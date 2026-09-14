@@ -380,8 +380,20 @@ class TeacherModel {
          ORDER BY tca.id ASC`,
         [id, schoolId]
       );
-      teacher.class_assignments = classAssignRows || [];
-      const distinctClasses = [...new Set((classAssignRows || []).map((a) => a.class_name).filter(Boolean))];
+      teacher.class_assignments = [];
+      if (classAssignRows && classAssignRows.length > 0) {
+        const uniqueAssignRows = [];
+        const seenAssign = new Set();
+        for (const row of classAssignRows) {
+          const key = `${row.class_id}-${row.subject_id || 0}`;
+          if (!seenAssign.has(key)) {
+            seenAssign.add(key);
+            uniqueAssignRows.push(row);
+          }
+        }
+        teacher.class_assignments = uniqueAssignRows;
+      }
+      const distinctClasses = [...new Set((teacher.class_assignments || []).map((a) => a.class_name).filter(Boolean))];
       teacher.assigned_classes = distinctClasses.length > 0 ? distinctClasses.join(', ') : (teacher.class_name || '');
       teacher.assigned_classes_list = distinctClasses.length > 0 ? distinctClasses : (teacher.class_name ? [teacher.class_name] : []);
     } catch {
@@ -917,14 +929,22 @@ class TeacherModel {
     if (Array.isArray(class_assignments) && class_assignments.length > 0) {
       try {
         const assignStatus = Number(status) === 2 ? 4 : 1;
+        const uniqueAssignments = [];
+        const seenPairs = new Set();
         for (const item of class_assignments) {
-          if (item.class_id) {
-            await pool.query(
-              `INSERT INTO teacher_class_assign (school_id, teacher_id, class_id, subject_id, academic_year, status)
-               VALUES (?, ?, ?, ?, ?, ?)`,
-              [schoolId, newId, item.class_id, item.subject_id || 0, academic_year || null, assignStatus]
-            );
+          if (!item.class_id) continue;
+          const key = `${item.class_id}-${item.subject_id || 0}`;
+          if (!seenPairs.has(key)) {
+            seenPairs.add(key);
+            uniqueAssignments.push(item);
           }
+        }
+        for (const item of uniqueAssignments) {
+          await pool.query(
+            `INSERT INTO teacher_class_assign (school_id, teacher_id, class_id, subject_id, academic_year, status)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            [schoolId, newId, item.class_id, item.subject_id || 0, academic_year || null, assignStatus]
+          );
         }
       } catch (assignErr) {
         console.error('[TeacherModel.createTeacher] Error saving teacher_class_assign:', assignErr.message);
@@ -1246,25 +1266,33 @@ class TeacherModel {
         );
 
         const assignStatus = isInactive ? 2 : 1;
+        const uniqueAssignments = [];
+        const seenPairs = new Set();
         for (const item of data.class_assignments) {
-          if (item.class_id) {
-            await pool.query(
-              `INSERT INTO teacher_class_assign (school_id, teacher_id, class_id, subject_id, academic_year, status)
-               VALUES (?, ?, ?, ?, ?, ?)`,
-              [schoolId, id, item.class_id, item.subject_id || 0, academic_year || null, assignStatus]
-            );
+          if (!item.class_id) continue;
+          const key = `${item.class_id}-${item.subject_id || 0}`;
+          if (!seenPairs.has(key)) {
+            seenPairs.add(key);
+            uniqueAssignments.push(item);
           }
         }
+        for (const item of uniqueAssignments) {
+          await pool.query(
+            `INSERT INTO teacher_class_assign (school_id, teacher_id, class_id, subject_id, academic_year, status)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            [schoolId, id, item.class_id, item.subject_id || 0, academic_year || null, assignStatus]
+          );
+        }
       } else {
-        // Partial update / status toggle:
+        // Partial update / status toggle: only toggle between active (1) and inactive (2), NEVER revive soft-deleted (4)
         if (isInactive) {
           await pool.query(
-            `UPDATE teacher_class_assign SET status = 2 WHERE teacher_id = ? AND school_id = ?`,
+            `UPDATE teacher_class_assign SET status = 2 WHERE teacher_id = ? AND school_id = ? AND status = 1`,
             [id, schoolId]
           );
         } else {
           await pool.query(
-            `UPDATE teacher_class_assign SET status = 1 WHERE teacher_id = ? AND school_id = ?`,
+            `UPDATE teacher_class_assign SET status = 1 WHERE teacher_id = ? AND school_id = ? AND status = 2`,
             [id, schoolId]
           );
         }
@@ -1561,24 +1589,36 @@ class TeacherModel {
          FROM teacher_class_assign tca
          LEFT JOIN class_master cm ON tca.class_id = cm.id
          LEFT JOIN subject_master sm ON tca.subject_id = sm.id
-         WHERE tca.teacher_id = ? AND tca.status != 4
+         WHERE tca.teacher_id = ? AND (tca.status = 1 OR tca.status = '1') AND (cm.status IS NULL OR cm.status != 4)
          ORDER BY tca.id ASC`,
         [teacherId]
       );
 
+      teacher.class_assignments = [];
       if (tcaRows && tcaRows.length > 0) {
-        teacher.class_assignments = tcaRows;
-        const uniqueClasses = tcaRows.map((r) => r.class_name).filter(Boolean).filter((v, i, a) => a.indexOf(v) === i);
+        const uniqueTca = [];
+        const seenTca = new Set();
+        for (const row of tcaRows) {
+          const key = `${row.class_id}-${row.subject_id || 0}`;
+          if (!seenTca.has(key)) {
+            seenTca.add(key);
+            uniqueTca.push(row);
+          }
+        }
+        teacher.class_assignments = uniqueTca;
+
+        const uniqueClasses = uniqueTca.map((r) => r.class_name).filter(Boolean).filter((v, i, a) => a.indexOf(v) === i);
         if (uniqueClasses.length > 0) {
           teacher.class_name = uniqueClasses.join(', ');
         }
-        const uniqueSubjects = tcaRows.map((r) => r.subject_name).filter(Boolean).filter((v, i, a) => a.indexOf(v) === i);
+        const uniqueSubjects = uniqueTca.map((r) => r.subject_name).filter(Boolean).filter((v, i, a) => a.indexOf(v) === i);
         if (uniqueSubjects.length > 0) {
           teacher.subject_name = uniqueSubjects.join(', ');
         }
       }
     } catch (e) {
       console.error('Error fetching teacher class assignments in findAuthProfileById:', e.message);
+      teacher.class_assignments = [];
     }
 
     return teacher;

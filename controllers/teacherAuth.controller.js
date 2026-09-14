@@ -14,8 +14,8 @@ class TeacherAuthController {
     const tokenPayload = {
       userId: teacher.id,
       teacherId: teacher.id,
-      schoolId: teacher.school_id || 1,
-      schoolName: teacher.school_name || 'Growvidya School',
+      schoolId: teacher.school_id || null,
+      schoolName: teacher.school_name || null,
       schoolLogo: teacher.school_logo || null,
       email: teacher.email_address,
       teacherCode: teacher.teacher_id,
@@ -54,7 +54,7 @@ class TeacherAuthController {
         gender: safeTeacher.gender,
         picture: safeTeacher.picture,
         schoolId: safeTeacher.school_id,
-        schoolName: safeTeacher.school_name || 'Growvidya School',
+        schoolName: safeTeacher.school_name || null,
         schoolLogo: safeTeacher.school_logo || null,
         className: safeTeacher.class_name || null,
         sectionName: safeTeacher.section_name || null,
@@ -195,7 +195,7 @@ class TeacherAuthController {
     ];
 
     const presentAddressParts = [safeTeacher.address1, safeTeacher.city_name, safeTeacher.state_name, safeTeacher.country_name].filter(Boolean);
-    const presentAddressStr = presentAddressParts.length > 0 ? presentAddressParts.join(', ') : 'N/A';
+    const presentAddressStr = presentAddressParts.length > 0 ? presentAddressParts.join(', ') : null;
 
     return {
       id: safeTeacher.id,
@@ -215,8 +215,8 @@ class TeacherAuthController {
       picture: safeTeacher.picture,
       schoolId: safeTeacher.school_id,
       school_id: safeTeacher.school_id,
-      schoolName: safeTeacher.school_name || 'Growvidya School',
-      school_name: safeTeacher.school_name || 'Growvidya School',
+      schoolName: safeTeacher.school_name || null,
+      school_name: safeTeacher.school_name || null,
       schoolLogo: safeTeacher.school_logo || null,
       className: safeTeacher.class_name || null,
       class_name: safeTeacher.class_name || null,
@@ -236,12 +236,12 @@ class TeacherAuthController {
       joining_date: safeTeacher.date_of_joining,
       bloodGroup: safeTeacher.blood_group,
       blood_group: safeTeacher.blood_group,
-      bloodGroupName: safeTeacher.blood_group_name || safeTeacher.blood_group || '',
-      blood_group_name: safeTeacher.blood_group_name || safeTeacher.blood_group || '',
+      bloodGroupName: safeTeacher.blood_group_name || null,
+      blood_group_name: safeTeacher.blood_group_name || null,
       maritalStatus: safeTeacher.marital_status,
       marital_status: safeTeacher.marital_status,
-      maritalStatusName: safeTeacher.marital_status_name || safeTeacher.marital_status || '',
-      marital_status_name: safeTeacher.marital_status_name || safeTeacher.marital_status || '',
+      maritalStatusName: safeTeacher.marital_status_name || null,
+      marital_status_name: safeTeacher.marital_status_name || null,
       address1: safeTeacher.address1,
       address2: safeTeacher.address2,
       address: addresses,

@@ -188,7 +188,7 @@ class TeacherDashboardController {
           subjectName: safeTeacher.subject_name || null,
           classAssignments: safeTeacher.class_assignments || [],
           qualification: safeTeacher.qualification,
-          schoolName: safeTeacher.school_name || 'Growvidya School',
+          schoolName: safeTeacher.school_name || null,
         },
         academicYear: {
           id: academicYearId,
