@@ -191,7 +191,7 @@ class BranchController {
   }
 
   /**
-   * Get countries list from countries_master
+   * Get countries list from countries table
    */
   static async getCountries(req, res, next) {
     try {
@@ -203,7 +203,7 @@ class BranchController {
   }
 
   /**
-   * Get states list for country (linking countries_master to states)
+   * Get states list for country
    */
   static async getStates(req, res, next) {
     try {

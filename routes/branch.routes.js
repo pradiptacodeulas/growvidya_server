@@ -12,7 +12,7 @@ router.get('/', BranchController.getBranches);
 // Get branches summary with student & teacher statistics
 router.get('/summary', BranchController.getBranchesSummary);
 
-// Location Lookups (using countries_master)
+// Location Lookups (using countries)
 router.get('/locations/countries', BranchController.getCountries);
 router.get('/locations/states', BranchController.getStates);
 router.get('/locations/cities', BranchController.getCities);

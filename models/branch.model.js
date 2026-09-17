@@ -32,7 +32,7 @@ class BranchModel {
       // 1. Seed a default "Main Campus" for any school in school_master that doesn't have any branches yet
       try {
         const [schoolsWithoutBranch] = await pool.query(`
-          SELECT s.id, s.school_name, s.school_code, s.email, s.phone_number, s.address 
+          SELECT s.id, s.school_name, s.school_code, s.email, s.phone_number, s.address, s.country, s.state, s.city, s.postal_code 
           FROM school_master s
           LEFT JOIN branch_master b ON s.id = b.school_id
           WHERE b.id IS NULL
@@ -41,18 +41,35 @@ class BranchModel {
         for (const sch of schoolsWithoutBranch) {
           const code = (sch.school_code || 'MAIN').toUpperCase();
           await pool.query(
-            `INSERT INTO branch_master (school_id, branch_name, branch_code, address, phone, email, is_main_branch, status)
-             VALUES (?, ?, ?, ?, ?, ?, 1, 1)`,
+            `INSERT INTO branch_master (
+              school_id, branch_name, branch_code, address, country_id, state_id, city_id,
+              pincode, phone, email, is_main_branch, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)`,
             [
               sch.id,
               `${sch.school_name || 'Growvidya School'} (Main Campus)`,
               code === 'MAIN' ? 'MAIN-01' : `${code}-MAIN`,
               sch.address || null,
+              sch.country || null,
+              sch.state || null,
+              sch.city || null,
+              sch.postal_code || null,
               sch.phone_number || null,
               sch.email || null,
             ]
           );
         }
+
+        // Backfill country_id, state_id, city_id from school_master for any branches currently missing them
+        await pool.query(`
+          UPDATE branch_master b
+          INNER JOIN school_master s ON b.school_id = s.id
+          SET b.country_id = COALESCE(b.country_id, s.country),
+              b.state_id = COALESCE(b.state_id, s.state),
+              b.city_id = COALESCE(b.city_id, s.city),
+              b.pincode = COALESCE(b.pincode, s.postal_code)
+          WHERE b.country_id IS NULL OR b.state_id IS NULL OR b.city_id IS NULL
+        `);
       } catch (seedErr) {
         console.warn('[BranchModel] Note during default branch seeding:', seedErr.message);
       }
@@ -151,7 +168,7 @@ class BranchModel {
         b.country_id,
         b.state_id,
         b.city_id,
-        cm.country_name AS country,
+        co.name AS country,
         s.state AS state,
         ct.name AS city,
         b.pincode,
@@ -163,7 +180,7 @@ class BranchModel {
         b.created_at,
         b.updated_at
       FROM branch_master b
-      LEFT JOIN countries_master cm ON b.country_id = cm.id
+      LEFT JOIN countries co ON b.country_id = co.id
       LEFT JOIN states s ON b.state_id = s.id_state
       LEFT JOIN cities ct ON b.city_id = ct.id
       WHERE b.school_id = ?
@@ -198,7 +215,7 @@ class BranchModel {
         b.country_id,
         b.state_id,
         b.city_id,
-        cm.country_name AS country,
+        co.name AS country,
         s.state AS state,
         ct.name AS city,
         b.pincode,
@@ -210,7 +227,7 @@ class BranchModel {
         b.created_at,
         b.updated_at
       FROM branch_master b
-      LEFT JOIN countries_master cm ON b.country_id = cm.id
+      LEFT JOIN countries co ON b.country_id = co.id
       LEFT JOIN states s ON b.state_id = s.id_state
       LEFT JOIN cities ct ON b.city_id = ct.id
       WHERE b.id = ? AND b.school_id = ?
@@ -430,7 +447,7 @@ class BranchModel {
         b.country_id,
         b.state_id,
         b.city_id,
-        cm.country_name AS country,
+        co.name AS country,
         s.state AS state,
         ct.name AS city,
         b.pincode,
@@ -444,7 +461,7 @@ class BranchModel {
         COALESCE(t.teacher_count, 0) AS teacher_count,
         COALESCE(c.class_count, 0) AS class_count
       FROM branch_master b
-      LEFT JOIN countries_master cm ON b.country_id = cm.id
+      LEFT JOIN countries co ON b.country_id = co.id
       LEFT JOIN states s ON b.state_id = s.id_state
       LEFT JOIN cities ct ON b.city_id = ct.id
       LEFT JOIN (
@@ -474,15 +491,15 @@ class BranchModel {
   }
 
   /**
-   * Get all active countries from countries_master table
+   * Get all active countries from countries table
    */
   static async getCountries() {
     try {
       const [rows] = await pool.query(
-        `SELECT id, country_name AS name, country_name, country_code, phone_code 
-         FROM countries_master 
-         WHERE status = 1 
-         ORDER BY country_name ASC`
+        `SELECT id, name, name AS country_name, shortname AS country_code, phonecode AS phone_code 
+         FROM countries 
+         WHERE status = 1 OR status IS NULL 
+         ORDER BY name ASC`
       );
       return rows;
     } catch (err) {
@@ -492,30 +509,19 @@ class BranchModel {
   }
 
   /**
-   * Get states for a country from states table linking to countries_master
+   * Get states for a country from states table
    */
   static async getStates(countryId) {
     if (!countryId) return [];
     try {
-      // Map countries_master ID to legacy countries table if needed
-      const [mapped] = await pool.query(
-        `SELECT c.id FROM countries c
-         JOIN countries_master cm ON cm.country_code = c.shortname OR LOWER(cm.country_name) = LOWER(c.name)
-         WHERE cm.id = ?`,
-        [Number(countryId)]
-      );
-
-      const targetCountryIds = mapped.length > 0 ? mapped.map((r) => r.id) : [Number(countryId)];
-      const placeholders = targetCountryIds.map(() => '?').join(',');
-
       const sql = `
         SELECT s.id_state AS id, s.state, s.state AS name, s.country_id
         FROM states s
         WHERE (s.is_active = 1 OR s.is_active IS NULL)
-          AND s.country_id IN (${placeholders})
+          AND s.country_id = ?
         ORDER BY s.state ASC
       `;
-      const [rows] = await pool.query(sql, targetCountryIds);
+      const [rows] = await pool.query(sql, [Number(countryId)]);
       return rows;
     } catch (err) {
       console.error('[BranchModel.getStates] Error:', err.message);

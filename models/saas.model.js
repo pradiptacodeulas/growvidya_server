@@ -122,6 +122,34 @@ class SaasModel {
         console.warn('Could not insert default weekends:', weekendErr.message);
       }
 
+      // Seed initial Main Campus branch for the new school
+      let mainBranchId = null;
+      try {
+        const cleanBranchCode = (schoolCode || 'MAIN').toUpperCase();
+        const branchCode = cleanBranchCode === 'MAIN' ? 'MAIN-01' : `${cleanBranchCode}-MAIN`;
+        const [branchResult] = await connection.query(
+          `INSERT INTO branch_master (
+            school_id, branch_name, branch_code, address, country_id, state_id, city_id,
+            pincode, phone, email, is_main_branch, status, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, NOW(), NOW())`,
+          [
+            schoolId,
+            `${schoolName} (Main Campus)`,
+            branchCode,
+            schoolData.address || null,
+            countryId,
+            stateId,
+            cityId,
+            schoolData.postal_code || null,
+            schoolData.phone_number || null,
+            schoolData.email || adminEmail,
+          ]
+        );
+        mainBranchId = branchResult.insertId;
+      } catch (branchErr) {
+        console.warn('Could not insert default main branch:', branchErr.message);
+      }
+
       // 5. Get plan details to calculate subscription duration
       let effectivePlanId = parseInt(planId, 10);
       const [planRows] = await connection.query(
@@ -215,12 +243,13 @@ class SaasModel {
 
       const insertAdminQuery = `
         INSERT INTO user_master (
-          school_id, first_name, last_name, email, phone, password,
+          school_id, branch_id, first_name, last_name, email, phone, password,
           gender, picture, country_id, state_id, city, role, admin_type, status, date
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, NOW())
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, NOW())
       `;
       await connection.query(insertAdminQuery, [
         schoolId,
+        mainBranchId,
         (adminData.first_name || 'Admin').trim(),
         (adminData.last_name || '').trim(),
         adminEmail,
