@@ -1,0 +1,11 @@
+# Dependencies
+node_modules/
+
+# Environment variables (Secrets)
+.env
+
+# Logs & Temp outputs
+*.log
+*.pdf
+public/upload/temp/
+

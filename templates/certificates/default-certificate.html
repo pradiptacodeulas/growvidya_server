@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Certificate - {{student_name}}</title>
+  
+  <!--
+  ================================================================================
+  GROWVIDYA CERTIFICATE TEMPLATE (A4 PORTRAIT)
+  ================================================================================
+  HOW TO EDIT THIS TEMPLATE MANUALLY:
+  1. COLORS & FONTS: Change the values under the :root { ... } CSS section below.
+  2. TEXT & HEADINGS: You can edit or rephrase any text directly in the HTML body.
+  3. AVAILABLE DYNAMIC PLACEHOLDERS (Replaced automatically by the backend server):
+     - {{school_name}}           : Name of the school / institution
+     - {{affiliation}}           : Affiliation or board details (e.g. CBSE / State Board)
+     - {{school_address}}        : Address and city of the school
+     - {{school_code}}           : School code or registration number
+     - {{school_logo_src}}       : URL or base64 data of the school crest/logo
+     - {{border_image_url}}      : URL or local path of the A4 decorative border image
+     - {{serial_no}}             : Certificate serial / issue number (e.g. CERT-2026-001)
+     - {{issue_date}}            : Date of issue (e.g. 11/09/2026)
+     - {{certificate_heading}}   : Heading badge (e.g. CHARACTER CERTIFICATE, TRANSFER CERTIFICATE)
+     - {{student_name}}          : Full name of the recipient student
+     - {{certificate_body}}      : Main certificate text paragraphs with student details
+     - {{certified_by}}          : Signature designation (e.g. Principal / Headmaster)
+  ================================================================================
+  -->
+
+  <!-- Google Fonts for High-Fidelity Certificate Typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800;900&family=Playfair+Display:ital,wght@0,600;0,700;0,800;1,400;1,600&family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ==========================================================================
+       1. THEME VARIABLES (EDIT COLORS & FONTS HERE EASILY)
+       ========================================================================== */
+    :root {
+      --primary-color: #0c2340;       /* Dark navy for school title and student name */
+      --accent-color: #c5a059;        /* Royal gold for borders, badge and dividers */
+      --text-dark: #1e293b;           /* Slate color for main body text */
+      --text-muted: #64748b;          /* Soft gray for labels and lead-in text */
+      --serial-color: #b91c1c;        /* Crimson red for serial number */
+      
+      --font-display: "Cinzel", "Georgia", "Times New Roman", serif;
+      --font-body: "Playfair Display", "Georgia", serif;
+      --font-sans: "Montserrat", "Helvetica", Arial, sans-serif;
+    }
+
+    /* ==========================================================================
+       2. PAGE SETUP FOR A4 PORTRAIT PRINTING
+       ========================================================================== */
+    @page {
+      size: A4 portrait;
+      margin: 0;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      width: 210mm;
+      height: 297mm;
+      margin: 0;
+      padding: 0;
+      background-color: #ffffff;
+      font-family: var(--font-body);
+      color: var(--text-dark);
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    /* ==========================================================================
+       3. CERTIFICATE CANVAS & BACKGROUND BORDER
+       ========================================================================== */
+    .certificate-container {
+      width: 210mm;
+      height: 297mm;
+      position: relative;
+      overflow: hidden;
+      background-color: #ffffff;
+      background-image: url('{{border_image_url}}');
+      background-size: 100% 100%;
+      background-repeat: no-repeat;
+      background-position: center;
+      padding: 18mm 16mm 16mm 16mm;
+      display: flex;
+      flex-direction: column;
+      justify-content: stretch;
+    }
+
+    /* Soft watermark crest in the center */
+    .watermark-logo {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 85mm;
+      height: 85mm;
+      background-image: url('{{school_logo_src}}');
+      background-size: contain;
+      background-repeat: no-repeat;
+      background-position: center;
+      opacity: 0.045;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    /* Main inner frame containing all readable certificate content */
+    .certificate-inner {
+      position: relative;
+      z-index: 2;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 8mm 7mm 4mm 7mm;
+    }
+
+    /* ==========================================================================
+       4. TOP ROW (SERIAL NUMBER & ISSUE DATE)
+       ========================================================================== */
+    .meta-top-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-family: var(--font-sans);
+      font-size: 9.5pt;
+      padding-bottom: 2mm;
+    }
+
+    .meta-group {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .meta-label {
+      color: var(--text-muted);
+      font-size: 8.5pt;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .meta-serial {
+      color: var(--serial-color);
+      font-weight: 700;
+      font-family: "Courier New", Courier, monospace;
+      font-size: 10.5pt;
+      letter-spacing: 1px;
+    }
+
+    .meta-date {
+      color: var(--text-dark);
+      font-weight: 600;
+    }
+
+    /* ==========================================================================
+       5. SCHOOL BRANDING & HEADER
+       ========================================================================== */
+    .school-header {
+      text-align: center;
+      margin-top: 2mm;
+      margin-bottom: 2mm;
+    }
+
+    .school-logo {
+      max-height: 46px;
+      max-width: 46px;
+      object-fit: contain;
+      margin-bottom: 2mm;
+      filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.08));
+    }
+
+    .school-name {
+      font-family: var(--display-font, var(--font-display));
+      font-size: 19pt;
+      font-weight: 800;
+      color: var(--primary-color);
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      line-height: 1.2;
+      margin-bottom: 1.5mm;
+    }
+
+    .school-affiliation {
+      font-family: var(--font-sans);
+      font-size: 8.5pt;
+      color: var(--text-muted);
+      font-weight: 500;
+      letter-spacing: 0.5px;
+      margin-bottom: 1mm;
+    }
+
+    .school-address-code {
+      font-family: var(--font-sans);
+      font-size: 8.5pt;
+      font-weight: 600;
+      color: #334155;
+      letter-spacing: 0.3px;
+    }
+
+    /* Ornate Divider */
+    .ornate-divider {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      margin: 2.5mm auto 3.5mm auto;
+      width: 55%;
+    }
+
+    .ornate-line {
+      flex: 1;
+      height: 1px;
+      background: linear-gradient(to right, transparent, var(--accent-color), transparent);
+    }
+
+    .ornate-diamond {
+      color: var(--accent-color);
+      font-size: 8pt;
+    }
+
+    /* ==========================================================================
+       6. CERTIFICATE TITLE / BADGE
+       ========================================================================== */
+    .certificate-title-wrap {
+      text-align: center;
+      margin: 2mm auto 3mm auto;
+    }
+
+    .certificate-title {
+      display: inline-block;
+      font-family: var(--font-display);
+      font-size: 14pt;
+      font-weight: 800;
+      letter-spacing: 2.5px;
+      color: var(--primary-color);
+      text-transform: uppercase;
+      padding: 4px 22px;
+      border-top: 1.5px solid var(--accent-color);
+      border-bottom: 1.5px solid var(--accent-color);
+      background: rgba(197, 160, 89, 0.08);
+      border-radius: 2px;
+    }
+
+    .certificate-lead-in {
+      text-align: center;
+      font-style: italic;
+      font-size: 12.5pt;
+      color: var(--text-muted);
+      margin: 2mm 0;
+    }
+
+    /* ==========================================================================
+       7. RECIPIENT / STUDENT NAME
+       ========================================================================== */
+    .recipient-wrap {
+      text-align: center;
+      margin: 2mm 0 4mm 0;
+    }
+
+    .recipient-name {
+      font-family: var(--font-body);
+      font-size: 21pt;
+      font-weight: 800;
+      color: var(--primary-color);
+      letter-spacing: 1px;
+      display: inline-block;
+      padding: 0 16px 2px 16px;
+      border-bottom: 1.8px solid var(--accent-color);
+      min-width: 260px;
+    }
+
+    /* ==========================================================================
+       8. CERTIFICATE BODY CONTENT
+       ========================================================================== */
+    .certificate-content {
+      font-size: 12.5pt;
+      line-height: 2.1;
+      color: var(--text-dark);
+      text-align: center;
+      padding: 0 5mm;
+      max-width: 95%;
+      margin: 0 auto;
+    }
+
+    .certificate-content p {
+      margin-bottom: 3mm;
+    }
+
+    /* Highlights for student details (name, roll no, class) */
+    .highlight {
+      font-weight: 700;
+      color: #0f172a;
+      border-bottom: 1px solid #0f172a;
+      padding: 0 3px;
+      margin: 0 2px;
+      display: inline;
+    }
+
+    /* ==========================================================================
+       9. FOOTER & SIGNATURE BLOCKS
+       ========================================================================== */
+    .certificate-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      padding: 4mm 6mm 2mm 6mm;
+      margin-top: 4mm;
+    }
+
+    .sign-block {
+      text-align: center;
+      width: 48mm;
+    }
+
+    .sign-line {
+      width: 42mm;
+      height: 1px;
+      background: #0f172a;
+      margin: 0 auto 5px auto;
+    }
+
+    .sign-title {
+      font-family: var(--font-sans);
+      font-size: 10pt;
+      font-weight: 700;
+      color: var(--primary-color);
+      line-height: 1.2;
+    }
+
+    .sign-subtitle {
+      font-family: var(--font-sans);
+      font-size: 8pt;
+      font-style: italic;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="certificate-container">
+    <!-- Soft Watermark Crest -->
+    <div class="watermark-logo"></div>
+
+    <!-- Inner Readable Certificate Frame -->
+    <div class="certificate-inner">
+
+      <!-- Top Row: Serial & Date -->
+      <div class="meta-top-row">
+        <div class="meta-group">
+          <span class="meta-label">Serial No:</span>
+          <span class="meta-serial">{{serial_no}}</span>
+        </div>
+        <div class="meta-group">
+          <span class="meta-label">Date:</span>
+          <span class="meta-date">{{issue_date}}</span>
+        </div>
+      </div>
+
+      <!-- School Header & Branding -->
+      <div class="school-header">
+        <div>
+          <img src="{{school_logo_src}}" alt="Logo" class="school-logo" onerror="this.style.display='none'" />
+        </div>
+        <div class="school-name">{{school_name}}</div>
+        <div class="school-affiliation">{{affiliation}}</div>
+        <div class="school-address-code">{{school_address}} {{school_code}}</div>
+      </div>
+
+      <!-- Ornate Divider -->
+      <div class="ornate-divider">
+        <div class="ornate-line"></div>
+        <div class="ornate-diamond">&#9670;</div>
+        <div class="ornate-line"></div>
+      </div>
+
+      <!-- Certificate Title & Lead-in -->
+      <div class="certificate-title-wrap">
+        <div class="certificate-title">{{certificate_heading}}</div>
+      </div>
+      <div class="certificate-lead-in">This is to proudly certify that</div>
+
+      <!-- Recipient Student Name -->
+      <div class="recipient-wrap">
+        <div class="recipient-name">{{student_name}}</div>
+      </div>
+
+      <!-- Dynamic Certificate Body -->
+      <div class="certificate-content">
+        {{certificate_body}}
+      </div>
+
+      <!-- Signatures Footer -->
+      <div class="certificate-footer">
+        <!-- Left: Prepared By / Class Teacher -->
+        <div class="sign-block">
+          <div class="sign-line"></div>
+          <div class="sign-title">Prepared By</div>
+          <div class="sign-subtitle">Class Teacher / Incharge</div>
+        </div>
+
+        <!-- Right: Principal / Issuing Authority -->
+        <div class="sign-block">
+          <div class="sign-line"></div>
+          <div class="sign-title">{{certified_by}}</div>
+          <div class="sign-subtitle">Head of Institution</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</body>
+</html>

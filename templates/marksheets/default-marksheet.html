@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Marksheet - {{student_name}}</title>
+  
+  <!--
+  ================================================================================
+  GROWVIDYA OFFICIAL MARKSHEET / PROGRESS REPORT TEMPLATE (A4 PORTRAIT)
+  ================================================================================
+  HOW TO EDIT THIS TEMPLATE MANUALLY:
+  1. COLORS & FONTS: Change the values under the :root { ... } CSS section below.
+  2. DIMENSIONS: Formatted for standard A4 Portrait (210mm x 297mm).
+  3. DYNAMIC PLACEHOLDERS (Filled automatically by the backend server):
+     - {{school_title}}, {{school_logo}}, {{school_address}}, {{school_code}}, {{affiliation_board}}
+     - {{student_name}}, {{admission_no}}, {{roll_no}}, {{class_name}}, {{section_name}}
+     - {{father_name}}, {{dob}}, {{gender}}, {{academic_year}}
+     - {{subjects_table_html}}      : Complete academic marks table with terms & grades
+     - {{total_marks_obtained}}, {{grand_full_marks}}, {{overall_percentage}}, {{overall_grade}}
+     - {{result_status}}            : Passed / Promoted
+     - {{grading_scale_html}}       : Grade breakdown legend
+     - {{issue_date}}               : Issue date
+  ================================================================================
+  -->
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ==========================================================================
+       1. THEME VARIABLES (EDIT COLORS & FONTS HERE)
+       ========================================================================== */
+    :root {
+      --primary-color: #0c2340;       /* Deep navy for school title & table headers */
+      --primary-light: #f1f5f9;       /* Light slate for alternating rows */
+      --accent-color: #1e40af;        /* Blue accent for badges and borders */
+      --border-color: #94a3b8;        /* Slate gray for crisp print table borders */
+      --border-light: #cbd5e1;
+      --text-dark: #0f172a;           /* Near black for optimal print readability */
+      --text-muted: #475569;          /* Subdued gray for secondary labels */
+      --success-color: #15803d;       /* Green for pass / distinction */
+      
+      --font-display: "Cinzel", "Georgia", "Times New Roman", serif;
+      --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    /* ==========================================================================
+       2. PAGE SETUP FOR A4 PORTRAIT PRINTING
+       ========================================================================== */
+    @page {
+      size: A4 portrait;
+      margin: 0;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      width: 210mm;
+      height: 297mm;
+      margin: 0;
+      padding: 0;
+      background-color: #ffffff;
+      font-family: var(--font-sans);
+      color: var(--text-dark);
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    /* Main Printable Outer Container */
+    .marksheet-container {
+      width: 210mm;
+      height: 297mm;
+      padding: 7mm 11mm 9.5mm 11mm;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      position: relative;
+      background: #ffffff;
+      overflow: hidden;
+    }
+
+    /* Decorative Outer Border */
+    .marksheet-outer-border {
+      position: absolute;
+      top: 6mm;
+      left: 6mm;
+      right: 6mm;
+      bottom: 6mm;
+      border: 2px solid var(--primary-color);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .marksheet-inner-border {
+      position: absolute;
+      top: 7.2mm;
+      left: 7.2mm;
+      right: 7.2mm;
+      bottom: 7.2mm;
+      border: 0.8px solid var(--border-color);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .marksheet-content {
+      position: relative;
+      z-index: 1;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    /* ==========================================================================
+       3. SCHOOL BRANDING HEADER
+       ========================================================================== */
+    .header-section {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 2px solid var(--primary-color);
+      padding-bottom: 3mm;
+      margin-bottom: 3mm;
+      gap: 4mm;
+    }
+
+    .school-logo-wrap {
+      width: 24mm;
+      height: 24mm;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .school-logo {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+    }
+
+    .school-info {
+      flex: 1;
+      text-align: center;
+    }
+
+    .school-name {
+      font-family: var(--font-display);
+      font-size: 16pt;
+      font-weight: 800;
+      color: var(--primary-color);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      line-height: 1.15;
+      margin-bottom: 1.5mm;
+    }
+
+    .school-affiliation {
+      font-size: 8pt;
+      font-weight: 600;
+      color: var(--text-muted);
+      letter-spacing: 0.5px;
+      margin-bottom: 1mm;
+    }
+
+    .school-address-contact {
+      font-size: 7.5pt;
+      color: var(--text-muted);
+      line-height: 1.3;
+    }
+
+    /* ==========================================================================
+       4. REPORT CARD TITLE BADGE
+       ========================================================================== */
+    .title-banner {
+      text-align: center;
+      margin-bottom: 3mm;
+    }
+
+    .title-badge {
+      display: inline-block;
+      background: var(--primary-color);
+      color: #ffffff;
+      font-size: 10pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      padding: 1.5mm 8mm;
+      border-radius: 3px;
+    }
+
+    .session-badge {
+      font-size: 8.5pt;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-top: 1mm;
+    }
+
+    /* ==========================================================================
+       5. STUDENT DETAILS PROFILE CARD
+       ========================================================================== */
+    .student-card {
+      border: 1px solid var(--border-color);
+      background: rgba(250, 250, 250, 0.82);
+      border-radius: 4px;
+      padding: 2.5mm 3.5mm;
+      margin-bottom: 3.5mm;
+    }
+
+    .student-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      row-gap: 1.8mm;
+      column-gap: 3mm;
+      font-size: 8.5pt;
+    }
+
+    .student-field {
+      display: flex;
+      align-items: baseline;
+      gap: 1.5mm;
+    }
+
+    .field-label {
+      font-weight: 600;
+      color: var(--text-muted);
+      font-size: 8pt;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      white-space: nowrap;
+    }
+
+    .field-value {
+      font-weight: 700;
+      color: var(--text-dark);
+      border-bottom: 1px dotted var(--border-color);
+      flex: 1;
+      padding-bottom: 0.5mm;
+    }
+
+    /* ==========================================================================
+       6. ACADEMIC PERFORMANCE TABLE
+       ========================================================================== */
+    .table-section {
+      flex: 1;
+      margin-bottom: 2.5mm;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      gap: 2mm;
+    }
+
+    .term-table-block {
+      width: 100%;
+    }
+
+    .marks-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 7.5pt;
+      text-align: center;
+      background: transparent;
+    }
+
+    .marks-table th, 
+    .marks-table td {
+      border: 1px solid var(--border-color);
+      padding: 2.2mm 2mm;
+    }
+
+    .marks-table thead tr.term-banner-row th {
+      background: var(--primary-color);
+      color: #ffffff;
+      font-size: 8.5pt;
+      font-weight: 800;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      padding: 2mm 3mm;
+      text-align: center;
+    }
+
+    .marks-table thead tr.sub-header th {
+      background: #1e293b;
+      color: #ffffff;
+      font-size: 7.5pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      padding: 2mm 2mm;
+    }
+
+    .marks-table tbody td {
+      color: var(--text-dark);
+      font-weight: 500;
+      background: rgba(255, 255, 255, 0.85);
+    }
+
+    .marks-table tbody tr:nth-child(even) td {
+      background: rgba(241, 245, 249, 0.85);
+    }
+
+    .marks-table td.subject-col {
+      text-align: left;
+      font-weight: 600;
+      padding-left: 2.5mm;
+      color: var(--primary-color);
+    }
+
+    .marks-table td.bold-col {
+      font-weight: 700;
+    }
+
+    .marks-table tfoot th,
+    .marks-table tfoot td {
+      background: #e2e8f0;
+      font-weight: 700;
+      border-top: 1.5px solid var(--primary-color);
+    }
+
+    /* ==========================================================================
+       7. PERFORMANCE SUMMARY & ATTENDANCE
+       ========================================================================== */
+    .summary-section {
+      display: flex;
+      justify-content: space-between;
+      gap: 3mm;
+      margin-bottom: 3mm;
+    }
+
+    .summary-box {
+      flex: 1.4;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      padding: 2.5mm 3.5mm;
+      background: #fafafa;
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      text-align: center;
+    }
+
+    .summary-item {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5mm;
+    }
+
+    .summary-title {
+      font-size: 7.5pt;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+    }
+
+    .summary-value {
+      font-size: 11pt;
+      font-weight: 800;
+      color: var(--primary-color);
+    }
+
+    .result-badge {
+      padding: 1mm 3.5mm;
+      border-radius: 3px;
+      font-weight: 800;
+      font-size: 9.5pt;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      background: rgba(21, 128, 61, 0.12);
+      color: var(--success-color);
+      border: 1px solid var(--success-color);
+    }
+
+    /* Grading Scale Box */
+    .grading-scale-box {
+      flex: 1;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      padding: 2mm 2.5mm;
+      background: #ffffff;
+    }
+
+    .grading-scale-title {
+      font-size: 7pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 1mm;
+      text-align: center;
+      letter-spacing: 0.5px;
+    }
+
+    .grading-scale-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 6.5pt;
+      text-align: center;
+    }
+
+    .grading-scale-table th,
+    .grading-scale-table td {
+      border: 0.5px solid var(--border-light);
+      padding: 0.8mm;
+    }
+
+    .grading-scale-table th {
+      background: #f1f5f9;
+      font-weight: 700;
+      color: var(--text-dark);
+    }
+
+    /* ==========================================================================
+       8. FOOTER & SIGNATURES
+       ========================================================================== */
+    .footer-section {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      padding-top: 3.5mm;
+      padding-bottom: 2mm;
+      border-top: 1px dashed var(--border-color);
+      margin-top: 1mm;
+      margin-bottom: 0mm;
+    }
+
+    .signature-block {
+      text-align: center;
+      width: 48mm;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .signature-space {
+      height: 8mm;
+      width: 100%;
+    }
+
+    .signature-line {
+      width: 42mm;
+      height: 1.2px;
+      background: var(--primary-color);
+      margin-bottom: 1.5mm;
+    }
+
+    .signature-title {
+      font-size: 8pt;
+      font-weight: 700;
+      color: var(--primary-color);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      line-height: 1.2;
+    }
+
+    .signature-date {
+      font-size: 7pt;
+      color: var(--text-muted);
+      margin-top: 0.5mm;
+      line-height: 1.2;
+    }
+
+    /* ==========================================================================
+       9. SECURITY WATERMARKS: DIAGONAL BOARD & SCHOOL HOLOGRAM CREST
+       ========================================================================== */
+    .diagonal-watermark-layer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 0;
+      overflow: hidden;
+    }
+
+    .school-hologram-watermark {
+      position: absolute;
+      top: 53%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 110mm;
+      height: 110mm;
+      pointer-events: none;
+      z-index: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0.088;
+    }
+
+    .hologram-seal {
+      width: 102mm;
+      height: 102mm;
+      border-radius: 50%;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      border: 2.5px double var(--primary-color);
+      box-shadow: 0 0 0 1.5mm rgba(12, 35, 64, 0.15), 0 0 0 3.2mm rgba(12, 35, 64, 0.06);
+      background: radial-gradient(
+        circle,
+        rgba(255, 255, 255, 0.95) 0%,
+        rgba(186, 230, 253, 0.45) 30%,
+        rgba(254, 240, 138, 0.45) 55%,
+        rgba(233, 213, 255, 0.45) 75%,
+        rgba(167, 243, 208, 0.45) 100%
+      );
+    }
+
+    .hologram-rays {
+      position: absolute;
+      width: 96mm;
+      height: 96mm;
+      border-radius: 50%;
+      border: 1px dashed var(--primary-color);
+      background: repeating-conic-gradient(
+        from 0deg,
+        rgba(12, 35, 64, 0.07) 0deg 8deg,
+        transparent 8deg 16deg
+      );
+    }
+
+    .hologram-outer-ring {
+      width: 82mm;
+      height: 82mm;
+      border-radius: 50%;
+      border: 1.5px solid var(--primary-color);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      box-shadow: inset 0 0 8px rgba(12, 35, 64, 0.15);
+    }
+
+    .hologram-inner-ring {
+      width: 68mm;
+      height: 68mm;
+      border-radius: 50%;
+      border: 1px dashed var(--primary-color);
+      background: rgba(255, 255, 255, 0.88);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hologram-sheen {
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: linear-gradient(
+        135deg,
+        transparent 30%,
+        rgba(255, 255, 255, 0.7) 45%,
+        rgba(147, 197, 253, 0.5) 50%,
+        rgba(253, 230, 138, 0.5) 55%,
+        transparent 70%
+      );
+      transform: rotate(30deg);
+    }
+
+    .hologram-logo-img {
+      max-width: 52mm;
+      max-height: 52mm;
+      object-fit: contain;
+      filter: contrast(115%) saturate(120%);
+      position: relative;
+      z-index: 1;
+    }
+
+    .hologram-label {
+      position: absolute;
+      bottom: 5mm;
+      font-size: 6pt;
+      font-weight: 800;
+      letter-spacing: 1.8px;
+      color: var(--primary-color);
+      text-transform: uppercase;
+      font-family: var(--font-sans);
+    }
+
+    /* Fallback 'No Logo' text badges when school has not uploaded a logo */
+    .no-logo-badge {
+      width: 22mm;
+      height: 22mm;
+      border: 1.5px dashed var(--border-color);
+      border-radius: 4px;
+      background: #f8fafc;
+      color: #94a3b8;
+      font-size: 7pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+    }
+
+    .hologram-no-logo-badge {
+      font-size: 11pt;
+      font-weight: 800;
+      color: var(--primary-color);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      border: 1.5px dashed var(--primary-color);
+      padding: 2.5mm 5.5mm;
+      border-radius: 4px;
+      position: relative;
+      z-index: 1;
+      opacity: 0.85;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="marksheet-container">
+    <!-- Borders -->
+    <div class="marksheet-outer-border"></div>
+    <div class="marksheet-inner-border"></div>
+
+    <!-- 1. Diagonal Repeating Board Name Watermark Layer -->
+    <div class="diagonal-watermark-layer">
+      <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%">
+        <defs>
+          <pattern id="diagonalBoardWatermark" width="280" height="85" patternUnits="userSpaceOnUse" patternTransform="rotate(-30)">
+            <text x="15" y="32" font-family="'Inter', -apple-system, sans-serif" font-size="8pt" font-weight="700" letter-spacing="2.5px" fill="var(--primary-color)" fill-opacity="0.045" text-transform="uppercase">
+              {{board_watermark_text}} &#8226;
+            </text>
+            <text x="155" y="74" font-family="'Inter', -apple-system, sans-serif" font-size="8pt" font-weight="700" letter-spacing="2.5px" fill="var(--primary-color)" fill-opacity="0.045" text-transform="uppercase">
+              {{board_watermark_text}} &#8226;
+            </text>
+          </pattern>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#diagonalBoardWatermark)" />
+      </svg>
+    </div>
+
+    <!-- 2. Central School Hologram Watermark Crest -->
+    <div class="school-hologram-watermark">
+      <div class="hologram-seal">
+        <div class="hologram-rays"></div>
+        <div class="hologram-outer-ring">
+          <div class="hologram-inner-ring">
+            <div class="hologram-sheen"></div>
+            {{hologram_logo_html}}
+          </div>
+        </div>
+        <div class="hologram-label">&#9733; OFFICIAL ACADEMIC RECORD &#9733;</div>
+      </div>
+    </div>
+
+    <div class="marksheet-content">
+
+      <!-- School Header -->
+      <div class="header-section">
+        <div class="school-logo-wrap logo-left">
+          {{header_logo_html}}
+        </div>
+        <div class="school-info">
+          <div class="school-name">{{school_title}}</div>
+          <div class="school-affiliation">{{affiliation_board}}</div>
+          <div class="school-address-contact">
+            {{school_address}} {{school_code}}
+          </div>
+        </div>
+        <div class="school-logo-wrap logo-right">
+          {{header_logo_html}}
+        </div>
+      </div>
+
+      <!-- Report Card Title -->
+      <div class="title-banner">
+        <div class="title-badge">Progress Report / Marksheet</div>
+        <div class="session-badge">Academic Session: {{academic_year}}</div>
+      </div>
+
+      <!-- Student Profile Card -->
+      <div class="student-card">
+        <div class="student-grid">
+          <div class="student-field">
+            <span class="field-label">Student Name:</span>
+            <span class="field-value">{{student_name}}</span>
+          </div>
+          <div class="student-field">
+            <span class="field-label">Roll No:</span>
+            <span class="field-value">{{roll_no}}</span>
+          </div>
+          <div class="student-field">
+            <span class="field-label">Admission No:</span>
+            <span class="field-value">{{admission_no}}</span>
+          </div>
+          <div class="student-field">
+            <span class="field-label">Class &amp; Section:</span>
+            <span class="field-value">{{class_name}} - {{section_name}}</span>
+          </div>
+          <div class="student-field">
+            <span class="field-label">Father's Name:</span>
+            <span class="field-value">{{father_name}}</span>
+          </div>
+          <div class="student-field">
+            <span class="field-label">Date of Birth:</span>
+            <span class="field-value">{{dob}}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Academic Performance Table -->
+      <div class="table-section">
+        {{subjects_table_html}}
+      </div>
+
+      <!-- Performance Summary & Grading Scale -->
+      <div class="summary-section">
+        <div class="summary-box">
+          <div class="summary-item">
+            <span class="summary-title">Total Marks</span>
+            <span class="summary-value">{{total_marks_obtained}} / {{grand_full_marks}}</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-title">Percentage</span>
+            <span class="summary-value">{{overall_percentage}}%</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-title">Grade</span>
+            <span class="summary-value">{{overall_grade}}</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-title">Result</span>
+            <span class="result-badge">{{result_status}}</span>
+          </div>
+        </div>
+
+        <div class="grading-scale-box">
+          <div class="grading-scale-title">Grading Scale</div>
+          {{grading_scale_html}}
+        </div>
+      </div>
+
+      <!-- Footer & Signatures -->
+      <div class="footer-section">
+        <div class="signature-block">
+          <div class="signature-space"></div>
+          <div class="signature-line"></div>
+          <div class="signature-title">Class Teacher</div>
+          <div class="signature-date">Date: {{issue_date}}</div>
+        </div>
+
+        <div class="signature-block">
+          <div class="signature-space"></div>
+          <div class="signature-line"></div>
+          <div class="signature-title">Exam Controller</div>
+          <div class="signature-date">&nbsp;</div>
+        </div>
+
+        <div class="signature-block">
+          <div class="signature-space"></div>
+          <div class="signature-line"></div>
+          <div class="signature-title">Principal</div>
+          <div class="signature-date">&nbsp;</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</body>
+</html>

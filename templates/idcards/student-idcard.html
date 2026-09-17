@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Student ID Card - {{student_name}}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
+  <style>
+    @page {
+      size: 54mm 86mm;
+      margin: 0;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      width: 54mm;
+      height: 86mm;
+      margin: 0;
+      padding: 0;
+      background-color: #ffffff;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    .idcard-wrapper {
+      width: 54mm;
+      height: 86mm;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      position: relative;
+      background: #ffffff;
+      overflow: hidden;
+      page-break-inside: avoid;
+      page-break-after: always;
+      border: 0.5px solid #cbd5e1;
+    }
+
+    .idcard-wrapper:last-child {
+      page-break-after: auto;
+    }
+
+    /* Top School Header */
+    .card-header {
+      background: linear-gradient(135deg, #0c2340 0%, #1e3a8a 100%);
+      color: #ffffff;
+      padding: 2.2mm 2.5mm 1.8mm 2.5mm;
+      text-align: center;
+      position: relative;
+    }
+
+    .school-top-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 1.8mm;
+      margin-bottom: 0.8mm;
+    }
+
+    .school-logo-wrap {
+      width: 6.5mm;
+      height: 6.5mm;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .school-logo {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+    }
+
+    .no-logo-badge {
+      font-size: 4.5pt;
+      font-weight: 700;
+      color: #93c5fd;
+      border: 0.5px dashed #93c5fd;
+      padding: 0.2mm 0.8mm;
+      border-radius: 1px;
+    }
+
+    .school-title {
+      font-family: 'Cinzel', serif;
+      font-size: 6.2pt;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+      line-height: 1.15;
+      color: #ffffff;
+      text-align: left;
+    }
+
+    .school-subtitle {
+      font-size: 4.2pt;
+      color: #cbd5e1;
+      letter-spacing: 0.2px;
+      text-align: left;
+      line-height: 1.1;
+    }
+
+    .card-badge-container {
+      margin-top: 1mm;
+      display: flex;
+      justify-content: center;
+    }
+
+    .card-type-badge {
+      background: #f59e0b;
+      color: #0c2340;
+      font-size: 5pt;
+      font-weight: 800;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      padding: 0.4mm 3mm;
+      border-radius: 2px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.15);
+    }
+
+    /* Card Body */
+    .card-body {
+      padding: 1.5mm 3.5mm 1mm 3.5mm;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      flex: 1;
+      justify-content: flex-start;
+      gap: 1.2mm;
+    }
+
+    /* Photo */
+    .photo-frame {
+      width: 17mm;
+      height: 20mm;
+      border: 1px solid #1e3a8a;
+      border-radius: 2px;
+      padding: 0.5mm;
+      background: #ffffff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      margin-top: 0.5mm;
+    }
+
+    .photo-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 1px;
+    }
+
+    .photo-placeholder {
+      font-size: 4pt;
+      font-weight: 600;
+      color: #94a3b8;
+      text-align: center;
+      line-height: 1.1;
+      text-transform: uppercase;
+    }
+
+    /* Candidate Name */
+    .candidate-name {
+      font-size: 7.2pt;
+      font-weight: 800;
+      color: #0c2340;
+      text-align: center;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      line-height: 1.15;
+      margin-top: 0.2mm;
+    }
+
+    .candidate-class-badge {
+      font-size: 5pt;
+      font-weight: 700;
+      color: #1e40af;
+      background: #eff6ff;
+      border: 0.6px solid #bfdbfe;
+      padding: 0.3mm 2mm;
+      border-radius: 2px;
+      letter-spacing: 0.2px;
+    }
+
+    /* Details Grid */
+    .details-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 0.8mm;
+      font-size: 5pt;
+    }
+
+    .details-table td {
+      padding: 0.45mm 0.2mm;
+      vertical-align: middle;
+      line-height: 1.2;
+    }
+
+    .lbl {
+      color: #64748b;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.2px;
+      width: 42%;
+      font-size: 4.8pt;
+    }
+
+    .sep {
+      width: 4%;
+      color: #94a3b8;
+      font-weight: 600;
+      text-align: center;
+    }
+
+    .val {
+      color: #0f172a;
+      font-weight: 700;
+      width: 54%;
+      text-align: left;
+      font-size: 5pt;
+    }
+
+    .blood-highlight {
+      color: #dc2626;
+      font-weight: 800;
+    }
+
+    /* Bottom Signature & Footer */
+    .card-footer {
+      padding: 1mm 3.5mm 1.5mm 3.5mm;
+      display: flex;
+      flex-direction: column;
+      gap: 0.8mm;
+      background: #fafafa;
+    }
+
+    .footer-sign-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+    }
+
+    .validity-block {
+      font-size: 4.2pt;
+      color: #64748b;
+      line-height: 1.1;
+    }
+
+    .validity-block strong {
+      color: #0c2340;
+      font-weight: 700;
+    }
+
+    .signature-block {
+      text-align: center;
+      width: 18mm;
+    }
+
+    .signature-line {
+      width: 100%;
+      height: 0.5px;
+      background: #0c2340;
+      margin-bottom: 0.3mm;
+    }
+
+    .signature-label {
+      font-size: 4pt;
+      font-weight: 700;
+      color: #0c2340;
+      text-transform: uppercase;
+      letter-spacing: 0.2px;
+    }
+
+    .emergency-bar {
+      background: #0c2340;
+      color: #ffffff;
+      font-size: 3.8pt;
+      font-weight: 600;
+      text-align: center;
+      padding: 0.5mm 1mm;
+      letter-spacing: 0.2px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="idcard-wrapper">
+    <!-- Top Header -->
+    <div class="card-header">
+      <div class="school-top-row">
+        <div class="school-logo-wrap">
+          {{school_logo_html}}
+        </div>
+        <div>
+          <div class="school-title">{{school_title}}</div>
+          <div class="school-subtitle">{{school_subtitle}}</div>
+        </div>
+      </div>
+      <div class="card-badge-container">
+        <span class="card-type-badge">Student ID Card</span>
+      </div>
+    </div>
+
+    <!-- Card Body -->
+    <div class="card-body">
+      <div class="photo-frame">
+        {{photo_html}}
+      </div>
+
+      <div class="candidate-name">{{student_name}}</div>
+      <div class="candidate-class-badge">Class: {{class_name}} &bull; Sec: {{section_name}}</div>
+
+      <table class="details-table">
+        <tr>
+          <td class="lbl">Roll No</td>
+          <td class="sep">:</td>
+          <td class="val">{{roll_no}}</td>
+        </tr>
+        <tr>
+          <td class="lbl">Admission No</td>
+          <td class="sep">:</td>
+          <td class="val">{{admission_no}}</td>
+        </tr>
+        <tr>
+          <td class="lbl">Father's Name</td>
+          <td class="sep">:</td>
+          <td class="val">{{father_name}}</td>
+        </tr>
+        <tr>
+          <td class="lbl">Blood Group</td>
+          <td class="sep">:</td>
+          <td class="val blood-highlight">{{blood_group}}</td>
+        </tr>
+        <tr>
+          <td class="lbl">Emergency No</td>
+          <td class="sep">:</td>
+          <td class="val">{{contact_no}}</td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- Footer -->
+    <div class="card-footer">
+      <div class="footer-sign-row">
+        <div class="validity-block">
+          <div>Session: <strong>{{academic_year}}</strong></div>
+          <div>Valid Until: <strong>{{valid_until}}</strong></div>
+        </div>
+        <div class="signature-block">
+          <div class="signature-line"></div>
+          <div class="signature-label">Principal</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="emergency-bar">
+      If found, please return to school administration
+    </div>
+  </div>
+
+</body>
+</html>
