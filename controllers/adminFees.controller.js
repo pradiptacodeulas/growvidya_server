@@ -226,6 +226,33 @@ class AdminFeesController {
     }
   }
 
+  static async togglePublishStructure(req, res, next) {
+    try {
+      const schoolId = req.user.schoolId;
+      const { id } = req.params;
+      const { is_published } = req.body;
+
+      if (!id) {
+        return ApiResponse.error(res, 'Structure ID is required.', null, 400);
+      }
+
+      const updated = await AdminFeesModel.togglePublishStructure(id, schoolId, is_published);
+      if (!updated) {
+        return ApiResponse.error(res, 'Fee structure not found.', null, 404);
+      }
+
+      const statusText = updated.is_published === 1 ? 'Published' : 'Draft';
+      let message = `Fee structure "${updated.name}" is now ${statusText}.`;
+      if (updated.allocatedCount > 0) {
+        message += ` Automatically assigned to ${updated.allocatedCount} student${updated.allocatedCount === 1 ? '' : 's'}.`;
+      }
+
+      return ApiResponse.success(res, message, updated);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // =========================================================
   // 3. STUDENT FEE ALLOCATIONS
   // =========================================================
@@ -414,6 +441,16 @@ class AdminFeesController {
 
       return ApiResponse.success(res, `Successfully generated ${count} invoice(s).`, { count }, 201);
     } catch (error) {
+      if (
+        error.message &&
+        (error.message.includes('Draft mode') ||
+          error.message.includes('published') ||
+          error.message.includes('not found') ||
+          error.message.includes('deleted') ||
+          error.message.includes('eligible students'))
+      ) {
+        return ApiResponse.error(res, error.message, null, 400);
+      }
       next(error);
     }
   }

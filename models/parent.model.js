@@ -580,7 +580,7 @@ class ParentModel {
 
   static async getChildFees(studentId, schoolId) {
     try {
-      // 1. Fee Invoices
+      // 1. Fee Invoices (Only generated invoices from published structures are visible to students)
       const [dueRows] = await pool.query(
         `SELECT 
           fi.*,
@@ -593,9 +593,12 @@ class ParentModel {
          LEFT JOIN class_master cm ON fi.class_id = cm.id
          LEFT JOIN section_master sec ON fi.section_id = sec.id
          LEFT JOIN academic_year_master aym ON fi.academic_year_id = aym.id
-         WHERE fi.student_id = ? AND fi.school_id = ?
+         WHERE fi.student_id = ? 
+           AND fi.school_id = ? 
+           AND fi.status != '4'
+           AND (fi.fee_structure_id IS NULL OR (fs.is_published = 1 AND fs.status != 4))
          ORDER BY fi.due_date ASC, fi.id DESC`,
-        [studentId, schoolId, schoolId]
+        [studentId, schoolId]
       );
 
       // Fetch invoice items for each invoice
@@ -620,9 +623,13 @@ class ParentModel {
           fi.invoice_no
          FROM fee_payments fp
          LEFT JOIN fee_invoices fi ON fp.invoice_id = fi.id
-         WHERE fp.student_id = ? AND fp.school_id = ? AND (fp.status = 'success' OR fp.status = 'Success')
+         LEFT JOIN fee_structures fs ON fi.fee_structure_id = fs.id
+         WHERE fp.student_id = ? 
+           AND fp.school_id = ? 
+           AND (fp.status = 'success' OR fp.status = 'Success')
+           AND (fi.id IS NULL OR (fi.status != '4' AND (fi.fee_structure_id IS NULL OR (fs.is_published = 1 AND fs.status != 4))))
          ORDER BY fp.payment_date DESC, fp.id DESC`,
-        [studentId, schoolId, schoolId]
+        [studentId, schoolId]
       );
 
       for (const pay of paidRows || []) {

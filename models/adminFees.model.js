@@ -395,9 +395,9 @@ class AdminFeesModel {
         }
       }
 
-      // Auto-assign fee structure to all active students in the target classes
+      // Auto-assign fee structure to all active students in the target classes (Published structures only)
       let allocatedCount = 0;
-      if (autoAllocate) {
+      if (autoAllocate && Number(isPublished) === 1) {
         let targetClassIds = [];
         if (Array.isArray(classIds)) {
           targetClassIds = classIds.map((c) => String(c).trim()).filter(Boolean);
@@ -495,6 +495,108 @@ class AdminFeesModel {
     const query = `UPDATE fee_structures SET status = 4 WHERE id = ? AND school_id = ?`;
     const [result] = await pool.query(query, [id, schoolId]);
     return result.affectedRows > 0;
+  }
+
+  static async togglePublishStructure(id, schoolId, targetStatus = null) {
+    const [rows] = await pool.query(
+      `SELECT id, name, is_published, class_id, academic_year_id, branch_id, allow_partial_payment 
+       FROM fee_structures 
+       WHERE id = ? AND school_id = ? AND status != 4`,
+      [id, schoolId]
+    );
+    if (rows.length === 0) return null;
+
+    const current = rows[0];
+    const newStatus = targetStatus !== null && targetStatus !== undefined
+      ? (Number(targetStatus) === 1 ? 1 : 0)
+      : (current.is_published === 1 ? 0 : 1);
+
+    await pool.query(
+      `UPDATE fee_structures SET is_published = ? WHERE id = ? AND school_id = ?`,
+      [newStatus, id, schoolId]
+    );
+
+    let allocatedCount = 0;
+    if (newStatus === 1 && current.class_id) {
+      try {
+        const classIds = String(current.class_id).split(',').map((c) => c.trim()).filter(Boolean);
+        if (classIds.length > 0) {
+          let effectiveAcademicYearId = current.academic_year_id;
+          if (!effectiveAcademicYearId) {
+            const [currentYearRows] = await pool.query(
+              `SELECT id FROM academic_year_master WHERE school_id = ? AND is_current = 1 AND status = 1 LIMIT 1`,
+              [schoolId]
+            );
+            effectiveAcademicYearId = currentYearRows[0]?.id || 1;
+          }
+
+          let studentQuery = `
+            SELECT sm.id
+            FROM student_master sm
+            WHERE sm.school_id = ? 
+              AND sm.status = 1 
+              AND (sm.status != 4 OR sm.status IS NULL)
+              AND (
+                sm.class IN (?) 
+                OR sm.class IN (SELECT class_name FROM class_master WHERE id IN (?))
+              )
+          `;
+          const studentQueryParams = [schoolId, classIds, classIds];
+
+          if (current.branch_id) {
+            studentQuery += ` AND sm.branch_id = ?`;
+            studentQueryParams.push(Number(current.branch_id));
+          }
+
+          const [students] = await pool.query(studentQuery, studentQueryParams);
+
+          if (students.length > 0) {
+            const studentIds = students.map((s) => s.id);
+            const [alreadyAllocated] = await pool.query(
+              `SELECT student_id FROM student_fee_allocations 
+               WHERE school_id = ? AND fee_structure_id = ? AND academic_year_id = ? AND status != 4 AND student_id IN (?)`,
+              [schoolId, id, effectiveAcademicYearId, studentIds]
+            );
+
+            const allocatedSet = new Set(alreadyAllocated.map((r) => r.student_id));
+            const toAllocateStudentIds = studentIds.filter((sid) => !allocatedSet.has(sid));
+
+            if (toAllocateStudentIds.length > 0) {
+              const now = new Date();
+              const todayStr = now.toISOString().split('T')[0];
+              const insertRows = toAllocateStudentIds.map((sid) => [
+                schoolId,
+                sid,
+                id,
+                effectiveAcademicYearId,
+                todayStr,
+                1,
+                current.allow_partial_payment ? 1 : 0,
+                now,
+              ]);
+
+              await pool.query(
+                `INSERT INTO student_fee_allocations (
+                   school_id, student_id, fee_structure_id, academic_year_id,
+                   assigned_date, status, allow_partial_payment, created_at
+                 ) VALUES ?`,
+                [insertRows]
+              );
+              allocatedCount = toAllocateStudentIds.length;
+            }
+          }
+        }
+      } catch (allocErr) {
+        console.error('Error auto-allocating on publish:', allocErr);
+      }
+    }
+
+    return {
+      id: current.id,
+      name: current.name,
+      is_published: newStatus,
+      allocatedCount,
+    };
   }
 
   // =========================================================
@@ -608,6 +710,18 @@ class AdminFeesModel {
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
+
+      // Check if structure is published
+      const [structRows] = await connection.query(
+        `SELECT id, name, is_published, status FROM fee_structures WHERE id = ? AND school_id = ? AND status != 4`,
+        [feeStructureId, schoolId]
+      );
+      if (structRows.length === 0) {
+        throw new Error('Fee Structure not found.');
+      }
+      if (Number(structRows[0].is_published) !== 1) {
+        throw new Error(`Cannot assign fee structure: "${structRows[0].name}" is in Draft mode. Fee structures must be published before students can be allocated.`);
+      }
 
       let count = 0;
       for (const studentId of studentIds) {
@@ -848,6 +962,16 @@ class AdminFeesModel {
         throw new Error('Fee Structure not found.');
       }
       const structure = structRows[0];
+
+      if (structure.status === 4) {
+        throw new Error('Fee Structure has been deleted.');
+      }
+
+      if (Number(structure.is_published) !== 1) {
+        throw new Error(
+          `Cannot generate invoices: Fee Structure "${structure.name}" is in Draft mode. Fee structures must be published before invoices can be generated.`
+        );
+      }
 
       const [components] = await connection.query(
         `SELECT fsc.*, fc.name AS component_name 
