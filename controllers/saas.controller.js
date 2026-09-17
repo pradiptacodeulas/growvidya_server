@@ -155,6 +155,18 @@ class SaasController {
   }
 
   /**
+   * Get all active genders
+   */
+  static async getGenders(req, res, next) {
+    try {
+      const genders = await SaasModel.getGenders();
+      return ApiResponse.success(res, 'Genders fetched successfully.', genders);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Create Razorpay Order for school registration with paid plan
    */
   static async createRegistrationOrder(req, res, next) {

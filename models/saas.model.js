@@ -187,11 +187,37 @@ class SaasModel {
 
       // 7. Insert Super Admin into user_master
       const hashedPassword = await hashPassword(adminData.password);
+
+      let adminPicturePath = adminData.picture || null;
+      if (adminPicturePath && adminPicturePath.startsWith('data:')) {
+        adminPicturePath = saveBase64File(adminPicturePath, 'staff', 'Admin');
+      }
+
+      const genderId = (adminData.gender !== undefined && adminData.gender !== null && !isNaN(adminData.gender))
+        ? parseInt(adminData.gender, 10)
+        : 1;
+
+      const adminCountryId = (adminData.country_id !== undefined && adminData.country_id !== null && !isNaN(adminData.country_id))
+        ? parseInt(adminData.country_id, 10)
+        : countryId;
+
+      const adminStateId = (adminData.state_id !== undefined && adminData.state_id !== null && !isNaN(adminData.state_id))
+        ? parseInt(adminData.state_id, 10)
+        : stateId;
+
+      const adminCityId = (adminData.city !== undefined && adminData.city !== null && !isNaN(adminData.city))
+        ? parseInt(adminData.city, 10)
+        : cityId;
+
+      const adminRole = (adminData.role !== undefined && adminData.role !== null && !isNaN(adminData.role))
+        ? parseInt(adminData.role, 10)
+        : 0;
+
       const insertAdminQuery = `
         INSERT INTO user_master (
           school_id, first_name, last_name, email, phone, password,
-          gender, city, role, admin_type, status, date
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, 1, 1, NOW())
+          gender, picture, country_id, state_id, city, role, admin_type, status, date
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, NOW())
       `;
       await connection.query(insertAdminQuery, [
         schoolId,
@@ -200,8 +226,12 @@ class SaasModel {
         adminEmail,
         adminData.phone || null,
         hashedPassword,
-        adminData.gender || 'Male',
-        schoolData.city || null,
+        genderId,
+        adminPicturePath,
+        adminCountryId,
+        adminStateId,
+        adminCityId,
+        adminRole,
       ]);
 
       await connection.commit();
@@ -250,6 +280,16 @@ class SaasModel {
     const [rows] = await pool.query(
       `SELECT id, name FROM cities WHERE state_id = ? ORDER BY name ASC`,
       [stateId]
+    );
+    return rows;
+  }
+
+  /**
+   * Fetch all genders from gender_master
+   */
+  static async getGenders() {
+    const [rows] = await pool.query(
+      `SELECT id, gender FROM gender_master ORDER BY id ASC`
     );
     return rows;
   }
