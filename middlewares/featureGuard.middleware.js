@@ -37,7 +37,7 @@ function featureGuard(featureKey, featureLabel) {
 
         return ApiResponse.error(
           res,
-          `The ${label} module is not included in your ${planName}. Please upgrade your subscription plan to unlock this feature.`,
+          'You are not allow to use this features try to upgrade your current plan',
           {
             code: 'FEATURE_NOT_IN_PLAN',
             feature: featureKey,
