@@ -36,7 +36,7 @@ class AdminTransportController {
   static async createRoute(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
-      const { transport_route, bus_id, fare, sort_order, status } = req.body;
+      const { transport_route, bus_id, bus, driver_id, driver, helpers, helper, fare, sort_order, status } = req.body;
 
       if (!transport_route) {
         return ApiResponse.error(res, 'Route name is required.', null, 400);
@@ -44,7 +44,9 @@ class AdminTransportController {
 
       const id = await TransportModel.createRoute(schoolId, {
         transport_route,
-        bus_id,
+        bus_id: bus_id || bus,
+        driver_id: driver_id || driver,
+        helpers: helpers || helper,
         fare,
         sort_order,
         status,
@@ -59,7 +61,7 @@ class AdminTransportController {
     try {
       const schoolId = req.user.schoolId;
       const { id } = req.params;
-      const { transport_route, bus_id, fare, sort_order, status } = req.body;
+      const { transport_route, bus_id, bus, driver_id, driver, helpers, helper, fare, sort_order, status } = req.body;
 
       if (!transport_route) {
         return ApiResponse.error(res, 'Route name is required.', null, 400);
@@ -67,7 +69,9 @@ class AdminTransportController {
 
       await TransportModel.updateRoute(schoolId, id, {
         transport_route,
-        bus_id,
+        bus_id: bus_id || bus,
+        driver_id: driver_id || driver,
+        helpers: helpers || helper,
         fare,
         sort_order,
         status,
