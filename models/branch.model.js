@@ -29,52 +29,7 @@ class BranchModel {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
       `);
 
-      // 1. Seed a default "Main Campus" for any school in school_master that doesn't have any branches yet
-      try {
-        const [schoolsWithoutBranch] = await pool.query(`
-          SELECT s.id, s.school_name, s.school_code, s.email, s.phone_number, s.address, s.country, s.state, s.city, s.postal_code 
-          FROM school_master s
-          LEFT JOIN branch_master b ON s.id = b.school_id
-          WHERE b.id IS NULL
-        `);
-
-        for (const sch of schoolsWithoutBranch) {
-          const code = (sch.school_code || 'MAIN').toUpperCase();
-          await pool.query(
-            `INSERT INTO branch_master (
-              school_id, branch_name, branch_code, address, country_id, state_id, city_id,
-              pincode, phone, email, is_main_branch, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)`,
-            [
-              sch.id,
-              `${sch.school_name || 'Growvidya School'} (Main Campus)`,
-              code === 'MAIN' ? 'MAIN-01' : `${code}-MAIN`,
-              sch.address || null,
-              sch.country || null,
-              sch.state || null,
-              sch.city || null,
-              sch.postal_code || null,
-              sch.phone_number || null,
-              sch.email || null,
-            ]
-          );
-        }
-
-        // Backfill country_id, state_id, city_id from school_master for any branches currently missing them
-        await pool.query(`
-          UPDATE branch_master b
-          INNER JOIN school_master s ON b.school_id = s.id
-          SET b.country_id = COALESCE(b.country_id, s.country),
-              b.state_id = COALESCE(b.state_id, s.state),
-              b.city_id = COALESCE(b.city_id, s.city),
-              b.pincode = COALESCE(b.pincode, s.postal_code)
-          WHERE b.country_id IS NULL OR b.state_id IS NULL OR b.city_id IS NULL
-        `);
-      } catch (seedErr) {
-        console.warn('[BranchModel] Note during default branch seeding:', seedErr.message);
-      }
-
-      // 2. Helper to add branch_id column to existing core tables if missing
+      // Ensure core tables have branch_id column if missing
       const tablesToScope = [
         'student_master',
         'teacher_master',

@@ -122,33 +122,28 @@ class SaasModel {
         console.warn('Could not insert default weekends:', weekendErr.message);
       }
 
-      // Seed initial Main Campus branch for the new school
-      let mainBranchId = null;
-      try {
-        const cleanBranchCode = (schoolCode || 'MAIN').toUpperCase();
-        const branchCode = cleanBranchCode === 'MAIN' ? 'MAIN-01' : `${cleanBranchCode}-MAIN`;
-        const [branchResult] = await connection.query(
-          `INSERT INTO branch_master (
-            school_id, branch_name, branch_code, address, country_id, state_id, city_id,
-            pincode, phone, email, is_main_branch, status, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, NOW(), NOW())`,
-          [
-            schoolId,
-            `${schoolName} (Main Campus)`,
-            branchCode,
-            schoolData.address || null,
-            countryId,
-            stateId,
-            cityId,
-            schoolData.postal_code || null,
-            schoolData.phone_number || null,
-            schoolData.email || adminEmail,
-          ]
-        );
-        mainBranchId = branchResult.insertId;
-      } catch (branchErr) {
-        console.warn('Could not insert default main branch:', branchErr.message);
-      }
+      // 4b. Create default Main Campus branch for the new school
+      const cleanBranchCode = (schoolCode || 'MAIN').toUpperCase();
+      const branchCode = cleanBranchCode === 'MAIN' ? 'MAIN-01' : `${cleanBranchCode}-MAIN`;
+      const [branchResult] = await connection.query(
+        `INSERT INTO branch_master (
+          school_id, branch_name, branch_code, address, country_id, state_id, city_id,
+          pincode, phone, email, is_main_branch, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, NOW(), NOW())`,
+        [
+          schoolId,
+          `${schoolName} (Main Campus)`,
+          branchCode,
+          schoolData.address || null,
+          countryId,
+          stateId,
+          cityId,
+          schoolData.postal_code || null,
+          schoolData.phone_number || null,
+          schoolData.email || adminEmail,
+        ]
+      );
+      const mainBranchId = branchResult.insertId;
 
       // 5. Get plan details to calculate subscription duration
       let effectivePlanId = parseInt(planId, 10);
@@ -269,6 +264,7 @@ class SaasModel {
         schoolId,
         schoolName: schoolData.school_name,
         schoolCode,
+        branchId: mainBranchId,
         adminEmail,
         planName: plan.plan_name,
         transactionId: finalTxnId,
