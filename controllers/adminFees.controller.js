@@ -170,6 +170,25 @@ class AdminFeesController {
         return ApiResponse.error(res, 'Structure Name is required.', null, 400);
       }
 
+      const targetStructureId = id || req.params?.id;
+      if (targetStructureId) {
+        const existingStructure = await AdminFeesModel.getStructureById(targetStructureId, schoolId);
+        if (existingStructure && Number(existingStructure.is_published) === 1) {
+          const reqPublished = is_published !== undefined ? is_published : isPublished;
+          if (
+            reqPublished !== undefined &&
+            (reqPublished === 0 || reqPublished === '0' || reqPublished === false)
+          ) {
+            return ApiResponse.error(
+              res,
+              'A published fee structure cannot be reverted to Draft. A published Fee Structure must remain published.',
+              null,
+              400
+            );
+          }
+        }
+      }
+
       const shouldAutoAllocate = auto_allocate !== undefined 
         ? (auto_allocate === true || auto_allocate === 1 || auto_allocate === 'true' || auto_allocate === '1')
         : (autoAllocate !== undefined 
@@ -177,7 +196,7 @@ class AdminFeesController {
             : true);
 
       const { id: structureId, allocatedCount } = await AdminFeesModel.saveStructure({
-        id: id || req.params?.id,
+        id: targetStructureId,
         schoolId,
         branchId,
         name,
@@ -198,7 +217,7 @@ class AdminFeesController {
         autoAllocate: shouldAutoAllocate,
       });
 
-      let message = (id || req.params?.id)
+      let message = targetStructureId
         ? 'Fee structure updated successfully.'
         : 'Fee structure created successfully.';
 
@@ -234,6 +253,28 @@ class AdminFeesController {
 
       if (!id) {
         return ApiResponse.error(res, 'Structure ID is required.', null, 400);
+      }
+
+      const existingStructure = await AdminFeesModel.getStructureById(id, schoolId);
+      if (!existingStructure) {
+        return ApiResponse.error(res, 'Fee structure not found.', null, 404);
+      }
+
+      if (Number(existingStructure.is_published) === 1) {
+        const isTryingToUnpublish =
+          is_published === 0 ||
+          is_published === '0' ||
+          is_published === false ||
+          is_published === null ||
+          is_published === undefined;
+        if (isTryingToUnpublish) {
+          return ApiResponse.error(
+            res,
+            'A published fee structure cannot be reverted to Draft. A published Fee Structure must remain published.',
+            null,
+            400
+          );
+        }
       }
 
       const updated = await AdminFeesModel.togglePublishStructure(id, schoolId, is_published);

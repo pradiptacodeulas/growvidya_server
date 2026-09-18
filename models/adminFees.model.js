@@ -307,7 +307,16 @@ class AdminFeesModel {
       const classIdStr = Array.isArray(classIds) ? classIds.join(',') : (classIds || '');
 
       let structureId = id;
+      let effectivePublished = isPublished ? 1 : 0;
       if (id) {
+        // Fetch current published status to guarantee published structures cannot be reverted to draft
+        const [existingRows] = await connection.query(
+          `SELECT is_published FROM fee_structures WHERE id = ? AND school_id = ? AND status != 4`,
+          [id, schoolId]
+        );
+        const wasPublished = existingRows.length > 0 && Number(existingRows[0].is_published) === 1;
+        effectivePublished = wasPublished ? 1 : (isPublished ? 1 : 0);
+
         // Update
         const updateQuery = `
           UPDATE fee_structures SET
@@ -340,7 +349,7 @@ class AdminFeesModel {
           lateFeeType || '0',
           parseFloat(lateFeeAmount) || 0.0,
           allowPartialPayment ? 1 : 0,
-          isPublished ? 1 : 0,
+          effectivePublished,
           parseInt(generateOnDay, 10) || 1,
           description || null,
           status !== undefined ? status : 1,
@@ -397,7 +406,7 @@ class AdminFeesModel {
 
       // Auto-assign fee structure to all active students in the target classes (Published structures only)
       let allocatedCount = 0;
-      if (autoAllocate && Number(isPublished) === 1) {
+      if (autoAllocate && Number(effectivePublished) === 1) {
         let targetClassIds = [];
         if (Array.isArray(classIds)) {
           targetClassIds = classIds.map((c) => String(c).trim()).filter(Boolean);
@@ -507,9 +516,25 @@ class AdminFeesModel {
     if (rows.length === 0) return null;
 
     const current = rows[0];
-    const newStatus = targetStatus !== null && targetStatus !== undefined
-      ? (Number(targetStatus) === 1 ? 1 : 0)
-      : (current.is_published === 1 ? 0 : 1);
+    if (Number(current.is_published) === 1) {
+      const isTryingToUnpublish =
+        targetStatus === 0 ||
+        targetStatus === '0' ||
+        targetStatus === false ||
+        targetStatus === null ||
+        targetStatus === undefined;
+      if (isTryingToUnpublish) {
+        throw new Error('A published fee structure cannot be reverted to Draft. It must remain published.');
+      }
+      return {
+        id: current.id,
+        name: current.name,
+        is_published: 1,
+        allocatedCount: 0,
+      };
+    }
+
+    const newStatus = 1;
 
     await pool.query(
       `UPDATE fee_structures SET is_published = ? WHERE id = ? AND school_id = ?`,
