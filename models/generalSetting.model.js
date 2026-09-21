@@ -12,6 +12,7 @@ class GeneralSettingModel {
         school_name AS school_title, 
         school_code, 
         school_logo, 
+        qr_code, 
         address, 
         city, 
         state, 
@@ -42,6 +43,7 @@ class GeneralSettingModel {
       school_title: school.school_title || '',
       school_name: school.school_title || '',
       school_logo: school.school_logo || '',
+      qr_code: school.qr_code || '',
       footer: school.footer || '',
       phone: school.phone || '',
       email: school.email || '',
@@ -67,6 +69,7 @@ class GeneralSettingModel {
         school_name AS school_title, 
         school_code, 
         school_logo, 
+        qr_code, 
         address, 
         city, 
         state, 
@@ -174,6 +177,7 @@ class GeneralSettingModel {
       website,
       affiliation_board,
       weekends = [],
+      qr_code,
       bank_name,
       account_holder_name,
       account_number,
@@ -187,6 +191,7 @@ class GeneralSettingModel {
       `UPDATE school_master SET 
         school_name = COALESCE(?, school_name),
         school_logo = CASE WHEN ? IS NOT NULL THEN ? ELSE school_logo END,
+        qr_code = CASE WHEN ? = 1 THEN ? ELSE qr_code END,
         phone_number = COALESCE(?, phone_number),
         address = COALESCE(?, address),
         country = COALESCE(?, country),
@@ -209,6 +214,8 @@ class GeneralSettingModel {
         school_title,
         school_logo !== undefined ? school_logo : null,
         school_logo !== undefined ? school_logo : null,
+        qr_code !== undefined ? 1 : 0,
+        qr_code !== undefined ? (qr_code ? String(qr_code).trim() : null) : null,
         phone,
         address,
         country ? Number(country) : null,
@@ -248,7 +255,7 @@ class GeneralSettingModel {
     }
 
     const [updatedRows] = await pool.query(
-      `SELECT id, school_name, school_code, school_logo, email, phone_number, website, footer, bank_name, account_holder_name, account_number, ifsc_code, branch_name, upi_id FROM school_master WHERE id = ?`,
+      `SELECT id, school_name, school_code, school_logo, qr_code, email, phone_number, website, footer, bank_name, account_holder_name, account_number, ifsc_code, branch_name, upi_id FROM school_master WHERE id = ?`,
       [schoolId]
     );
 
