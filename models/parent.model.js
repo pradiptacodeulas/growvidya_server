@@ -580,6 +580,32 @@ class ParentModel {
 
   static async getChildFees(studentId, schoolId) {
     try {
+      // 0. School Master Bank & QR Code Details
+      let bankDetails = null;
+      try {
+        const [schoolRows] = await pool.query(
+          `SELECT 
+             id,
+             school_name,
+             school_logo,
+             bank_name,
+             account_holder_name,
+             account_number,
+             ifsc_code,
+             branch_name,
+             upi_id,
+             qr_code
+           FROM school_master
+           WHERE id = ? LIMIT 1`,
+          [schoolId]
+        );
+        if (schoolRows && schoolRows.length > 0) {
+          bankDetails = schoolRows[0];
+        }
+      } catch (err) {
+        console.error('Error fetching bank details for child fees:', err.message);
+      }
+
       // 1. Fee Invoices (Only generated invoices from published structures are visible to students)
       const [dueRows] = await pool.query(
         `SELECT 
@@ -612,7 +638,7 @@ class ParentModel {
         inv.items = items || [];
       }
 
-      // 2. Paid Fees Receipts
+      // 2. Paid Fees Receipts (including pending verification)
       const [paidRows] = await pool.query(
         `SELECT 
           fp.*,
@@ -626,7 +652,7 @@ class ParentModel {
          LEFT JOIN fee_structures fs ON fi.fee_structure_id = fs.id
          WHERE fp.student_id = ? 
            AND fp.school_id = ? 
-           AND (fp.status = 'success' OR fp.status = 'Success')
+           AND (fp.status IN ('success', 'Success', 'Pending Verification', 'pending', 'Verified'))
            AND (fi.id IS NULL OR (fi.status != '4' AND (fi.fee_structure_id IS NULL OR fs.status != 4 OR fs.status IS NULL)))
          ORDER BY fp.payment_date DESC, fp.id DESC`,
         [studentId, schoolId]
@@ -682,6 +708,7 @@ class ParentModel {
         due_this_month: activeDueFees,
         student_due_fees: activeDueFees,
         paidFees: paidRows || [],
+        bank_details: bankDetails,
         summary: {
           totalDue: totalOutstandingDue,
           totalOutstandingDue,
@@ -698,7 +725,7 @@ class ParentModel {
       };
     } catch (e) {
       console.error('Error fetching child fees:', e);
-      return { invoices: [], dueFees: [], paidFees: [], summary: { totalDue: 0, totalOutstandingDue: 0, totalDueThisMonth: 0, totalPaid: 0, totalAmount: 0 }, metrics: { totalPayable: 0, totalPaid: 0, totalOutstanding: 0, totalDueThisMonth: 0 } };
+      return { invoices: [], dueFees: [], paidFees: [], bank_details: null, summary: { totalDue: 0, totalOutstandingDue: 0, totalDueThisMonth: 0, totalPaid: 0, totalAmount: 0 }, metrics: { totalPayable: 0, totalPaid: 0, totalOutstanding: 0, totalDueThisMonth: 0 } };
     }
   }
 

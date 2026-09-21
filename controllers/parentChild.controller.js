@@ -146,7 +146,16 @@ class ParentChildController {
       }
 
       const schoolId = req.user?.schoolId;
-      const { invoiceId, amountPaid, paymentMethod, referenceNo, notes } = req.body;
+      const {
+        invoiceId,
+        amountPaid,
+        paymentMethod,
+        referenceNo,
+        notes,
+        receiptFile,
+        receipt_file,
+        bankName,
+      } = req.body;
 
       if (!invoiceId || !amountPaid) {
         return ApiResponse.error(res, 'Invoice ID and Amount Paid are required.', null, 400);
@@ -180,6 +189,9 @@ class ParentChildController {
         }
       }
 
+      const finalReceiptFile = receiptFile || receipt_file || null;
+      const paymentStatus = finalReceiptFile ? 'Pending Verification' : 'Success';
+
       const result = await AdminFeesModel.recordPayment({
         schoolId,
         studentId,
@@ -187,11 +199,17 @@ class ParentChildController {
         amountPaid: parsedAmount,
         paymentMethod: paymentMethod || 'UPI / Online Transfer',
         referenceNo: referenceNo || `TXN-P-${Date.now()}`,
+        bankName: bankName || null,
         notes: notes || 'Parent Portal Payment',
         collectedBy: req.user.id || 0,
+        receiptFile: finalReceiptFile,
+        status: paymentStatus,
       });
 
-      return ApiResponse.success(res, 'Fee payment completed successfully.', result);
+      const message = finalReceiptFile
+        ? 'Payment receipt submitted successfully and is pending verification.'
+        : 'Fee payment completed successfully.';
+      return ApiResponse.success(res, message, result);
     } catch (error) {
       next(error);
     }

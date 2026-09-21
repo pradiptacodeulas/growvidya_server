@@ -128,6 +128,7 @@ class ParentDashboardController {
         student_due_fees: feesData.dueFees || [],
         invoices: feesData.invoices || [],
         paidFees: feesData.paidFees || [],
+        bank_details: feesData.bank_details || null,
         todayClasses,
         notices: notices.slice(0, 5),
         events: events.slice(0, 5),

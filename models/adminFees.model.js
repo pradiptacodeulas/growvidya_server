@@ -1424,6 +1424,8 @@ class AdminFeesModel {
     lateFeePaid,
     notes,
     collectedBy,
+    receiptFile,
+    status = 'Success',
   }) {
     const connection = await pool.getConnection();
     try {
@@ -1448,13 +1450,14 @@ class AdminFeesModel {
       const receiptNo = `REC-${datePrefix}-${randNum}`;
       const txnNo = `TXN-${datePrefix}-${randNum}`;
       const paymentBranchId = invoice.branch_id || branchId || null;
+      const paymentStatus = status || 'Success';
 
       const [payRes] = await connection.query(
         `INSERT INTO fee_payments (
            txn_no, receipt_no, school_id, branch_id, student_id, invoice_id,
            amount_paid, late_fee_paid, payment_method, reference_no,
-           payment_date, bank_name, status, notes, collected_by, created_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Success', ?, ?, NOW())`,
+           payment_date, bank_name, status, notes, collected_by, receipt_file, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
         [
           txnNo,
           receiptNo,
@@ -1468,17 +1471,27 @@ class AdminFeesModel {
           referenceNo || null,
           paymentDate || new Date().toISOString().split('T')[0],
           bankName || null,
+          paymentStatus,
           notes || null,
           collectedBy || null,
+          receiptFile || null,
         ]
       );
 
       const paymentId = payRes.insertId;
 
-      // 3. Update Invoice totals
-      const newTotalPaid = parseFloat(invoice.paid_amount || 0) + paidAmountNum;
-      const newDueAmount = Math.max(0, parseFloat(invoice.total_amount || 0) - newTotalPaid);
-      const newStatus = newDueAmount <= 0 ? 'Paid' : newTotalPaid > 0 ? 'Partial' : 'Unpaid';
+      // 3. Update Invoice totals & status
+      let newTotalPaid = parseFloat(invoice.paid_amount || 0);
+      let newDueAmount = parseFloat(invoice.due_amount || 0);
+      let newStatus = invoice.status;
+
+      if (paymentStatus === 'Pending Verification') {
+        newStatus = 'Pending Verification';
+      } else {
+        newTotalPaid = parseFloat(invoice.paid_amount || 0) + paidAmountNum;
+        newDueAmount = Math.max(0, parseFloat(invoice.total_amount || 0) - newTotalPaid);
+        newStatus = newDueAmount <= 0 ? 'Paid' : newTotalPaid > 0 ? 'Partial' : 'Unpaid';
+      }
 
       await connection.query(
         `UPDATE fee_invoices SET 
