@@ -596,7 +596,7 @@ class ParentModel {
          WHERE fi.student_id = ? 
            AND fi.school_id = ? 
            AND fi.status != '4'
-           AND (fi.fee_structure_id IS NULL OR (fs.is_published = 1 AND fs.status != 4))
+           AND (fi.fee_structure_id IS NULL OR fs.status != 4 OR fs.status IS NULL)
          ORDER BY fi.due_date ASC, fi.id DESC`,
         [studentId, schoolId]
       );
@@ -627,7 +627,7 @@ class ParentModel {
          WHERE fp.student_id = ? 
            AND fp.school_id = ? 
            AND (fp.status = 'success' OR fp.status = 'Success')
-           AND (fi.id IS NULL OR (fi.status != '4' AND (fi.fee_structure_id IS NULL OR (fs.is_published = 1 AND fs.status != 4))))
+           AND (fi.id IS NULL OR (fi.status != '4' AND (fi.fee_structure_id IS NULL OR fs.status != 4 OR fs.status IS NULL)))
          ORDER BY fp.payment_date DESC, fp.id DESC`,
         [studentId, schoolId]
       );
@@ -685,10 +685,16 @@ class ParentModel {
           totalPaid,
           totalAmount: totalOutstandingDue + totalPaid,
         },
+        metrics: {
+          totalPayable: totalOutstandingDue + totalPaid,
+          totalPaid,
+          totalOutstanding: totalOutstandingDue,
+          totalDueThisMonth,
+        },
       };
     } catch (e) {
       console.error('Error fetching child fees:', e);
-      return { invoices: [], dueFees: [], paidFees: [], summary: { totalDue: 0, totalOutstandingDue: 0, totalDueThisMonth: 0, totalPaid: 0, totalAmount: 0 } };
+      return { invoices: [], dueFees: [], paidFees: [], summary: { totalDue: 0, totalOutstandingDue: 0, totalDueThisMonth: 0, totalPaid: 0, totalAmount: 0 }, metrics: { totalPayable: 0, totalPaid: 0, totalOutstanding: 0, totalDueThisMonth: 0 } };
     }
   }
 
