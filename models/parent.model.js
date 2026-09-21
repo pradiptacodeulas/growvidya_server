@@ -674,9 +674,13 @@ class ParentModel {
         totalPaid += parseFloat(p.amount_paid || p.amount || 0);
       });
 
+      const activeDueFees = (dueRows || []).filter((d) => d.status !== 'paid' && d.status !== 'Paid' && parseFloat(d.due_amount || 0) > 0);
+
       return {
         invoices: dueRows || [],
-        dueFees: (dueRows || []).filter((d) => d.status !== 'paid' && d.status !== 'Paid' && parseFloat(d.due_amount || 0) > 0),
+        dueFees: activeDueFees,
+        due_this_month: activeDueFees,
+        student_due_fees: activeDueFees,
         paidFees: paidRows || [],
         summary: {
           totalDue: totalOutstandingDue,
