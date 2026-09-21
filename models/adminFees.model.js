@@ -962,6 +962,40 @@ class AdminFeesModel {
     return invoice;
   }
 
+  static async checkDuplicateInvoice({ schoolId, feeStructureId, issueDate }) {
+    if (!feeStructureId || !issueDate) {
+      return { exists: false };
+    }
+    const effectiveIssueDate = String(issueDate).includes('T')
+      ? String(issueDate).split('T')[0]
+      : String(issueDate).trim();
+
+    const [existing] = await pool.query(
+      `SELECT fi.id, fi.invoice_no, fs.name AS structure_name, fi.issue_date, COUNT(*) AS count
+       FROM fee_invoices fi
+       JOIN fee_structures fs ON fs.id = fi.fee_structure_id
+       WHERE fi.school_id = ?
+         AND fi.fee_structure_id = ?
+         AND DATE(fi.issue_date) = DATE(?)
+         AND fi.status != '4'
+       GROUP BY fi.id, fi.invoice_no, fs.name, fi.issue_date
+       LIMIT 1`,
+      [schoolId, feeStructureId, effectiveIssueDate]
+    );
+
+    if (existing.length > 0) {
+      const structName = existing[0].structure_name || 'this Fee Structure';
+      return {
+        exists: true,
+        structureName: structName,
+        issueDate: effectiveIssueDate,
+        message: `A fee has already been created for Fee Structure "${structName}" and Issue Date ${effectiveIssueDate}. Duplicate fee entries are not allowed.`,
+      };
+    }
+
+    return { exists: false };
+  }
+
   static async generateInvoices({
     schoolId,
     branchId,
@@ -998,6 +1032,30 @@ class AdminFeesModel {
         );
       }
 
+      const effectiveIssueDate = issueDate
+        ? (String(issueDate).includes('T') ? String(issueDate).split('T')[0] : String(issueDate).trim())
+        : new Date().toISOString().split('T')[0];
+
+      // Prevent duplicate fee entries: check if a fee has already been created for the same Fee Structure and Issue Date
+      const [existingInvoices] = await connection.query(
+        `SELECT fi.id, fi.invoice_no, fs.name AS structure_name, fi.issue_date
+         FROM fee_invoices fi
+         JOIN fee_structures fs ON fs.id = fi.fee_structure_id
+         WHERE fi.school_id = ? 
+           AND fi.fee_structure_id = ? 
+           AND DATE(fi.issue_date) = DATE(?)
+           AND fi.status != '4'
+         LIMIT 1`,
+        [schoolId, feeStructureId, effectiveIssueDate]
+      );
+
+      if (existingInvoices.length > 0) {
+        const sName = existingInvoices[0].structure_name || structure.name || 'this Fee Structure';
+        throw new Error(
+          `A fee has already been created for Fee Structure "${sName}" and Issue Date ${effectiveIssueDate}. Duplicate fee entries are not allowed.`
+        );
+      }
+
       const [components] = await connection.query(
         `SELECT fsc.*, fc.name AS component_name 
          FROM fee_structure_components fsc 
@@ -1012,7 +1070,7 @@ class AdminFeesModel {
       // Calculate due date if not provided
       let finalDueDate = dueDate;
       if (!finalDueDate) {
-        const issue = new Date(issueDate || new Date());
+        const issue = new Date(effectiveIssueDate);
         issue.setDate(issue.getDate() + (structure.grace_period_days || 10));
         finalDueDate = issue.toISOString().split('T')[0];
       }
@@ -1051,6 +1109,21 @@ class AdminFeesModel {
 
       let generatedCount = 0;
       for (const st of targetStudents) {
+        // Prevent duplicate fee entries per student
+        const [studentExisting] = await connection.query(
+          `SELECT id FROM fee_invoices 
+           WHERE school_id = ? 
+             AND student_id = ? 
+             AND fee_structure_id = ? 
+             AND DATE(issue_date) = DATE(?)
+             AND status != '4'
+           LIMIT 1`,
+          [schoolId, st.id, feeStructureId, effectiveIssueDate]
+        );
+        if (studentExisting.length > 0) {
+          continue;
+        }
+
         // Generate unique invoice number: INV-YYYYMMDD-RAND
         const randStr = Math.floor(1000 + Math.random() * 9000);
         const datePrefix = new Date().toISOString().slice(0, 10).replace(/-/g, '');
@@ -1077,7 +1150,7 @@ class AdminFeesModel {
             subtotal,
             totalAmount,
             totalAmount,
-            issueDate || new Date().toISOString().split('T')[0],
+            effectiveIssueDate,
             finalDueDate,
             structure.allow_partial_payment ? 1 : 0,
           ]
@@ -1095,6 +1168,12 @@ class AdminFeesModel {
         }
 
         generatedCount++;
+      }
+
+      if (generatedCount === 0) {
+        throw new Error(
+          `Fee entries already exist for all selected students with Fee Structure "${structure.name}" and Issue Date ${effectiveIssueDate}. Duplicate fee entries are not allowed.`
+        );
       }
 
       await connection.commit();

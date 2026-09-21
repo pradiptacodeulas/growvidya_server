@@ -69,6 +69,7 @@ router.delete('/allocations/:id', AdminFeesController.deleteAllocation);
 // 4. FEE INVOICES & DEMANDS
 // =========================================================
 router.get('/invoices', AdminFeesController.getAllInvoices);
+router.get('/invoices/check-duplicate', AdminFeesController.checkDuplicateInvoice);
 router.get('/invoices/:id', AdminFeesController.getInvoiceById);
 router.post('/invoices/generate', AdminFeesController.generateInvoices);
 router.delete('/invoices/:id', AdminFeesController.deleteInvoice);

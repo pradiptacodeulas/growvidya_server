@@ -440,6 +440,29 @@ class AdminFeesController {
     }
   }
 
+  static async checkDuplicateInvoice(req, res, next) {
+    try {
+      const schoolId = req.user.schoolId;
+      const { fee_structure_id, feeStructureId, issue_date, issueDate } = req.query;
+      const targetStructureId = fee_structure_id || feeStructureId;
+      const targetIssueDate = issue_date || issueDate;
+
+      if (!targetStructureId || !targetIssueDate) {
+        return ApiResponse.success(res, 'Validation passed', { exists: false });
+      }
+
+      const result = await AdminFeesModel.checkDuplicateInvoice({
+        schoolId,
+        feeStructureId: targetStructureId,
+        issueDate: targetIssueDate,
+      });
+
+      return ApiResponse.success(res, 'Duplicate check completed.', result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   static async generateInvoices(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
@@ -488,7 +511,11 @@ class AdminFeesController {
           error.message.includes('published') ||
           error.message.includes('not found') ||
           error.message.includes('deleted') ||
-          error.message.includes('eligible students'))
+          error.message.includes('eligible students') ||
+          error.message.includes('already been created') ||
+          error.message.includes('already exist') ||
+          error.message.includes('Duplicate') ||
+          error.message.includes('duplicate'))
       ) {
         return ApiResponse.error(res, error.message, null, 400);
       }
