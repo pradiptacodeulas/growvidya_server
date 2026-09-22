@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fee Receipt - {{receipt_no}}</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background: #f1f5f9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      color: #1e293b;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    .invoice-wrapper {
+      width: 210mm;
+      min-height: 297mm;
+      margin: 20px auto;
+      background: #ffffff;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    /* Top & Bottom Tri-Color Bar from Reference Design */
+    .color-bar {
+      height: 12px;
+      display: flex;
+      width: 100%;
+      flex-shrink: 0;
+    }
+
+    .color-bar .dark {
+      width: 24%;
+      background: #24516b;
+    }
+
+    .color-bar .light {
+      width: 28%;
+      background: #64c8df;
+    }
+
+    .color-bar .blue {
+      width: 48%;
+      background: #5d83c5;
+    }
+
+    .invoice-content {
+      padding: 36px 44px 24px;
+      flex-grow: 1;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Header Layout */
+    .header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 20px;
+      padding-bottom: 16px;
+      border-bottom: 2px solid #e2e8f0;
+    }
+
+    .school-info {
+      flex: 1;
+      padding-right: 20px;
+    }
+
+    .company-name {
+      color: #24516b;
+      font-size: 26px;
+      font-weight: 800;
+      line-height: 1.2;
+      margin-bottom: 4px;
+      letter-spacing: -0.3px;
+    }
+
+    .branch-name {
+      color: #4e78b6;
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .school-meta {
+      color: #64748b;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .receipt-badge-col {
+      text-align: right;
+      min-width: 230px;
+    }
+
+    .invoice-title {
+      color: #24516b;
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+
+    .receipt-number-box {
+      background: #f8fafc;
+      border: 1px solid #cbd5e1;
+      border-left: 4px solid #5d83c5;
+      padding: 6px 12px;
+      border-radius: 4px;
+      display: inline-block;
+      text-align: right;
+      margin-bottom: 6px;
+    }
+
+    .receipt-number-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      color: #64748b;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      display: block;
+    }
+
+    .receipt-number-val {
+      font-size: 17px;
+      font-weight: 800;
+      color: #166534;
+    }
+
+    .invoice-meta-row {
+      font-size: 13px;
+      color: #334155;
+      margin-top: 4px;
+      line-height: 1.4;
+    }
+
+    .invoice-meta-row strong {
+      color: #0f172a;
+    }
+
+    /* Student & Payment Info Grid (Reference-style info rows) */
+    .info-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px 24px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 14px 18px;
+      margin-bottom: 20px;
+    }
+
+    .info-item {
+      display: flex;
+      align-items: center;
+      border-bottom: 1px dashed #cbd5e1;
+      padding-bottom: 4px;
+      min-height: 28px;
+    }
+
+    .info-label {
+      width: 140px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #24516b;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      flex-shrink: 0;
+    }
+
+    .info-value {
+      flex: 1;
+      font-size: 13px;
+      font-weight: 600;
+      color: #0f172a;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* Fee Table from Reference */
+    .table-container {
+      margin-bottom: 16px;
+      flex-grow: 1;
+    }
+
+    .invoice-table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+
+    .invoice-table th,
+    .invoice-table td {
+      border: 1px solid #cbd5e1;
+    }
+
+    .invoice-table th {
+      background-color: #24516b;
+      color: #ffffff;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 9px 12px;
+      text-align: left;
+    }
+
+    .invoice-table th.text-center,
+    .invoice-table td.text-center {
+      text-align: center;
+    }
+
+    .invoice-table th.text-end,
+    .invoice-table td.text-end {
+      text-align: right;
+    }
+
+    .invoice-table td {
+      font-size: 13px;
+      color: #1e293b;
+      padding: 8px 12px;
+      vertical-align: middle;
+    }
+
+    .invoice-table tbody tr:nth-child(even) {
+      background-color: #f8fafc;
+    }
+
+    .invoice-table .serial {
+      width: 8%;
+    }
+
+    .invoice-table .description {
+      width: 62%;
+    }
+
+    .invoice-table .amount {
+      width: 30%;
+    }
+
+    /* Total row */
+    .total-row td {
+      background-color: #f8fafc !important;
+      font-weight: 700;
+      border-top: 2px solid #24516b;
+    }
+
+    .total-label {
+      text-align: right;
+      font-size: 14px;
+      color: #24516b;
+      font-weight: 700;
+    }
+
+    .total-value {
+      font-size: 14px;
+      color: #0f172a;
+      font-weight: 700;
+      text-align: right;
+    }
+
+    .total-received-row td {
+      background-color: #f0fdf4 !important;
+      border-top: 1px solid #86efac;
+    }
+
+    .total-received-label {
+      text-align: right;
+      font-size: 15px;
+      font-weight: 800;
+      color: #166534;
+      text-transform: uppercase;
+    }
+
+    .total-received-value {
+      font-size: 17px;
+      font-weight: 800;
+      color: #166534;
+      text-align: right;
+    }
+
+    .due-row td {
+      background-color: #fef2f2 !important;
+    }
+
+    .due-label {
+      text-align: right;
+      font-size: 13px;
+      font-weight: 700;
+      color: #b91c1c;
+    }
+
+    .due-value {
+      font-size: 14px;
+      font-weight: 700;
+      color: #b91c1c;
+      text-align: right;
+    }
+
+    /* Amount in Words */
+    .amount-words-box {
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-left: 4px solid #64c8df;
+      border-radius: 4px;
+      padding: 9px 14px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+    }
+
+    .amount-words-label {
+      font-size: 12px;
+      font-weight: 700;
+      color: #24516b;
+      white-space: nowrap;
+      margin-right: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    .amount-words-value {
+      font-size: 13px;
+      font-weight: 600;
+      color: #0f172a;
+      font-style: italic;
+    }
+
+    /* Terms / Notes */
+    .terms-section {
+      margin-top: 4px;
+      padding-top: 10px;
+      border-top: 1px dashed #cbd5e1;
+    }
+
+    .terms-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: #24516b;
+      text-transform: uppercase;
+      margin-bottom: 2px;
+    }
+
+    .terms-content {
+      font-size: 12px;
+      color: #64748b;
+      line-height: 1.45;
+    }
+
+    /* Signatures Section from Reference */
+    .signatures-row {
+      display: flex;
+      justify-content: flex-end;
+      align-items: flex-end;
+      margin-top: 36px;
+      padding: 0 16px;
+    }
+
+    .signature-block {
+      text-align: center;
+      width: 190px;
+    }
+
+    .signature-line {
+      border-bottom: 1px solid #64748b;
+      height: 30px;
+      margin-bottom: 6px;
+    }
+
+    .signature-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: #24516b;
+    }
+
+    .signature-subtitle {
+      font-size: 11px;
+      color: #94a3b8;
+    }
+
+    /* Print Setup */
+    @media print {
+      body {
+        background: #ffffff;
+        padding: 0;
+      }
+
+      .invoice-wrapper {
+        width: 210mm;
+        height: 297mm;
+        min-height: 297mm;
+        margin: 0;
+        box-shadow: none;
+        page-break-after: avoid;
+        page-break-inside: avoid;
+      }
+
+      @page {
+        size: A4 portrait;
+        margin: 0;
+      }
+    }
+
+    @media screen and (max-width: 900px) {
+      .invoice-wrapper {
+        width: 100%;
+        margin: 0;
+        box-shadow: none;
+      }
+
+      .invoice-content {
+        padding: 24px 20px;
+      }
+
+      .info-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="invoice-wrapper">
+    <!-- Top Color Bar from Reference -->
+    <div class="color-bar">
+      <div class="dark"></div>
+      <div class="light"></div>
+      <div class="blue"></div>
+    </div>
+
+    <div class="invoice-content">
+      <!-- Header -->
+      <div class="header-row">
+        <!-- School Info (School Name, Clean Branch Name, Address) -->
+        <div class="school-info">
+          <div class="company-name">{{school_name}}</div>
+          {{#if branch_name}}
+          <div class="branch-name">{{branch_name}}</div>
+          {{/if}}
+          {{#if school_address}}
+          <div class="school-meta">{{school_address}}</div>
+          {{/if}}
+          {{#if school_contact}}
+          <div class="school-meta">{{school_contact}}</div>
+          {{/if}}
+        </div>
+
+        <!-- Receipt Title & Number Box -->
+        <div class="receipt-badge-col">
+          <div class="invoice-title">FEE RECEIPT</div>
+          <div class="receipt-number-box">
+            <span class="receipt-number-label">Receipt Number</span>
+            <span class="receipt-number-val">{{receipt_no}}</span>
+          </div>
+          <div class="invoice-meta-row">
+            <strong>Date:</strong> {{payment_date}}
+          </div>
+          {{#if invoice_no}}
+          <div class="invoice-meta-row">
+            <strong>Invoice #:</strong> {{invoice_no}}
+          </div>
+          {{/if}}
+          {{#if txn_no}}
+          <div class="invoice-meta-row">
+            <strong>Txn / Ref #:</strong> {{txn_no}}
+          </div>
+          {{/if}}
+        </div>
+      </div>
+
+      <!-- Student & Payment Information -->
+      <div class="info-grid">
+        <div class="info-item">
+          <div class="info-label">Student Name</div>
+          <div class="info-value">{{student_name}}</div>
+        </div>
+
+        <div class="info-item">
+          <div class="info-label">Admission No.</div>
+          <div class="info-value">{{admission_number}}</div>
+        </div>
+
+        <div class="info-item">
+          <div class="info-label">Class &amp; Section</div>
+          <div class="info-value">{{class_section}}</div>
+        </div>
+
+        <div class="info-item">
+          <div class="info-label">Roll Number</div>
+          <div class="info-value">{{roll_number}}</div>
+        </div>
+
+        <div class="info-item">
+          <div class="info-label">Payment Mode</div>
+          <div class="info-value">{{payment_method}}</div>
+        </div>
+
+        <div class="info-item">
+          <div class="info-label">Billing Session</div>
+          <div class="info-value">{{academic_session}}</div>
+        </div>
+      </div>
+
+      <!-- Fee Particulars Table -->
+      <div class="table-container">
+        <table class="invoice-table">
+          <thead>
+            <tr>
+              <th class="serial text-center">#</th>
+              <th class="description">Fee Particulars / Description</th>
+              <th class="amount text-end">Amount (₹)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{items_rows}}
+
+            <!-- Total Invoiced row if different -->
+            {{#if show_invoice_total}}
+            <tr class="total-row">
+              <td colspan="2" class="total-label">Total Invoiced Amount</td>
+              <td class="total-value">{{invoice_total_formatted}}</td>
+            </tr>
+            {{/if}}
+
+            <!-- Total Received / Amount Paid -->
+            <tr class="total-received-row">
+              <td colspan="2" class="total-received-label">Total Amount Paid</td>
+              <td class="total-received-value">{{amount_paid_formatted}}</td>
+            </tr>
+
+            <!-- Due Amount if balance remains -->
+            {{#if show_due}}
+            <tr class="due-row">
+              <td colspan="2" class="due-label">Remaining Invoice Balance</td>
+              <td class="due-value">{{due_amount_formatted}}</td>
+            </tr>
+            {{/if}}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Amount in Words -->
+      <div class="amount-words-box">
+        <div class="amount-words-label">Rupees in words:</div>
+        <div class="amount-words-value">{{amount_in_words}}</div>
+      </div>
+
+      <!-- Terms & Conditions / Remarks -->
+      <div class="terms-section">
+        <div class="terms-title">Remarks / Terms:</div>
+        <div class="terms-content">
+          {{remarks_or_terms}}
+        </div>
+      </div>
+
+      <!-- Signatures Section -->
+      <div class="signatures-row">
+        <div class="signature-block">
+          <div class="signature-line"></div>
+          <div class="signature-title">Authorized Signatory</div>
+          <div class="signature-subtitle">Accounts Department</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom Color Bar from Reference -->
+    <div class="color-bar">
+      <div class="dark"></div>
+      <div class="light"></div>
+      <div class="blue"></div>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,5 +1,6 @@
 const AdminFeesModel = require('../models/adminFees.model');
 const ApiResponse = require('../utils/api.response');
+const FeeReceiptPdfService = require('../services/feeReceiptPdf.service');
 
 class AdminFeesController {
   // =========================================================
@@ -588,6 +589,69 @@ class AdminFeesController {
     } catch (error) {
       next(error);
     }
+  }
+
+  /**
+   * Generates and returns server-rendered HTML receipt based on official reference design
+   */
+  static async getPaymentReceiptHtml(req, res, next) {
+    try {
+      const schoolId = req.user.schoolId;
+      const { id } = req.params;
+      const payment = await AdminFeesModel.getPaymentById(id, schoolId);
+      if (!payment) {
+        return ApiResponse.error(res, 'Payment record not found.', null, 404);
+      }
+
+      const receiptHtml = FeeReceiptPdfService.generateReceiptHtml(payment);
+
+      if (req.query.format === 'json') {
+        return ApiResponse.success(res, 'Receipt generated successfully.', {
+          html: receiptHtml,
+          payment,
+        });
+      }
+
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      return res.send(receiptHtml);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Generates and streams official server-generated PDF buffer via Puppeteer
+   */
+  static async getPaymentReceiptPdf(req, res, next) {
+    try {
+      const schoolId = req.user.schoolId;
+      const { id } = req.params;
+      const payment = await AdminFeesModel.getPaymentById(id, schoolId);
+      if (!payment) {
+        return ApiResponse.error(res, 'Payment record not found.', null, 404);
+      }
+
+      const pdfBuffer = await FeeReceiptPdfService.generateReceiptPdfBuffer(payment);
+      const cleanReceiptNo = (payment.receipt_no || `REC_${id}`).replace(/[^a-zA-Z0-9_-]/g, '_');
+      const fileName = `Fee_Receipt_${cleanReceiptNo}.pdf`;
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="${fileName}"`);
+      res.setHeader('Content-Length', pdfBuffer.length);
+      return res.end(pdfBuffer);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Unified route for receipt: returns PDF or HTML based on query param
+   */
+  static async getPaymentReceipt(req, res, next) {
+    if (req.query.format === 'pdf') {
+      return AdminFeesController.getPaymentReceiptPdf(req, res, next);
+    }
+    return AdminFeesController.getPaymentReceiptHtml(req, res, next);
   }
 
   static async recordPayment(req, res, next) {
