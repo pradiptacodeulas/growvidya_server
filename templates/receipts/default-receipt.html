@@ -399,12 +399,15 @@
 
       .invoice-wrapper {
         width: 210mm;
-        height: 297mm;
         min-height: 297mm;
         margin: 0;
         box-shadow: none;
-        page-break-after: avoid;
+        page-break-after: always;
         page-break-inside: avoid;
+      }
+
+      .invoice-wrapper:last-child {
+        page-break-after: auto;
       }
 
       @page {

@@ -596,7 +596,7 @@ class AdminFeesController {
    */
   static async getPaymentReceiptHtml(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
+      const schoolId = req.user?.schoolId || req.user?.school_id;
       const { id } = req.params;
       const payment = await AdminFeesModel.getPaymentById(id, schoolId);
       if (!payment) {
@@ -620,28 +620,69 @@ class AdminFeesController {
   }
 
   /**
-   * Generates and streams official server-generated PDF buffer via Puppeteer
+   * Generates and streams official server-generated PDF buffer (Single or Batch) matching ID Card data flow
    */
-  static async getPaymentReceiptPdf(req, res, next) {
+  static async downloadReceiptPdf(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
-      const { id } = req.params;
-      const payment = await AdminFeesModel.getPaymentById(id, schoolId);
-      if (!payment) {
-        return ApiResponse.error(res, 'Payment record not found.', null, 404);
+      const schoolId = req.user?.schoolId || req.user?.school_id;
+      const params = { ...req.query, ...req.body, ...req.params };
+
+      // Parse candidate / payment IDs
+      let parsedIds = [];
+      const singleId = params.id || params.paymentId || params.candidateId;
+      const arrayIds = params.paymentIds || params.ids;
+
+      if (singleId) {
+        parsedIds = [parseInt(singleId, 10)];
+      } else if (Array.isArray(arrayIds)) {
+        parsedIds = arrayIds.map((id) => parseInt(id, 10)).filter(Boolean);
+      } else if (typeof arrayIds === 'string' && arrayIds.trim()) {
+        parsedIds = arrayIds.split(',').map((id) => parseInt(id.trim(), 10)).filter(Boolean);
       }
 
-      const pdfBuffer = await FeeReceiptPdfService.generateReceiptPdfBuffer(payment);
-      const cleanReceiptNo = (payment.receipt_no || `REC_${id}`).replace(/[^a-zA-Z0-9_-]/g, '_');
-      const fileName = `Fee_Receipt_${cleanReceiptNo}.pdf`;
+      const classId = params.classId || params.class_id ? parseInt(params.classId || params.class_id, 10) : null;
+      const sectionId = params.sectionId || params.section_id ? parseInt(params.sectionId || params.section_id, 10) : null;
+
+      const receiptData = await AdminFeesModel.getReceiptData({
+        schoolId,
+        paymentIds: parsedIds,
+        classId,
+        sectionId,
+      });
+
+      if (!receiptData || receiptData.length === 0) {
+        return ApiResponse.error(res, 'No active payment receipt records found.', null, 404);
+      }
+
+      if (req.query.format === 'json') {
+        return ApiResponse.success(res, 'Receipt data retrieved successfully', receiptData);
+      }
+
+      const pdfBuffer = await FeeReceiptPdfService.generateReceiptPdfBuffer(receiptData);
+
+      let fileName = 'Fee_Receipts_Batch.pdf';
+      if (receiptData.length === 1) {
+        const p = receiptData[0];
+        const rNo = (p.receipt_no || `REC_${p.id}`).replace(/[^a-zA-Z0-9_-]/g, '_');
+        const sName = `${p.first_name || ''}_${p.last_name || ''}`.trim().replace(/[^a-zA-Z0-9_-]/g, '_') || 'Student';
+        fileName = `Fee_Receipt_${sName}_${rNo}.pdf`;
+      } else {
+        fileName = `Fee_Receipts_Batch_${receiptData.length}_${new Date().toISOString().split('T')[0]}.pdf`;
+      }
 
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `inline; filename="${fileName}"`);
       res.setHeader('Content-Length', pdfBuffer.length);
       return res.end(pdfBuffer);
     } catch (error) {
+      console.error('Fee Receipt PDF generation error:', error);
       next(error);
     }
+  }
+
+  // Alias for single payment receipt route
+  static async getPaymentReceiptPdf(req, res, next) {
+    return AdminFeesController.downloadReceiptPdf(req, res, next);
   }
 
   /**
@@ -649,7 +690,7 @@ class AdminFeesController {
    */
   static async getPaymentReceipt(req, res, next) {
     if (req.query.format === 'pdf') {
-      return AdminFeesController.getPaymentReceiptPdf(req, res, next);
+      return AdminFeesController.downloadReceiptPdf(req, res, next);
     }
     return AdminFeesController.getPaymentReceiptHtml(req, res, next);
   }

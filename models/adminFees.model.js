@@ -1425,6 +1425,99 @@ class AdminFeesModel {
     return payment;
   }
 
+  /**
+   * Fetches single or batch payment receipt data matching the ID Card data flow pattern
+   */
+  static async getReceiptData({ schoolId, paymentIds = [], paymentId = null, classId = null, sectionId = null }) {
+    let ids = [];
+    if (paymentId) {
+      ids = [paymentId];
+    } else if (Array.isArray(paymentIds) && paymentIds.length > 0) {
+      ids = paymentIds.map((id) => parseInt(id, 10)).filter(Boolean);
+    }
+
+    let query = `
+      SELECT 
+        fp.*,
+        COALESCE(fp.branch_id, sm.branch_id) AS branch_id,
+        brm.branch_name,
+        brm.branch_code,
+        brm.address AS branch_address,
+        sch.school_name,
+        sch.school_logo,
+        sch.address AS school_address,
+        sch.phone_number AS school_phone,
+        sch.email AS school_email,
+        sm.first_name,
+        sm.last_name,
+        sm.admission_number,
+        sm.roll_number,
+        sm.primary_contact_number,
+        sm.email_address,
+        cm.class_name,
+        sec.section_name,
+        fi.invoice_no,
+        fi.title AS invoice_title,
+        fi.total_amount AS invoice_total,
+        fi.due_amount AS invoice_due,
+        ay.academic_year
+      FROM fee_payments fp
+      INNER JOIN student_master sm ON sm.id = fp.student_id
+      LEFT JOIN school_master sch ON sch.id = fp.school_id
+      LEFT JOIN branch_master brm ON brm.id = COALESCE(fp.branch_id, sm.branch_id)
+      LEFT JOIN class_master cm ON cm.id = sm.class
+      LEFT JOIN section_master sec ON sec.id = sm.section
+      LEFT JOIN fee_invoices fi ON fi.id = fp.invoice_id
+      LEFT JOIN academic_year_master ay ON ay.id = fi.academic_year_id
+      WHERE fp.school_id = ?
+    `;
+
+    const params = [schoolId];
+
+    if (ids.length > 0) {
+      query += ` AND fp.id IN (?)`;
+      params.push(ids);
+    }
+
+    if (classId) {
+      query += ` AND sm.class = ?`;
+      params.push(classId);
+    }
+
+    if (sectionId) {
+      query += ` AND sm.section = ?`;
+      params.push(sectionId);
+    }
+
+    query += ` ORDER BY fp.payment_date DESC, fp.id DESC`;
+
+    const [payments] = await pool.query(query, params);
+    if (!payments || payments.length === 0) return [];
+
+    // Fetch invoice items breakdown for all invoices in the batch
+    const invoiceIds = [...new Set(payments.map((p) => p.invoice_id).filter(Boolean))];
+    if (invoiceIds.length > 0) {
+      const [items] = await pool.query(
+        `SELECT * FROM fee_invoice_items WHERE invoice_id IN (?)`,
+        [invoiceIds]
+      );
+      const itemsByInvoice = {};
+      items.forEach((item) => {
+        if (!itemsByInvoice[item.invoice_id]) itemsByInvoice[item.invoice_id] = [];
+        itemsByInvoice[item.invoice_id].push(item);
+      });
+      payments.forEach((payment) => {
+        payment.items = itemsByInvoice[payment.invoice_id] || [];
+      });
+    } else {
+      payments.forEach((payment) => {
+        payment.items = [];
+      });
+    }
+
+    return payments;
+  }
+
   static async recordPayment({
     schoolId,
     branchId,

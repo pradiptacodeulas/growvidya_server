@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const puppeteer = require('puppeteer');
+const AdminIdCardModel = require('../models/adminIdCard.model');
 
 const TEMPLATES_DIR = path.join(__dirname, '../templates/idcards');
 
@@ -50,11 +51,9 @@ const toBase64DataUri = (imgUrlOrPath) => {
  * Formats academic session as range
  */
 const formatAcademicSession = (rawSession) => {
-  if (!rawSession) {
-    const curYear = new Date().getFullYear();
-    return `${curYear}-${curYear + 1}`;
-  }
+  if (!rawSession) return '—';
   const str = String(rawSession).trim();
+  if (!str) return '—';
   const match = str.match(/^(\d{4})$/);
   if (match) {
     const y = parseInt(match[1], 10);
@@ -72,31 +71,23 @@ const getValidityString = (academicYearStr) => {
     if (match && match.length >= 2) {
       return `31 Mar ${match[1]}`;
     }
+    if (match && match.length === 1) {
+      return `31 Mar ${match[0]}`;
+    }
   }
-  const nextYear = new Date().getFullYear() + 1;
-  return `31 Mar ${nextYear}`;
+  return '—';
 };
 
 /**
- * Blood group ID fallback dictionary
+ * Formats and resolves blood group name dynamically from database dictionary
  */
-const BLOOD_GROUP_MAP = {
-  '1': 'A+',
-  '2': 'A-',
-  '3': 'B+',
-  '4': 'B-',
-  '5': 'AB+',
-  '6': 'AB-',
-  '7': 'AB-',
-  '8': 'O+',
-  '9': 'O-',
-};
-
-const formatBloodGroup = (bg) => {
+const formatBloodGroup = (bg, bgMap = {}) => {
   if (!bg) return '—';
   const str = String(bg).trim();
-  if (BLOOD_GROUP_MAP[str]) return BLOOD_GROUP_MAP[str];
-  if (/^\d+$/.test(str)) return '—';
+  if (bgMap && bgMap[str]) return bgMap[str];
+  if (/^\d+$/.test(str)) {
+    return bgMap && bgMap[str] ? bgMap[str] : '—';
+  }
   return str;
 };
 
@@ -124,25 +115,25 @@ const formatDisplayDate = (rawDate) => {
 /**
  * Builds HTML for an individual card item according to its type
  */
-const buildSingleCardBodyHtml = (type, item, template) => {
+const buildSingleCardBodyHtml = (type, item, template, bgMap = {}) => {
   const school = item.school || {};
-  const schoolTitle = school.school_title || school.school_name || 'Growvidya Academy';
-  const schoolSubtitle = [school.city, school.state].filter(Boolean).join(', ') || (school.school_code ? `Code: ${school.school_code}` : 'Official Campus');
+  const schoolTitle = school.school_title || school.school_name || '';
+  const schoolSubtitle = school.school_code ? `Code: ${school.school_code}` : '';
 
   const rawSchoolLogo = toBase64DataUri(school.school_logo);
   const schoolLogoHtml = rawSchoolLogo
-    ? `<img src="${rawSchoolLogo}" alt="Logo" class="school-logo" onerror="this.style.display='none'" />`
-    : `<div class="no-logo-badge">LOGO</div>`;
+    ? `<img src="${rawSchoolLogo}" alt="Logo" class="school-logo" onerror="this.parentElement.style.display='none'" />`
+    : '';
 
   if (type === 'student') {
     const student = item.candidate || item.student || {};
-    const studentName = `${student.first_name || ''} ${student.last_name || ''}`.trim() || 'Student';
+    const studentName = `${student.first_name || ''} ${student.last_name || ''}`.trim() || '—';
     const rollNo = student.roll_number || student.roll_no || '—';
-    const admissionNo = student.admission_number || student.admission_no || (student.id ? `AD${student.id}` : '—');
-    const className = student.class_name || 'Class';
-    const sectionName = student.section_name || 'A';
-    const fatherName = student.father_name || '—';
-    const bloodGroup = formatBloodGroup(student.blood_group);
+    const admissionNo = student.admission_number || student.admission_no || '—';
+    const className = student.class_name || '—';
+    const sectionName = student.section_name || '—';
+    const fatherName = (student.father_name || '').trim() || '—';
+    const bloodGroup = formatBloodGroup(student.blood_group, bgMap);
     const contactNo = student.primary_contact_number || student.emergency_contact || student.phone || '—';
     const academicYear = formatAcademicSession(item.academic_year || student.academic_year);
     const validUntil = getValidityString(academicYear);
@@ -171,15 +162,15 @@ const buildSingleCardBodyHtml = (type, item, template) => {
 
   if (type === 'teacher') {
     const teacher = item.candidate || item.teacher || {};
-    const teacherName = `${teacher.first_name || ''} ${teacher.last_name || ''}`.trim() || 'Faculty Member';
-    const teacherId = teacher.teacher_id || `TCH-${teacher.id || '1001'}`;
-    const designation = teacher.designation || (teacher.subject ? `${teacher.subject} Faculty` : 'Senior Teacher');
-    const qualification = teacher.qualification || 'Post Graduate';
+    const teacherName = `${teacher.first_name || ''} ${teacher.last_name || ''}`.trim() || '—';
+    const teacherId = teacher.teacher_id || (teacher.id ? String(teacher.id) : '—');
+    const designation = teacher.designation || (teacher.subject ? `${teacher.subject} Faculty` : '—');
+    const qualification = teacher.qualification || '—';
     const rawJoining = teacher.date_of_joining || teacher.joining_date || teacher.doj || teacher.dateOfJoining || teacher.created_on;
     const joiningDate = formatDisplayDate(rawJoining);
-    const bloodGroup = formatBloodGroup(teacher.blood_group);
+    const bloodGroup = formatBloodGroup(teacher.blood_group, bgMap);
     const contactNo = teacher.primary_contact_number || teacher.phone || '—';
-    const validUntil = getValidityString(null);
+    const validUntil = getValidityString(item.academic_year || teacher.academic_year);
 
     const rawPhoto = toBase64DataUri(teacher.picture);
     const photoHtml = rawPhoto
@@ -203,14 +194,14 @@ const buildSingleCardBodyHtml = (type, item, template) => {
 
   // Staff
   const staff = item.candidate || item.staff || {};
-  const staffName = `${staff.first_name || ''} ${staff.last_name || ''}`.trim() || 'Staff Member';
-  const employeeId = staff.employee_id || `STF-${staff.id || '1001'}`;
-  const roleName = staff.role_name || staff.role || 'Administrative Staff';
-  const department = staff.department || roleName;
-  const bloodGroup = formatBloodGroup(staff.blood_group);
+  const staffName = `${staff.first_name || ''} ${staff.last_name || ''}`.trim() || '—';
+  const employeeId = staff.employee_id || (staff.id ? String(staff.id) : '—');
+  const roleName = staff.role_name || (staff.role ? String(staff.role) : '—');
+  const department = staff.department || '—';
+  const bloodGroup = formatBloodGroup(staff.blood_group, bgMap);
   const contactNo = staff.phone || staff.primary_contact_number || '—';
   const email = staff.email || '—';
-  const validUntil = getValidityString(null);
+  const validUntil = getValidityString(item.academic_year || staff.academic_year);
 
   const rawPhoto = toBase64DataUri(staff.picture);
   const photoHtml = rawPhoto
@@ -241,11 +232,12 @@ class IdCardPdfService {
    */
   static async generateIdCardPdfBuffer(type, itemsList = []) {
     const rawTemplate = getTemplateHtml(type);
+    const bgMap = await AdminIdCardModel.getBloodGroupMap();
 
     // Extract HTML body content template
     // We replace the outer body with multiple idcard-wrapper blocks for multi-page batch rendering
     const cardsHtml = itemsList.map((item) => {
-      return buildSingleCardBodyHtml(type, item, rawTemplate);
+      return buildSingleCardBodyHtml(type, item, rawTemplate, bgMap);
     });
 
     // Extract head styles from template

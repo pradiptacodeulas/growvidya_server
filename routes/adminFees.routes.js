@@ -79,8 +79,11 @@ router.delete('/invoices/:id', AdminFeesController.deleteInvoice);
 // =========================================================
 router.get('/stats', AdminFeesController.getCollectionStats);
 router.get('/payments', AdminFeesController.getAllPayments);
+router.get('/payments/receipt/pdf', AdminFeesController.downloadReceiptPdf);
+router.post('/payments/receipt/pdf', AdminFeesController.downloadReceiptPdf);
+router.get('/payments/receipt/pdf/:id', AdminFeesController.downloadReceiptPdf);
 router.get('/payments/:id/receipt-html', AdminFeesController.getPaymentReceiptHtml);
-router.get('/payments/:id/receipt-pdf', AdminFeesController.getPaymentReceiptPdf);
+router.get('/payments/:id/receipt-pdf', AdminFeesController.downloadReceiptPdf);
 router.get('/payments/:id/receipt', AdminFeesController.getPaymentReceipt);
 router.get('/payments/:id', AdminFeesController.getPaymentById);
 router.post('/payments/collect', AdminFeesController.recordPayment);

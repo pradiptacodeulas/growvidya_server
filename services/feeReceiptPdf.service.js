@@ -5,6 +5,42 @@ const puppeteer = require('puppeteer');
 const TEMPLATE_PATH = path.join(__dirname, '../templates/receipts/default-receipt.html');
 
 /**
+ * Loads the HTML template from disk
+ */
+const getTemplateHtml = () => {
+  return fs.readFileSync(TEMPLATE_PATH, 'utf8');
+};
+
+/**
+ * Converts a local file path to base64 Data URI for fast and reliable Puppeteer rendering
+ */
+const toBase64DataUri = (imgUrlOrPath) => {
+  if (!imgUrlOrPath) return '';
+  if (typeof imgUrlOrPath !== 'string') return '';
+  if (imgUrlOrPath.startsWith('data:')) return imgUrlOrPath;
+
+  try {
+    let cleanPath = imgUrlOrPath.replace(/^https?:\/\/[^\/]+/i, '');
+    if (cleanPath.startsWith('/')) cleanPath = cleanPath.substring(1);
+
+    const fullPath = path.isAbsolute(imgUrlOrPath)
+      ? imgUrlOrPath
+      : path.join(__dirname, '../public', cleanPath);
+
+    if (fs.existsSync(fullPath)) {
+      const ext = path.extname(fullPath).toLowerCase().replace('.', '') || 'jpeg';
+      const mime = ext === 'png' ? 'image/png' : ext === 'svg' ? 'image/svg+xml' : 'image/jpeg';
+      const data = fs.readFileSync(fullPath).toString('base64');
+      return `data:${mime};base64,${data}`;
+    }
+  } catch (err) {
+    console.warn('[feeReceiptPdf.service] Failed to convert image to base64:', err.message);
+  }
+
+  return imgUrlOrPath;
+};
+
+/**
  * Converts a number to Indian currency words
  */
 const ones = [
@@ -89,7 +125,7 @@ const escapeHtml = (str) => {
 };
 
 /**
- * Simple Mustache/Handlebars-like renderer
+ * Renders template placeholders and conditional blocks
  */
 const renderTemplate = (template, data) => {
   let output = template;
@@ -107,104 +143,139 @@ const renderTemplate = (template, data) => {
   return output;
 };
 
+/**
+ * Builds the HTML content for an individual receipt
+ */
+const buildSingleReceiptBodyHtml = (payment, template) => {
+  const schoolName = payment.school_name || '';
+  let branchName = payment.branch_name || '';
+  let schoolAddress = payment.branch_address || payment.school_address || '';
+
+  // Constraint: DO NOT repeat school name anywhere on the receipt
+  if (schoolName && branchName) {
+    const escapedSchoolName = schoolName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    branchName = branchName.replace(new RegExp(escapedSchoolName, 'gi'), '');
+    branchName = branchName.replace(/^[\s(\-–/]+/, '').replace(/[\s)\-–/]+$/, '').trim();
+  }
+
+  if (schoolName && schoolAddress) {
+    const escapedSchoolName = schoolName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    schoolAddress = schoolAddress.replace(new RegExp(escapedSchoolName, 'gi'), '');
+    schoolAddress = schoolAddress.replace(/^[\s,(\-–/]+/, '').replace(/[\s,)\-–/]+$/, '').trim();
+  }
+
+  const contactParts = [];
+  if (payment.school_phone) contactParts.push(`Phone: ${escapeHtml(payment.school_phone)}`);
+  if (payment.school_email) contactParts.push(`Email: ${escapeHtml(payment.school_email)}`);
+  const schoolContact = contactParts.join(' | ');
+
+  // Items table generation
+  let itemsRows = '';
+  if (Array.isArray(payment.items) && payment.items.length > 0) {
+    itemsRows = payment.items
+      .map((item, idx) => `
+        <tr>
+          <td class="serial text-center">${idx + 1}</td>
+          <td class="description">${escapeHtml(item.component_name || 'Fee Component')}</td>
+          <td class="amount text-end fw-bold">${formatCurrency(item.amount)}</td>
+        </tr>
+      `)
+      .join('');
+  } else {
+    itemsRows = `
+      <tr>
+        <td class="serial text-center">1</td>
+        <td class="description">${escapeHtml(payment.invoice_title || 'Fee Payment Installment')}</td>
+        <td class="amount text-end fw-bold">${formatCurrency(payment.amount_paid)}</td>
+      </tr>
+    `;
+  }
+
+  const totalInvoiced = parseFloat(payment.invoice_total || 0);
+  const amountPaid = parseFloat(payment.amount_paid || 0);
+  const totalDue = parseFloat(payment.invoice_due || 0);
+
+  const showInvoiceTotal = totalInvoiced > 0 && totalInvoiced !== amountPaid;
+  const showDue = payment.invoice_due !== undefined && payment.invoice_due !== null && totalDue > 0;
+
+  const data = {
+    school_name: escapeHtml(schoolName),
+    branch_name: escapeHtml(branchName),
+    school_address: escapeHtml(schoolAddress),
+    school_contact: schoolContact,
+    receipt_no: escapeHtml(payment.receipt_no || '-'),
+    payment_date: formatDate(payment.payment_date || payment.created_at),
+    invoice_no: payment.invoice_no ? escapeHtml(payment.invoice_no) : '',
+    txn_no: payment.transaction_id || payment.reference_no || payment.cheque_no
+      ? escapeHtml(payment.transaction_id || payment.reference_no || payment.cheque_no)
+      : '',
+    student_name: escapeHtml(`${payment.first_name || ''} ${payment.last_name || ''}`.trim() || '-'),
+    admission_number: escapeHtml(payment.admission_number || '-'),
+    class_section: escapeHtml(`${payment.class_name || '-'}${payment.section_name ? ` (${payment.section_name})` : ''}`),
+    roll_number: escapeHtml(payment.roll_number || '-'),
+    payment_method: escapeHtml(payment.payment_method || '-'),
+    academic_session: escapeHtml(payment.academic_year || payment.invoice_title || '-'),
+    items_rows: itemsRows,
+    show_invoice_total: showInvoiceTotal,
+    invoice_total_formatted: formatCurrency(totalInvoiced),
+    amount_paid_formatted: formatCurrency(amountPaid),
+    show_due: showDue,
+    due_amount_formatted: formatCurrency(totalDue),
+    amount_in_words: numberToIndianWords(amountPaid),
+    remarks_or_terms: payment.notes
+      ? escapeHtml(payment.notes)
+      : 'This is an official computer-generated fee payment receipt. Retain this receipt for future reference.',
+  };
+
+  return renderTemplate(template, data);
+};
+
 class FeeReceiptPdfService {
   /**
-   * Generates the complete HTML for the fee payment receipt
+   * Generates the complete HTML for a single fee payment receipt
    */
   static generateReceiptHtml(payment) {
-    const templateContent = fs.readFileSync(TEMPLATE_PATH, 'utf8');
-
-    const schoolName = payment.school_name || '';
-    let branchName = payment.branch_name || '';
-    let schoolAddress = payment.branch_address || payment.school_address || '';
-
-    // Constraint: DO NOT repeat school name anywhere on the receipt
-    if (schoolName && branchName) {
-      const escapedSchoolName = schoolName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      branchName = branchName.replace(new RegExp(escapedSchoolName, 'gi'), '');
-      branchName = branchName.replace(/^[\s(\-–/]+/, '').replace(/[\s)\-–/]+$/, '').trim();
-    }
-
-    if (schoolName && schoolAddress) {
-      const escapedSchoolName = schoolName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      schoolAddress = schoolAddress.replace(new RegExp(escapedSchoolName, 'gi'), '');
-      schoolAddress = schoolAddress.replace(/^[\s,(\-–/]+/, '').replace(/[\s,)\-–/]+$/, '').trim();
-    }
-
-    const contactParts = [];
-    if (payment.school_phone) contactParts.push(`Phone: ${escapeHtml(payment.school_phone)}`);
-    if (payment.school_email) contactParts.push(`Email: ${escapeHtml(payment.school_email)}`);
-    const schoolContact = contactParts.join(' | ');
-
-    // Items table generation
-    let itemsRows = '';
-    if (Array.isArray(payment.items) && payment.items.length > 0) {
-      itemsRows = payment.items
-        .map((item, idx) => `
-          <tr>
-            <td class="serial text-center">${idx + 1}</td>
-            <td class="description">${escapeHtml(item.component_name || 'Fee Component')}</td>
-            <td class="amount text-end fw-bold">${formatCurrency(item.amount)}</td>
-          </tr>
-        `)
-        .join('');
-    } else {
-      itemsRows = `
-        <tr>
-          <td class="serial text-center">1</td>
-          <td class="description">${escapeHtml(payment.invoice_title || 'Fee Payment Installment')}</td>
-          <td class="amount text-end fw-bold">${formatCurrency(payment.amount_paid)}</td>
-        </tr>
-      `;
-    }
-
-    const totalInvoiced = parseFloat(payment.invoice_total || 0);
-    const amountPaid = parseFloat(payment.amount_paid || 0);
-    const totalDue = parseFloat(payment.invoice_due || 0);
-
-    const showInvoiceTotal = totalInvoiced > 0 && totalInvoiced !== amountPaid;
-    const showDue = payment.invoice_due !== undefined && payment.invoice_due !== null && totalDue > 0;
-
-    const data = {
-      school_name: escapeHtml(schoolName),
-      branch_name: escapeHtml(branchName),
-      school_address: escapeHtml(schoolAddress),
-      school_contact: schoolContact,
-      receipt_no: escapeHtml(payment.receipt_no || '-'),
-      payment_date: formatDate(payment.payment_date || payment.created_at),
-      invoice_no: payment.invoice_no ? escapeHtml(payment.invoice_no) : '',
-      txn_no: payment.transaction_id || payment.reference_no || payment.cheque_no
-        ? escapeHtml(payment.transaction_id || payment.reference_no || payment.cheque_no)
-        : '',
-      student_name: escapeHtml(`${payment.first_name || ''} ${payment.last_name || ''}`.trim() || '-'),
-      admission_number: escapeHtml(payment.admission_number || '-'),
-      class_section: escapeHtml(`${payment.class_name || '-'}${payment.section_name ? ` (${payment.section_name})` : ''}`),
-      roll_number: escapeHtml(payment.roll_number || '-'),
-      payment_method: escapeHtml(payment.payment_method || '-'),
-      academic_session: escapeHtml(payment.academic_year || payment.invoice_title || '-'),
-      items_rows: itemsRows,
-      show_invoice_total: showInvoiceTotal,
-      invoice_total_formatted: formatCurrency(totalInvoiced),
-      amount_paid_formatted: formatCurrency(amountPaid),
-      show_due: showDue,
-      due_amount_formatted: formatCurrency(totalDue),
-      amount_in_words: numberToIndianWords(amountPaid),
-      remarks_or_terms: payment.notes
-        ? escapeHtml(payment.notes)
-        : 'This is an official computer-generated fee payment receipt. Retain this receipt for future reference.',
-    };
-
-    return renderTemplate(templateContent, data);
+    const rawTemplate = getTemplateHtml();
+    return buildSingleReceiptBodyHtml(payment, rawTemplate);
   }
 
   /**
-   * Generates high-quality A4 PDF Buffer using Puppeteer
+   * Generates an official A4 PDF buffer (Single or Batch) matching the ID Card engine
+   * @param {Object|Array<Object>} paymentsInput - single payment or array of payments
+   * @returns {Promise<Buffer>}
    */
-  static async generateReceiptPdfBuffer(payment) {
-    const html = this.generateReceiptHtml(payment);
+  static async generateReceiptPdfBuffer(paymentsInput) {
+    const paymentsList = Array.isArray(paymentsInput) ? paymentsInput : [paymentsInput];
+    const rawTemplate = getTemplateHtml();
 
+    // Build receipt HTML for each item in the batch
+    const receiptsHtml = paymentsList.map((payment) => {
+      return buildSingleReceiptBodyHtml(payment, rawTemplate);
+    });
+
+    // Extract head content from template
+    const headMatch = rawTemplate.match(/<head>([\s\S]*?)<\/head>/i);
+    const headContent = headMatch ? headMatch[1] : '';
+
+    // Multi-page batch HTML
+    const fullHtml = `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        ${headContent}
+      </head>
+      <body>
+        ${receiptsHtml.map((c) => {
+          const m = c.match(/<div class="invoice-wrapper">([\s\S]*?)<\/div>\s*<\/body>/i);
+          return m ? `<div class="invoice-wrapper">${m[1]}</div>` : c;
+        }).join('\n')}
+      </body>
+      </html>
+    `;
+
+    // Launch Puppeteer matching IdCardPdfService configuration
     const browser = await puppeteer.launch({
-      headless: true,
+      headless: 'new',
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -216,9 +287,9 @@ class FeeReceiptPdfService {
 
     try {
       const page = await browser.newPage();
-      await page.setContent(html, {
-        waitUntil: ['load', 'domcontentloaded'],
-        timeout: 15000,
+      await page.setContent(fullHtml, {
+        waitUntil: ['domcontentloaded'],
+        timeout: 10000,
       });
 
       const pdfBuffer = await page.pdf({
@@ -226,14 +297,14 @@ class FeeReceiptPdfService {
         printBackground: true,
         preferCSSPageSize: true,
         margin: {
-          top: 0,
-          right: 0,
-          bottom: 0,
-          left: 0,
+          top: '0mm',
+          right: '0mm',
+          bottom: '0mm',
+          left: '0mm',
         },
       });
 
-      return pdfBuffer;
+      return Buffer.from(pdfBuffer);
     } finally {
       await browser.close();
     }
