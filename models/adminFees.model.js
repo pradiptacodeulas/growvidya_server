@@ -1380,6 +1380,12 @@ class AdminFeesModel {
         COALESCE(fp.branch_id, sm.branch_id) AS branch_id,
         brm.branch_name,
         brm.branch_code,
+        brm.address AS branch_address,
+        sch.school_name,
+        sch.school_logo,
+        sch.address AS school_address,
+        sch.phone_number AS school_phone,
+        sch.email AS school_email,
         sm.first_name,
         sm.last_name,
         sm.admission_number,
@@ -1395,6 +1401,7 @@ class AdminFeesModel {
         ay.academic_year
       FROM fee_payments fp
       INNER JOIN student_master sm ON sm.id = fp.student_id
+      LEFT JOIN school_master sch ON sch.id = fp.school_id
       LEFT JOIN branch_master brm ON brm.id = COALESCE(fp.branch_id, sm.branch_id)
       LEFT JOIN class_master cm ON cm.id = sm.class
       LEFT JOIN section_master sec ON sec.id = sm.section
