@@ -1292,7 +1292,7 @@ class AdminFeesModel {
     };
   }
 
-  static async getAllPayments({ schoolId, branchId = null, studentId, invoiceId, paymentMethod, dateFrom, dateTo, search }) {
+  static async getAllPayments({ schoolId, branchId = null, studentId, invoiceId, paymentMethod, status, dateFrom, dateTo, search }) {
     let query = `
       SELECT 
         fp.id,
@@ -1315,6 +1315,7 @@ class AdminFeesModel {
         fp.notes,
         fp.collected_by,
         fp.created_at,
+        fp.receipt_file,
         sm.first_name,
         sm.last_name,
         sm.admission_number,
@@ -1322,7 +1323,9 @@ class AdminFeesModel {
         cm.class_name,
         fi.invoice_no,
         fi.title AS invoice_title,
-        fi.total_amount AS invoice_total
+        fi.total_amount AS invoice_total,
+        fi.due_amount AS invoice_due,
+        fi.status AS invoice_status
       FROM fee_payments fp
       INNER JOIN student_master sm ON sm.id = fp.student_id
       LEFT JOIN branch_master brm ON brm.id = COALESCE(fp.branch_id, sm.branch_id)
@@ -1347,6 +1350,10 @@ class AdminFeesModel {
     if (paymentMethod) {
       query += ` AND fp.payment_method = ?`;
       params.push(paymentMethod);
+    }
+    if (status) {
+      query += ` AND fp.status = ?`;
+      params.push(status);
     }
     if (dateFrom) {
       query += ` AND fp.payment_date >= ?`;
@@ -1510,6 +1517,127 @@ class AdminFeesModel {
         amountPaid: paidAmountNum,
         newDueAmount,
         newStatus,
+      };
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+
+  /**
+   * Verify / Approve or Reject Fee Payment (Offline / Receipt Proof Verification)
+   */
+  static async verifyPayment({ paymentId, schoolId, action, rejectionReason, verifiedBy }) {
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
+
+      // 1. Fetch the payment record
+      const [payRows] = await connection.query(
+        `SELECT * FROM fee_payments WHERE id = ? AND school_id = ?`,
+        [paymentId, schoolId]
+      );
+      if (payRows.length === 0) {
+        throw new Error('Fee payment record not found.');
+      }
+      const payment = payRows[0];
+
+      if (payment.status !== 'Pending Verification' && payment.status !== 'pending') {
+        throw new Error(`This payment has already been processed with status: ${payment.status}`);
+      }
+
+      const invoiceId = payment.invoice_id;
+      let newPaymentStatus = 'Success';
+      let updateNote = payment.notes || '';
+
+      if (action === 'approve') {
+        newPaymentStatus = 'Success';
+        updateNote = updateNote ? `${updateNote} [Verified by Admin]` : 'Verified by Admin';
+      } else if (action === 'reject') {
+        newPaymentStatus = 'Rejected';
+        const reasonStr = rejectionReason ? `: ${rejectionReason}` : '';
+        updateNote = updateNote ? `${updateNote} [Rejected by Admin${reasonStr}]` : `Rejected by Admin${reasonStr}`;
+      } else {
+        throw new Error('Invalid verification action. Must be "approve" or "reject".');
+      }
+
+      // 2. Update the payment record
+      await connection.query(
+        `UPDATE fee_payments SET 
+           status = ?, 
+           notes = ?, 
+           collected_by = COALESCE(?, collected_by)
+         WHERE id = ?`,
+        [newPaymentStatus, updateNote, verifiedBy || null, paymentId]
+      );
+
+      // 3. Recalculate Invoice totals and status if linked to an invoice
+      let updatedInvoice = null;
+      if (invoiceId) {
+        const [invRows] = await connection.query(
+          `SELECT * FROM fee_invoices WHERE id = ? AND school_id = ?`,
+          [invoiceId, schoolId]
+        );
+        if (invRows.length > 0) {
+          const invoice = invRows[0];
+
+          // Calculate total verified paid amount from all successful payments for this invoice
+          const [sumRows] = await connection.query(
+            `SELECT COALESCE(SUM(amount_paid), 0) AS total_approved 
+             FROM fee_payments 
+             WHERE invoice_id = ? AND school_id = ? AND status IN ('Success', 'success', 'Verified')`,
+            [invoiceId, schoolId]
+          );
+          const totalApproved = parseFloat(sumRows[0]?.total_approved || 0);
+
+          // Check if there are any remaining pending verification payments
+          const [pendingRows] = await connection.query(
+            `SELECT COUNT(*) AS pending_count 
+             FROM fee_payments 
+             WHERE invoice_id = ? AND school_id = ? AND status IN ('Pending Verification', 'pending')`,
+            [invoiceId, schoolId]
+          );
+          const pendingCount = parseInt(pendingRows[0]?.pending_count || 0, 10);
+
+          const invoiceTotal = parseFloat(invoice.total_amount || 0);
+          const newDue = Math.max(0, invoiceTotal - totalApproved);
+
+          let newInvoiceStatus = 'Unpaid';
+          if (pendingCount > 0) {
+            newInvoiceStatus = 'Pending Verification';
+          } else if (newDue <= 0) {
+            newInvoiceStatus = 'Paid';
+          } else if (totalApproved > 0) {
+            newInvoiceStatus = 'Partial';
+          } else {
+            newInvoiceStatus = 'Unpaid';
+          }
+
+          await connection.query(
+            `UPDATE fee_invoices SET 
+               paid_amount = ?, 
+               due_amount = ?, 
+               status = ? 
+             WHERE id = ?`,
+            [totalApproved, newDue, newInvoiceStatus, invoiceId]
+          );
+
+          updatedInvoice = {
+            id: invoiceId,
+            paidAmount: totalApproved,
+            dueAmount: newDue,
+            status: newInvoiceStatus,
+          };
+        }
+      }
+
+      await connection.commit();
+      return {
+        paymentId,
+        newStatus: newPaymentStatus,
+        updatedInvoice,
       };
     } catch (error) {
       await connection.rollback();

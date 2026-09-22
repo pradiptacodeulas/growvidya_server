@@ -81,5 +81,7 @@ router.get('/stats', AdminFeesController.getCollectionStats);
 router.get('/payments', AdminFeesController.getAllPayments);
 router.get('/payments/:id', AdminFeesController.getPaymentById);
 router.post('/payments/collect', AdminFeesController.recordPayment);
+router.patch('/payments/:id/verify', AdminFeesController.verifyPayment);
+router.post('/payments/:id/verify', AdminFeesController.verifyPayment);
 
 module.exports = router;

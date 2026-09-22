@@ -556,7 +556,7 @@ class AdminFeesController {
     try {
       const schoolId = req.user.schoolId;
       const branchId = req.branchId || req.query.branch_id || null;
-      const { student_id, invoice_id, payment_method, date_from, date_to, search } = req.query;
+      const { student_id, invoice_id, payment_method, status, date_from, date_to, search } = req.query;
 
       const payments = await AdminFeesModel.getAllPayments({
         schoolId,
@@ -564,6 +564,7 @@ class AdminFeesController {
         studentId: student_id,
         invoiceId: invoice_id,
         paymentMethod: payment_method,
+        status,
         dateFrom: date_from,
         dateTo: date_to,
         search,
@@ -637,6 +638,48 @@ class AdminFeesController {
       });
 
       return ApiResponse.success(res, `Payment recorded successfully. Receipt No: ${result.receiptNo}`, result, 201);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Verify / Approve or Reject Fee Payment
+   * PATCH /admin/fees/payments/:id/verify
+   */
+  static async verifyPayment(req, res, next) {
+    try {
+      const schoolId = req.user.schoolId;
+      const paymentId = Number(req.params.id);
+      const { action, reason, rejectionReason } = req.body;
+
+      if (!paymentId || isNaN(paymentId)) {
+        return ApiResponse.error(res, 'Valid payment ID is required.', null, 400);
+      }
+
+      const normalizedAction = (action || '').toLowerCase().trim();
+      if (!['approve', 'reject'].includes(normalizedAction)) {
+        return ApiResponse.error(res, 'Action must be either "approve" or "reject".', null, 400);
+      }
+
+      if (normalizedAction === 'reject' && !reason && !rejectionReason) {
+        return ApiResponse.error(res, 'Please provide a reason for rejecting this payment.', null, 400);
+      }
+
+      const result = await AdminFeesModel.verifyPayment({
+        paymentId,
+        schoolId,
+        action: normalizedAction,
+        rejectionReason: reason || rejectionReason || null,
+        verifiedBy: req.user.id || null,
+      });
+
+      const message =
+        normalizedAction === 'approve'
+          ? 'Fee payment approved and verified successfully. Invoice balance and status updated.'
+          : 'Fee payment rejected successfully.';
+
+      return ApiResponse.success(res, message, result);
     } catch (error) {
       next(error);
     }
