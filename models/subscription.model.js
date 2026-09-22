@@ -36,11 +36,15 @@ class SubscriptionModel {
       JOIN subscription_plans p ON s.plan_id = p.id
       WHERE s.school_id = ?
       ORDER BY 
-        CASE s.status 
-          WHEN 'active' THEN 1 
-          WHEN 'trial' THEN 2 
-          WHEN 'expired' THEN 3 
-          ELSE 4 
+        CASE 
+          -- 1. Active paid subscriptions first (annual/monthly with valid end_date)
+          WHEN s.status = 'active' AND p.billing_cycle != 'trial' AND DATEDIFF(s.end_date, CURDATE()) >= 0 THEN 1
+          -- 2. Active trials next (only if valid end_date)
+          WHEN s.status = 'trial' AND DATEDIFF(s.end_date, CURDATE()) >= 0 THEN 2
+          -- 3. Paid subscriptions (even if expired, latest first)
+          WHEN p.billing_cycle != 'trial' THEN 3
+          -- 4. Expired trials
+          ELSE 4
         END ASC,
         s.id DESC
       LIMIT 1
@@ -61,16 +65,27 @@ class SubscriptionModel {
 
     const sub = rows[0];
     const daysLeft = sub.days_left !== null ? Number(sub.days_left) : 0;
-    const isTrial =
-      sub.status === 'trial' ||
-      sub.billing_cycle === 'trial' ||
-      parseFloat(sub.price) === 0 ||
-      (sub.plan_code || '').includes('trial');
+    const planNameLower = (sub.plan_name || '').toLowerCase();
+    const planCodeLower = (sub.plan_code || '').toLowerCase();
+
+    // A subscription is ONLY a trial if its billing cycle is trial or code/name indicates trial,
+    // AND it is not an annual/monthly paid plan (like Starter Plan, Growth Plan, Enterprise Plan).
+    const isTrial = Boolean(
+      (sub.billing_cycle === 'trial' ||
+       planCodeLower.includes('trial') ||
+       planNameLower.includes('trial') ||
+       sub.status === 'trial') &&
+      sub.billing_cycle !== 'annual' &&
+      sub.billing_cycle !== 'monthly' &&
+      !planNameLower.includes('starter') &&
+      !planNameLower.includes('growth') &&
+      !planNameLower.includes('enterprise')
+    );
 
     let liveStatus = sub.status;
     let isExpired = false;
 
-    if (daysLeft < 0 || sub.status === 'expired') {
+    if (daysLeft <= 0 || sub.status === 'expired') {
       liveStatus = 'expired';
       isExpired = true;
 
