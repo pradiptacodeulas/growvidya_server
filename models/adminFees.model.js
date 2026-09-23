@@ -930,9 +930,17 @@ class AdminFeesModel {
         cm.class_name,
         sec.section_name,
         fs.name AS structure_name,
-        ay.academic_year
+        ay.academic_year,
+        sch.school_name,
+        sch.school_code,
+        sch.school_logo,
+        sch.address AS school_address,
+        sch.phone_number AS school_phone,
+        sch.email AS school_email,
+        sch.affiliation_board
       FROM fee_invoices fi
       INNER JOIN student_master sm ON sm.id = fi.student_id
+      LEFT JOIN school_master sch ON sch.id = fi.school_id
       LEFT JOIN branch_master brm ON brm.id = COALESCE(fi.branch_id, sm.branch_id)
       LEFT JOIN class_master cm ON cm.id = fi.class_id
       LEFT JOIN section_master sec ON sec.id = fi.section_id

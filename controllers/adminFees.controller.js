@@ -429,8 +429,18 @@ class AdminFeesController {
 
   static async getInvoiceById(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
-      const { id } = req.params;
+      const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+      let { id } = req.params;
+
+      if (typeof id === 'string' && !/^\d+$/.test(id)) {
+        try {
+          const decoded = Buffer.from(id, 'base64').toString('utf-8');
+          if (/^\d+$/.test(decoded)) {
+            id = decoded;
+          }
+        } catch (e) {}
+      }
+
       const invoice = await AdminFeesModel.getInvoiceById(id, schoolId);
       if (!invoice) {
         return ApiResponse.error(res, 'Fee invoice not found.', null, 404);
