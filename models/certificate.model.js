@@ -307,8 +307,8 @@ class CertificateModel {
       params.push(sectionId, sectionId);
     }
     if (academicYear) {
-      baseWhere += ` AND scl.academic_year = ?`;
-      params.push(academicYear);
+      baseWhere += ` AND (scl.academic_year = ? OR s.academic_year = ?)`;
+      params.push(academicYear, academicYear);
     }
     if (studentId) {
       baseWhere += ` AND sc.student_id = ?`;

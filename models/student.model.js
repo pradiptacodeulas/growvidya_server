@@ -3,7 +3,7 @@ const { saveBase64File } = require('../utils/file.util');
 const { hashPassword } = require('../utils/password.util');
 
 class StudentModel {
-  static async getAll(schoolId, { search = '', classId = '', sectionId = '', status = '', admissionDate = '', branchId = null, limit = 12, offset = 0 } = {}) {
+  static async getAll(schoolId, { search = '', classId = '', sectionId = '', academicYear = '', academic_year = '', academicYearId = '', status = '', admissionDate = '', branchId = null, limit = 12, offset = 0 } = {}) {
     let whereClauses = ['s.school_id = ?', 's.status != 4'];
     const params = [schoolId];
 
@@ -16,6 +16,12 @@ class StudentModel {
       whereClauses.push('s.status = 1');
     } else if (String(status) === '2') {
       whereClauses.push('s.status = 2');
+    }
+
+    const targetAcademicYear = academicYear || academic_year || academicYearId;
+    if (targetAcademicYear && String(targetAcademicYear).trim() && String(targetAcademicYear).toLowerCase() !== 'all') {
+      whereClauses.push('(s.academic_year = ? OR s.academic_year = (SELECT id FROM academic_year_master WHERE academic_year = ? AND (school_id = ? OR school_id IS NULL) LIMIT 1) OR s.academic_year = (SELECT academic_year FROM academic_year_master WHERE id = ? AND (school_id = ? OR school_id IS NULL) LIMIT 1))');
+      params.push(targetAcademicYear, targetAcademicYear, schoolId, targetAcademicYear, schoolId);
     }
 
     if (classId) {

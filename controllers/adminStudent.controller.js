@@ -10,6 +10,7 @@ class AdminStudentController {
       const paramsSrc = { ...req.query, ...req.body };
       
       const search = paramsSrc.search || paramsSrc.name || '';
+      const academicYear = paramsSrc.academicYear || paramsSrc.academic_year || paramsSrc.academicYearId || paramsSrc.academic_year_id || paramsSrc.yearId || paramsSrc.year || '';
       const classId = paramsSrc.classId || paramsSrc.class || paramsSrc.class_id || '';
       const sectionId = paramsSrc.sectionId || paramsSrc.section || paramsSrc.section_id || '';
       const status = paramsSrc.status !== undefined ? paramsSrc.status : '';
@@ -21,6 +22,7 @@ class AdminStudentController {
 
       const { students, total } = await StudentModel.getAll(schoolId, {
         search: String(search).trim(),
+        academicYear,
         classId,
         sectionId,
         status,
