@@ -10,5 +10,6 @@ router.get('/locations/countries', SaasController.getCountries);
 router.get('/locations/states/:countryId', SaasController.getStates);
 router.get('/locations/cities/:stateId', SaasController.getCities);
 router.get('/genders', SaasController.getGenders);
+router.post('/validate-coupon', SaasController.validateCoupon);
 
 module.exports = router;

@@ -34,6 +34,8 @@ class SaasController {
         admin,
         is_trial,
         isTrial,
+        coupon_code,
+        couponCode,
       } = req.body;
 
       const selectedPlanId = plan_id || planId;
@@ -102,6 +104,7 @@ class SaasController {
         academicYearData: academic_year || academicYear || {},
         adminData: admin,
         isTrial: is_trial !== undefined ? is_trial : Boolean(isTrial),
+        couponCode: coupon_code || couponCode,
       });
 
 
@@ -198,7 +201,22 @@ class SaasController {
         );
       }
 
-      const amountInPaise = Math.round(parseFloat(plan.price) * 100);
+      let finalPrice = parseFloat(plan.price);
+      let couponInfo = null;
+
+      const couponCode = req.body.coupon_code || req.body.couponCode;
+      if (couponCode && String(couponCode).trim()) {
+        const SaasAdminModel = require('../models/saasAdmin.model');
+        const validation = await SaasAdminModel.validateCoupon(couponCode, finalPrice);
+        if (validation.valid) {
+          finalPrice = validation.coupon.finalAmount;
+          couponInfo = validation.coupon;
+        } else {
+          return ApiResponse.error(res, validation.message, null, 400);
+        }
+      }
+
+      const amountInPaise = Math.round(finalPrice * 100);
       const receiptId = `REG_${Date.now()}`.slice(0, 40);
 
       const order = await razorpayInstance.orders.create({
@@ -208,6 +226,8 @@ class SaasController {
         notes: {
           plan_id: String(plan.id),
           plan_name: plan.plan_name,
+          coupon_code: couponInfo ? couponInfo.code : null,
+          original_price: String(plan.price),
         },
       });
 
@@ -219,12 +239,36 @@ class SaasController {
         plan_id: plan.id,
         plan_name: plan.plan_name,
         price: plan.price,
+        discount_amount: couponInfo ? couponInfo.discountAmount : 0,
+        final_price: finalPrice,
+        coupon: couponInfo,
       });
     } catch (error) {
       next(error);
     }
   }
-}
 
+  /**
+   * Validate coupon code for registration / plan purchase
+   */
+  static async validateCoupon(req, res, next) {
+    try {
+      const { code, amount } = req.body;
+      if (!code) {
+        return ApiResponse.error(res, 'Coupon code is required.', null, 400);
+      }
+
+      const SaasAdminModel = require('../models/saasAdmin.model');
+      const result = await SaasAdminModel.validateCoupon(code, amount || 0);
+      if (!result.valid) {
+        return ApiResponse.error(res, result.message, null, 400);
+      }
+
+      return ApiResponse.success(res, result.message, result.coupon);
+    } catch (error) {
+      next(error);
+    }
+  }
+}
 
 module.exports = SaasController;

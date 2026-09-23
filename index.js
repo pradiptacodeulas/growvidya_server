@@ -7,6 +7,7 @@ const path = require('path');
 const fs = require('fs');
 
 const config = require('./config/app.config');
+const { corsOptions } = require('./config/cors.config');
 const { testConnection } = require('./config/db.config');
 const { initSocket } = require('./services/socket.service');
 const MessageModel = require('./models/message.model');
@@ -24,13 +25,7 @@ const app = express();
 // 1. Security & Body Parsing Middlewares
 // ==========================================
 app.use(helmet({ crossOriginResourcePolicy: false }));
-
-app.use(
-  cors({
-    origin: config.corsOrigin,
-    credentials: true,
-  })
-);
+app.use(cors(corsOptions));
 
 
 app.use(

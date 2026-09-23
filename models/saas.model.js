@@ -34,6 +34,7 @@ class SaasModel {
     academicYearData = {},
     adminData = {},
     isTrial = false,
+    couponCode = null,
   }) {
     const connection = await pool.getConnection();
     try {
@@ -157,7 +158,20 @@ class SaasModel {
       }
 
       const isTrialMode = Boolean(isTrial) || plan.billing_cycle === 'trial' || parseFloat(plan.price) === 0;
-      const finalAmount = isTrialMode ? 0 : (amountPaid !== undefined ? parseFloat(amountPaid) : parseFloat(plan.price));
+      let couponId = null;
+      let discountAmount = 0;
+      let originalAmount = parseFloat(plan.price) || 0;
+
+      if (!isTrialMode && couponCode && String(couponCode).trim()) {
+        const SaasAdminModel = require('./saasAdmin.model');
+        const couponRes = await SaasAdminModel.validateCoupon(couponCode, originalAmount);
+        if (couponRes.valid) {
+          couponId = couponRes.coupon.id;
+          discountAmount = couponRes.coupon.discountAmount;
+        }
+      }
+
+      const finalAmount = isTrialMode ? 0 : (amountPaid !== undefined ? parseFloat(amountPaid) : Math.max(0, originalAmount - discountAmount));
       const finalTxnId = isTrialMode
         ? (paymentTransactionId || `TRIAL_14DAYS_${Date.now()}_${Math.floor(Math.random() * 10000)}`)
         : (paymentTransactionId || `PAY_DUMMY_${Date.now()}_${Math.floor(Math.random() * 10000)}`);
@@ -181,13 +195,17 @@ class SaasModel {
       // Insert into school_subscriptions
       const insertSubQuery = `
         INSERT INTO school_subscriptions (
-          school_id, plan_id, amount_paid, payment_gateway,
-          payment_transaction_id, payment_status, start_date, end_date, status, created_at
-        ) VALUES (?, ?, ?, ?, ?, 'completed', ?, ?, ?, NOW())
+          school_id, plan_id, coupon_id, original_amount, discount_amount,
+          amount_paid, payment_gateway, payment_transaction_id, payment_status,
+          start_date, end_date, status, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, NOW())
       `;
-      await connection.query(insertSubQuery, [
+      const [subResult] = await connection.query(insertSubQuery, [
         schoolId,
         plan.id,
+        couponId,
+        originalAmount,
+        discountAmount,
         finalAmount,
         finalGateway,
         finalTxnId,
@@ -195,6 +213,18 @@ class SaasModel {
         endDateStr,
         subStatus,
       ]);
+      const subscriptionId = subResult.insertId;
+
+      if (couponId && discountAmount > 0) {
+        await connection.query(
+          'INSERT INTO coupon_usages (coupon_id, school_id, subscription_id, discount_amount, used_at) VALUES (?, ?, ?, ?, NOW())',
+          [couponId, schoolId, subscriptionId, discountAmount]
+        );
+        await connection.query(
+          'UPDATE coupons SET used_count = used_count + 1 WHERE id = ?',
+          [couponId]
+        );
+      }
 
       // 6. Insert initial academic year
       const yearName = (academicYearData.academic_year || `${new Date().getFullYear()} - ${new Date().getFullYear() + 1}`).trim();

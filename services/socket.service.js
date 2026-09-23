@@ -1,6 +1,7 @@
 const { Server } = require('socket.io');
 const { verifyToken } = require('../utils/jwt.util');
 const MessageModel = require('../models/message.model');
+const { isOriginAllowed } = require('../config/cors.config');
 
 let io = null;
 
@@ -35,9 +36,15 @@ function isCommunicationAllowed(senderRole, receiverRole) {
 function initSocket(server, config) {
   io = new Server(server, {
     cors: {
-      origin: config.corsOrigin || '*',
+      origin: (origin, callback) => {
+        if (isOriginAllowed(origin)) {
+          callback(null, true);
+        } else {
+          callback(new Error(`Socket.IO CORS blocked for origin: ${origin}`));
+        }
+      },
       credentials: true,
-      methods: ['GET', 'POST'],
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     },
     pingTimeout: 60000,
     pingInterval: 25000,

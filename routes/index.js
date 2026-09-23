@@ -48,6 +48,7 @@ const studentPortalRoutes = require('./studentPortal.routes');
 const uploadRoutes = require('./upload.routes');
 const commonOptionsRoutes = require('./commonOptions.routes');
 const saasRoutes = require('./saas.routes');
+const saasAdminRoutes = require('./saasAdmin.routes');
 const webhookRoutes = require('./webhook.routes');
 const messageRoutes = require('./message.routes');
 const schoolRoutes = require('./school.routes');
@@ -75,6 +76,10 @@ router.use('/webhooks', webhookRoutes);
 // SaaS Pricing & Registration Onboarding
 router.use('/v1/saas', saasRoutes);
 router.use('/saas', saasRoutes);
+
+// SaaS Platform Master Admin
+router.use('/v1/saas-admin', saasAdminRoutes);
+router.use('/saas-admin', saasAdminRoutes);
 
 // ==========================================
 // 2. Subscription & Trial Guard
