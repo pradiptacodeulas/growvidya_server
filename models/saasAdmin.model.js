@@ -7,21 +7,130 @@ class SaasAdminModel {
   // ========================================================
   static async findByEmail(email) {
     const [rows] = await pool.query(
-      'SELECT * FROM saas_admin_users WHERE email = ? LIMIT 1',
+      `SELECT 
+        sau.*, 
+        sau.gender AS gender_id, 
+        gm.gender AS gender_name,
+        COALESCE(sr.role_name, IF(sau.role = 'superadmin', 'Super Admin', 'Sub Admin')) AS role_name
+      FROM saas_admin_users sau 
+      LEFT JOIN gender_master gm ON sau.gender = gm.id 
+      LEFT JOIN saas_roles sr ON sau.role_id = sr.id
+      WHERE sau.email = ? 
+      LIMIT 1`,
       [email.toLowerCase().trim()]
     );
-    return rows[0] || null;
+    if (rows.length === 0) return null;
+    const user = rows[0];
+
+    // Fetch permissions
+    if (user.role === 'superadmin') {
+      const [modules] = await pool.query('SELECT module_key, module_name FROM saas_modules WHERE status = 1 ORDER BY display_order ASC');
+      user.permissions = modules.map(m => ({
+        module_key: m.module_key,
+        module_name: m.module_name,
+        can_view: 1,
+        can_add: 1,
+        can_edit: 1,
+        can_delete: 1,
+        can_manage: 1,
+      }));
+    } else if (user.role_id) {
+      const [perms] = await pool.query(`
+        SELECT 
+          srp.module_key, 
+          sm.module_name,
+          srp.can_view, 
+          srp.can_add, 
+          srp.can_edit, 
+          srp.can_delete, 
+          srp.can_manage
+        FROM saas_role_permissions srp
+        JOIN saas_modules sm ON srp.module_key = sm.module_key
+        WHERE srp.role_id = ?
+        ORDER BY sm.display_order ASC
+      `, [user.role_id]);
+      user.permissions = perms;
+    } else {
+      user.permissions = [];
+    }
+
+    return user;
   }
 
   static async findById(id) {
     const [rows] = await pool.query(
-      'SELECT id, first_name, last_name, gender, profile_image, phone_number, email, role, status, created_at, updated_at FROM saas_admin_users WHERE id = ? LIMIT 1',
+      `SELECT 
+        sau.id, 
+        sau.first_name, 
+        sau.last_name, 
+        sau.gender, 
+        sau.gender AS gender_id, 
+        gm.gender AS gender_name, 
+        sau.profile_image, 
+        sau.phone_number, 
+        sau.email, 
+        sau.role, 
+        sau.role_id,
+        COALESCE(sr.role_name, IF(sau.role = 'superadmin', 'Super Admin', 'Sub Admin')) AS role_name,
+        sau.status, 
+        sau.created_at, 
+        sau.updated_at 
+      FROM saas_admin_users sau 
+      LEFT JOIN gender_master gm ON sau.gender = gm.id 
+      LEFT JOIN saas_roles sr ON sau.role_id = sr.id
+      WHERE sau.id = ? 
+      LIMIT 1`,
       [id]
     );
-    return rows[0] || null;
+    if (rows.length === 0) return null;
+    const user = rows[0];
+
+    // Fetch permissions
+    if (user.role === 'superadmin') {
+      const [modules] = await pool.query('SELECT module_key, module_name FROM saas_modules WHERE status = 1 ORDER BY display_order ASC');
+      user.permissions = modules.map(m => ({
+        module_key: m.module_key,
+        module_name: m.module_name,
+        can_view: 1,
+        can_add: 1,
+        can_edit: 1,
+        can_delete: 1,
+        can_manage: 1,
+      }));
+    } else if (user.role_id) {
+      const [perms] = await pool.query(`
+        SELECT 
+          srp.module_key, 
+          sm.module_name,
+          srp.can_view, 
+          srp.can_add, 
+          srp.can_edit, 
+          srp.can_delete, 
+          srp.can_manage
+        FROM saas_role_permissions srp
+        JOIN saas_modules sm ON srp.module_key = sm.module_key
+        WHERE srp.role_id = ?
+        ORDER BY sm.display_order ASC
+      `, [user.role_id]);
+      user.permissions = perms;
+    } else {
+      user.permissions = [];
+    }
+
+    return user;
   }
 
-  static async updateProfile(id, { first_name, last_name, gender, profile_image, phone_number, email, password, name }) {
+  /**
+   * Fetch all genders from gender_master
+   */
+  static async getGenders() {
+    const [rows] = await pool.query(
+      'SELECT id, gender, gender AS name FROM gender_master ORDER BY id ASC'
+    );
+    return rows;
+  }
+
+  static async updateProfile(id, { first_name, last_name, gender, gender_id, profile_image, phone_number, email, password, name }) {
     const updates = [];
     const params = [];
 
@@ -44,9 +153,35 @@ class SaasAdminModel {
       params.push(lName ? String(lName).trim() : null);
     }
 
-    if (gender !== undefined) {
+    // Gender field stores the gender ID referencing gender_master(id)
+    const genderInput = gender_id !== undefined ? gender_id : gender;
+    if (genderInput !== undefined) {
+      let resolvedGenderId = null;
+      if (genderInput !== null && String(genderInput).trim() !== '') {
+        const rawStr = String(genderInput).trim();
+        if (/^\d+$/.test(rawStr)) {
+          const [gmRows] = await pool.query('SELECT id, gender FROM gender_master WHERE id = ? LIMIT 1', [Number(rawStr)]);
+          if (gmRows.length === 0) {
+            const err = new Error(`Invalid gender ID '${genderInput}'. Please provide a valid ID from gender_master.`);
+            err.statusCode = 400;
+            throw err;
+          }
+          resolvedGenderId = gmRows[0].id;
+        } else {
+          const [gmRows] = await pool.query(
+            'SELECT id, gender FROM gender_master WHERE LOWER(gender) = LOWER(?) OR (LOWER(?) = "other" AND LOWER(gender) = "others") LIMIT 1',
+            [rawStr, rawStr]
+          );
+          if (gmRows.length === 0) {
+            const err = new Error(`Invalid gender '${genderInput}'. Please provide a valid gender ID or name from gender_master.`);
+            err.statusCode = 400;
+            throw err;
+          }
+          resolvedGenderId = gmRows[0].id;
+        }
+      }
       updates.push('gender = ?');
-      params.push(gender ? String(gender).trim().toLowerCase() : null);
+      params.push(resolvedGenderId);
     }
 
     if (profile_image !== undefined) {
@@ -611,32 +746,59 @@ class SaasAdminModel {
   // ========================================================
   // 6. COUPON MANAGEMENT
   // ========================================================
-  static async getAllCoupons({ search = '', status = '' } = {}) {
+  static async getAllCoupons({ search = '', status = '', discount_type = '', page = 1, limit = 10 } = {}) {
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.max(1, parseInt(limit, 10) || 10);
+    const offset = (pageNum - 1) * limitNum;
+
     let conditions = [];
     let params = [];
 
     if (status !== '' && status !== undefined && status !== 'all') {
-      conditions.push('status = ?');
+      conditions.push('c.status = ?');
       params.push(parseInt(status, 10));
     }
 
+    if (discount_type && discount_type !== 'all') {
+      conditions.push('c.discount_type = ?');
+      params.push(discount_type.trim().toLowerCase());
+    }
+
     if (search && search.trim()) {
-      conditions.push('(code LIKE ? OR description LIKE ?)');
+      conditions.push('(c.code LIKE ? OR c.description LIKE ?)');
       const term = `%${search.trim()}%`;
       params.push(term, term);
     }
 
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const countQuery = `SELECT COUNT(*) AS total FROM coupons c ${where}`;
+    const [countRows] = await pool.query(countQuery, params);
+    const total = countRows[0]?.total || 0;
+
     const query = `
       SELECT c.*,
              (SELECT COUNT(*) FROM coupon_usages cu WHERE cu.coupon_id = c.id) AS total_redemptions,
-             (SELECT SUM(discount_amount) FROM coupon_usages cu WHERE cu.coupon_id = c.id) AS total_discount_given
+             (SELECT IFNULL(SUM(discount_amount), 0.00) FROM coupon_usages cu WHERE cu.coupon_id = c.id) AS total_discount_given
       FROM coupons c
       ${where}
       ORDER BY c.id DESC
+      LIMIT ? OFFSET ?
     `;
-    const [rows] = await pool.query(query, params);
-    return rows;
+    const [coupons] = await pool.query(query, [...params, limitNum, offset]);
+    const totalPages = Math.ceil(total / limitNum) || 1;
+
+    return {
+      coupons,
+      pagination: {
+        total,
+        page: pageNum,
+        limit: limitNum,
+        totalPages,
+        hasNextPage: pageNum < totalPages,
+        hasPrevPage: pageNum > 1,
+      },
+    };
   }
 
   static async getCouponById(id) {

@@ -72,7 +72,24 @@ const saasAdminAuthMiddleware = async (req, res, next) => {
 
     const adminId = decoded.userId || decoded.id;
     const [rows] = await pool.query(
-      'SELECT id, first_name, last_name, gender, profile_image, phone_number, email, role, status, created_at FROM saas_admin_users WHERE id = ? AND status = 1 LIMIT 1',
+      `SELECT 
+        sau.id, 
+        sau.first_name, 
+        sau.last_name, 
+        sau.gender, 
+        sau.gender AS gender_id, 
+        gm.gender AS gender_name, 
+        sau.profile_image, 
+        sau.phone_number, 
+        sau.email, 
+        sau.role, 
+        sau.role_id,
+        sau.status, 
+        sau.created_at 
+      FROM saas_admin_users sau
+      LEFT JOIN gender_master gm ON sau.gender = gm.id
+      WHERE sau.id = ? AND sau.status = 1 
+      LIMIT 1`,
       [adminId]
     );
 

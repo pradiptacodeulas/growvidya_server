@@ -1,4 +1,5 @@
 const SaasAdminModel = require('../models/saasAdmin.model');
+const SaasRoleModel = require('../models/saasRole.model');
 const CouponModel = require('../models/coupon.model');
 const ApiResponse = require('../utils/api.response');
 const { generateToken } = require('../utils/jwt.util');
@@ -35,6 +36,7 @@ class SaasAdminController {
         userId: user.id,
         email: user.email,
         role: user.role,
+        roleId: user.role_id || null,
         portalType: 'SaaSAdminPortal',
       });
 
@@ -54,12 +56,17 @@ class SaasAdminController {
           id: user.id,
           first_name: user.first_name || null,
           last_name: user.last_name || null,
-          gender: user.gender || null,
+          gender: user.gender !== null && user.gender !== undefined ? Number(user.gender) : null,
+          gender_id: user.gender !== null && user.gender !== undefined ? Number(user.gender) : null,
+          gender_name: user.gender_name || null,
           profile_image: user.profile_image || null,
           phone_number: user.phone_number || null,
           email: user.email,
           role: user.role,
+          role_id: user.role_id || null,
+          role_name: user.role_name || null,
           status: user.status,
+          permissions: user.permissions || [],
         },
       });
     } catch (error) {
@@ -79,6 +86,15 @@ class SaasAdminController {
     }
   }
 
+  static async getGenders(req, res, next) {
+    try {
+      const genders = await SaasAdminModel.getGenders();
+      return ApiResponse.success(res, 'Genders retrieved successfully.', genders);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   static async logout(req, res, next) {
     try {
       res.clearCookie('saas_admin_token');
@@ -91,16 +107,28 @@ class SaasAdminController {
 
   static async updateProfile(req, res, next) {
     try {
-      const { first_name, last_name, gender, profile_image, phone_number, email, password } = req.body;
+      const { first_name, last_name, gender, gender_id, profile_image, phone_number, email, password } = req.body;
 
-      if (email && !email.includes('@')) {
-        return ApiResponse.error(res, 'Please provide a valid email address.', null, 400);
+      if (first_name !== undefined && (!first_name || String(first_name).trim() === '')) {
+        return ApiResponse.error(res, 'First name cannot be empty.', null, 400);
       }
 
-      if (email && email.toLowerCase().trim() !== req.saasAdmin.email.toLowerCase().trim()) {
-        const existing = await SaasAdminModel.findByEmail(email);
-        if (existing && existing.id !== req.saasAdmin.id) {
-          return ApiResponse.error(res, 'This email address is already in use by another admin.', null, 400);
+      if (email !== undefined) {
+        if (!email || !email.includes('@') || !email.includes('.')) {
+          return ApiResponse.error(res, 'Please provide a valid email address.', null, 400);
+        }
+        if (email.toLowerCase().trim() !== req.saasAdmin.email.toLowerCase().trim()) {
+          const existing = await SaasAdminModel.findByEmail(email);
+          if (existing && existing.id !== req.saasAdmin.id) {
+            return ApiResponse.error(res, 'This email address is already in use by another admin.', null, 400);
+          }
+        }
+      }
+
+      if (phone_number !== undefined && phone_number !== null && String(phone_number).trim() !== '') {
+        const cleanPhone = String(phone_number).replace(/[\s\-\(\)]/g, '');
+        if (!/^\+?[0-9]{7,15}$/.test(cleanPhone)) {
+          return ApiResponse.error(res, 'Please provide a valid phone number (7 to 15 digits).', null, 400);
         }
       }
 
@@ -108,6 +136,7 @@ class SaasAdminController {
         first_name,
         last_name,
         gender,
+        gender_id,
         profile_image,
         phone_number,
         email,
@@ -121,6 +150,9 @@ class SaasAdminController {
       const user = await SaasAdminModel.findById(req.saasAdmin.id);
       return ApiResponse.success(res, 'Profile updated successfully.', user);
     } catch (error) {
+      if (error.statusCode === 400 || (error.message && error.message.includes('Invalid gender'))) {
+        return ApiResponse.error(res, error.message, null, 400);
+      }
       next(error);
     }
   }
@@ -431,11 +463,9 @@ class SaasAdminController {
   }
 
   // ========================================================
-  // 6. COUPON MANAGEMENT
-  // ========================================================
   static async getCoupons(req, res, next) {
     try {
-      const { search, status, id, coupon_id, couponId, code } = req.query;
+      const { search, status, discount_type, discountType, page, limit, id, coupon_id, couponId, code } = req.query;
 
       // If specific coupon id or code is provided in query, body, or header, delegate to getCouponById
       const targetId =
@@ -452,8 +482,14 @@ class SaasAdminController {
         return SaasAdminController.getCouponById(req, res, next);
       }
 
-      const coupons = await SaasAdminModel.getAllCoupons({ search, status });
-      return ApiResponse.success(res, 'Coupons retrieved successfully.', coupons);
+      const result = await SaasAdminModel.getAllCoupons({
+        search,
+        status,
+        discount_type: discount_type || discountType,
+        page,
+        limit,
+      });
+      return ApiResponse.success(res, 'Coupons retrieved successfully.', result);
     } catch (error) {
       next(error);
     }
@@ -624,6 +660,282 @@ class SaasAdminController {
 
       return ApiResponse.success(res, result.message, result.coupon);
     } catch (error) {
+      next(error);
+    }
+  }
+
+  // ========================================================
+  // 8. MODULES & ROLES MANAGEMENT
+  // ========================================================
+  static async getModules(req, res, next) {
+    try {
+      const modules = await SaasRoleModel.getModules();
+      return ApiResponse.success(res, 'SaaS modules retrieved successfully.', modules);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getRoles(req, res, next) {
+    try {
+      const { search, status } = req.query;
+      const roles = await SaasRoleModel.getAllRoles({ search, status });
+      return ApiResponse.success(res, 'SaaS roles retrieved successfully.', roles);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getRoleById(req, res, next) {
+    try {
+      const { id } = req.params;
+      const role = await SaasRoleModel.getRoleById(id);
+      if (!role) {
+        return ApiResponse.notFound(res, 'Role not found.');
+      }
+      return ApiResponse.success(res, 'Role details retrieved successfully.', role);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async createRole(req, res, next) {
+    try {
+      const { role_name, description, permissions } = req.body;
+      if (!role_name || !String(role_name).trim()) {
+        return ApiResponse.error(res, 'Role name is required.', null, 400);
+      }
+
+      const role = await SaasRoleModel.createRole({
+        role_name,
+        description,
+        permissions,
+      });
+      return ApiResponse.success(res, 'Role created successfully.', role, 201);
+    } catch (error) {
+      if (error.statusCode === 400) {
+        return ApiResponse.error(res, error.message, null, 400);
+      }
+      next(error);
+    }
+  }
+
+  static async updateRole(req, res, next) {
+    try {
+      const { id } = req.params;
+      const { role_name, description, status, permissions } = req.body;
+
+      const role = await SaasRoleModel.updateRole(id, {
+        role_name,
+        description,
+        status,
+        permissions,
+      });
+      if (!role) {
+        return ApiResponse.notFound(res, 'Role not found.');
+      }
+      return ApiResponse.success(res, 'Role updated successfully.', role);
+    } catch (error) {
+      if (error.statusCode === 400) {
+        return ApiResponse.error(res, error.message, null, 400);
+      }
+      next(error);
+    }
+  }
+
+  static async deleteRole(req, res, next) {
+    try {
+      const { id } = req.params;
+      const result = await SaasRoleModel.deleteRole(id);
+      if (result.notFound) {
+        return ApiResponse.notFound(res, 'Role not found.');
+      }
+      return ApiResponse.success(res, 'Role deleted successfully.');
+    } catch (error) {
+      if (error.statusCode === 400) {
+        return ApiResponse.error(res, error.message, null, 400);
+      }
+      next(error);
+    }
+  }
+
+  // ========================================================
+  // 9. SUB ADMIN USERS MANAGEMENT
+  // ========================================================
+  static async getSubAdmins(req, res, next) {
+    try {
+      const { search, status, role_id, page, limit } = req.query;
+      const result = await SaasRoleModel.getAllSubAdmins({
+        search,
+        status,
+        role_id,
+        page,
+        limit,
+      });
+      return ApiResponse.success(res, 'Sub-admin users retrieved successfully.', result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getSubAdminById(req, res, next) {
+    try {
+      const { id } = req.params;
+      const subAdmin = await SaasRoleModel.getSubAdminById(id);
+      if (!subAdmin) {
+        return ApiResponse.notFound(res, 'Sub-admin user not found.');
+      }
+      return ApiResponse.success(res, 'Sub-admin details retrieved successfully.', subAdmin);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async createSubAdmin(req, res, next) {
+    try {
+      const {
+        first_name,
+        last_name,
+        email,
+        password,
+        gender,
+        gender_id,
+        phone_number,
+        profile_image,
+        role_id,
+        status,
+      } = req.body;
+
+      if (!first_name || !String(first_name).trim()) {
+        return ApiResponse.error(res, 'First name is required.', null, 400);
+      }
+      if (!email || !email.includes('@') || !email.includes('.')) {
+        return ApiResponse.error(res, 'A valid email address is required.', null, 400);
+      }
+      if (!password || password.length < 6) {
+        return ApiResponse.error(res, 'Password is required and must be at least 6 characters.', null, 400);
+      }
+      if (!role_id) {
+        return ApiResponse.error(res, 'A valid role_id is required.', null, 400);
+      }
+
+      if (phone_number && !/^\+?[0-9]{7,15}$/.test(String(phone_number).replace(/[\s\-\(\)]/g, ''))) {
+        return ApiResponse.error(res, 'Please provide a valid phone number (7 to 15 digits).', null, 400);
+      }
+
+      const subAdmin = await SaasRoleModel.createSubAdmin({
+        first_name,
+        last_name,
+        email,
+        password,
+        gender: gender_id !== undefined ? gender_id : gender,
+        phone_number,
+        profile_image,
+        role_id,
+        status,
+      });
+
+      return ApiResponse.success(res, 'Sub-admin user created successfully.', subAdmin, 201);
+    } catch (error) {
+      if (error.statusCode === 400) {
+        return ApiResponse.error(res, error.message, null, 400);
+      }
+      next(error);
+    }
+  }
+
+  static async updateSubAdmin(req, res, next) {
+    try {
+      const { id } = req.params;
+      const {
+        first_name,
+        last_name,
+        email,
+        password,
+        gender,
+        gender_id,
+        phone_number,
+        profile_image,
+        role_id,
+        status,
+      } = req.body;
+
+      if (first_name !== undefined && String(first_name).trim() === '') {
+        return ApiResponse.error(res, 'First name cannot be empty.', null, 400);
+      }
+      if (email !== undefined && (!email.includes('@') || !email.includes('.'))) {
+        return ApiResponse.error(res, 'Please provide a valid email address.', null, 400);
+      }
+      if (password !== undefined && password && password.length < 6) {
+        return ApiResponse.error(res, 'Password must be at least 6 characters long.', null, 400);
+      }
+      if (phone_number !== undefined && phone_number !== null && String(phone_number).trim() !== '') {
+        if (!/^\+?[0-9]{7,15}$/.test(String(phone_number).replace(/[\s\-\(\)]/g, ''))) {
+          return ApiResponse.error(res, 'Please provide a valid phone number (7 to 15 digits).', null, 400);
+        }
+      }
+
+      const updated = await SaasRoleModel.updateSubAdmin(id, {
+        first_name,
+        last_name,
+        email,
+        password,
+        gender,
+        gender_id,
+        phone_number,
+        profile_image,
+        role_id,
+        status,
+      });
+
+      if (!updated) {
+        return ApiResponse.notFound(res, 'Sub-admin user not found.');
+      }
+
+      return ApiResponse.success(res, 'Sub-admin user updated successfully.', updated);
+    } catch (error) {
+      if (error.statusCode === 400) {
+        return ApiResponse.error(res, error.message, null, 400);
+      }
+      next(error);
+    }
+  }
+
+  static async deleteSubAdmin(req, res, next) {
+    try {
+      const { id } = req.params;
+      const result = await SaasRoleModel.deleteSubAdmin(id);
+      if (result.notFound) {
+        return ApiResponse.notFound(res, 'Sub-admin user not found.');
+      }
+      return ApiResponse.success(res, 'Sub-admin user deleted successfully.');
+    } catch (error) {
+      if (error.statusCode === 400) {
+        return ApiResponse.error(res, error.message, null, 400);
+      }
+      next(error);
+    }
+  }
+
+  static async toggleSubAdminStatus(req, res, next) {
+    try {
+      const { id } = req.params;
+      const { status } = req.body;
+      if (status === undefined || (Number(status) !== 0 && Number(status) !== 1)) {
+        return ApiResponse.error(res, 'Status must be 0 (inactive) or 1 (active).', null, 400);
+      }
+
+      const updated = await SaasRoleModel.toggleSubAdminStatus(id, status);
+      if (!updated) {
+        return ApiResponse.notFound(res, 'Sub-admin user not found.');
+      }
+
+      const user = await SaasRoleModel.getSubAdminById(id);
+      return ApiResponse.success(res, `Sub-admin status updated to ${status == 1 ? 'active' : 'inactive'}.`, user);
+    } catch (error) {
+      if (error.statusCode === 400) {
+        return ApiResponse.error(res, error.message, null, 400);
+      }
       next(error);
     }
   }

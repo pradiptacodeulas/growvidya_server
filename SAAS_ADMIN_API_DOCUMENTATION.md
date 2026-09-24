@@ -77,7 +77,9 @@ Authorization: Bearer <JWT_TOKEN>
       "id": 1,
       "first_name": "Super",
       "last_name": "Administrator",
-      "gender": "male",
+      "gender": 1,
+      "gender_id": 1,
+      "gender_name": "Male",
       "profile_image": "upload/admin/profile_pic/admin_avatar.png",
       "phone_number": "9876543210",
       "email": "superadmin@growvidya.com",
@@ -100,7 +102,9 @@ Authorization: Bearer <JWT_TOKEN>
     "id": 1,
     "first_name": "Super",
     "last_name": "Administrator",
-    "gender": "male",
+    "gender": 1,
+    "gender_id": 1,
+    "gender_name": "Male",
     "profile_image": "upload/admin/profile_pic/admin_avatar.png",
     "phone_number": "9876543210",
     "email": "superadmin@growvidya.com",
@@ -120,16 +124,33 @@ Authorization: Bearer <JWT_TOKEN>
 {
   "first_name": "Super",
   "last_name": "Administrator",
-  "gender": "male", // "male" | "female" | "other"
+  "gender": 1, // Stores gender ID referencing gender_master (1 = Male, 2 = Female, 3 = Others)
   "phone_number": "9876543210",
   "profile_image": "data:image/png;base64,iVBORw0KGgo...", // Base64 data string (auto-saved to disk) or URL
   "email": "superadmin@growvidya.com",
   "password": "NewSecurePassword123" // Optional: only if changing password
 }
 ```
-* **Success Response (200 OK):** Returns the updated profile object.
+* **Success Response (200 OK):** Returns the updated profile object with `gender`, `gender_id`, and `gender_name`.
 
-#### 4. Logout
+#### 4. Get Gender Master List
+* **Method & Path:** `GET /api/v1/saas-admin/genders` (or `GET /api/v1/saas/genders`)
+* **Access:** Public / Protected
+* **Description:** Retrieves the list of available genders from `gender_master` to populate dropdown selections.
+* **Success Response (200 OK):**
+```json
+{
+  "success": true,
+  "message": "Genders retrieved successfully.",
+  "data": [
+    { "id": 1, "gender": "Male", "name": "Male" },
+    { "id": 2, "gender": "Female", "name": "Female" },
+    { "id": 3, "gender": "Others", "name": "Others" }
+  ]
+}
+```
+
+#### 5. Logout
 * **Method & Path:** `POST /api/v1/saas-admin/logout`
 * **Access:** Protected (`Bearer <token>`)
 * **Success Response (200 OK):** Clears session cookies.
@@ -424,35 +445,48 @@ Authorization: Bearer <JWT_TOKEN>
 
 ### 3.6 Coupon Management
 
-#### 1. List All Coupons
-* **Method & Path:** `GET /api/v1/saas-admin/coupons`
-* **Access:** Protected
+#### 1. List All Coupons (Paginated)
+* **Method & Path:** `GET /api/v1/saas-admin/coupons` (or `GET /api/v1/coupons`)
+* **Access:** Protected (`Bearer <token>`)
 * **Query Parameters:**
+  * `page` *(number, optional, default: 1)*: Page number.
+  * `limit` *(number, optional, default: 10)*: Records per page.
   * `search` *(string, optional)*: Filter by code or description.
-  * `status` *(number, optional)*: `1` or `0`.
+  * `status` *(number, optional)*: `1` (active) or `0` (inactive).
+  * `discount_type` *(string, optional)*: `'percentage'` or `'fixed'`.
 * **Success Response (200 OK):**
 ```json
 {
   "success": true,
   "message": "Coupons retrieved successfully.",
-  "data": [
-    {
-      "id": 1,
-      "code": "WELCOME50",
-      "description": "50% discount on first school registration",
-      "discount_type": "percentage",
-      "discount_value": "50.00",
-      "min_order_amount": "0.00",
-      "max_discount_amount": "5000.00",
-      "start_date": "2026-01-01",
-      "end_date": "2026-12-31",
-      "max_uses": 100,
-      "used_count": 4,
-      "status": 1,
-      "total_redemptions": 4,
-      "total_discount_given": "18000.00"
+  "data": {
+    "coupons": [
+      {
+        "id": 1,
+        "code": "WELCOME50",
+        "description": "50% discount on first school registration",
+        "discount_type": "percentage",
+        "discount_value": "50.00",
+        "min_order_amount": "0.00",
+        "max_discount_amount": "5000.00",
+        "start_date": "2026-01-01",
+        "end_date": "2026-12-31",
+        "max_uses": 100,
+        "used_count": 4,
+        "status": 1,
+        "total_redemptions": 4,
+        "total_discount_given": "18000.00"
+      }
+    ],
+    "pagination": {
+      "total": 2,
+      "page": 1,
+      "limit": 10,
+      "totalPages": 1,
+      "hasNextPage": false,
+      "hasPrevPage": false
     }
-  ]
+  }
 }
 ```
 
@@ -639,6 +673,178 @@ Both the SaaS Admin Portal and the School Registration / Checkout interface can 
 
 ---
 
+### 3.8 Roles & Permission Management (RBAC)
+
+#### 1. List Available SaaS Modules
+* **Method & Path:** `GET /api/v1/saas-admin/modules`
+* **Access:** Protected (`Bearer <token>`)
+* **Success Response (200 OK):**
+```json
+{
+  "success": true,
+  "message": "SaaS modules retrieved successfully.",
+  "data": [
+    { "id": 1, "module_key": "dashboard", "module_name": "Dashboard & Analytics", "display_order": 1 },
+    { "id": 2, "module_key": "schools", "module_name": "School Management", "display_order": 2 },
+    { "id": 3, "module_key": "subscriptions", "module_name": "Subscriptions & Payments", "display_order": 3 },
+    { "id": 4, "module_key": "packages", "module_name": "Packages & Plans", "display_order": 4 },
+    { "id": 5, "module_key": "coupons", "module_name": "Coupon Management", "display_order": 5 },
+    { "id": 6, "module_key": "storage_plans", "module_name": "Storage Plans", "display_order": 6 },
+    { "id": 7, "module_key": "roles", "module_name": "Roles & Permissions", "display_order": 7 },
+    { "id": 8, "module_key": "sub_admins", "module_name": "Sub Admin Users", "display_order": 8 }
+  ]
+}
+```
+
+#### 2. List All Roles
+* **Method & Path:** `GET /api/v1/saas-admin/roles`
+* **Access:** Protected
+* **Query Parameters:** `search`, `status`
+* **Success Response (200 OK):** Returns all roles with assigned user counts and active module counts.
+
+#### 3. Get Role Details with Permissions
+* **Method & Path:** `GET /api/v1/saas-admin/roles/:id`
+* **Access:** Protected
+* **Success Response (200 OK):**
+```json
+{
+  "success": true,
+  "message": "Role details retrieved successfully.",
+  "data": {
+    "id": 2,
+    "role_name": "Operations Manager",
+    "description": "Can manage schools, subscriptions, coupons, and storage plans",
+    "is_system": 0,
+    "status": 1,
+    "assigned_users_count": 3,
+    "permissions": [
+      {
+        "module_key": "schools",
+        "module_name": "School Management",
+        "can_view": 1,
+        "can_add": 1,
+        "can_edit": 1,
+        "can_delete": 0,
+        "can_manage": 1
+      },
+      {
+        "module_key": "coupons",
+        "module_name": "Coupon Management",
+        "can_view": 1,
+        "can_add": 1,
+        "can_edit": 1,
+        "can_delete": 1,
+        "can_manage": 1
+      }
+    ]
+  }
+}
+```
+
+#### 4. Create Role
+* **Method & Path:** `POST /api/v1/saas-admin/roles`
+* **Access:** Protected
+* **Request Body:**
+```json
+{
+  "role_name": "Support Executive",
+  "description": "Read-only access to schools and subscriptions",
+  "permissions": [
+    { "module_key": "schools", "can_view": 1, "can_add": 0, "can_edit": 0, "can_delete": 0, "can_manage": 0 },
+    { "module_key": "subscriptions", "can_view": 1, "can_add": 0, "can_edit": 0, "can_delete": 0, "can_manage": 0 }
+  ]
+}
+```
+
+#### 5. Update Role
+* **Method & Path:** `PUT /api/v1/saas-admin/roles/:id`
+* **Access:** Protected
+* **Request Body:** Same format as Create Role. System roles (like Super Admin) cannot be renamed or deactivated.
+
+#### 6. Delete Role
+* **Method & Path:** `DELETE /api/v1/saas-admin/roles/:id`
+* **Access:** Protected
+* **Constraints:** Cannot delete system roles or roles currently assigned to sub-admins.
+
+---
+
+### 3.9 Sub-Admin Users Management
+
+#### 1. List Sub-Admin Users (Paginated)
+* **Method & Path:** `GET /api/v1/saas-admin/sub-admins`
+* **Access:** Protected
+* **Query Parameters:** `page`, `limit`, `search`, `status`, `role_id`
+* **Success Response (200 OK):**
+```json
+{
+  "success": true,
+  "message": "Sub-admin users retrieved successfully.",
+  "data": {
+    "sub_admins": [
+      {
+        "id": 2,
+        "first_name": "Rajesh",
+        "last_name": "Sharma",
+        "email": "rajesh.ops@growvidya.com",
+        "gender": 1,
+        "gender_name": "Male",
+        "phone_number": "9876543210",
+        "role": "subadmin",
+        "role_id": 2,
+        "role_name": "Operations Manager",
+        "status": 1
+      }
+    ],
+    "pagination": {
+      "total": 1,
+      "page": 1,
+      "limit": 10,
+      "totalPages": 1,
+      "hasNextPage": false,
+      "hasPrevPage": false
+    }
+  }
+}
+```
+
+#### 2. Get Sub-Admin by ID
+* **Method & Path:** `GET /api/v1/saas-admin/sub-admins/:id`
+* **Access:** Protected
+
+#### 3. Create Sub-Admin User
+* **Method & Path:** `POST /api/v1/saas-admin/sub-admins`
+* **Access:** Protected
+* **Request Body:**
+```json
+{
+  "first_name": "Rajesh",
+  "last_name": "Sharma",
+  "email": "rajesh.ops@growvidya.com",
+  "password": "SecurePassword123",
+  "gender": 1, // gender_master.id
+  "phone_number": "9876543210",
+  "profile_image": null,
+  "role_id": 2, // saas_roles.id
+  "status": 1
+}
+```
+
+#### 4. Update Sub-Admin User
+* **Method & Path:** `PUT /api/v1/saas-admin/sub-admins/:id`
+* **Access:** Protected
+* **Request Body:** Accepts `first_name`, `last_name`, `email`, `password`, `gender`, `phone_number`, `profile_image`, `role_id`, `status`.
+
+#### 5. Toggle Sub-Admin Status (Active / Inactive)
+* **Method & Path:** `PATCH /api/v1/saas-admin/sub-admins/:id/status`
+* **Access:** Protected
+* **Request Body:** `{"status": 1}` or `{"status": 0}`
+
+#### 6. Delete Sub-Admin User
+* **Method & Path:** `DELETE /api/v1/saas-admin/sub-admins/:id`
+* **Access:** Protected
+
+---
+
 ## 4. Integration with School Registration & Razorpay
 
 When a new school registers and pays using a coupon:
@@ -662,18 +868,22 @@ The server automatically stores `coupon_id`, `original_amount`, and `discount_am
 
 ## 5. Summary Checklist for the Client Developer
 
-| Feature | Routes to Consume |
-|---|---|
-| **Login & Logout** | `POST /login`, `GET /profile`, `POST /logout` |
-| **Profile Management** | `GET /profile`, `PUT /profile` |
-| **Dashboard** | `GET /dashboard/stats` |
-| **Schools Directory** | `GET /schools`, `GET /schools/:id` |
-| **Activate / Deactivate School** | `PATCH /schools/:id/status` |
-| **Edit School Info** | `PUT /schools/:id` |
-| **Subscriptions & Payment Verification** | `GET /subscriptions`, `GET /subscriptions/:id`, `POST /subscriptions/:id/verify`, `PATCH /subscriptions/:id/status`, `POST /subscriptions/:id/extend` |
-| **Package Management (CRUD)** | `GET /packages`, `POST /packages`, `PUT /packages/:id`, `DELETE /packages/:id`, `PATCH /packages/:id/status` |
-| **Coupon Management (CRUD)** | `GET /coupons`, `POST /coupons`, `PUT /coupons/:id`, `DELETE /coupons/:id`, `PATCH /coupons/:id/status` |
-| **Coupon Validation** | `POST /validate-coupon` |
-| **Storage Plan Management (CRUD)** | `GET /storage-plans`, `POST /storage-plans`, `PUT /storage-plans/:id`, `DELETE /storage-plans/:id`, `PATCH /storage-plans/:id/status` |
+| Feature | Routes to Consume | Permissions / Access |
+|---|---|---|
+| **Login & Logout** | `POST /login`, `GET /profile`, `POST /logout` | Public (Login) / Protected |
+| **Profile Management** | `GET /profile`, `PUT /profile` | Any Authenticated Admin |
+| **Gender Master Data** | `GET /genders` | Public / Protected |
+| **Dashboard** | `GET /dashboard/stats` | Super Admin or `dashboard:can_view` |
+| **Schools Directory** | `GET /schools`, `GET /schools/:id` | Super Admin or `schools:can_view` |
+| **Activate / Deactivate School** | `PATCH /schools/:id/status` | Super Admin or `schools:can_manage` |
+| **Edit School Info** | `PUT /schools/:id` | Super Admin or `schools:can_edit` |
+| **Subscriptions & Payment Verification** | `GET /subscriptions`, `GET /subscriptions/:id`, `POST /subscriptions/:id/verify`, `PATCH /subscriptions/:id/status`, `POST /subscriptions/:id/extend` | Super Admin or `subscriptions:can_view/can_manage` |
+| **Package Management (CRUD)** | `GET /packages`, `POST /packages`, `PUT /packages/:id`, `DELETE /packages/:id`, `PATCH /packages/:id/status` | Super Admin or `packages:*` |
+| **Coupon Management (Paginated CRUD)** | `GET /coupons`, `POST /coupons`, `PUT /coupons/:id`, `DELETE /coupons/:id`, `PATCH /coupons/:id/status` | Super Admin or `coupons:*` |
+| **Coupon Validation** | `POST /validate-coupon` | Public / Protected |
+| **Storage Plan Management (CRUD)** | `GET /storage-plans`, `POST /storage-plans`, `PUT /storage-plans/:id`, `DELETE /storage-plans/:id`, `PATCH /storage-plans/:id/status` | Super Admin or `storage_plans:*` |
+| **SaaS Modules Directory** | `GET /modules` | Protected |
+| **Roles & Permissions (CRUD)** | `GET /roles`, `GET /roles/:id`, `POST /roles`, `PUT /roles/:id`, `DELETE /roles/:id` | Super Admin or `roles:*` |
+| **Sub-Admin Users (Paginated CRUD)** | `GET /sub-admins`, `GET /sub-admins/:id`, `POST /sub-admins`, `PUT /sub-admins/:id`, `DELETE /sub-admins/:id`, `PATCH /sub-admins/:id/status` | Super Admin or `sub_admins:*` |
 
 All endpoints have been tested against the live MySQL database and are ready for frontend integration.

@@ -11,7 +11,7 @@ async function runMigration() {
         id INT AUTO_INCREMENT PRIMARY KEY,
         first_name VARCHAR(100) DEFAULT NULL,
         last_name VARCHAR(100) DEFAULT NULL,
-        gender VARCHAR(20) DEFAULT NULL,
+        gender INT DEFAULT NULL,
         profile_image VARCHAR(255) DEFAULT NULL,
         phone_number VARCHAR(30) DEFAULT NULL,
         email VARCHAR(150) NOT NULL UNIQUE,
@@ -19,22 +19,186 @@ async function runMigration() {
         role VARCHAR(50) NOT NULL DEFAULT 'superadmin',
         status TINYINT(1) NOT NULL DEFAULT 1,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        CONSTRAINT fk_saas_admin_users_gender FOREIGN KEY (gender) REFERENCES gender_master(id) ON DELETE SET NULL ON UPDATE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    // Ensure gender column is INT and references gender_master if table already existed
+    try {
+      await pool.query(`
+        UPDATE saas_admin_users
+        SET gender = CASE 
+          WHEN LOWER(TRIM(gender)) = 'male' OR gender = '1' THEN '1'
+          WHEN LOWER(TRIM(gender)) = 'female' OR gender = '2' THEN '2'
+          WHEN LOWER(TRIM(gender)) IN ('other', 'others') OR gender = '3' THEN '3'
+          ELSE NULL
+        END
+        WHERE gender IS NOT NULL AND gender REGEXP '^[a-zA-Z]+$'
+      `);
+      await pool.query('ALTER TABLE saas_admin_users MODIFY COLUMN gender INT DEFAULT NULL');
+      const [fks] = await pool.query(`
+        SELECT CONSTRAINT_NAME 
+        FROM information_schema.TABLE_CONSTRAINTS 
+        WHERE TABLE_SCHEMA = DATABASE() 
+          AND TABLE_NAME = 'saas_admin_users' 
+          AND CONSTRAINT_NAME = 'fk_saas_admin_users_gender'
+      `);
+      if (fks.length === 0) {
+        await pool.query('ALTER TABLE saas_admin_users ADD CONSTRAINT fk_saas_admin_users_gender FOREIGN KEY (gender) REFERENCES gender_master(id) ON DELETE SET NULL ON UPDATE CASCADE');
+      }
+    } catch (e) {
+      // Column or constraint may already be up to date
+    }
+    console.log('saas_admin_users table verified.');
+
+    // 1b. saas_roles table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS saas_roles (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        role_name VARCHAR(100) NOT NULL UNIQUE,
+        description TEXT DEFAULT NULL,
+        is_system TINYINT(1) NOT NULL DEFAULT 0,
+        status TINYINT(1) NOT NULL DEFAULT 1,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
-    console.log('saas_admin_users table verified.');
+
+    // 1c. saas_modules table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS saas_modules (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        module_key VARCHAR(50) NOT NULL UNIQUE,
+        module_name VARCHAR(100) NOT NULL,
+        description VARCHAR(255) DEFAULT NULL,
+        display_order INT DEFAULT 0,
+        status TINYINT(1) NOT NULL DEFAULT 1,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    // 1d. saas_role_permissions table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS saas_role_permissions (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        role_id INT NOT NULL,
+        module_key VARCHAR(50) NOT NULL,
+        can_view TINYINT(1) NOT NULL DEFAULT 0,
+        can_add TINYINT(1) NOT NULL DEFAULT 0,
+        can_edit TINYINT(1) NOT NULL DEFAULT 0,
+        can_delete TINYINT(1) NOT NULL DEFAULT 0,
+        can_manage TINYINT(1) NOT NULL DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        CONSTRAINT fk_saas_role_perm_role FOREIGN KEY (role_id) REFERENCES saas_roles(id) ON DELETE CASCADE,
+        UNIQUE KEY uq_saas_role_module (role_id, module_key)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    // Add role_id to saas_admin_users if missing
+    try {
+      const [cols] = await pool.query(`
+        SELECT COLUMN_NAME 
+        FROM information_schema.COLUMNS 
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'saas_admin_users' AND COLUMN_NAME = 'role_id'
+      `);
+      if (cols.length === 0) {
+        await pool.query('ALTER TABLE saas_admin_users ADD COLUMN role_id INT DEFAULT NULL AFTER role');
+        await pool.query('ALTER TABLE saas_admin_users ADD CONSTRAINT fk_saas_admin_users_role FOREIGN KEY (role_id) REFERENCES saas_roles(id) ON DELETE SET NULL ON UPDATE CASCADE');
+        console.log('Added role_id to saas_admin_users.');
+      }
+    } catch (e) {
+      // Constraint or column may already exist
+    }
+
+    // Seed default SaaS modules
+    const modules = [
+      { key: 'dashboard', name: 'Dashboard & Analytics', desc: 'Overview metrics, registration statistics, revenue', order: 1 },
+      { key: 'schools', name: 'School Management', desc: 'Registered schools, approvals, school status', order: 2 },
+      { key: 'subscriptions', name: 'Subscriptions & Payments', desc: 'School subscriptions, manual payment verification, extensions', order: 3 },
+      { key: 'packages', name: 'Packages & Plans', desc: 'Subscription pricing tiers, features, plan limits', order: 4 },
+      { key: 'coupons', name: 'Coupon Management', desc: 'Promo codes, discounts, redemption limits', order: 5 },
+      { key: 'storage_plans', name: 'Storage Plans', desc: 'Storage add-on packages and capacity units', order: 6 },
+      { key: 'roles', name: 'Roles & Permissions', desc: 'Manage SaaS roles and granular module permissions', order: 7 },
+      { key: 'sub_admins', name: 'Sub Admin Users', desc: 'Manage sub-admin staff accounts and role assignments', order: 8 },
+    ];
+
+    for (const m of modules) {
+      await pool.query(`
+        INSERT INTO saas_modules (module_key, module_name, description, display_order, status)
+        VALUES (?, ?, ?, ?, 1)
+        ON DUPLICATE KEY UPDATE module_name = VALUES(module_name), description = VALUES(description), display_order = VALUES(display_order)
+      `, [m.key, m.name, m.desc, m.order]);
+    }
+
+    // Seed default Super Admin system role
+    const [superAdminRole] = await pool.query('SELECT id FROM saas_roles WHERE role_name = ?', ['Super Admin']);
+    let superAdminRoleId;
+    if (superAdminRole.length === 0) {
+      const [res] = await pool.query(
+        'INSERT INTO saas_roles (role_name, description, is_system, status) VALUES (?, ?, 1, 1)',
+        ['Super Admin', 'Full unrestricted platform access to all modules and settings']
+      );
+      superAdminRoleId = res.insertId;
+    } else {
+      superAdminRoleId = superAdminRole[0].id;
+    }
+
+    // Ensure Super Admin has all permissions on all modules
+    for (const m of modules) {
+      await pool.query(`
+        INSERT INTO saas_role_permissions (role_id, module_key, can_view, can_add, can_edit, can_delete, can_manage)
+        VALUES (?, ?, 1, 1, 1, 1, 1)
+        ON DUPLICATE KEY UPDATE can_view = 1, can_add = 1, can_edit = 1, can_delete = 1, can_manage = 1
+      `, [superAdminRoleId, m.key]);
+    }
+
+    // Seed default Operations Manager role (Sub Admin template)
+    const [opsRole] = await pool.query('SELECT id FROM saas_roles WHERE role_name = ?', ['Operations Manager']);
+    let opsRoleId;
+    if (opsRole.length === 0) {
+      const [res] = await pool.query(
+        'INSERT INTO saas_roles (role_name, description, is_system, status) VALUES (?, ?, 0, 1)',
+        ['Operations Manager', 'Can manage schools, subscriptions, coupons, and storage plans']
+      );
+      opsRoleId = res.insertId;
+
+      const opsPerms = [
+        { key: 'dashboard', view: 1, add: 0, edit: 0, del: 0, manage: 0 },
+        { key: 'schools', view: 1, add: 1, edit: 1, del: 0, manage: 1 },
+        { key: 'subscriptions', view: 1, add: 1, edit: 1, del: 0, manage: 1 },
+        { key: 'packages', view: 1, add: 0, edit: 0, del: 0, manage: 0 },
+        { key: 'coupons', view: 1, add: 1, edit: 1, del: 1, manage: 1 },
+        { key: 'storage_plans', view: 1, add: 0, edit: 0, del: 0, manage: 0 },
+        { key: 'roles', view: 0, add: 0, edit: 0, del: 0, manage: 0 },
+        { key: 'sub_admins', view: 0, add: 0, edit: 0, del: 0, manage: 0 },
+      ];
+      for (const p of opsPerms) {
+        await pool.query(`
+          INSERT INTO saas_role_permissions (role_id, module_key, can_view, can_add, can_edit, can_delete, can_manage)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE can_view = VALUES(can_view), can_add = VALUES(can_add), can_edit = VALUES(can_edit), can_delete = VALUES(can_delete), can_manage = VALUES(can_manage)
+        `, [opsRoleId, p.key, p.view, p.add, p.edit, p.del, p.manage]);
+      }
+    }
 
     // Seed default SaaS Super Admin if none exists
     const [existingAdmin] = await pool.query('SELECT id FROM saas_admin_users WHERE email = ?', ['superadmin@growvidya.com']);
     if (existingAdmin.length === 0) {
       const hashedPass = await bcrypt.hash('Admin@1234', 10);
       await pool.query(
-        'INSERT INTO saas_admin_users (first_name, last_name, email, password, role, status) VALUES (?, ?, ?, ?, ?, ?)',
-        ['Super', 'Administrator', 'superadmin@growvidya.com', hashedPass, 'superadmin', 1]
+        'INSERT INTO saas_admin_users (first_name, last_name, email, password, role, role_id, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        ['Super', 'Administrator', 'superadmin@growvidya.com', hashedPass, 'superadmin', superAdminRoleId, 1]
       );
       console.log('Default super admin created: superadmin@growvidya.com / Admin@1234');
     } else {
-      console.log('Default super admin already exists.');
+      await pool.query(
+        'UPDATE saas_admin_users SET role_id = ? WHERE id = ? AND (role_id IS NULL OR role_id = 0)',
+        [superAdminRoleId, existingAdmin[0].id]
+      );
+      console.log('Default super admin already exists and linked to Super Admin role.');
     }
 
     // 2. coupons
