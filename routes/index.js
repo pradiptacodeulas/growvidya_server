@@ -49,6 +49,8 @@ const uploadRoutes = require('./upload.routes');
 const commonOptionsRoutes = require('./commonOptions.routes');
 const saasRoutes = require('./saas.routes');
 const saasAdminRoutes = require('./saasAdmin.routes');
+const storageMasterRoutes = require('./storageMaster.routes');
+const couponRoutes = require('./coupon.routes');
 const webhookRoutes = require('./webhook.routes');
 const messageRoutes = require('./message.routes');
 const schoolRoutes = require('./school.routes');
@@ -72,6 +74,14 @@ router.use('/v1/school', schoolRoutes);
 // Webhooks
 router.use('/v1/webhooks', webhookRoutes);
 router.use('/webhooks', webhookRoutes);
+
+// Storage Master Plans (Public endpoints & Direct API)
+router.use('/v1/storage-plans', storageMasterRoutes);
+router.use('/storage-plans', storageMasterRoutes);
+
+// Coupons (Direct / Public API)
+router.use('/v1/coupons', couponRoutes);
+router.use('/coupons', couponRoutes);
 
 // SaaS Pricing & Registration Onboarding
 router.use('/v1/saas', saasRoutes);

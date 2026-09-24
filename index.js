@@ -16,6 +16,7 @@ const BranchModel = require('./models/branch.model');
 const errorMiddleware = require('./middlewares/error.middleware');
 const paramsDecoderMiddleware = require('./middlewares/paramsDecoder.middleware');
 const apiRoutes = require('./routes');
+const couponRoutes = require('./routes/coupon.routes');
 const ApiResponse = require('./utils/api.response');
 
 const app = express();
@@ -104,6 +105,8 @@ app.use(async (req, res, next) => {
 // 3. API Routes Mount
 // ==========================================
 app.use('/api', apiRoutes);
+app.use('/coupons', couponRoutes);
+app.use('/v1/coupons', couponRoutes);
 
 // ==========================================
 // 4. 404 & Central Error Handling

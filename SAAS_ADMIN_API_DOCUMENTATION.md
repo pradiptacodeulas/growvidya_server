@@ -459,9 +459,10 @@ Authorization: Bearer <JWT_TOKEN>
 ```
 
 #### 2. Get Coupon Details & Usage History
-* **Method & Path:** `GET /api/v1/saas-admin/coupons/:id`
-* **Access:** Protected
-* **Response:** Includes list of schools that redeemed the coupon, subscription IDs, discount given, and date of redemption.
+* **Method & Path:** `GET /api/v1/saas-admin/coupons/:id` or `GET /api/v1/coupons/:id`
+* **Access:** Protected (Requires `Authorization: Bearer <token>` or session cookie)
+* **Identifier Parameter:** Supports passing the coupon ID in the path `/coupons/:id`, or as a query parameter `?id=1` / `?coupon_id=1`, or using the coupon promo code (e.g. `/coupons/WELCOME50`).
+* **Response:** Returns only the data and redemption history for the specified coupon.
 
 #### 3. Create Coupon
 * **Method & Path:** `POST /api/v1/saas-admin/coupons`
@@ -546,6 +547,98 @@ Both the SaaS Admin Portal and the School Registration / Checkout interface can 
 }
 ```
 
+### 3.8 Storage Master Plan Management
+
+#### 1. List All Storage Plans
+* **Method & Path:** `GET /api/v1/saas-admin/storage-plans` (or `GET /api/v1/storage-plans`)
+* **Access:** Protected (Admin) / Direct
+* **Query Parameters:** `?search=...` & `?status=1|0`
+* **Success Response (200 OK):**
+```json
+{
+  "success": true,
+  "message": "Storage plans retrieved successfully.",
+  "data": [
+    {
+      "id": 1,
+      "plan_name": "50 GB Plan",
+      "storage_capacity": 50,
+      "capacity_unit_id": 2,
+      "unit_code": "GB",
+      "unit_name": "Gigabyte",
+      "factor_in_mb": 1024,
+      "total_capacity_mb": 51200,
+      "monthly_price": "299.00",
+      "annual_price": "2999.00",
+      "description": "50 GB additional cloud storage for documents, backups, and multimedia",
+      "status": 1,
+      "created_at": "2026-09-24T09:36:59.000Z",
+      "updated_at": "2026-09-24T09:36:59.000Z"
+    }
+  ]
+}
+```
+
+#### 2. Get Available Capacity Units (For Dropdowns)
+* **Method & Path:** `GET /api/v1/saas-admin/capacity-units` (or `GET /api/v1/storage-plans/units`)
+* **Access:** Public / Admin
+* **Success Response (200 OK):**
+```json
+{
+  "success": true,
+  "message": "Capacity units retrieved successfully.",
+  "data": [
+    { "id": 1, "unit_name": "Megabyte", "unit_code": "MB", "factor_in_mb": 1, "status": 1 },
+    { "id": 2, "unit_name": "Gigabyte", "unit_code": "GB", "factor_in_mb": 1024, "status": 1 },
+    { "id": 3, "unit_name": "Terabyte", "unit_code": "TB", "factor_in_mb": 1048576, "status": 1 }
+  ]
+}
+```
+
+#### 3. Get Public / Active Storage Plans (For Schools)
+* **Method & Path:** `GET /api/v1/saas/storage-plans` (or `GET /api/v1/storage-plans/active`)
+* **Access:** Public
+
+#### 4. Get Single Storage Plan
+* **Method & Path:** `GET /api/v1/saas-admin/storage-plans/:id` (or `GET /api/v1/storage-plans/:id`)
+* **Access:** Protected (Admin) / Direct
+
+#### 5. Create New Storage Plan
+* **Method & Path:** `POST /api/v1/saas-admin/storage-plans` (or `POST /api/v1/storage-plans`)
+* **Access:** Protected (Admin)
+* **Request Body:**
+```json
+{
+  "plan_name": "250 GB Plan",
+  "storage_capacity": 250,
+  "capacity_unit_id": 2,
+  "monthly_price": 999.00,
+  "annual_price": 9999.00,
+  "description": "250 GB expanded cloud storage for large institutions",
+  "status": 1
+}
+```
+*(Note: `capacity_unit` code e.g. `"GB"` is also accepted as a convenience fallback).*
+
+#### 5. Update Storage Plan
+* **Method & Path:** `PUT /api/v1/saas-admin/storage-plans/:id` (or `PUT /api/v1/storage-plans/:id`)
+* **Access:** Protected (Admin)
+* **Request Body:** Pass any field(s) to update.
+
+#### 6. Toggle Status (Active / Inactive)
+* **Method & Path:** `PATCH /api/v1/saas-admin/storage-plans/:id/status` (or `PATCH /api/v1/storage-plans/:id/status`)
+* **Access:** Protected (Admin)
+* **Request Body:**
+```json
+{
+  "status": 0
+}
+```
+
+#### 7. Delete Storage Plan
+* **Method & Path:** `DELETE /api/v1/saas-admin/storage-plans/:id` (or `DELETE /api/v1/storage-plans/:id`)
+* **Access:** Protected (Admin)
+
 ---
 
 ## 4. Integration with School Registration & Razorpay
@@ -583,5 +676,6 @@ The server automatically stores `coupon_id`, `original_amount`, and `discount_am
 | **Package Management (CRUD)** | `GET /packages`, `POST /packages`, `PUT /packages/:id`, `DELETE /packages/:id`, `PATCH /packages/:id/status` |
 | **Coupon Management (CRUD)** | `GET /coupons`, `POST /coupons`, `PUT /coupons/:id`, `DELETE /coupons/:id`, `PATCH /coupons/:id/status` |
 | **Coupon Validation** | `POST /validate-coupon` |
+| **Storage Plan Management (CRUD)** | `GET /storage-plans`, `POST /storage-plans`, `PUT /storage-plans/:id`, `DELETE /storage-plans/:id`, `PATCH /storage-plans/:id/status` |
 
 All endpoints have been tested against the live MySQL database and are ready for frontend integration.

@@ -1,4 +1,5 @@
 const SaasAdminModel = require('../models/saasAdmin.model');
+const CouponModel = require('../models/coupon.model');
 const ApiResponse = require('../utils/api.response');
 const { generateToken } = require('../utils/jwt.util');
 const { comparePassword } = require('../utils/password.util');
@@ -436,7 +437,23 @@ class SaasAdminController {
   // ========================================================
   static async getCoupons(req, res, next) {
     try {
-      const { search, status } = req.query;
+      const { search, status, id, coupon_id, couponId, code } = req.query;
+
+      // If specific coupon id or code is provided in query, body, or header, delegate to getCouponById
+      const targetId =
+        id ||
+        coupon_id ||
+        couponId ||
+        code ||
+        req.body?.id ||
+        req.body?.coupon_id ||
+        req.body?.code ||
+        req.headers['x-coupon-id'];
+      if (targetId && targetId !== ':id') {
+        req.params.id = targetId;
+        return SaasAdminController.getCouponById(req, res, next);
+      }
+
       const coupons = await SaasAdminModel.getAllCoupons({ search, status });
       return ApiResponse.success(res, 'Coupons retrieved successfully.', coupons);
     } catch (error) {
@@ -446,8 +463,36 @@ class SaasAdminController {
 
   static async getCouponById(req, res, next) {
     try {
-      const { id } = req.params;
-      const coupon = await SaasAdminModel.getCouponById(id);
+      let { id } = req.params;
+
+      // Fallback if id was passed as query or body parameter, or literal placeholder ':id'
+      if (!id || id === ':id' || String(id).trim() === '') {
+        id =
+          req.query?.id ||
+          req.query?.coupon_id ||
+          req.query?.couponId ||
+          req.query?.code ||
+          req.body?.id ||
+          req.body?.coupon_id ||
+          req.body?.code ||
+          req.headers['x-coupon-id'];
+      }
+
+      if (!id || id === ':id' || String(id).trim() === '') {
+        return ApiResponse.error(res, 'Coupon ID is required.', null, 400);
+      }
+
+      const trimmedId = String(id).trim();
+      let coupon = null;
+      if (/^\d+$/.test(trimmedId)) {
+        coupon = await SaasAdminModel.getCouponById(Number(trimmedId));
+      } else {
+        coupon = await CouponModel.getByCode(trimmedId);
+        if (coupon && coupon.id) {
+          coupon = await SaasAdminModel.getCouponById(coupon.id);
+        }
+      }
+
       if (!coupon) {
         return ApiResponse.notFound(res, 'Coupon not found.');
       }

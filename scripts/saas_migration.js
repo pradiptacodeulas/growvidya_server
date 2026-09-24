@@ -85,7 +85,56 @@ async function runMigration() {
     `);
     console.log('coupon_usages table verified.');
 
-    // 4. Alter school_subscriptions to add coupon and verification columns if missing
+    // 4. capacity_unit_master
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS capacity_unit_master (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        unit_name VARCHAR(50) NOT NULL,
+        unit_code VARCHAR(20) NOT NULL UNIQUE,
+        factor_in_mb BIGINT UNSIGNED NOT NULL DEFAULT 1024,
+        status TINYINT(1) NOT NULL DEFAULT 1,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_unit_status (status)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+    console.log('capacity_unit_master table verified.');
+
+    // Seed default capacity units if none exist
+    const [existingUnits] = await pool.query('SELECT id FROM capacity_unit_master LIMIT 1');
+    if (existingUnits.length === 0) {
+      await pool.query(`
+        INSERT INTO capacity_unit_master (unit_name, unit_code, factor_in_mb, status)
+        VALUES 
+          ('Megabyte', 'MB', 1, 1),
+          ('Gigabyte', 'GB', 1024, 1),
+          ('Terabyte', 'TB', 1048576, 1)
+      `);
+      console.log('Default capacity units seeded (MB, GB, TB).');
+    }
+
+    // 5. storage_master
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS storage_master (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        plan_name VARCHAR(100) NOT NULL,
+        storage_capacity INT NOT NULL COMMENT 'Storage capacity value',
+        capacity_unit_id INT NOT NULL COMMENT 'Foreign key to capacity_unit_master.id',
+        monthly_price DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
+        annual_price DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
+        description TEXT DEFAULT NULL,
+        status TINYINT(1) NOT NULL DEFAULT 1 COMMENT '1 = Active, 0 = Inactive',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_storage_status (status),
+        INDEX idx_storage_capacity (storage_capacity),
+        CONSTRAINT fk_storage_capacity_unit FOREIGN KEY (capacity_unit_id) 
+          REFERENCES capacity_unit_master(id) ON UPDATE CASCADE ON DELETE RESTRICT
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+    console.log('storage_master table verified.');
+
+    // 6. Alter school_subscriptions to add coupon and verification columns if missing
     const [subCols] = await pool.query('DESCRIBE school_subscriptions');
     const colNames = subCols.map(c => c.Field);
 

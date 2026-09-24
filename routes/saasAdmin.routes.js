@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const SaasAdminController = require('../controllers/saasAdmin.controller');
+const StorageMasterController = require('../controllers/storageMaster.controller');
 const saasAdminAuthMiddleware = require('../middlewares/saasAdminAuth.middleware');
 
 // ==========================================
@@ -51,5 +52,15 @@ router.put('/coupons/:id', SaasAdminController.updateCoupon);
 router.delete('/coupons/:id', SaasAdminController.deleteCoupon);
 router.patch('/coupons/:id/status', SaasAdminController.toggleCouponStatus);
 router.post('/coupons/validate', SaasAdminController.validateCoupon);
+
+// Storage Master Plan Management
+router.get('/storage-plans', StorageMasterController.getAll);
+router.get('/storage-plans/units', StorageMasterController.getCapacityUnits);
+router.get('/capacity-units', StorageMasterController.getCapacityUnits);
+router.get('/storage-plans/:id', StorageMasterController.getById);
+router.post('/storage-plans', StorageMasterController.create);
+router.put('/storage-plans/:id', StorageMasterController.update);
+router.delete('/storage-plans/:id', StorageMasterController.delete);
+router.patch('/storage-plans/:id/status', StorageMasterController.toggleStatus);
 
 module.exports = router;

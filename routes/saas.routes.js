@@ -1,9 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const SaasController = require('../controllers/saas.controller');
+const StorageMasterController = require('../controllers/storageMaster.controller');
 
 // Public SaaS routes (no auth required)
 router.get('/plans', SaasController.getPlans);
+router.get('/storage-plans', StorageMasterController.getActive);
 router.post('/create-order', SaasController.createRegistrationOrder);
 router.post('/register-school', SaasController.registerSchool);
 router.get('/locations/countries', SaasController.getCountries);
