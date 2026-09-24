@@ -34,7 +34,7 @@ const saasAdminAuthMiddleware = async (req, res, next) => {
 
     // Verify user exists and is active in database
     const [rows] = await pool.query(
-      'SELECT id, name, email, role, status FROM saas_admin_users WHERE id = ? AND status = 1 LIMIT 1',
+      'SELECT id, first_name, last_name, gender, profile_image, phone_number, name, email, role, status, created_at FROM saas_admin_users WHERE id = ? AND status = 1 LIMIT 1',
       [decoded.userId]
     );
 

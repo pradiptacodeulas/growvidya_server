@@ -75,6 +75,11 @@ Authorization: Bearer <JWT_TOKEN>
     "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
     "user": {
       "id": 1,
+      "first_name": "Super",
+      "last_name": "Administrator",
+      "gender": "male",
+      "profile_image": "upload/admin/profile_pic/admin_avatar.png",
+      "phone_number": "9876543210",
       "name": "Super Administrator",
       "email": "superadmin@growvidya.com",
       "role": "superadmin",
@@ -85,7 +90,7 @@ Authorization: Bearer <JWT_TOKEN>
 ```
 
 #### 2. Get Current Authenticated Profile
-* **Method & Path:** `GET /api/v1/saas-admin/me`
+* **Method & Path:** `GET /api/v1/saas-admin/profile`
 * **Access:** Protected (`Bearer <token>`)
 * **Success Response (200 OK):**
 ```json
@@ -94,25 +99,37 @@ Authorization: Bearer <JWT_TOKEN>
   "message": "Profile fetched successfully.",
   "data": {
     "id": 1,
+    "first_name": "Super",
+    "last_name": "Administrator",
+    "gender": "male",
+    "profile_image": "upload/admin/profile_pic/admin_avatar.png",
+    "phone_number": "9876543210",
     "name": "Super Administrator",
     "email": "superadmin@growvidya.com",
     "role": "superadmin",
-    "status": 1
+    "status": 1,
+    "created_at": "2026-09-23 14:42:38",
+    "updated_at": "2026-09-23 18:46:08"
   }
 }
 ```
 
-#### 3. Update Admin Profile / Password
+#### 3. Update Admin Profile
 * **Method & Path:** `PUT /api/v1/saas-admin/profile`
 * **Access:** Protected (`Bearer <token>`)
 * **Request Body:**
 ```json
 {
-  "name": "Super Admin",
+  "first_name": "Super",
+  "last_name": "Administrator",
+  "gender": "male", // "male" | "female" | "other"
+  "phone_number": "9876543210",
+  "profile_image": "data:image/png;base64,iVBORw0KGgo...", // Base64 data string (auto-saved to disk) or URL
   "email": "superadmin@growvidya.com",
   "password": "NewSecurePassword123" // Optional: only if changing password
 }
 ```
+* **Success Response (200 OK):** Returns the updated profile object.
 
 #### 4. Logout
 * **Method & Path:** `POST /api/v1/saas-admin/logout`
@@ -556,7 +573,8 @@ The server automatically stores `coupon_id`, `original_amount`, and `discount_am
 
 | Feature | Routes to Consume |
 |---|---|
-| **Login & Logout** | `POST /login`, `GET /me`, `POST /logout` |
+| **Login & Logout** | `POST /login`, `GET /profile`, `POST /logout` |
+| **Profile Management** | `GET /profile`, `PUT /profile` |
 | **Dashboard** | `GET /dashboard/stats` |
 | **Schools Directory** | `GET /schools`, `GET /schools/:id` |
 | **Activate / Deactivate School** | `PATCH /schools/:id/status` |

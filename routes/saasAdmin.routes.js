@@ -15,9 +15,9 @@ router.post('/validate-coupon', SaasAdminController.validateCoupon);
 router.use(saasAdminAuthMiddleware);
 
 // Profile & Session
-router.get('/me', SaasAdminController.getMe);
-router.post('/logout', SaasAdminController.logout);
+router.get('/profile', SaasAdminController.getProfile);
 router.put('/profile', SaasAdminController.updateProfile);
+router.post('/logout', SaasAdminController.logout);
 
 // Dashboard
 router.get('/dashboard/stats', SaasAdminController.getDashboardStats);

@@ -7,7 +7,6 @@ const path = require('path');
 const fs = require('fs');
 
 const config = require('./config/app.config');
-const { corsOptions } = require('./config/cors.config');
 const { testConnection } = require('./config/db.config');
 const { initSocket } = require('./services/socket.service');
 const MessageModel = require('./models/message.model');
@@ -24,7 +23,24 @@ const app = express();
 // ==========================================
 // 1. Security & Body Parsing Middlewares
 // ==========================================
-app.use(helmet({ crossOriginResourcePolicy: false }));
+// app.use(helmet({ crossOriginResourcePolicy: false }));
+
+var corsOptions = {
+  origin: [
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'http://127.0.0.1:5173',
+    'http://192.168.29.144',
+    'http://192.168.29.144:5173',
+    'http://192.168.29.231',
+    'http://192.168.29.231:5173',
+    'http://192.168.29.243',
+    'http://192.168.29.243:5173'
+  ],
+  credentials: true,
+  optionsSuccessStatus: 200,
+};
+
 app.use(cors(corsOptions));
 
 

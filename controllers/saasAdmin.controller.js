@@ -51,9 +51,14 @@ class SaasAdminController {
         token,
         user: {
           id: user.id,
+          first_name: user.first_name || null,
+          last_name: user.last_name || null,
+          gender: user.gender || null,
+          profile_image: user.profile_image || null,
+          phone_number: user.phone_number || null,
           name: user.name,
           email: user.email,
-          role: user.role,    
+          role: user.role,
           status: user.status,
         },
       });
@@ -62,9 +67,13 @@ class SaasAdminController {
     }
   }
 
-  static async getMe(req, res, next) {
+  static async getProfile(req, res, next) {
     try {
-      return ApiResponse.success(res, 'Profile fetched successfully.', req.saasAdmin);
+      const user = await SaasAdminModel.findById(req.saasAdmin.id);
+      if (!user) {
+        return ApiResponse.notFound(res, 'Admin user not found.');
+      }
+      return ApiResponse.success(res, 'Profile fetched successfully.', user);
     } catch (error) {
       next(error);
     }
@@ -82,14 +91,32 @@ class SaasAdminController {
 
   static async updateProfile(req, res, next) {
     try {
-      const { name, email, password } = req.body;
-      if (!name || !email) {
-        return ApiResponse.error(res, 'Name and email are required.', null, 400);
+      const { first_name, last_name, gender, profile_image, phone_number, name, email, password } = req.body;
+
+      if (email && !email.includes('@')) {
+        return ApiResponse.error(res, 'Please provide a valid email address.', null, 400);
       }
 
-      const updated = await SaasAdminModel.updateProfile(req.saasAdmin.id, { name, email, password });
+      if (email && email.toLowerCase().trim() !== req.saasAdmin.email.toLowerCase().trim()) {
+        const existing = await SaasAdminModel.findByEmail(email);
+        if (existing && existing.id !== req.saasAdmin.id) {
+          return ApiResponse.error(res, 'This email address is already in use by another admin.', null, 400);
+        }
+      }
+
+      const updated = await SaasAdminModel.updateProfile(req.saasAdmin.id, {
+        first_name,
+        last_name,
+        gender,
+        profile_image,
+        phone_number,
+        name,
+        email,
+        password,
+      });
+
       if (!updated) {
-        return ApiResponse.error(res, 'Failed to update profile.', null, 400);
+        return ApiResponse.error(res, 'No changes made or update failed.', null, 400);
       }
 
       const user = await SaasAdminModel.findById(req.saasAdmin.id);

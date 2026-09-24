@@ -15,25 +15,75 @@ class SaasAdminModel {
 
   static async findById(id) {
     const [rows] = await pool.query(
-      'SELECT id, name, email, role, status, created_at FROM saas_admin_users WHERE id = ? LIMIT 1',
+      'SELECT id, first_name, last_name, gender, profile_image, phone_number, name, email, role, status, created_at, updated_at FROM saas_admin_users WHERE id = ? LIMIT 1',
       [id]
     );
     return rows[0] || null;
   }
 
-  static async updateProfile(id, { name, email, password }) {
-    let query = 'UPDATE saas_admin_users SET name = ?, email = ?';
-    const params = [name.trim(), email.toLowerCase().trim()];
+  static async updateProfile(id, { first_name, last_name, gender, profile_image, phone_number, name, email, password }) {
+    const updates = [];
+    const params = [];
+
+    if (first_name !== undefined) {
+      updates.push('first_name = ?');
+      params.push(first_name ? String(first_name).trim() : null);
+    }
+
+    if (last_name !== undefined) {
+      updates.push('last_name = ?');
+      params.push(last_name ? String(last_name).trim() : null);
+    }
+
+    // Keep name in sync with first_name and last_name
+    if (first_name !== undefined || last_name !== undefined) {
+      const fn = first_name !== undefined ? (first_name || '').trim() : '';
+      const ln = last_name !== undefined ? (last_name || '').trim() : '';
+      const combined = `${fn} ${ln}`.trim();
+      if (combined) {
+        updates.push('name = ?');
+        params.push(combined);
+      }
+    } else if (name !== undefined) {
+      updates.push('name = ?');
+      params.push(name.trim());
+    }
+
+    if (gender !== undefined) {
+      updates.push('gender = ?');
+      params.push(gender ? String(gender).trim().toLowerCase() : null);
+    }
+
+    if (profile_image !== undefined) {
+      let imagePath = profile_image;
+      if (imagePath && imagePath.startsWith('data:')) {
+        const { saveBase64File } = require('../utils/file.util');
+        imagePath = saveBase64File(imagePath, 'admin/profile_pic', 'SaasAdmin');
+      }
+      updates.push('profile_image = ?');
+      params.push(imagePath || null);
+    }
+
+    if (phone_number !== undefined) {
+      updates.push('phone_number = ?');
+      params.push(phone_number ? String(phone_number).trim() : null);
+    }
+
+    if (email !== undefined && email.trim()) {
+      updates.push('email = ?');
+      params.push(String(email).toLowerCase().trim());
+    }
 
     if (password && password.length >= 6) {
       const hashed = await hashPassword(password);
-      query += ', password = ?';
+      updates.push('password = ?');
       params.push(hashed);
     }
 
-    query += ' WHERE id = ?';
-    params.push(id);
+    if (updates.length === 0) return false;
 
+    params.push(id);
+    const query = `UPDATE saas_admin_users SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ?`;
     const [result] = await pool.query(query, params);
     return result.affectedRows > 0;
   }
