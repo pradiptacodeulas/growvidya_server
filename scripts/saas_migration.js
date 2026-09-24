@@ -9,7 +9,11 @@ async function runMigration() {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS saas_admin_users (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        name VARCHAR(150) NOT NULL,
+        first_name VARCHAR(100) DEFAULT NULL,
+        last_name VARCHAR(100) DEFAULT NULL,
+        gender VARCHAR(20) DEFAULT NULL,
+        profile_image VARCHAR(255) DEFAULT NULL,
+        phone_number VARCHAR(30) DEFAULT NULL,
         email VARCHAR(150) NOT NULL UNIQUE,
         password VARCHAR(255) NOT NULL,
         role VARCHAR(50) NOT NULL DEFAULT 'superadmin',
@@ -25,8 +29,8 @@ async function runMigration() {
     if (existingAdmin.length === 0) {
       const hashedPass = await bcrypt.hash('Admin@1234', 10);
       await pool.query(
-        'INSERT INTO saas_admin_users (name, email, password, role, status) VALUES (?, ?, ?, ?, ?)',
-        ['GrowVidya Master Admin', 'superadmin@growvidya.com', hashedPass, 'superadmin', 1]
+        'INSERT INTO saas_admin_users (first_name, last_name, email, password, role, status) VALUES (?, ?, ?, ?, ?, ?)',
+        ['Super', 'Administrator', 'superadmin@growvidya.com', hashedPass, 'superadmin', 1]
       );
       console.log('Default super admin created: superadmin@growvidya.com / Admin@1234');
     } else {

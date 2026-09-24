@@ -1,8 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const StorageMasterController = require('../controllers/storageMaster.controller');
+const couponAuthMiddleware = require('../middlewares/couponAuth.middleware');
 
-// Public listing
+// Protected routes (Requires authentication)
+router.use(couponAuthMiddleware);
+
+// Listing & details
 router.get('/', StorageMasterController.getAll);
 router.get('/active', StorageMasterController.getActive);
 router.get('/units', StorageMasterController.getCapacityUnits);

@@ -57,7 +57,6 @@ class SaasAdminController {
           gender: user.gender || null,
           profile_image: user.profile_image || null,
           phone_number: user.phone_number || null,
-          name: user.name,
           email: user.email,
           role: user.role,
           status: user.status,
@@ -92,7 +91,7 @@ class SaasAdminController {
 
   static async updateProfile(req, res, next) {
     try {
-      const { first_name, last_name, gender, profile_image, phone_number, name, email, password } = req.body;
+      const { first_name, last_name, gender, profile_image, phone_number, email, password } = req.body;
 
       if (email && !email.includes('@')) {
         return ApiResponse.error(res, 'Please provide a valid email address.', null, 400);
@@ -111,7 +110,6 @@ class SaasAdminController {
         gender,
         profile_image,
         phone_number,
-        name,
         email,
         password,
       });

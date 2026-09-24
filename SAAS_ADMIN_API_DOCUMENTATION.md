@@ -80,7 +80,6 @@ Authorization: Bearer <JWT_TOKEN>
       "gender": "male",
       "profile_image": "upload/admin/profile_pic/admin_avatar.png",
       "phone_number": "9876543210",
-      "name": "Super Administrator",
       "email": "superadmin@growvidya.com",
       "role": "superadmin",
       "status": 1
@@ -104,7 +103,6 @@ Authorization: Bearer <JWT_TOKEN>
     "gender": "male",
     "profile_image": "upload/admin/profile_pic/admin_avatar.png",
     "phone_number": "9876543210",
-    "name": "Super Administrator",
     "email": "superadmin@growvidya.com",
     "role": "superadmin",
     "status": 1,

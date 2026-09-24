@@ -15,38 +15,33 @@ class SaasAdminModel {
 
   static async findById(id) {
     const [rows] = await pool.query(
-      'SELECT id, first_name, last_name, gender, profile_image, phone_number, name, email, role, status, created_at, updated_at FROM saas_admin_users WHERE id = ? LIMIT 1',
+      'SELECT id, first_name, last_name, gender, profile_image, phone_number, email, role, status, created_at, updated_at FROM saas_admin_users WHERE id = ? LIMIT 1',
       [id]
     );
     return rows[0] || null;
   }
 
-  static async updateProfile(id, { first_name, last_name, gender, profile_image, phone_number, name, email, password }) {
+  static async updateProfile(id, { first_name, last_name, gender, profile_image, phone_number, email, password, name }) {
     const updates = [];
     const params = [];
 
-    if (first_name !== undefined) {
+    // Fallback if client sends 'name' instead of first_name / last_name
+    let fName = first_name;
+    let lName = last_name;
+    if (fName === undefined && lName === undefined && name !== undefined) {
+      const parts = String(name).trim().split(/\s+/);
+      fName = parts[0] || '';
+      lName = parts.slice(1).join(' ') || '';
+    }
+
+    if (fName !== undefined) {
       updates.push('first_name = ?');
-      params.push(first_name ? String(first_name).trim() : null);
+      params.push(fName ? String(fName).trim() : null);
     }
 
-    if (last_name !== undefined) {
+    if (lName !== undefined) {
       updates.push('last_name = ?');
-      params.push(last_name ? String(last_name).trim() : null);
-    }
-
-    // Keep name in sync with first_name and last_name
-    if (first_name !== undefined || last_name !== undefined) {
-      const fn = first_name !== undefined ? (first_name || '').trim() : '';
-      const ln = last_name !== undefined ? (last_name || '').trim() : '';
-      const combined = `${fn} ${ln}`.trim();
-      if (combined) {
-        updates.push('name = ?');
-        params.push(combined);
-      }
-    } else if (name !== undefined) {
-      updates.push('name = ?');
-      params.push(name.trim());
+      params.push(lName ? String(lName).trim() : null);
     }
 
     if (gender !== undefined) {
@@ -297,7 +292,7 @@ class SaasAdminModel {
     const [subs] = await pool.query(
       `SELECT ss.*, sp.plan_name, sp.plan_code, sp.price AS plan_price, sp.billing_cycle,
               c.code AS coupon_code, c.discount_type AS coupon_discount_type,
-              sau.name AS verified_by_name
+              CONCAT_WS(' ', sau.first_name, sau.last_name) AS verified_by_name
        FROM school_subscriptions ss
        LEFT JOIN subscription_plans sp ON ss.plan_id = sp.id
        LEFT JOIN coupons c ON ss.coupon_id = c.id
@@ -400,7 +395,7 @@ class SaasAdminModel {
         sp.billing_cycle,
         c.code AS coupon_code,
         c.discount_type AS coupon_discount_type,
-        sau.name AS verified_by_name
+        CONCAT_WS(' ', sau.first_name, sau.last_name) AS verified_by_name
       FROM school_subscriptions ss
       JOIN school_master s ON ss.school_id = s.id
       LEFT JOIN subscription_plans sp ON ss.plan_id = sp.id
@@ -434,7 +429,7 @@ class SaasAdminModel {
               s.school_name, s.school_code, s.email AS school_email, s.phone_number AS school_phone, s.address AS school_address,
               sp.plan_name, sp.plan_code, sp.price AS plan_price, sp.billing_cycle, sp.features_json, sp.max_students, sp.max_teachers,
               c.code AS coupon_code, c.discount_type AS coupon_discount_type, c.discount_value AS coupon_discount_val,
-              sau.name AS verified_by_name
+              CONCAT_WS(' ', sau.first_name, sau.last_name) AS verified_by_name
        FROM school_subscriptions ss
        JOIN school_master s ON ss.school_id = s.id
        LEFT JOIN subscription_plans sp ON ss.plan_id = sp.id

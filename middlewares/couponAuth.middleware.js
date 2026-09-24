@@ -76,7 +76,7 @@ const couponAuthMiddleware = async (req, res, next) => {
     const userId = decoded.userId || decoded.id;
     if (decoded.portalType === 'SaaSAdminPortal' && userId) {
       const [adminRows] = await pool.query(
-        'SELECT id, name, email, role, status FROM saas_admin_users WHERE id = ? AND status = 1 LIMIT 1',
+        'SELECT id, first_name, last_name, email, role, status FROM saas_admin_users WHERE id = ? AND status = 1 LIMIT 1',
         [userId]
       );
       if (adminRows.length === 0) {

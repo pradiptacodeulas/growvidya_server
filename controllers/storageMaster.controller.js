@@ -9,7 +9,15 @@ class StorageMasterController {
    */
   static async getAll(req, res, next) {
     try {
-      const { search, status } = req.query;
+      const { search, status, id, plan_id, planId } = req.query;
+
+      // If specific storage plan ID is provided in query, body, or header, delegate to getById
+      const targetId = id || plan_id || planId || req.body?.id || req.body?.plan_id || req.headers['x-storage-plan-id'];
+      if (targetId && targetId !== ':id') {
+        req.params.id = targetId;
+        return StorageMasterController.getById(req, res, next);
+      }
+
       const plans = await StorageMasterModel.getAll({ search, status });
       return ApiResponse.success(res, 'Storage plans retrieved successfully.', plans);
     } catch (error) {
@@ -23,6 +31,15 @@ class StorageMasterController {
    */
   static async getActive(req, res, next) {
     try {
+      const { id, plan_id, planId } = req.query;
+
+      // If specific storage plan ID is provided in query, body, or header, delegate to getById
+      const targetId = id || plan_id || planId || req.body?.id || req.body?.plan_id || req.headers['x-storage-plan-id'];
+      if (targetId && targetId !== ':id') {
+        req.params.id = targetId;
+        return StorageMasterController.getById(req, res, next);
+      }
+
       const plans = await StorageMasterModel.getActivePlans();
       return ApiResponse.success(res, 'Active storage plans retrieved successfully.', plans);
     } catch (error) {
@@ -49,8 +66,35 @@ class StorageMasterController {
    */
   static async getById(req, res, next) {
     try {
-      const { id } = req.params;
-      const plan = await StorageMasterModel.getById(id);
+      let { id } = req.params;
+
+      // Fallback if id was passed as query or body parameter, or literal placeholder ':id'
+      if (!id || id === ':id' || String(id).trim() === '') {
+        id =
+          req.query?.id ||
+          req.query?.plan_id ||
+          req.query?.planId ||
+          req.body?.id ||
+          req.body?.plan_id ||
+          req.headers['x-storage-plan-id'];
+      }
+
+      if (!id || id === ':id' || String(id).trim() === '') {
+        return ApiResponse.error(res, 'Storage plan ID is required.', null, 400);
+      }
+
+      const trimmedId = String(id).trim();
+      let plan = null;
+      if (/^\d+$/.test(trimmedId)) {
+        plan = await StorageMasterModel.getById(Number(trimmedId));
+      } else {
+        // Fallback for lookup by code
+        plan = await StorageMasterModel.getByCode(trimmedId);
+        if (plan && plan.id) {
+          plan = await StorageMasterModel.getById(plan.id);
+        }
+      }
+
       if (!plan) {
         return ApiResponse.notFound(res, 'Storage plan not found.');
       }
