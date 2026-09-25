@@ -4,6 +4,7 @@ const router = express.Router();
 const SaasAdminController = require('../controllers/saasAdmin.controller');
 const StorageMasterController = require('../controllers/storageMaster.controller');
 const RfidCardMasterController = require('../controllers/rfidCardMaster.controller');
+const AttendanceMachineMasterController = require('../controllers/attendanceMachineMaster.controller');
 const saasAdminAuthMiddleware = require('../middlewares/saasAdminAuth.middleware');
 const { checkPermission } = require('../middlewares/saasPermission.middleware');
 const { upload } = require('../middlewares/upload.middleware');
@@ -80,6 +81,15 @@ router.post('/rfid-cards', checkPermission('rfid_cards', 'can_add'), RfidCardMas
 router.put('/rfid-cards/:id', checkPermission('rfid_cards', 'can_edit'), RfidCardMasterController.update);
 router.delete('/rfid-cards/:id', checkPermission('rfid_cards', 'can_delete'), RfidCardMasterController.delete);
 router.patch('/rfid-cards/:id/status', checkPermission('rfid_cards', 'can_manage'), RfidCardMasterController.toggleStatus);
+
+// Attendance Machine Master Management
+router.get('/attendance-machines', checkPermission('attendance_machines', 'can_view'), AttendanceMachineMasterController.getAll);
+router.get('/attendance-machines/active', checkPermission('attendance_machines', 'can_view'), AttendanceMachineMasterController.getActive);
+router.get('/attendance-machines/:id', checkPermission('attendance_machines', 'can_view'), AttendanceMachineMasterController.getById);
+router.post('/attendance-machines', checkPermission('attendance_machines', 'can_add'), AttendanceMachineMasterController.create);
+router.put('/attendance-machines/:id', checkPermission('attendance_machines', 'can_edit'), AttendanceMachineMasterController.update);
+router.delete('/attendance-machines/:id', checkPermission('attendance_machines', 'can_delete'), AttendanceMachineMasterController.delete);
+router.patch('/attendance-machines/:id/status', checkPermission('attendance_machines', 'can_manage'), AttendanceMachineMasterController.toggleStatus);
 
 // Roles & Permissions Management
 router.get('/roles', checkPermission('roles', 'can_view'), SaasAdminController.getRoles);
