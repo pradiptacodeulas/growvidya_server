@@ -48,12 +48,40 @@ app.use(cors(corsOptions));
 app.use(
   express.json({
     limit: '50mb',
+    type: (req) => {
+      const ct = (req.headers['content-type'] || '').toLowerCase();
+      if (ct.includes('multipart/form-data') || ct.includes('application/x-www-form-urlencoded')) {
+        return false;
+      }
+      return true;
+    },
     verify: (req, res, buf) => {
       req.rawBody = buf;
     },
   })
 );
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Ensure req.body is always an object, and attempt fallback parsing if Content-Type was missing
+app.use((req, res, next) => {
+  if (req.body === undefined || req.body === null || (typeof req.body === 'object' && Object.keys(req.body).length === 0)) {
+    if (req.rawBody && req.rawBody.length > 0) {
+      try {
+        const text = req.rawBody.toString('utf8').trim();
+        if ((text.startsWith('{') && text.endsWith('}')) || (text.startsWith('[') && text.endsWith(']'))) {
+          req.body = JSON.parse(text);
+        }
+      } catch (_) {}
+    }
+  }
+
+  // Guarantee req.body is defined as an object so destructuring never crashes
+  if (req.body === undefined || req.body === null) {
+    req.body = {};
+  }
+  next();
+});
+
 app.use(cookieParser(config.cookie.secret));
 app.use(paramsDecoderMiddleware);
 
@@ -65,6 +93,11 @@ const assetsDir = path.join(__dirname, 'public/assets');
 
 // Primary static uploads & assets
 app.use('/upload', express.static(uploadDir));
+app.use('/api/v1/saas-admin/upload', express.static(uploadDir));
+app.use('/api/saas-admin/upload', express.static(uploadDir));
+app.use('/saas-admin/upload', express.static(uploadDir));
+app.use('/api/v1/upload', express.static(uploadDir));
+app.use('/api/upload', express.static(uploadDir));
 app.use('/vidya_assets', express.static(uploadDir));
 app.use('/assets', express.static(assetsDir));
 app.use('/vidya_assets/images', express.static(assetsDir));
@@ -72,10 +105,14 @@ app.use('/vidya_assets/images', express.static(assetsDir));
 // Optional legacy upload directory from environment
 if (config.legacyUploadPath && fs.existsSync(config.legacyUploadPath)) {
   app.use('/upload', express.static(config.legacyUploadPath));
+  app.use('/api/v1/saas-admin/upload', express.static(config.legacyUploadPath));
+  app.use('/api/upload', express.static(config.legacyUploadPath));
 }
 
 // Fallback search resolver for nested subdirectories in public/upload
 const uploadSubDirs = [
+  'admin',
+  'admin/profile_pic',
   'study_material',
   'general',
   'leave',
@@ -88,14 +125,30 @@ const uploadSubDirs = [
 ];
 
 app.use(async (req, res, next) => {
-  if (req.method === 'GET' && req.path.startsWith('/upload/')) {
-    const filename = path.basename(req.path);
-    for (const sub of uploadSubDirs) {
-      const candidate = path.join(uploadDir, sub, filename);
+  if (req.method === 'GET') {
+    const uploadIndex = req.path.indexOf('/upload/');
+    if (uploadIndex !== -1) {
+      const relPath = req.path.substring(uploadIndex + '/upload/'.length);
+      const directCandidate = path.join(uploadDir, relPath);
       try {
-        const stat = await fs.promises.stat(candidate);
-        if (stat.isFile()) return res.sendFile(candidate);
+        const stat = await fs.promises.stat(directCandidate);
+        if (stat.isFile()) return res.sendFile(directCandidate);
       } catch (_) {}
+
+      // Fallback search in subdirectories or extension swap (.png <-> .jpg)
+      const filename = path.basename(req.path);
+      const nameWithoutExt = path.parse(filename).name;
+      const exts = ['.png', '.jpg', '.jpeg', '.webp'];
+
+      for (const sub of ['', ...uploadSubDirs]) {
+        for (const ext of exts) {
+          const candidate = path.join(uploadDir, sub, nameWithoutExt + ext);
+          try {
+            const stat = await fs.promises.stat(candidate);
+            if (stat.isFile()) return res.sendFile(candidate);
+          } catch (_) {}
+        }
+      }
     }
   }
   next();

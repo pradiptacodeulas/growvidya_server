@@ -127,13 +127,13 @@ class AdminParentController {
   static async createParent(req, res, next) {
     try {
       const schoolId = AdminParentController.getSchoolId(req);
-      const { first_name } = req.body;
+      const { first_name } = req.body || {};
 
       if (!first_name) {
         return ApiResponse.error(res, 'First name is required.', null, 400);
       }
 
-      const insertId = await ParentModel.create(schoolId, req.body);
+      const insertId = await ParentModel.create(schoolId, req.body || {});
 
       return ApiResponse.success(res, 'Parent registered successfully.', { id: insertId }, 201);
     } catch (error) {
@@ -145,7 +145,7 @@ class AdminParentController {
     try {
       const schoolId = AdminParentController.getSchoolId(req);
       const parentId = req.params.id;
-      const { first_name } = req.body;
+      const { first_name } = req.body || {};
 
       if (!first_name) {
         return ApiResponse.error(res, 'First name is required.', null, 400);

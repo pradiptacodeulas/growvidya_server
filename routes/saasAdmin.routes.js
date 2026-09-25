@@ -1,9 +1,11 @@
 const express = require('express');
+const path = require('path');
 const router = express.Router();
 const SaasAdminController = require('../controllers/saasAdmin.controller');
 const StorageMasterController = require('../controllers/storageMaster.controller');
 const saasAdminAuthMiddleware = require('../middlewares/saasAdminAuth.middleware');
 const { checkPermission } = require('../middlewares/saasPermission.middleware');
+const { upload } = require('../middlewares/upload.middleware');
 
 // ==========================================
 // 1. PUBLIC SAAS ADMIN ROUTES
@@ -11,6 +13,7 @@ const { checkPermission } = require('../middlewares/saasPermission.middleware');
 router.post('/login', SaasAdminController.login);
 router.post('/validate-coupon', SaasAdminController.validateCoupon);
 router.get('/genders', SaasAdminController.getGenders);
+router.use('/upload', express.static(path.join(__dirname, '../public/upload')));
 
 // ==========================================
 // 2. PROTECTED SAAS ADMIN ROUTES
@@ -19,7 +22,7 @@ router.use(saasAdminAuthMiddleware);
 
 // Profile & Session (Any authenticated admin can access their own profile)
 router.get('/profile', SaasAdminController.getProfile);
-router.put('/profile', SaasAdminController.updateProfile);
+router.put('/profile', upload.single('profile_image'), SaasAdminController.updateProfile);
 router.post('/logout', SaasAdminController.logout);
 
 // Modules Lookup
@@ -78,8 +81,8 @@ router.delete('/roles/:id', checkPermission('roles', 'can_delete'), SaasAdminCon
 // Sub Admin Users Management
 router.get('/sub-admins', checkPermission('sub_admins', 'can_view'), SaasAdminController.getSubAdmins);
 router.get('/sub-admins/:id', checkPermission('sub_admins', 'can_view'), SaasAdminController.getSubAdminById);
-router.post('/sub-admins', checkPermission('sub_admins', 'can_add'), SaasAdminController.createSubAdmin);
-router.put('/sub-admins/:id', checkPermission('sub_admins', 'can_edit'), SaasAdminController.updateSubAdmin);
+router.post('/sub-admins', checkPermission('sub_admins', 'can_add'), upload.single('profile_image'), SaasAdminController.createSubAdmin);
+router.put('/sub-admins/:id', checkPermission('sub_admins', 'can_edit'), upload.single('profile_image'), SaasAdminController.updateSubAdmin);
 router.delete('/sub-admins/:id', checkPermission('sub_admins', 'can_delete'), SaasAdminController.deleteSubAdmin);
 router.patch('/sub-admins/:id/status', checkPermission('sub_admins', 'can_manage'), SaasAdminController.toggleSubAdminStatus);
 

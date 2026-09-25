@@ -127,11 +127,10 @@ Authorization: Bearer <JWT_TOKEN>
   "gender": 1, // Stores gender ID referencing gender_master (1 = Male, 2 = Female, 3 = Others)
   "phone_number": "9876543210",
   "profile_image": "data:image/png;base64,iVBORw0KGgo...", // Base64 data string (auto-saved to disk) or URL
-  "email": "superadmin@growvidya.com",
-  "password": "NewSecurePassword123" // Optional: only if changing password
+  "email": "superadmin@growvidya.com"
 }
 ```
-* **Success Response (200 OK):** Returns the updated profile object with `gender`, `gender_id`, and `gender_name`.
+* **Success Response (200 OK):** Returns the updated profile object with `gender`, `gender_id`, and `gender_name`. Passwords are not updated via this endpoint.
 
 #### 4. Get Gender Master List
 * **Method & Path:** `GET /api/v1/saas-admin/genders` (or `GET /api/v1/saas/genders`)

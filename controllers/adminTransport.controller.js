@@ -246,7 +246,7 @@ class AdminTransportController {
   static async createDriver(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
-      const { first_name, last_name, email, phone, license_number, lisence_number, gender, picture, status } = req.body;
+      const { first_name, last_name, email, phone, license_number, lisence_number, gender, picture, status } = req.body || {};
 
       if (!first_name || !first_name.trim()) {
         return ApiResponse.error(res, 'Driver first name is required.', null, 400);
@@ -319,7 +319,7 @@ class AdminTransportController {
     try {
       const schoolId = req.user.schoolId;
       const { id } = req.params;
-      const { first_name, last_name, email, phone, license_number, lisence_number, gender, picture, status } = req.body;
+      const { first_name, last_name, email, phone, license_number, lisence_number, gender, picture, status } = req.body || {};
 
       if (!first_name || !first_name.trim()) {
         return ApiResponse.error(res, 'Driver first name is required.', null, 400);
@@ -459,7 +459,7 @@ class AdminTransportController {
   static async createHelper(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
-      const { first_name, last_name, email, phone, gender, picture, status } = req.body;
+      const { first_name, last_name, email, phone, gender, picture, status } = req.body || {};
 
       if (!first_name || !first_name.trim()) {
         return ApiResponse.error(res, 'First name is required.', null, 400);
@@ -516,7 +516,7 @@ class AdminTransportController {
     try {
       const schoolId = req.user.schoolId;
       const { id } = req.params;
-      const { first_name, last_name, email, phone, gender, picture, status } = req.body;
+      const { first_name, last_name, email, phone, gender, picture, status } = req.body || {};
 
       if (!first_name || !first_name.trim()) {
         return ApiResponse.error(res, 'First name is required.', null, 400);

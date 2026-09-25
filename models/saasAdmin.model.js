@@ -130,7 +130,7 @@ class SaasAdminModel {
     return rows;
   }
 
-  static async updateProfile(id, { first_name, last_name, gender, gender_id, profile_image, phone_number, email, password, name }) {
+  static async updateProfile(id, { first_name, last_name, gender, gender_id, profile_image, phone_number, email, name }) {
     const updates = [];
     const params = [];
 
@@ -202,12 +202,6 @@ class SaasAdminModel {
     if (email !== undefined && email.trim()) {
       updates.push('email = ?');
       params.push(String(email).toLowerCase().trim());
-    }
-
-    if (password && password.length >= 6) {
-      const hashed = await hashPassword(password);
-      updates.push('password = ?');
-      params.push(hashed);
     }
 
     if (updates.length === 0) return false;

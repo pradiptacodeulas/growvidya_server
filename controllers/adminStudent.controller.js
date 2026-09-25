@@ -103,7 +103,7 @@ class AdminStudentController {
   static async createStudent(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
-      const { first_name, class_id, email_address } = req.body;
+      const { first_name, class_id, email_address } = req.body || {};
 
       if (!first_name || !class_id) {
         return ApiResponse.error(res, 'First name and Class selection are required.', null, 400);
@@ -160,7 +160,7 @@ class AdminStudentController {
     try {
       const schoolId = req.user.schoolId;
       const studentId = req.params.id;
-      const { first_name, class_id, email_address } = req.body;
+      const { first_name, class_id, email_address } = req.body || {};
 
       if (!first_name || !class_id) {
         return ApiResponse.error(res, 'First name and Class selection are required.', null, 400);

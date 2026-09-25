@@ -1,3 +1,4 @@
+const path = require('path');
 const SaasAdminModel = require('../models/saasAdmin.model');
 const SaasRoleModel = require('../models/saasRole.model');
 const CouponModel = require('../models/coupon.model');
@@ -11,7 +12,7 @@ class SaasAdminController {
   // ========================================================
   static async login(req, res, next) {
     try {
-      const { email, password } = req.body;
+      const { email, password } = req.body || {};
 
       if (!email || !password) {
         return ApiResponse.error(res, 'Email and password are required.', null, 400);
@@ -107,7 +108,33 @@ class SaasAdminController {
 
   static async updateProfile(req, res, next) {
     try {
-      const { first_name, last_name, gender, gender_id, profile_image, phone_number, email, password } = req.body;
+      const body = req.body || {};
+      let profile_image = body.profile_image;
+      if (req.file) {
+        const uploadRoot = path.join(__dirname, '../public/upload');
+        let folderRel = '';
+        if (req.file.destination) {
+          folderRel = path.relative(uploadRoot, req.file.destination).replace(/\\/g, '/');
+        }
+        const cleanFolder = folderRel && folderRel !== '.' ? `${folderRel.replace(/^\/+|\/+$/g, '')}/` : '';
+        profile_image = `/upload/${cleanFolder}${req.file.filename}`;
+      }
+
+      const { first_name, last_name, gender, gender_id, phone_number, email, name } = body;
+
+      const hasFields =
+        first_name !== undefined ||
+        last_name !== undefined ||
+        gender !== undefined ||
+        gender_id !== undefined ||
+        profile_image !== undefined ||
+        phone_number !== undefined ||
+        email !== undefined ||
+        name !== undefined;
+
+      if (!hasFields) {
+        return ApiResponse.error(res, 'Request body is required and must contain at least one field to update.', null, 400);
+      }
 
       if (first_name !== undefined && (!first_name || String(first_name).trim() === '')) {
         return ApiResponse.error(res, 'First name cannot be empty.', null, 400);
@@ -140,7 +167,7 @@ class SaasAdminController {
         profile_image,
         phone_number,
         email,
-        password,
+        name,
       });
 
       if (!updated) {
@@ -793,6 +820,18 @@ class SaasAdminController {
 
   static async createSubAdmin(req, res, next) {
     try {
+      const body = req.body || {};
+      let profile_image = body.profile_image;
+      if (req.file) {
+        const uploadRoot = path.join(__dirname, '../public/upload');
+        let folderRel = '';
+        if (req.file.destination) {
+          folderRel = path.relative(uploadRoot, req.file.destination).replace(/\\/g, '/');
+        }
+        const cleanFolder = folderRel && folderRel !== '.' ? `${folderRel.replace(/^\/+|\/+$/g, '')}/` : '';
+        profile_image = `/upload/${cleanFolder}${req.file.filename}`;
+      }
+
       const {
         first_name,
         last_name,
@@ -801,10 +840,9 @@ class SaasAdminController {
         gender,
         gender_id,
         phone_number,
-        profile_image,
         role_id,
         status,
-      } = req.body;
+      } = body;
 
       if (!first_name || !String(first_name).trim()) {
         return ApiResponse.error(res, 'First name is required.', null, 400);
@@ -847,6 +885,18 @@ class SaasAdminController {
   static async updateSubAdmin(req, res, next) {
     try {
       const { id } = req.params;
+      const body = req.body || {};
+      let profile_image = body.profile_image;
+      if (req.file) {
+        const uploadRoot = path.join(__dirname, '../public/upload');
+        let folderRel = '';
+        if (req.file.destination) {
+          folderRel = path.relative(uploadRoot, req.file.destination).replace(/\\/g, '/');
+        }
+        const cleanFolder = folderRel && folderRel !== '.' ? `${folderRel.replace(/^\/+|\/+$/g, '')}/` : '';
+        profile_image = `/upload/${cleanFolder}${req.file.filename}`;
+      }
+
       const {
         first_name,
         last_name,
@@ -855,10 +905,9 @@ class SaasAdminController {
         gender,
         gender_id,
         phone_number,
-        profile_image,
         role_id,
         status,
-      } = req.body;
+      } = body;
 
       if (first_name !== undefined && String(first_name).trim() === '') {
         return ApiResponse.error(res, 'First name cannot be empty.', null, 400);
@@ -920,7 +969,8 @@ class SaasAdminController {
   static async toggleSubAdminStatus(req, res, next) {
     try {
       const { id } = req.params;
-      const { status } = req.body;
+      const body = req.body || {};
+      const { status } = body;
       if (status === undefined || (Number(status) !== 0 && Number(status) !== 1)) {
         return ApiResponse.error(res, 'Status must be 0 (inactive) or 1 (active).', null, 400);
       }
