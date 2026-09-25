@@ -54,6 +54,13 @@ router.put('/packages/:id', checkPermission('packages', 'can_edit'), SaasAdminCo
 router.delete('/packages/:id', checkPermission('packages', 'can_delete'), SaasAdminController.deletePackage);
 router.patch('/packages/:id/status', checkPermission('packages', 'can_manage'), SaasAdminController.togglePackageStatus);
 
+// Package Items & Add-ons
+router.get('/packages/:id/items', checkPermission('packages', 'can_view'), SaasAdminController.getPackageItems);
+router.post('/packages/:id/items', checkPermission('packages', 'can_edit'), SaasAdminController.addPackageItem);
+router.put('/packages/items/:itemId', checkPermission('packages', 'can_edit'), SaasAdminController.updatePackageItem);
+router.delete('/packages/items/:itemId', checkPermission('packages', 'can_delete'), SaasAdminController.deletePackageItem);
+router.patch('/packages/items/:itemId/status', checkPermission('packages', 'can_manage'), SaasAdminController.togglePackageItemStatus);
+
 // Coupon Management
 router.get('/coupons', checkPermission('coupons', 'can_view'), SaasAdminController.getCoupons);
 router.get('/coupons/:id', checkPermission('coupons', 'can_view'), SaasAdminController.getCouponById);

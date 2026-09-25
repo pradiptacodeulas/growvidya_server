@@ -30,8 +30,7 @@ class SubscriptionModel {
         p.price,
         p.billing_cycle,
         p.max_students,
-        p.max_teachers,
-        p.features_json
+        p.max_teachers
       FROM school_subscriptions s
       JOIN subscription_plans p ON s.plan_id = p.id
       WHERE s.school_id = ?
@@ -102,6 +101,25 @@ class SubscriptionModel {
       }
     }
 
+    // Fetch active items for the school's plan
+    let planItems = [];
+    if (sub.plan_id) {
+      try {
+        const [items] = await pool.query(
+          'SELECT id, item_name, item_code, item_type, price, quota_limit, unit, billing_type, description FROM subscription_items WHERE sub_id = ? AND status = 1 ORDER BY display_order ASC, id ASC',
+          [sub.plan_id]
+        );
+        planItems = items || [];
+      } catch (e) {
+        planItems = [];
+      }
+    }
+
+    const featuresMap = {};
+    planItems.forEach(it => {
+      if (it.item_code) featuresMap[it.item_code.toLowerCase()] = true;
+    });
+
     return {
       ...sub,
       days_left: Math.max(0, daysLeft),
@@ -109,10 +127,8 @@ class SubscriptionModel {
       isTrial,
       isExpired,
       liveStatus,
-      features:
-        typeof sub.features_json === 'string'
-          ? JSON.parse(sub.features_json)
-          : sub.features_json || {},
+      features: featuresMap,
+      items: planItems,
     };
   }
 
@@ -122,19 +138,29 @@ class SubscriptionModel {
   static async getUpgradePlans() {
     const query = `
       SELECT id, plan_name, plan_code, description, price, billing_cycle,
-             max_students, max_teachers, features_json
+             max_students, max_teachers
       FROM subscription_plans
       WHERE status = 1 AND billing_cycle != 'trial' AND price > 0
       ORDER BY price ASC
     `;
     const [rows] = await pool.query(query);
-    return rows.map((row) => ({
-      ...row,
-      features:
-        typeof row.features_json === 'string'
-          ? JSON.parse(row.features_json)
-          : row.features_json || {},
-    }));
+    const plans = [];
+    for (const row of rows) {
+      const [items] = await pool.query(
+        'SELECT id, item_name, item_code, item_type, price, quota_limit, unit, billing_type, description FROM subscription_items WHERE sub_id = ? AND status = 1 ORDER BY display_order ASC, id ASC',
+        [row.id]
+      );
+      const featuresMap = {};
+      (items || []).forEach(it => {
+        if (it.item_code) featuresMap[it.item_code.toLowerCase()] = true;
+      });
+      plans.push({
+        ...row,
+        features: featuresMap,
+        items: items || [],
+      });
+    }
+    return plans;
   }
 
   /**
@@ -146,7 +172,7 @@ class SubscriptionModel {
 
     const [rows] = await pool.query(
       `SELECT id, plan_name, plan_code, description, price, billing_cycle,
-              max_students, max_teachers, features_json
+              max_students, max_teachers
        FROM subscription_plans
        WHERE id = ? LIMIT 1`,
       [targetPlanId]
@@ -155,12 +181,19 @@ class SubscriptionModel {
     if (rows.length === 0) return null;
 
     const row = rows[0];
+    const [items] = await pool.query(
+      'SELECT id, item_name, item_code, item_type, price, quota_limit, unit, billing_type, description FROM subscription_items WHERE sub_id = ? AND status = 1 ORDER BY display_order ASC, id ASC',
+      [row.id]
+    );
+    const featuresMap = {};
+    (items || []).forEach(it => {
+      if (it.item_code) featuresMap[it.item_code.toLowerCase()] = true;
+    });
+
     return {
       ...row,
-      features:
-        typeof row.features_json === 'string'
-          ? JSON.parse(row.features_json)
-          : row.features_json || {},
+      features: featuresMap,
+      items: items || [],
     };
   }
 

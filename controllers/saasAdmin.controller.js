@@ -2,6 +2,7 @@ const path = require('path');
 const SaasAdminModel = require('../models/saasAdmin.model');
 const SaasRoleModel = require('../models/saasRole.model');
 const CouponModel = require('../models/coupon.model');
+const SubscriptionItemModel = require('../models/subscriptionItem.model');
 const ApiResponse = require('../utils/api.response');
 const { generateToken } = require('../utils/jwt.util');
 const { comparePassword } = require('../utils/password.util');
@@ -403,7 +404,7 @@ class SaasAdminController {
 
   static async createPackage(req, res, next) {
     try {
-      const { plan_name, plan_code, description, price, billing_cycle, max_students, max_teachers, features_json, status } = req.body;
+      const { plan_name, plan_code, description, price, billing_cycle, max_students, max_teachers, status, items } = req.body;
 
       if (!plan_name || plan_name.trim() === '') {
         return ApiResponse.error(res, 'Plan name is required.', null, 400);
@@ -421,8 +422,8 @@ class SaasAdminController {
         billing_cycle,
         max_students,
         max_teachers,
-        features_json,
         status: status !== undefined ? status : 1,
+        items: items || [],
       });
 
       const pkg = await SaasAdminModel.getPackageById(newId);
@@ -484,6 +485,102 @@ class SaasAdminController {
       }
 
       return ApiResponse.success(res, `Package ${parseInt(status, 10) === 1 ? 'activated' : 'deactivated'} successfully.`);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ========================================================
+  // 5b. SUBSCRIPTION ITEMS / ADD-ONS MANAGEMENT
+  // ========================================================
+  static async getPackageItems(req, res, next) {
+    try {
+      const { id } = req.params;
+      const { status } = req.query;
+      const items = await SubscriptionItemModel.getByPlanId(id, { status });
+      return ApiResponse.success(res, 'Subscription items retrieved successfully.', items);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async addPackageItem(req, res, next) {
+    try {
+      const { id } = req.params;
+      const { item_name, item_code, item_type, price, quota_limit, unit, billing_type, description, status, display_order } = req.body;
+
+      if (!item_name || !item_name.trim()) {
+        return ApiResponse.error(res, 'Item name is required.', null, 400);
+      }
+
+      const newItemId = await SubscriptionItemModel.create({
+        sub_id: id,
+        item_name,
+        item_code,
+        item_type,
+        price,
+        quota_limit,
+        unit,
+        billing_type,
+        description,
+        status,
+        display_order,
+      });
+
+      const newItem = await SubscriptionItemModel.getById(newItemId);
+      return ApiResponse.created(res, 'Subscription item added successfully.', newItem);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async updatePackageItem(req, res, next) {
+    try {
+      const { itemId } = req.params;
+      const existing = await SubscriptionItemModel.getById(itemId);
+      if (!existing) {
+        return ApiResponse.notFound(res, 'Subscription item not found.');
+      }
+
+      await SubscriptionItemModel.update(itemId, req.body);
+      const updated = await SubscriptionItemModel.getById(itemId);
+      return ApiResponse.success(res, 'Subscription item updated successfully.', updated);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async deletePackageItem(req, res, next) {
+    try {
+      const { itemId } = req.params;
+      const existing = await SubscriptionItemModel.getById(itemId);
+      if (!existing) {
+        return ApiResponse.notFound(res, 'Subscription item not found.');
+      }
+
+      await SubscriptionItemModel.delete(itemId);
+      return ApiResponse.success(res, 'Subscription item deleted successfully.');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async togglePackageItemStatus(req, res, next) {
+    try {
+      const { itemId } = req.params;
+      const { status } = req.body;
+
+      if (status === undefined || (parseInt(status, 10) !== 0 && parseInt(status, 10) !== 1)) {
+        return ApiResponse.error(res, 'Status must be 0 or 1.', null, 400);
+      }
+
+      const existing = await SubscriptionItemModel.getById(itemId);
+      if (!existing) {
+        return ApiResponse.notFound(res, 'Subscription item not found.');
+      }
+
+      await SubscriptionItemModel.toggleStatus(itemId, status);
+      return ApiResponse.success(res, `Subscription item ${parseInt(status, 10) === 1 ? 'activated' : 'deactivated'} successfully.`);
     } catch (error) {
       next(error);
     }

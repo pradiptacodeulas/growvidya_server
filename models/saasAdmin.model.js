@@ -1,5 +1,6 @@
 const { pool } = require('../config/db.config');
 const { hashPassword } = require('../utils/password.util');
+const SubscriptionItemModel = require('./subscriptionItem.model');
 
 class SaasAdminModel {
   // ========================================================
@@ -556,7 +557,7 @@ class SaasAdminModel {
     const [rows] = await pool.query(
       `SELECT ss.*,
               s.school_name, s.school_code, s.email AS school_email, s.phone_number AS school_phone, s.address AS school_address,
-              sp.plan_name, sp.plan_code, sp.price AS plan_price, sp.billing_cycle, sp.features_json, sp.max_students, sp.max_teachers,
+              sp.plan_name, sp.plan_code, sp.price AS plan_price, sp.billing_cycle, sp.max_students, sp.max_teachers,
               c.code AS coupon_code, c.discount_type AS coupon_discount_type, c.discount_value AS coupon_discount_val,
               CONCAT_WS(' ', sau.first_name, sau.last_name) AS verified_by_name
        FROM school_subscriptions ss
@@ -655,12 +656,21 @@ class SaasAdminModel {
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
     const query = `
       SELECT sp.*,
-             (SELECT COUNT(*) FROM school_subscriptions ss WHERE ss.plan_id = sp.id) AS subscriber_count
+             (SELECT COUNT(*) FROM school_subscriptions ss WHERE ss.plan_id = sp.id) AS subscriber_count,
+             (SELECT COUNT(*) FROM subscription_items si WHERE si.sub_id = sp.id AND si.status = 1) AS items_count
       FROM subscription_plans sp
       ${where}
       ORDER BY sp.id ASC
     `;
     const [rows] = await pool.query(query, params);
+
+    for (const pkg of rows) {
+      const [items] = await pool.query(
+        'SELECT * FROM subscription_items WHERE sub_id = ? ORDER BY display_order ASC, id ASC',
+        [pkg.id]
+      );
+      pkg.items = items || [];
+    }
     return rows;
   }
 
@@ -672,14 +682,20 @@ class SaasAdminModel {
        WHERE sp.id = ? LIMIT 1`,
       [id]
     );
-    return rows[0] || null;
+    if (!rows[0]) return null;
+    const pkg = rows[0];
+    const [items] = await pool.query(
+      'SELECT * FROM subscription_items WHERE sub_id = ? ORDER BY display_order ASC, id ASC',
+      [id]
+    );
+    pkg.items = items || [];
+    return pkg;
   }
 
-  static async createPackage({ plan_name, plan_code, description, price, billing_cycle = 'annual', max_students = 0, max_teachers = 0, features_json = null, status = 1 }) {
-    const cleanFeatures = typeof features_json === 'object' ? JSON.stringify(features_json) : (features_json || '[]');
+  static async createPackage({ plan_name, plan_code, description, price, billing_cycle = 'annual', max_students = 0, max_teachers = 0, status = 1, items = [] }) {
     const [result] = await pool.query(
-      `INSERT INTO subscription_plans (plan_name, plan_code, description, price, billing_cycle, max_students, max_teachers, features_json, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+      `INSERT INTO subscription_plans (plan_name, plan_code, description, price, billing_cycle, max_students, max_teachers, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
       [
         plan_name.trim(),
         (plan_code || plan_name.toLowerCase().replace(/[^a-z0-9]/g, '_')).trim(),
@@ -688,14 +704,19 @@ class SaasAdminModel {
         billing_cycle,
         parseInt(max_students, 10) || 0,
         parseInt(max_teachers, 10) || 0,
-        cleanFeatures,
         parseInt(status, 10) === 0 ? 0 : 1,
       ]
     );
-    return result.insertId;
+    const newId = result.insertId;
+
+    if (Array.isArray(items) && items.length > 0) {
+      await SubscriptionItemModel.syncItemsForPlan(newId, items);
+    }
+
+    return newId;
   }
 
-  static async updatePackage(id, { plan_name, plan_code, description, price, billing_cycle, max_students, max_teachers, features_json, status }) {
+  static async updatePackage(id, { plan_name, plan_code, description, price, billing_cycle, max_students, max_teachers, status, items }) {
     const updates = [];
     const params = [];
 
@@ -706,18 +727,19 @@ class SaasAdminModel {
     if (billing_cycle !== undefined) { updates.push('billing_cycle = ?'); params.push(billing_cycle); }
     if (max_students !== undefined) { updates.push('max_students = ?'); params.push(parseInt(max_students, 10) || 0); }
     if (max_teachers !== undefined) { updates.push('max_teachers = ?'); params.push(parseInt(max_teachers, 10) || 0); }
-    if (features_json !== undefined) {
-      updates.push('features_json = ?');
-      params.push(typeof features_json === 'object' ? JSON.stringify(features_json) : features_json);
-    }
     if (status !== undefined) { updates.push('status = ?'); params.push(parseInt(status, 10)); }
 
-    if (updates.length === 0) return false;
+    if (updates.length > 0) {
+      params.push(id);
+      const query = `UPDATE subscription_plans SET ${updates.join(', ')} WHERE id = ?`;
+      await pool.query(query, params);
+    }
 
-    params.push(id);
-    const query = `UPDATE subscription_plans SET ${updates.join(', ')} WHERE id = ?`;
-    const [result] = await pool.query(query, params);
-    return result.affectedRows > 0;
+    if (items !== undefined && Array.isArray(items)) {
+      await SubscriptionItemModel.syncItemsForPlan(id, items);
+    }
+
+    return true;
   }
 
   static async deletePackage(id) {

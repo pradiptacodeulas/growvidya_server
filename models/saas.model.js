@@ -9,16 +9,31 @@ class SaasModel {
   static async getActivePlans() {
     const query = `
       SELECT id, plan_name, plan_code, description, price, billing_cycle,
-             max_students, max_teachers, features_json, status, created_at
+             max_students, max_teachers, status, created_at
       FROM subscription_plans
       WHERE status = 1
       ORDER BY price ASC
     `;
     const [rows] = await pool.query(query);
-    return rows.map((row) => ({
-      ...row,
-      features: typeof row.features_json === 'string' ? JSON.parse(row.features_json) : (row.features_json || {}),
-    }));
+    const plans = [];
+    for (const row of rows) {
+      const [items] = await pool.query(
+        'SELECT id, item_name, item_code, item_type, price, quota_limit, unit, billing_type, description FROM subscription_items WHERE sub_id = ? AND status = 1 ORDER BY display_order ASC, id ASC',
+        [row.id]
+      );
+      // Map item codes to a features map for frontend backwards compatibility
+      const featuresMap = {};
+      (items || []).forEach(it => {
+        if (it.item_code) featuresMap[it.item_code.toLowerCase()] = true;
+      });
+
+      plans.push({
+        ...row,
+        features: featuresMap,
+        items: items || [],
+      });
+    }
+    return plans;
   }
 
   /**
