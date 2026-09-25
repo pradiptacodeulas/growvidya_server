@@ -3,6 +3,7 @@ const path = require('path');
 const router = express.Router();
 const SaasAdminController = require('../controllers/saasAdmin.controller');
 const StorageMasterController = require('../controllers/storageMaster.controller');
+const RfidCardMasterController = require('../controllers/rfidCardMaster.controller');
 const saasAdminAuthMiddleware = require('../middlewares/saasAdminAuth.middleware');
 const { checkPermission } = require('../middlewares/saasPermission.middleware');
 const { upload } = require('../middlewares/upload.middleware');
@@ -70,6 +71,15 @@ router.post('/storage-plans', checkPermission('storage_plans', 'can_add'), Stora
 router.put('/storage-plans/:id', checkPermission('storage_plans', 'can_edit'), StorageMasterController.update);
 router.delete('/storage-plans/:id', checkPermission('storage_plans', 'can_delete'), StorageMasterController.delete);
 router.patch('/storage-plans/:id/status', checkPermission('storage_plans', 'can_manage'), StorageMasterController.toggleStatus);
+
+// RFID Card Master Management
+router.get('/rfid-cards', checkPermission('rfid_cards', 'can_view'), RfidCardMasterController.getAll);
+router.get('/rfid-cards/active', checkPermission('rfid_cards', 'can_view'), RfidCardMasterController.getActive);
+router.get('/rfid-cards/:id', checkPermission('rfid_cards', 'can_view'), RfidCardMasterController.getById);
+router.post('/rfid-cards', checkPermission('rfid_cards', 'can_add'), RfidCardMasterController.create);
+router.put('/rfid-cards/:id', checkPermission('rfid_cards', 'can_edit'), RfidCardMasterController.update);
+router.delete('/rfid-cards/:id', checkPermission('rfid_cards', 'can_delete'), RfidCardMasterController.delete);
+router.patch('/rfid-cards/:id/status', checkPermission('rfid_cards', 'can_manage'), RfidCardMasterController.toggleStatus);
 
 // Roles & Permissions Management
 router.get('/roles', checkPermission('roles', 'can_view'), SaasAdminController.getRoles);

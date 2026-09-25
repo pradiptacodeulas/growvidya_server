@@ -50,6 +50,7 @@ const commonOptionsRoutes = require('./commonOptions.routes');
 const saasRoutes = require('./saas.routes');
 const saasAdminRoutes = require('./saasAdmin.routes');
 const storageMasterRoutes = require('./storageMaster.routes');
+const rfidCardMasterRoutes = require('./rfidCardMaster.routes');
 const couponRoutes = require('./coupon.routes');
 const webhookRoutes = require('./webhook.routes');
 const messageRoutes = require('./message.routes');
@@ -78,6 +79,10 @@ router.use('/webhooks', webhookRoutes);
 // Storage Master Plans (Public endpoints & Direct API)
 router.use('/v1/storage-plans', storageMasterRoutes);
 router.use('/storage-plans', storageMasterRoutes);
+
+// RFID Cards Master (Public endpoints & Direct API)
+router.use('/v1/rfid-cards', rfidCardMasterRoutes);
+router.use('/rfid-cards', rfidCardMasterRoutes);
 
 // Coupons (Direct / Public API)
 router.use('/v1/coupons', couponRoutes);
