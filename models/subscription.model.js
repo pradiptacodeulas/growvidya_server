@@ -391,6 +391,27 @@ class SubscriptionModel {
       payment_status: 'pending',
     };
   }
+
+  /**
+   * Get active catalog for subscription configuration (Storage, Machines, RFID Cards)
+   */
+  static async getConfigurationCatalog() {
+    const [storagePlans] = await pool.query(
+      'SELECT id, plan_name, storage_capacity, capacity_unit_id, monthly_price, annual_price, description FROM storage_master WHERE status = 1 ORDER BY storage_capacity ASC'
+    );
+    const [attendanceMachines] = await pool.query(
+      'SELECT id, machine_name, model_number, brand, machine_type, connectivity, user_capacity, log_capacity, push_protocol, unit_price, amc_price, machine_image, specifications FROM attendance_machine_master WHERE status = 1 ORDER BY unit_price ASC'
+    );
+    const [rfidCards] = await pool.query(
+      'SELECT id, card_name, card_code, card_type, frequency, read_range, unit_price, min_order_qty, card_image, description FROM rfid_card_master WHERE status = 1 ORDER BY unit_price ASC'
+    );
+
+    return {
+      storage_plans: storagePlans || [],
+      attendance_machines: attendanceMachines || [],
+      rfid_cards: rfidCards || [],
+    };
+  }
 }
 
 module.exports = SubscriptionModel;

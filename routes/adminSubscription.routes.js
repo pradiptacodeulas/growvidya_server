@@ -8,6 +8,7 @@ const rbacMiddleware = require('../middlewares/rbac.middleware');
 router.use(authMiddleware);
 
 router.get('/status', AdminSubscriptionController.getSubscriptionStatus);
+router.get('/config-catalog', AdminSubscriptionController.getConfigurationCatalog);
 router.post('/create-order', AdminSubscriptionController.createSubscriptionOrder);
 router.post('/verify-payment', AdminSubscriptionController.verifySubscriptionPayment);
 router.post('/upgrade', rbacMiddleware(['Super Admin']), AdminSubscriptionController.upgradeSubscription);
