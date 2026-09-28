@@ -36,6 +36,7 @@ class RfidCardMasterModel {
         unit_price,
         min_order_qty,
         card_image,
+        rfid_image,
         description,
         status,
         created_at,
@@ -64,6 +65,7 @@ class RfidCardMasterModel {
         unit_price,
         min_order_qty,
         card_image,
+        rfid_image,
         description,
         status,
         created_at
@@ -109,13 +111,15 @@ class RfidCardMasterModel {
     unit_price = 0,
     min_order_qty = 1,
     card_image = null,
+    rfid_image = null,
     description = null,
     status = 1,
   }) {
+    const finalImage = card_image || rfid_image || null;
     const [result] = await pool.query(
       `INSERT INTO rfid_card_master 
-       (card_name, card_code, card_type, frequency, read_range, unit_price, min_order_qty, card_image, description, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+       (card_name, card_code, card_type, frequency, read_range, unit_price, min_order_qty, card_image, rfid_image, description, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
       [
         card_name.trim(),
         card_code.trim().toUpperCase(),
@@ -124,7 +128,8 @@ class RfidCardMasterModel {
         read_range ? read_range.trim() : null,
         parseFloat(unit_price) || 0.00,
         parseInt(min_order_qty, 10) || 1,
-        card_image || null,
+        finalImage,
+        finalImage,
         description || '',
         parseInt(status, 10) === 0 ? 0 : 1,
       ]
@@ -167,9 +172,10 @@ class RfidCardMasterModel {
       updates.push('min_order_qty = ?');
       params.push(parseInt(data.min_order_qty, 10) || 1);
     }
-    if (data.card_image !== undefined) {
-      updates.push('card_image = ?');
-      params.push(data.card_image);
+    if (data.card_image !== undefined || data.rfid_image !== undefined) {
+      const img = data.card_image !== undefined ? data.card_image : data.rfid_image;
+      updates.push('card_image = ?', 'rfid_image = ?');
+      params.push(img, img);
     }
     if (data.description !== undefined) {
       updates.push('description = ?');

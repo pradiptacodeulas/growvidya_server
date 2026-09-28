@@ -1,5 +1,36 @@
+const path = require('path');
+const fs = require('fs');
 const RfidCardMasterModel = require('../models/rfidCardMaster.model');
 const ApiResponse = require('../utils/api.response');
+
+// Helper to safely delete locally uploaded RFID images
+const deleteLocalRfidImage = (imagePath) => {
+  if (!imagePath || typeof imagePath !== 'string') return;
+  const normalized = imagePath.replace(/\\/g, '/');
+  if (normalized.startsWith('/upload/rfid_cards/') || normalized.startsWith('upload/rfid_cards/')) {
+    const filename = path.basename(normalized);
+    const fullPath = path.join(__dirname, '../public/upload/rfid_cards', filename);
+    if (fs.existsSync(fullPath)) {
+      try {
+        fs.unlinkSync(fullPath);
+      } catch (err) {
+        console.error('Failed to unlink old RFID card image:', err.message);
+      }
+    }
+  }
+};
+
+// Helper to safely extract RFID card ID from params, query, or body
+const extractCardId = (req) => {
+  let id = req.params?.id;
+  if (!id || id === ':id' || String(id).trim() === '') {
+    id = req.query?.id || req.query?.card_id || req.body?.id || req.body?.card_id;
+  }
+  if (!id || id === ':id' || String(id).trim() === '') {
+    return null;
+  }
+  return String(id).trim();
+};
 
 class RfidCardMasterController {
   /**
@@ -42,23 +73,17 @@ class RfidCardMasterController {
    */
   static async getById(req, res, next) {
     try {
-      let { id } = req.params;
+      const id = extractCardId(req);
 
-      if (!id || id === ':id' || String(id).trim() === '') {
-        id = req.query?.id || req.body?.id;
-      }
-
-      if (!id || id === ':id' || String(id).trim() === '') {
+      if (!id) {
         return ApiResponse.badRequest(res, 'RFID card ID is required.');
       }
 
-      const trimmedId = String(id).trim();
       let card = null;
-
-      if (/^\d+$/.test(trimmedId)) {
-        card = await RfidCardMasterModel.getById(Number(trimmedId));
+      if (/^\d+$/.test(id)) {
+        card = await RfidCardMasterModel.getById(Number(id));
       } else {
-        card = await RfidCardMasterModel.getByCode(trimmedId);
+        card = await RfidCardMasterModel.getByCode(id);
       }
 
       if (!card) {
@@ -76,6 +101,14 @@ class RfidCardMasterController {
    * Create a new RFID Card item
    */
   static async create(req, res, next) {
+    const cleanupUploadedFile = () => {
+      if (req.file && req.file.path && fs.existsSync(req.file.path)) {
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (e) {}
+      }
+    };
+
     try {
       const {
         card_name,
@@ -93,6 +126,8 @@ class RfidCardMasterController {
         minOrderQty,
         card_image,
         cardImage,
+        rfid_image,
+        rfidImage,
         description,
         status,
       } = req.body;
@@ -104,23 +139,29 @@ class RfidCardMasterController {
       const range = read_range || readRange;
       const price = unit_price !== undefined ? unit_price : unitPrice;
       const moq = min_order_qty !== undefined ? min_order_qty : minOrderQty;
-      const image = card_image || cardImage;
+      const image = req.file
+        ? `/upload/rfid_cards/${req.file.filename}`
+        : (card_image || cardImage || rfid_image || rfidImage || null);
 
       if (!name || !name.trim()) {
+        cleanupUploadedFile();
         return ApiResponse.badRequest(res, 'Card name is required.');
       }
 
       if (!code || !code.trim()) {
+        cleanupUploadedFile();
         return ApiResponse.badRequest(res, 'Card code / SKU is required.');
       }
 
       // Check unique card code
       const existing = await RfidCardMasterModel.getByCode(code);
       if (existing) {
+        cleanupUploadedFile();
         return ApiResponse.badRequest(res, `A card with code "${code.trim().toUpperCase()}" already exists.`);
       }
 
       if (price === undefined || price === null || isNaN(price) || parseFloat(price) < 0) {
+        cleanupUploadedFile();
         return ApiResponse.badRequest(res, 'A valid unit price is required.');
       }
 
@@ -133,6 +174,7 @@ class RfidCardMasterController {
         unit_price: price,
         min_order_qty: moq !== undefined ? moq : 1,
         card_image: image,
+        rfid_image: image,
         description: description || '',
         status: status !== undefined ? status : 1,
       });
@@ -140,6 +182,7 @@ class RfidCardMasterController {
       const newCard = await RfidCardMasterModel.getById(newId);
       return ApiResponse.created(res, 'RFID card created successfully.', newCard);
     } catch (error) {
+      cleanupUploadedFile();
       next(error);
     }
   }
@@ -149,15 +192,25 @@ class RfidCardMasterController {
    * Update an RFID Card item
    */
   static async update(req, res, next) {
+    const cleanupUploadedFile = () => {
+      if (req.file && req.file.path && fs.existsSync(req.file.path)) {
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (e) {}
+      }
+    };
+
     try {
-      const { id } = req.params;
+      const id = extractCardId(req);
 
       if (!id || !/^\d+$/.test(id)) {
+        cleanupUploadedFile();
         return ApiResponse.badRequest(res, 'Valid RFID card ID is required.');
       }
 
       const existing = await RfidCardMasterModel.getById(Number(id));
       if (!existing) {
+        cleanupUploadedFile();
         return ApiResponse.notFound(res, 'RFID card not found.');
       }
 
@@ -177,6 +230,8 @@ class RfidCardMasterController {
         minOrderQty,
         card_image,
         cardImage,
+        rfid_image,
+        rfidImage,
         description,
         status,
       } = req.body;
@@ -185,16 +240,23 @@ class RfidCardMasterController {
 
       if (card_name !== undefined || cardName !== undefined) {
         const val = card_name !== undefined ? card_name : cardName;
-        if (!val || !val.trim()) return ApiResponse.badRequest(res, 'Card name cannot be empty.');
+        if (!val || !val.trim()) {
+          cleanupUploadedFile();
+          return ApiResponse.badRequest(res, 'Card name cannot be empty.');
+        }
         updateData.card_name = val;
       }
 
       if (card_code !== undefined || cardCode !== undefined) {
         const val = card_code !== undefined ? card_code : cardCode;
-        if (!val || !val.trim()) return ApiResponse.badRequest(res, 'Card code cannot be empty.');
+        if (!val || !val.trim()) {
+          cleanupUploadedFile();
+          return ApiResponse.badRequest(res, 'Card code cannot be empty.');
+        }
         // Verify not duplicate of another card
         const duplicate = await RfidCardMasterModel.getByCode(val);
         if (duplicate && duplicate.id !== Number(id)) {
+          cleanupUploadedFile();
           return ApiResponse.badRequest(res, `Another card with code "${val.trim().toUpperCase()}" already exists.`);
         }
         updateData.card_code = val;
@@ -214,7 +276,10 @@ class RfidCardMasterController {
 
       if (unit_price !== undefined || unitPrice !== undefined) {
         const val = unit_price !== undefined ? unit_price : unitPrice;
-        if (isNaN(val) || parseFloat(val) < 0) return ApiResponse.badRequest(res, 'Valid unit price is required.');
+        if (isNaN(val) || parseFloat(val) < 0) {
+          cleanupUploadedFile();
+          return ApiResponse.badRequest(res, 'Valid unit price is required.');
+        }
         updateData.unit_price = val;
       }
 
@@ -222,8 +287,28 @@ class RfidCardMasterController {
         updateData.min_order_qty = min_order_qty !== undefined ? min_order_qty : minOrderQty;
       }
 
-      if (card_image !== undefined || cardImage !== undefined) {
-        updateData.card_image = card_image !== undefined ? card_image : cardImage;
+      // Handle image upload or image URL update
+      if (req.file) {
+        const imagePath = `/upload/rfid_cards/${req.file.filename}`;
+        updateData.card_image = imagePath;
+        updateData.rfid_image = imagePath;
+        if (existing.card_image && existing.card_image !== imagePath) {
+          deleteLocalRfidImage(existing.card_image);
+        }
+        if (existing.rfid_image && existing.rfid_image !== imagePath && existing.rfid_image !== existing.card_image) {
+          deleteLocalRfidImage(existing.rfid_image);
+        }
+      } else if (card_image !== undefined || cardImage !== undefined || rfid_image !== undefined || rfidImage !== undefined) {
+        const rawImg = card_image !== undefined ? card_image : (cardImage !== undefined ? cardImage : (rfid_image !== undefined ? rfid_image : rfidImage));
+        const normalizedImg = (!rawImg || String(rawImg).trim() === '' || rawImg === 'null') ? null : String(rawImg).trim();
+        updateData.card_image = normalizedImg;
+        updateData.rfid_image = normalizedImg;
+        if (existing.card_image && existing.card_image !== normalizedImg) {
+          deleteLocalRfidImage(existing.card_image);
+        }
+        if (existing.rfid_image && existing.rfid_image !== normalizedImg && existing.rfid_image !== existing.card_image) {
+          deleteLocalRfidImage(existing.rfid_image);
+        }
       }
 
       if (description !== undefined) {
@@ -238,6 +323,87 @@ class RfidCardMasterController {
       const updatedCard = await RfidCardMasterModel.getById(Number(id));
       return ApiResponse.success(res, 'RFID card updated successfully.', updatedCard);
     } catch (error) {
+      cleanupUploadedFile();
+      next(error);
+    }
+  }
+
+  /**
+   * POST /rfid-cards/:id/image
+   * Upload / update RFID card image directly
+   */
+  static async uploadImage(req, res, next) {
+    const cleanupUploadedFile = () => {
+      if (req.file && req.file.path && fs.existsSync(req.file.path)) {
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (e) {}
+      }
+    };
+
+    try {
+      const id = extractCardId(req);
+
+      if (!id || !/^\d+$/.test(id)) {
+        cleanupUploadedFile();
+        return ApiResponse.badRequest(res, 'Valid RFID card ID is required.');
+      }
+
+      if (!req.file) {
+        return ApiResponse.badRequest(res, 'No image file uploaded. Allowed formats: JPG, PNG, WEBP, SVG.');
+      }
+
+      const existing = await RfidCardMasterModel.getById(Number(id));
+      if (!existing) {
+        cleanupUploadedFile();
+        return ApiResponse.notFound(res, 'RFID card not found.');
+      }
+
+      const imagePath = `/upload/rfid_cards/${req.file.filename}`;
+      if (existing.card_image && existing.card_image !== imagePath) {
+        deleteLocalRfidImage(existing.card_image);
+      }
+      if (existing.rfid_image && existing.rfid_image !== imagePath && existing.rfid_image !== existing.card_image) {
+        deleteLocalRfidImage(existing.rfid_image);
+      }
+
+      await RfidCardMasterModel.update(Number(id), { card_image: imagePath, rfid_image: imagePath });
+      const updatedCard = await RfidCardMasterModel.getById(Number(id));
+      return ApiResponse.success(res, 'RFID card image uploaded successfully.', updatedCard);
+    } catch (error) {
+      cleanupUploadedFile();
+      next(error);
+    }
+  }
+
+  /**
+   * DELETE /rfid-cards/:id/image
+   * Remove / delete RFID card image
+   */
+  static async deleteImage(req, res, next) {
+    try {
+      const id = extractCardId(req);
+
+      if (!id || !/^\d+$/.test(id)) {
+        return ApiResponse.badRequest(res, 'Valid RFID card ID is required.');
+      }
+
+      const existing = await RfidCardMasterModel.getById(Number(id));
+      if (!existing) {
+        return ApiResponse.notFound(res, 'RFID card not found.');
+      }
+
+      if (existing.card_image) {
+        deleteLocalRfidImage(existing.card_image);
+      }
+      if (existing.rfid_image && existing.rfid_image !== existing.card_image) {
+        deleteLocalRfidImage(existing.rfid_image);
+      }
+
+      await RfidCardMasterModel.update(Number(id), { card_image: null, rfid_image: null });
+      const updatedCard = await RfidCardMasterModel.getById(Number(id));
+      return ApiResponse.success(res, 'RFID card image removed successfully.', updatedCard);
+    } catch (error) {
       next(error);
     }
   }
@@ -248,7 +414,7 @@ class RfidCardMasterController {
    */
   static async delete(req, res, next) {
     try {
-      const { id } = req.params;
+      const id = extractCardId(req);
 
       if (!id || !/^\d+$/.test(id)) {
         return ApiResponse.badRequest(res, 'Valid RFID card ID is required.');
@@ -260,6 +426,12 @@ class RfidCardMasterController {
       }
 
       await RfidCardMasterModel.delete(Number(id));
+      if (existing.card_image) {
+        deleteLocalRfidImage(existing.card_image);
+      }
+      if (existing.rfid_image && existing.rfid_image !== existing.card_image) {
+        deleteLocalRfidImage(existing.rfid_image);
+      }
       return ApiResponse.success(res, 'RFID card deleted successfully.');
     } catch (error) {
       if (error.message.includes('associated with it')) {
@@ -275,7 +447,7 @@ class RfidCardMasterController {
    */
   static async toggleStatus(req, res, next) {
     try {
-      const { id } = req.params;
+      const id = extractCardId(req);
       const { status } = req.body;
 
       if (!id || !/^\d+$/.test(id)) {

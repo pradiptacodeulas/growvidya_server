@@ -8,7 +8,7 @@ const AttendanceMachineMasterController = require('../controllers/attendanceMach
 const BankAccountMasterController = require('../controllers/bankAccountMaster.controller');
 const saasAdminAuthMiddleware = require('../middlewares/saasAdminAuth.middleware');
 const { checkPermission } = require('../middlewares/saasPermission.middleware');
-const { upload, machineImageMiddleware } = require('../middlewares/upload.middleware');
+const { upload, machineImageMiddleware, rfidImageMiddleware } = require('../middlewares/upload.middleware');
 
 // ==========================================
 // 1. PUBLIC SAAS ADMIN ROUTES
@@ -88,9 +88,13 @@ router.patch('/storage-plans/status', checkPermission('storage_plans', 'can_mana
 router.get('/rfid-cards', checkPermission('rfid_cards', 'can_view'), RfidCardMasterController.getAll);
 router.get('/rfid-cards/active', checkPermission('rfid_cards', 'can_view'), RfidCardMasterController.getActive);
 router.get('/rfid-cards/:id', checkPermission('rfid_cards', 'can_view'), RfidCardMasterController.getById);
-router.post('/rfid-cards', checkPermission('rfid_cards', 'can_add'), RfidCardMasterController.create);
-router.put('/rfid-cards/:id', checkPermission('rfid_cards', 'can_edit'), RfidCardMasterController.update);
-router.put('/rfid-cards', checkPermission('rfid_cards', 'can_edit'), RfidCardMasterController.update);
+router.post('/rfid-cards', checkPermission('rfid_cards', 'can_add'), rfidImageMiddleware, RfidCardMasterController.create);
+router.put('/rfid-cards/:id', checkPermission('rfid_cards', 'can_edit'), rfidImageMiddleware, RfidCardMasterController.update);
+router.put('/rfid-cards', checkPermission('rfid_cards', 'can_edit'), rfidImageMiddleware, RfidCardMasterController.update);
+router.post('/rfid-cards/:id/image', checkPermission('rfid_cards', 'can_edit'), rfidImageMiddleware, RfidCardMasterController.uploadImage);
+router.post('/rfid-cards/image', checkPermission('rfid_cards', 'can_edit'), rfidImageMiddleware, RfidCardMasterController.uploadImage);
+router.delete('/rfid-cards/:id/image', checkPermission('rfid_cards', 'can_edit'), RfidCardMasterController.deleteImage);
+router.delete('/rfid-cards/image', checkPermission('rfid_cards', 'can_edit'), RfidCardMasterController.deleteImage);
 router.delete('/rfid-cards/:id', checkPermission('rfid_cards', 'can_delete'), RfidCardMasterController.delete);
 router.delete('/rfid-cards', checkPermission('rfid_cards', 'can_delete'), RfidCardMasterController.delete);
 router.patch('/rfid-cards/:id/status', checkPermission('rfid_cards', 'can_manage'), RfidCardMasterController.toggleStatus);

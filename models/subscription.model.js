@@ -403,7 +403,7 @@ class SubscriptionModel {
       'SELECT id, machine_name, model_number, brand, machine_type, connectivity, user_capacity, log_capacity, push_protocol, unit_price, amc_price, machine_image, specifications FROM attendance_machine_master WHERE status = 1 ORDER BY unit_price ASC'
     );
     const [rfidCards] = await pool.query(
-      'SELECT id, card_name, card_code, card_type, frequency, read_range, unit_price, min_order_qty, card_image, description FROM rfid_card_master WHERE status = 1 ORDER BY unit_price ASC'
+      'SELECT id, card_name, card_code, card_type, frequency, read_range, unit_price, min_order_qty, card_image, rfid_image, description FROM rfid_card_master WHERE status = 1 ORDER BY unit_price ASC'
     );
     const [bankAccounts] = await pool.query(
       'SELECT id, account_title, beneficiary_name, account_number, bank_name, branch_name, ifsc_code, account_type, upi_id, swift_code, instructions, qr_code_image, is_default FROM bank_account_master WHERE status = 1 ORDER BY is_default DESC, id ASC'
