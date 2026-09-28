@@ -16,8 +16,12 @@ router.get('/:id', BankAccountMasterController.getById);
 // Admin / Mutation routes
 router.post('/', BankAccountMasterController.create);
 router.put('/:id', BankAccountMasterController.update);
+router.put('/', BankAccountMasterController.update);
 router.delete('/:id', BankAccountMasterController.delete);
+router.delete('/', BankAccountMasterController.delete);
 router.patch('/:id/status', BankAccountMasterController.toggleStatus);
+router.patch('/status', BankAccountMasterController.toggleStatus);
 router.patch('/:id/default', BankAccountMasterController.setDefault);
+router.patch('/default', BankAccountMasterController.setDefault);
 
 module.exports = router;

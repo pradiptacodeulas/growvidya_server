@@ -20,6 +20,18 @@ const deleteLocalMachineImage = (imagePath) => {
   }
 };
 
+// Helper to safely extract machine ID from params, query, or body
+const extractMachineId = (req) => {
+  let id = req.params?.id;
+  if (!id || id === ':id' || String(id).trim() === '') {
+    id = req.query?.id || req.query?.machine_id || req.body?.id || req.body?.machine_id;
+  }
+  if (!id || id === ':id' || String(id).trim() === '') {
+    return null;
+  }
+  return String(id).trim();
+};
+
 class AttendanceMachineMasterController {
   /**
    * GET /attendance-machines
@@ -61,17 +73,13 @@ class AttendanceMachineMasterController {
    */
   static async getById(req, res, next) {
     try {
-      let { id } = req.params;
+      const id = extractMachineId(req);
 
-      if (!id || id === ':id' || String(id).trim() === '') {
-        id = req.query?.id || req.body?.id;
-      }
-
-      if (!id || id === ':id' || String(id).trim() === '') {
+      if (!id) {
         return ApiResponse.badRequest(res, 'Attendance machine ID is required.');
       }
 
-      const trimmedId = String(id).trim();
+      const trimmedId = id;
       let machine = null;
 
       if (/^\d+$/.test(trimmedId)) {
@@ -208,7 +216,7 @@ class AttendanceMachineMasterController {
     };
 
     try {
-      const { id } = req.params;
+      const id = extractMachineId(req);
 
       if (!id || !/^\d+$/.test(id)) {
         cleanupUploadedFile();
@@ -364,7 +372,7 @@ class AttendanceMachineMasterController {
     };
 
     try {
-      const { id } = req.params;
+      const id = extractMachineId(req);
 
       if (!id || !/^\d+$/.test(id)) {
         cleanupUploadedFile();
@@ -401,7 +409,7 @@ class AttendanceMachineMasterController {
    */
   static async deleteImage(req, res, next) {
     try {
-      const { id } = req.params;
+      const id = extractMachineId(req);
 
       if (!id || !/^\d+$/.test(id)) {
         return ApiResponse.badRequest(res, 'Valid attendance machine ID is required.');
@@ -430,7 +438,7 @@ class AttendanceMachineMasterController {
    */
   static async delete(req, res, next) {
     try {
-      const { id } = req.params;
+      const id = extractMachineId(req);
 
       if (!id || !/^\d+$/.test(id)) {
         return ApiResponse.badRequest(res, 'Valid attendance machine ID is required.');
@@ -460,7 +468,7 @@ class AttendanceMachineMasterController {
    */
   static async toggleStatus(req, res, next) {
     try {
-      const { id } = req.params;
+      const id = extractMachineId(req);
       const { status } = req.body;
 
       if (!id || !/^\d+$/.test(id)) {

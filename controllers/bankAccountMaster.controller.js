@@ -1,6 +1,18 @@
 const BankAccountMasterModel = require('../models/bankAccountMaster.model');
 const ApiResponse = require('../utils/api.response');
 
+// Helper to extract bank account ID from params, query, or body
+const extractBankAccountId = (req) => {
+  let id = req.params?.id;
+  if (!id || id === ':id' || String(id).trim() === '') {
+    id = req.query?.id || req.query?.account_id || req.body?.id || req.body?.account_id;
+  }
+  if (!id || id === ':id' || String(id).trim() === '') {
+    return null;
+  }
+  return String(id).trim();
+};
+
 class BankAccountMasterController {
   /**
    * GET /bank-accounts
@@ -8,7 +20,13 @@ class BankAccountMasterController {
    */
   static async getAll(req, res, next) {
     try {
-      const { search, status } = req.query;
+      const { search, status, id, account_id } = req.query;
+      const targetId = id || account_id;
+      if (targetId && targetId !== ':id') {
+        req.params.id = targetId;
+        return BankAccountMasterController.getById(req, res, next);
+      }
+
       const accounts = await BankAccountMasterModel.getAll({ search, status });
       return ApiResponse.success(res, 'Bank accounts retrieved successfully.', accounts);
     } catch (error) {
@@ -35,7 +53,10 @@ class BankAccountMasterController {
    */
   static async getById(req, res, next) {
     try {
-      const { id } = req.params;
+      const id = extractBankAccountId(req);
+      if (!id) {
+        return ApiResponse.error(res, 'Bank account ID is required.', null, 400);
+      }
       const account = await BankAccountMasterModel.getById(id);
       if (!account) {
         return ApiResponse.error(res, 'Bank account not found.', null, 404);
@@ -105,7 +126,10 @@ class BankAccountMasterController {
    */
   static async update(req, res, next) {
     try {
-      const { id } = req.params;
+      const id = extractBankAccountId(req);
+      if (!id) {
+        return ApiResponse.error(res, 'Valid bank account ID is required.', null, 400);
+      }
       const existing = await BankAccountMasterModel.getById(id);
       if (!existing) {
         return ApiResponse.error(res, 'Bank account not found.', null, 404);
@@ -129,7 +153,10 @@ class BankAccountMasterController {
    */
   static async delete(req, res, next) {
     try {
-      const { id } = req.params;
+      const id = extractBankAccountId(req);
+      if (!id) {
+        return ApiResponse.error(res, 'Valid bank account ID is required.', null, 400);
+      }
       const existing = await BankAccountMasterModel.getById(id);
       if (!existing) {
         return ApiResponse.error(res, 'Bank account not found.', null, 404);
@@ -152,7 +179,10 @@ class BankAccountMasterController {
    */
   static async toggleStatus(req, res, next) {
     try {
-      const { id } = req.params;
+      const id = extractBankAccountId(req);
+      if (!id) {
+        return ApiResponse.error(res, 'Valid bank account ID is required.', null, 400);
+      }
       const { status } = req.body;
 
       const existing = await BankAccountMasterModel.getById(id);
@@ -173,7 +203,10 @@ class BankAccountMasterController {
    */
   static async setDefault(req, res, next) {
     try {
-      const { id } = req.params;
+      const id = extractBankAccountId(req);
+      if (!id) {
+        return ApiResponse.error(res, 'Valid bank account ID is required.', null, 400);
+      }
       const existing = await BankAccountMasterModel.getById(id);
       if (!existing) {
         return ApiResponse.error(res, 'Bank account not found.', null, 404);

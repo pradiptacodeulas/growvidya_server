@@ -78,8 +78,11 @@ router.get('/capacity-units', checkPermission('storage_plans', 'can_view'), Stor
 router.get('/storage-plans/:id', checkPermission('storage_plans', 'can_view'), StorageMasterController.getById);
 router.post('/storage-plans', checkPermission('storage_plans', 'can_add'), StorageMasterController.create);
 router.put('/storage-plans/:id', checkPermission('storage_plans', 'can_edit'), StorageMasterController.update);
+router.put('/storage-plans', checkPermission('storage_plans', 'can_edit'), StorageMasterController.update);
 router.delete('/storage-plans/:id', checkPermission('storage_plans', 'can_delete'), StorageMasterController.delete);
+router.delete('/storage-plans', checkPermission('storage_plans', 'can_delete'), StorageMasterController.delete);
 router.patch('/storage-plans/:id/status', checkPermission('storage_plans', 'can_manage'), StorageMasterController.toggleStatus);
+router.patch('/storage-plans/status', checkPermission('storage_plans', 'can_manage'), StorageMasterController.toggleStatus);
 
 // RFID Card Master Management
 router.get('/rfid-cards', checkPermission('rfid_cards', 'can_view'), RfidCardMasterController.getAll);
@@ -87,8 +90,11 @@ router.get('/rfid-cards/active', checkPermission('rfid_cards', 'can_view'), Rfid
 router.get('/rfid-cards/:id', checkPermission('rfid_cards', 'can_view'), RfidCardMasterController.getById);
 router.post('/rfid-cards', checkPermission('rfid_cards', 'can_add'), RfidCardMasterController.create);
 router.put('/rfid-cards/:id', checkPermission('rfid_cards', 'can_edit'), RfidCardMasterController.update);
+router.put('/rfid-cards', checkPermission('rfid_cards', 'can_edit'), RfidCardMasterController.update);
 router.delete('/rfid-cards/:id', checkPermission('rfid_cards', 'can_delete'), RfidCardMasterController.delete);
+router.delete('/rfid-cards', checkPermission('rfid_cards', 'can_delete'), RfidCardMasterController.delete);
 router.patch('/rfid-cards/:id/status', checkPermission('rfid_cards', 'can_manage'), RfidCardMasterController.toggleStatus);
+router.patch('/rfid-cards/status', checkPermission('rfid_cards', 'can_manage'), RfidCardMasterController.toggleStatus);
 
 // Attendance Machine Master Management
 router.get('/attendance-machines', checkPermission('attendance_machines', 'can_view'), AttendanceMachineMasterController.getAll);
@@ -96,10 +102,15 @@ router.get('/attendance-machines/active', checkPermission('attendance_machines',
 router.get('/attendance-machines/:id', checkPermission('attendance_machines', 'can_view'), AttendanceMachineMasterController.getById);
 router.post('/attendance-machines', checkPermission('attendance_machines', 'can_add'), machineImageMiddleware, AttendanceMachineMasterController.create);
 router.put('/attendance-machines/:id', checkPermission('attendance_machines', 'can_edit'), machineImageMiddleware, AttendanceMachineMasterController.update);
+router.put('/attendance-machines', checkPermission('attendance_machines', 'can_edit'), machineImageMiddleware, AttendanceMachineMasterController.update);
 router.post('/attendance-machines/:id/image', checkPermission('attendance_machines', 'can_edit'), machineImageMiddleware, AttendanceMachineMasterController.uploadImage);
+router.post('/attendance-machines/image', checkPermission('attendance_machines', 'can_edit'), machineImageMiddleware, AttendanceMachineMasterController.uploadImage);
 router.delete('/attendance-machines/:id/image', checkPermission('attendance_machines', 'can_edit'), AttendanceMachineMasterController.deleteImage);
+router.delete('/attendance-machines/image', checkPermission('attendance_machines', 'can_edit'), AttendanceMachineMasterController.deleteImage);
 router.delete('/attendance-machines/:id', checkPermission('attendance_machines', 'can_delete'), AttendanceMachineMasterController.delete);
+router.delete('/attendance-machines', checkPermission('attendance_machines', 'can_delete'), AttendanceMachineMasterController.delete);
 router.patch('/attendance-machines/:id/status', checkPermission('attendance_machines', 'can_manage'), AttendanceMachineMasterController.toggleStatus);
+router.patch('/attendance-machines/status', checkPermission('attendance_machines', 'can_manage'), AttendanceMachineMasterController.toggleStatus);
 
 // Bank Account Master Management (Super Admin)
 router.get('/bank-accounts', checkPermission('bank_accounts', 'can_view'), BankAccountMasterController.getAll);
@@ -107,9 +118,13 @@ router.get('/bank-accounts/active', checkPermission('bank_accounts', 'can_view')
 router.get('/bank-accounts/:id', checkPermission('bank_accounts', 'can_view'), BankAccountMasterController.getById);
 router.post('/bank-accounts', checkPermission('bank_accounts', 'can_add'), BankAccountMasterController.create);
 router.put('/bank-accounts/:id', checkPermission('bank_accounts', 'can_edit'), BankAccountMasterController.update);
+router.put('/bank-accounts', checkPermission('bank_accounts', 'can_edit'), BankAccountMasterController.update);
 router.delete('/bank-accounts/:id', checkPermission('bank_accounts', 'can_delete'), BankAccountMasterController.delete);
+router.delete('/bank-accounts', checkPermission('bank_accounts', 'can_delete'), BankAccountMasterController.delete);
 router.patch('/bank-accounts/:id/status', checkPermission('bank_accounts', 'can_manage'), BankAccountMasterController.toggleStatus);
+router.patch('/bank-accounts/status', checkPermission('bank_accounts', 'can_manage'), BankAccountMasterController.toggleStatus);
 router.patch('/bank-accounts/:id/default', checkPermission('bank_accounts', 'can_manage'), BankAccountMasterController.setDefault);
+router.patch('/bank-accounts/default', checkPermission('bank_accounts', 'can_manage'), BankAccountMasterController.setDefault);
 
 // Roles & Permissions Management
 router.get('/roles', checkPermission('roles', 'can_view'), SaasAdminController.getRoles);
