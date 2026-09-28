@@ -4,6 +4,25 @@ const AcademicModel = require('../models/academic.model');
 const AnnouncementModel = require('../models/announcement.model');
 const { pool } = require('../config/db.config');
 
+/**
+ * Helper to check if an assignment deadline has passed
+ * @param {string|Date} dueDateStr
+ * @returns {boolean}
+ */
+const isAssignmentExpired = (dueDateStr) => {
+  if (!dueDateStr) return false;
+  const str = String(dueDateStr).trim();
+  let deadline;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+    // If only date is provided (YYYY-MM-DD), expires at 23:59:59.999 of that day
+    deadline = new Date(`${str}T23:59:59.999`);
+  } else {
+    // Has time or ISO format (e.g. YYYY-MM-DD HH:mm:ss or YYYY-MM-DDTHH:mm:ss)
+    deadline = new Date(str.replace(' ', 'T'));
+  }
+  return !isNaN(deadline.getTime()) && Date.now() > deadline.getTime();
+};
+
 class StudentPortalController {
   static getStudentId(req) {
     return req.user?.studentId || req.user?.userId || req.user?.id;
@@ -441,7 +460,12 @@ class StudentPortalController {
           att.attempted_at,
           CASE 
             WHEN att.id IS NOT NULL THEN 'Attempted'
-            WHEN a.due_date < CURDATE() THEN 'Expired'
+            WHEN (
+              CASE 
+                WHEN a.due_date LIKE '%:%' THEN a.due_date < NOW()
+                ELSE a.due_date < CURDATE()
+              END
+            ) THEN 'Expired'
             ELSE 'Pending'
           END AS status
         FROM assignments a
@@ -473,7 +497,17 @@ class StudentPortalController {
         sectionId,
       ]);
 
-      return ApiResponse.success(res, 'Student assignments fetched successfully.', rows || []);
+      const evaluatedRows = (rows || []).map((row) => {
+        const isAttempted = row.attempt_id != null || row.status === 'Attempted';
+        const expired = !isAttempted && isAssignmentExpired(row.due_date);
+        return {
+          ...row,
+          status: isAttempted ? 'Attempted' : expired ? 'Expired' : 'Pending',
+          is_expired: expired,
+        };
+      });
+
+      return ApiResponse.success(res, 'Student assignments fetched successfully.', evaluatedRows);
     } catch (error) {
       console.error('Error in StudentPortalController.getAssignments:', error);
       next(error);
@@ -514,13 +548,33 @@ class StudentPortalController {
       );
       const alreadyAttempted = attRows.length > 0 ? attRows[0] : null;
 
-      // 3. Fetch questions
+      // 3. Strict Check: If assignment deadline has passed and student hasn't attempted yet
+      const isExpired = isAssignmentExpired(assignment.due_date);
+      if (isExpired && !alreadyAttempted) {
+        return ApiResponse.error(
+          res,
+          'The deadline for this assignment has expired. You can no longer answer questions or submit this assignment.',
+          {
+            isExpired: true,
+            due_date: assignment.due_date,
+            assignment: {
+              id: assignment.id,
+              title: assignment.title,
+              due_date: assignment.due_date,
+              subject_name: assignment.subject_name,
+            },
+          },
+          403
+        );
+      }
+
+      // 4. Fetch questions
       const [questions] = await pool.query(
         `SELECT id, question, status FROM assignment_questions WHERE assignment_id = ? AND status = 1 ORDER BY id ASC`,
         [assignmentId]
       );
 
-      // 4. Fetch options for each question (without revealing is_correct to the student during attempt)
+      // 5. Fetch options for each question (without revealing is_correct to the student during attempt)
       for (const q of questions) {
         const [options] = await pool.query(
           `SELECT id, answer, status FROM assignment_answers WHERE question_id = ? AND status = 1 ORDER BY id ASC`,
@@ -532,6 +586,7 @@ class StudentPortalController {
       return ApiResponse.success(res, 'Assignment details fetched successfully.', {
         assignment,
         alreadyAttempted,
+        isExpired,
         questions,
       });
     } catch (error) {
@@ -556,6 +611,33 @@ class StudentPortalController {
       if (!answers || typeof answers !== 'object') {
         await connection.rollback();
         return ApiResponse.error(res, 'Please provide answers to submit.', 400);
+      }
+
+      // 0. Verify assignment existence and check if deadline has passed
+      const [asgRows] = await connection.query(
+        `SELECT id, title, due_date, status, is_published FROM assignments WHERE id = ? AND (school_id = ? OR ? IS NULL) AND status != 4`,
+        [assignmentId, schoolId, schoolId]
+      );
+
+      if (asgRows.length === 0) {
+        await connection.rollback();
+        return ApiResponse.error(res, 'Assignment not found.', 404);
+      }
+
+      const assignment = asgRows[0];
+
+      // STRICT DEADLINE ENFORCEMENT: Reject any submission attempt after due date and time
+      if (isAssignmentExpired(assignment.due_date)) {
+        await connection.rollback();
+        return ApiResponse.error(
+          res,
+          'The deadline for this assignment has expired. Submissions are no longer accepted.',
+          {
+            isExpired: true,
+            due_date: assignment.due_date,
+          },
+          403
+        );
       }
 
       // 1. Fetch questions and correct answers for this assignment
