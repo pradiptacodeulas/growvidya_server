@@ -52,6 +52,7 @@ const saasAdminRoutes = require('./saasAdmin.routes');
 const storageMasterRoutes = require('./storageMaster.routes');
 const rfidCardMasterRoutes = require('./rfidCardMaster.routes');
 const attendanceMachineMasterRoutes = require('./attendanceMachineMaster.routes');
+const bankAccountMasterRoutes = require('./bankAccountMaster.routes');
 const couponRoutes = require('./coupon.routes');
 const webhookRoutes = require('./webhook.routes');
 const messageRoutes = require('./message.routes');
@@ -88,6 +89,10 @@ router.use('/rfid-cards', rfidCardMasterRoutes);
 // Attendance Machines Master (Public endpoints & Direct API)
 router.use('/v1/attendance-machines', attendanceMachineMasterRoutes);
 router.use('/attendance-machines', attendanceMachineMasterRoutes);
+
+// Bank Account Master (Public endpoints & Direct API)
+router.use('/v1/bank-accounts', bankAccountMasterRoutes);
+router.use('/bank-accounts', bankAccountMasterRoutes);
 
 // Coupons (Direct / Public API)
 router.use('/v1/coupons', couponRoutes);

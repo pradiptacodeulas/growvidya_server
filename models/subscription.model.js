@@ -405,11 +405,15 @@ class SubscriptionModel {
     const [rfidCards] = await pool.query(
       'SELECT id, card_name, card_code, card_type, frequency, read_range, unit_price, min_order_qty, card_image, description FROM rfid_card_master WHERE status = 1 ORDER BY unit_price ASC'
     );
+    const [bankAccounts] = await pool.query(
+      'SELECT id, account_title, beneficiary_name, account_number, bank_name, branch_name, ifsc_code, account_type, upi_id, swift_code, instructions, qr_code_image, is_default FROM bank_account_master WHERE status = 1 ORDER BY is_default DESC, id ASC'
+    );
 
     return {
       storage_plans: storagePlans || [],
       attendance_machines: attendanceMachines || [],
       rfid_cards: rfidCards || [],
+      bank_accounts: bankAccounts || [],
     };
   }
 }

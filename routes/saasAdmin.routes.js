@@ -5,6 +5,7 @@ const SaasAdminController = require('../controllers/saasAdmin.controller');
 const StorageMasterController = require('../controllers/storageMaster.controller');
 const RfidCardMasterController = require('../controllers/rfidCardMaster.controller');
 const AttendanceMachineMasterController = require('../controllers/attendanceMachineMaster.controller');
+const BankAccountMasterController = require('../controllers/bankAccountMaster.controller');
 const saasAdminAuthMiddleware = require('../middlewares/saasAdminAuth.middleware');
 const { checkPermission } = require('../middlewares/saasPermission.middleware');
 const { upload } = require('../middlewares/upload.middleware');
@@ -97,6 +98,16 @@ router.post('/attendance-machines', checkPermission('attendance_machines', 'can_
 router.put('/attendance-machines/:id', checkPermission('attendance_machines', 'can_edit'), AttendanceMachineMasterController.update);
 router.delete('/attendance-machines/:id', checkPermission('attendance_machines', 'can_delete'), AttendanceMachineMasterController.delete);
 router.patch('/attendance-machines/:id/status', checkPermission('attendance_machines', 'can_manage'), AttendanceMachineMasterController.toggleStatus);
+
+// Bank Account Master Management (Super Admin)
+router.get('/bank-accounts', checkPermission('bank_accounts', 'can_view'), BankAccountMasterController.getAll);
+router.get('/bank-accounts/active', checkPermission('bank_accounts', 'can_view'), BankAccountMasterController.getActive);
+router.get('/bank-accounts/:id', checkPermission('bank_accounts', 'can_view'), BankAccountMasterController.getById);
+router.post('/bank-accounts', checkPermission('bank_accounts', 'can_add'), BankAccountMasterController.create);
+router.put('/bank-accounts/:id', checkPermission('bank_accounts', 'can_edit'), BankAccountMasterController.update);
+router.delete('/bank-accounts/:id', checkPermission('bank_accounts', 'can_delete'), BankAccountMasterController.delete);
+router.patch('/bank-accounts/:id/status', checkPermission('bank_accounts', 'can_manage'), BankAccountMasterController.toggleStatus);
+router.patch('/bank-accounts/:id/default', checkPermission('bank_accounts', 'can_manage'), BankAccountMasterController.setDefault);
 
 // Roles & Permissions Management
 router.get('/roles', checkPermission('roles', 'can_view'), SaasAdminController.getRoles);
