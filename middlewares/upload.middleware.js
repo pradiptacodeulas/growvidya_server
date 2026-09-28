@@ -82,8 +82,74 @@ const uploadJpgOnly = multer({
   },
 });
 
+// Dedicated storage for Attendance Machine images
+const MACHINE_UPLOAD_ROOT = path.join(UPLOAD_ROOT, 'attendance_machines');
+if (!fs.existsSync(MACHINE_UPLOAD_ROOT)) {
+  fs.mkdirSync(MACHINE_UPLOAD_ROOT, { recursive: true });
+}
+
+const machineImageStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, MACHINE_UPLOAD_ROOT);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    const baseName = path
+      .basename(file.originalname, ext)
+      .replace(/[^a-zA-Z0-9_\-]/g, '_')
+      .substring(0, 50);
+
+    const timestamp = Date.now();
+    const randomSuffix = Math.round(Math.random() * 1e4);
+    cb(null, `machine_${baseName}_${timestamp}_${randomSuffix}${ext}`);
+  },
+});
+
+const uploadMachineImage = multer({
+  storage: machineImageStorage,
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase().replace('.', '');
+    const isImage = /jpeg|jpg|png|webp|svg/i.test(ext);
+    if (isImage) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Invalid image type: .${ext}. Only JPG, PNG, WEBP, and SVG are allowed for attendance machines.`));
+    }
+  },
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB
+  },
+});
+
+const machineImageMiddleware = (req, res, next) => {
+  uploadMachineImage.fields([
+    { name: 'machine_image', maxCount: 1 },
+    { name: 'image', maxCount: 1 },
+    { name: 'file', maxCount: 1 },
+  ])(req, res, (err) => {
+    if (err) {
+      return res.status(400).json({
+        status: false,
+        message: err.message,
+        data: null,
+      });
+    }
+    if (req.files) {
+      req.file =
+        req.files['machine_image']?.[0] ||
+        req.files['image']?.[0] ||
+        req.files['file']?.[0] ||
+        null;
+    }
+    next();
+  });
+};
+
 module.exports = {
   upload,
   uploadJpgOnly,
+  uploadMachineImage,
+  machineImageMiddleware,
   UPLOAD_ROOT,
+  MACHINE_UPLOAD_ROOT,
 };

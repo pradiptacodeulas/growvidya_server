@@ -8,7 +8,7 @@ const AttendanceMachineMasterController = require('../controllers/attendanceMach
 const BankAccountMasterController = require('../controllers/bankAccountMaster.controller');
 const saasAdminAuthMiddleware = require('../middlewares/saasAdminAuth.middleware');
 const { checkPermission } = require('../middlewares/saasPermission.middleware');
-const { upload } = require('../middlewares/upload.middleware');
+const { upload, machineImageMiddleware } = require('../middlewares/upload.middleware');
 
 // ==========================================
 // 1. PUBLIC SAAS ADMIN ROUTES
@@ -94,8 +94,10 @@ router.patch('/rfid-cards/:id/status', checkPermission('rfid_cards', 'can_manage
 router.get('/attendance-machines', checkPermission('attendance_machines', 'can_view'), AttendanceMachineMasterController.getAll);
 router.get('/attendance-machines/active', checkPermission('attendance_machines', 'can_view'), AttendanceMachineMasterController.getActive);
 router.get('/attendance-machines/:id', checkPermission('attendance_machines', 'can_view'), AttendanceMachineMasterController.getById);
-router.post('/attendance-machines', checkPermission('attendance_machines', 'can_add'), AttendanceMachineMasterController.create);
-router.put('/attendance-machines/:id', checkPermission('attendance_machines', 'can_edit'), AttendanceMachineMasterController.update);
+router.post('/attendance-machines', checkPermission('attendance_machines', 'can_add'), machineImageMiddleware, AttendanceMachineMasterController.create);
+router.put('/attendance-machines/:id', checkPermission('attendance_machines', 'can_edit'), machineImageMiddleware, AttendanceMachineMasterController.update);
+router.post('/attendance-machines/:id/image', checkPermission('attendance_machines', 'can_edit'), machineImageMiddleware, AttendanceMachineMasterController.uploadImage);
+router.delete('/attendance-machines/:id/image', checkPermission('attendance_machines', 'can_edit'), AttendanceMachineMasterController.deleteImage);
 router.delete('/attendance-machines/:id', checkPermission('attendance_machines', 'can_delete'), AttendanceMachineMasterController.delete);
 router.patch('/attendance-machines/:id/status', checkPermission('attendance_machines', 'can_manage'), AttendanceMachineMasterController.toggleStatus);
 

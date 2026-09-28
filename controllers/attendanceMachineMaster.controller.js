@@ -1,5 +1,24 @@
+const path = require('path');
+const fs = require('fs');
 const AttendanceMachineMasterModel = require('../models/attendanceMachineMaster.model');
 const ApiResponse = require('../utils/api.response');
+
+// Helper to safely delete locally uploaded attendance machine images
+const deleteLocalMachineImage = (imagePath) => {
+  if (!imagePath || typeof imagePath !== 'string') return;
+  const normalized = imagePath.replace(/\\/g, '/');
+  if (normalized.startsWith('/upload/attendance_machines/') || normalized.startsWith('upload/attendance_machines/')) {
+    const filename = path.basename(normalized);
+    const fullPath = path.join(__dirname, '../public/upload/attendance_machines', filename);
+    if (fs.existsSync(fullPath)) {
+      try {
+        fs.unlinkSync(fullPath);
+      } catch (err) {
+        console.error('Failed to unlink old machine image:', err.message);
+      }
+    }
+  }
+};
 
 class AttendanceMachineMasterController {
   /**
@@ -76,6 +95,14 @@ class AttendanceMachineMasterController {
    * Create a new attendance machine item
    */
   static async create(req, res, next) {
+    const cleanupUploadedFile = () => {
+      if (req.file && req.file.path && fs.existsSync(req.file.path)) {
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (e) {}
+      }
+    };
+
     try {
       const {
         machine_name,
@@ -112,27 +139,34 @@ class AttendanceMachineMasterController {
       const protocol = push_protocol || pushProtocol || 'Cloud Push';
       const price = unit_price !== undefined ? unit_price : unitPrice;
       const amc = amc_price !== undefined ? amc_price : amcPrice;
-      const image = machine_image || machineImage;
+      const image = req.file
+        ? `/upload/attendance_machines/${req.file.filename}`
+        : (machine_image || machineImage || null);
 
       if (!name || !name.trim()) {
+        cleanupUploadedFile();
         return ApiResponse.badRequest(res, 'Machine name is required.');
       }
 
       if (!model || !model.trim()) {
+        cleanupUploadedFile();
         return ApiResponse.badRequest(res, 'Model number / SKU is required.');
       }
 
       if (!brandName || !brandName.trim()) {
+        cleanupUploadedFile();
         return ApiResponse.badRequest(res, 'Brand / Manufacturer name is required.');
       }
 
       // Check unique model number
       const existing = await AttendanceMachineMasterModel.getByModelNumber(model);
       if (existing) {
+        cleanupUploadedFile();
         return ApiResponse.badRequest(res, `A machine with model number "${model.trim().toUpperCase()}" already exists.`);
       }
 
       if (price === undefined || price === null || isNaN(price) || parseFloat(price) < 0) {
+        cleanupUploadedFile();
         return ApiResponse.badRequest(res, 'A valid unit price is required.');
       }
 
@@ -155,6 +189,7 @@ class AttendanceMachineMasterController {
       const newMachine = await AttendanceMachineMasterModel.getById(newId);
       return ApiResponse.created(res, 'Attendance machine created successfully.', newMachine);
     } catch (error) {
+      cleanupUploadedFile();
       next(error);
     }
   }
@@ -164,15 +199,25 @@ class AttendanceMachineMasterController {
    * Update an attendance machine item
    */
   static async update(req, res, next) {
+    const cleanupUploadedFile = () => {
+      if (req.file && req.file.path && fs.existsSync(req.file.path)) {
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (e) {}
+      }
+    };
+
     try {
       const { id } = req.params;
 
       if (!id || !/^\d+$/.test(id)) {
+        cleanupUploadedFile();
         return ApiResponse.badRequest(res, 'Valid attendance machine ID is required.');
       }
 
       const existing = await AttendanceMachineMasterModel.getById(Number(id));
       if (!existing) {
+        cleanupUploadedFile();
         return ApiResponse.notFound(res, 'Attendance machine not found.');
       }
 
@@ -205,23 +250,33 @@ class AttendanceMachineMasterController {
 
       if (machine_name !== undefined || machineName !== undefined) {
         const val = machine_name !== undefined ? machine_name : machineName;
-        if (!val || !val.trim()) return ApiResponse.badRequest(res, 'Machine name cannot be empty.');
+        if (!val || !val.trim()) {
+          cleanupUploadedFile();
+          return ApiResponse.badRequest(res, 'Machine name cannot be empty.');
+        }
         updateData.machine_name = val;
       }
 
       if (model_number !== undefined || modelNumber !== undefined) {
         const val = model_number !== undefined ? model_number : modelNumber;
-        if (!val || !val.trim()) return ApiResponse.badRequest(res, 'Model number cannot be empty.');
+        if (!val || !val.trim()) {
+          cleanupUploadedFile();
+          return ApiResponse.badRequest(res, 'Model number cannot be empty.');
+        }
         // Verify not duplicate of another machine
         const duplicate = await AttendanceMachineMasterModel.getByModelNumber(val);
         if (duplicate && duplicate.id !== Number(id)) {
+          cleanupUploadedFile();
           return ApiResponse.badRequest(res, `Another machine with model number "${val.trim().toUpperCase()}" already exists.`);
         }
         updateData.model_number = val;
       }
 
       if (brand !== undefined) {
-        if (!brand || !brand.trim()) return ApiResponse.badRequest(res, 'Brand cannot be empty.');
+        if (!brand || !brand.trim()) {
+          cleanupUploadedFile();
+          return ApiResponse.badRequest(res, 'Brand cannot be empty.');
+        }
         updateData.brand = brand;
       }
 
@@ -247,18 +302,35 @@ class AttendanceMachineMasterController {
 
       if (unit_price !== undefined || unitPrice !== undefined) {
         const val = unit_price !== undefined ? unit_price : unitPrice;
-        if (isNaN(val) || parseFloat(val) < 0) return ApiResponse.badRequest(res, 'Valid unit price is required.');
+        if (isNaN(val) || parseFloat(val) < 0) {
+          cleanupUploadedFile();
+          return ApiResponse.badRequest(res, 'Valid unit price is required.');
+        }
         updateData.unit_price = val;
       }
 
       if (amc_price !== undefined || amcPrice !== undefined) {
         const val = amc_price !== undefined ? amc_price : amcPrice;
-        if (isNaN(val) || parseFloat(val) < 0) return ApiResponse.badRequest(res, 'Valid AMC price is required.');
+        if (isNaN(val) || parseFloat(val) < 0) {
+          cleanupUploadedFile();
+          return ApiResponse.badRequest(res, 'Valid AMC price is required.');
+        }
         updateData.amc_price = val;
       }
 
-      if (machine_image !== undefined || machineImage !== undefined) {
-        updateData.machine_image = machine_image !== undefined ? machine_image : machineImage;
+      // Handle image upload or image URL update
+      if (req.file) {
+        updateData.machine_image = `/upload/attendance_machines/${req.file.filename}`;
+        if (existing.machine_image && existing.machine_image !== updateData.machine_image) {
+          deleteLocalMachineImage(existing.machine_image);
+        }
+      } else if (machine_image !== undefined || machineImage !== undefined) {
+        const rawImg = machine_image !== undefined ? machine_image : machineImage;
+        const normalizedImg = (!rawImg || String(rawImg).trim() === '' || rawImg === 'null') ? null : String(rawImg).trim();
+        updateData.machine_image = normalizedImg;
+        if (existing.machine_image && existing.machine_image !== normalizedImg) {
+          deleteLocalMachineImage(existing.machine_image);
+        }
       }
 
       if (specifications !== undefined) {
@@ -272,6 +344,81 @@ class AttendanceMachineMasterController {
       await AttendanceMachineMasterModel.update(Number(id), updateData);
       const updatedMachine = await AttendanceMachineMasterModel.getById(Number(id));
       return ApiResponse.success(res, 'Attendance machine updated successfully.', updatedMachine);
+    } catch (error) {
+      cleanupUploadedFile();
+      next(error);
+    }
+  }
+
+  /**
+   * POST /attendance-machines/:id/image
+   * Upload / update attendance machine image directly
+   */
+  static async uploadImage(req, res, next) {
+    const cleanupUploadedFile = () => {
+      if (req.file && req.file.path && fs.existsSync(req.file.path)) {
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (e) {}
+      }
+    };
+
+    try {
+      const { id } = req.params;
+
+      if (!id || !/^\d+$/.test(id)) {
+        cleanupUploadedFile();
+        return ApiResponse.badRequest(res, 'Valid attendance machine ID is required.');
+      }
+
+      if (!req.file) {
+        return ApiResponse.badRequest(res, 'No image file uploaded. Allowed formats: JPG, PNG, WEBP, SVG.');
+      }
+
+      const existing = await AttendanceMachineMasterModel.getById(Number(id));
+      if (!existing) {
+        cleanupUploadedFile();
+        return ApiResponse.notFound(res, 'Attendance machine not found.');
+      }
+
+      const imagePath = `/upload/attendance_machines/${req.file.filename}`;
+      if (existing.machine_image && existing.machine_image !== imagePath) {
+        deleteLocalMachineImage(existing.machine_image);
+      }
+
+      await AttendanceMachineMasterModel.update(Number(id), { machine_image: imagePath });
+      const updatedMachine = await AttendanceMachineMasterModel.getById(Number(id));
+      return ApiResponse.success(res, 'Attendance machine image uploaded successfully.', updatedMachine);
+    } catch (error) {
+      cleanupUploadedFile();
+      next(error);
+    }
+  }
+
+  /**
+   * DELETE /attendance-machines/:id/image
+   * Remove / delete attendance machine image
+   */
+  static async deleteImage(req, res, next) {
+    try {
+      const { id } = req.params;
+
+      if (!id || !/^\d+$/.test(id)) {
+        return ApiResponse.badRequest(res, 'Valid attendance machine ID is required.');
+      }
+
+      const existing = await AttendanceMachineMasterModel.getById(Number(id));
+      if (!existing) {
+        return ApiResponse.notFound(res, 'Attendance machine not found.');
+      }
+
+      if (existing.machine_image) {
+        deleteLocalMachineImage(existing.machine_image);
+      }
+
+      await AttendanceMachineMasterModel.update(Number(id), { machine_image: null });
+      const updatedMachine = await AttendanceMachineMasterModel.getById(Number(id));
+      return ApiResponse.success(res, 'Attendance machine image removed successfully.', updatedMachine);
     } catch (error) {
       next(error);
     }
@@ -295,6 +442,9 @@ class AttendanceMachineMasterController {
       }
 
       await AttendanceMachineMasterModel.delete(Number(id));
+      if (existing.machine_image) {
+        deleteLocalMachineImage(existing.machine_image);
+      }
       return ApiResponse.success(res, 'Attendance machine deleted successfully.');
     } catch (error) {
       if (error.message.includes('assigned to school campuses')) {
