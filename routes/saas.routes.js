@@ -6,6 +6,7 @@ const couponAuthMiddleware = require('../middlewares/couponAuth.middleware');
 
 // Public SaaS routes (no auth required)
 router.get('/plans', SaasController.getPlans);
+router.get('/config-catalog', SaasController.getConfigCatalog);
 router.post('/create-order', SaasController.createRegistrationOrder);
 
 // Storage Plans requires authentication

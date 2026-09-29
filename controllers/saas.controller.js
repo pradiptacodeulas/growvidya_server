@@ -15,6 +15,19 @@ class SaasController {
   }
 
   /**
+   * Get public configuration catalog (notification_master, storage_master, etc.)
+   */
+  static async getConfigCatalog(req, res, next) {
+    try {
+      const SubscriptionModel = require('../models/subscription.model');
+      const catalog = await SubscriptionModel.getConfigurationCatalog();
+      return ApiResponse.success(res, 'Configuration catalog fetched successfully.', catalog);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Register a new school along with plan & superadmin
    */
   static async registerSchool(req, res, next) {
