@@ -40,7 +40,13 @@ class BankAccountMasterController {
    */
   static async getActive(req, res, next) {
     try {
-      const accounts = await BankAccountMasterModel.getActive();
+      const { default_only, is_default } = req.query;
+      const defaultOnly =
+        default_only === 'true' ||
+        default_only === '1' ||
+        is_default === '1' ||
+        is_default === 'true';
+      const accounts = await BankAccountMasterModel.getActive({ defaultOnly });
       return ApiResponse.success(res, 'Active bank accounts retrieved successfully.', accounts);
     } catch (error) {
       next(error);

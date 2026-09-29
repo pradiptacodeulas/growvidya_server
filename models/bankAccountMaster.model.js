@@ -48,8 +48,8 @@ class BankAccountMasterModel {
   /**
    * List only active bank accounts (for school subscription / checkout display)
    */
-  static async getActive() {
-    const query = `
+  static async getActive({ defaultOnly = false } = {}) {
+    let query = `
       SELECT 
         id, 
         account_title, 
@@ -63,11 +63,15 @@ class BankAccountMasterModel {
         swift_code, 
         instructions, 
         qr_code_image, 
-        is_default
+        is_default,
+        status
       FROM bank_account_master
       WHERE status = 1
-      ORDER BY is_default DESC, id ASC
     `;
+    if (defaultOnly) {
+      query += ` AND is_default = 1`;
+    }
+    query += ` ORDER BY is_default DESC, id ASC`;
     const [rows] = await pool.query(query);
     return rows;
   }
