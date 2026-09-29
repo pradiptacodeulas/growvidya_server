@@ -98,6 +98,11 @@ class BankAccountMasterController {
         );
       }
 
+      let finalQrImage = qr_code_image || null;
+      if (req.file) {
+        finalQrImage = `upload/bank_accounts/${req.file.filename}`;
+      }
+
       const newAccount = await BankAccountMasterModel.create({
         account_title: String(account_title).trim(),
         beneficiary_name: String(beneficiary_name).trim(),
@@ -109,7 +114,7 @@ class BankAccountMasterController {
         upi_id: upi_id ? String(upi_id).trim() : null,
         swift_code: swift_code ? String(swift_code).trim() : null,
         instructions: instructions ? String(instructions).trim() : null,
-        qr_code_image: qr_code_image || null,
+        qr_code_image: finalQrImage,
         is_default: is_default ? 1 : 0,
         status: status !== undefined ? (Number(status) ? 1 : 0) : 1,
       });
@@ -136,6 +141,9 @@ class BankAccountMasterController {
       }
 
       const updateData = { ...req.body };
+      if (req.file) {
+        updateData.qr_code_image = `upload/bank_accounts/${req.file.filename}`;
+      }
       if (updateData.ifsc_code) {
         updateData.ifsc_code = String(updateData.ifsc_code).trim().toUpperCase();
       }

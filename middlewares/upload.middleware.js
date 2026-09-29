@@ -210,6 +210,71 @@ const rfidImageMiddleware = (req, res, next) => {
   });
 };
 
+// Dedicated storage for Bank Account QR images
+const BANK_UPLOAD_ROOT = path.join(UPLOAD_ROOT, 'bank_accounts');
+if (!fs.existsSync(BANK_UPLOAD_ROOT)) {
+  fs.mkdirSync(BANK_UPLOAD_ROOT, { recursive: true });
+}
+
+const bankImageStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, BANK_UPLOAD_ROOT);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    const baseName = path
+      .basename(file.originalname, ext)
+      .replace(/[^a-zA-Z0-9_\-]/g, '_')
+      .substring(0, 50);
+
+    const timestamp = Date.now();
+    const randomSuffix = Math.round(Math.random() * 1e4);
+    cb(null, `bank_qr_${baseName}_${timestamp}_${randomSuffix}${ext}`);
+  },
+});
+
+const uploadBankImage = multer({
+  storage: bankImageStorage,
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase().replace('.', '');
+    const isImage = /jpeg|jpg|png|webp|svg/i.test(ext);
+    if (isImage) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Invalid image type: .${ext}. Only JPG, PNG, WEBP, and SVG are allowed for bank QR codes.`));
+    }
+  },
+  limits: {
+    fileSize: 10 * 1024 * 1024,
+  },
+});
+
+const bankImageMiddleware = (req, res, next) => {
+  uploadBankImage.fields([
+    { name: 'qr_code_image', maxCount: 1 },
+    { name: 'qr_code_file', maxCount: 1 },
+    { name: 'image', maxCount: 1 },
+    { name: 'file', maxCount: 1 },
+  ])(req, res, (err) => {
+    if (err) {
+      return res.status(400).json({
+        status: false,
+        message: err.message,
+        data: null,
+      });
+    }
+    if (req.files) {
+      req.file =
+        req.files['qr_code_image']?.[0] ||
+        req.files['qr_code_file']?.[0] ||
+        req.files['image']?.[0] ||
+        req.files['file']?.[0] ||
+        null;
+    }
+    next();
+  });
+};
+
 module.exports = {
   upload,
   uploadJpgOnly,
@@ -217,7 +282,10 @@ module.exports = {
   machineImageMiddleware,
   uploadRfidImage,
   rfidImageMiddleware,
+  uploadBankImage,
+  bankImageMiddleware,
   UPLOAD_ROOT,
   MACHINE_UPLOAD_ROOT,
   RFID_UPLOAD_ROOT,
+  BANK_UPLOAD_ROOT,
 };

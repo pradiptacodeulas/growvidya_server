@@ -8,7 +8,7 @@ const AttendanceMachineMasterController = require('../controllers/attendanceMach
 const BankAccountMasterController = require('../controllers/bankAccountMaster.controller');
 const saasAdminAuthMiddleware = require('../middlewares/saasAdminAuth.middleware');
 const { checkPermission } = require('../middlewares/saasPermission.middleware');
-const { upload, machineImageMiddleware, rfidImageMiddleware } = require('../middlewares/upload.middleware');
+const { upload, machineImageMiddleware, rfidImageMiddleware, bankImageMiddleware } = require('../middlewares/upload.middleware');
 
 // ==========================================
 // 1. PUBLIC SAAS ADMIN ROUTES
@@ -120,9 +120,9 @@ router.patch('/attendance-machines/status', checkPermission('attendance_machines
 router.get('/bank-accounts', checkPermission('bank_accounts', 'can_view'), BankAccountMasterController.getAll);
 router.get('/bank-accounts/active', checkPermission('bank_accounts', 'can_view'), BankAccountMasterController.getActive);
 router.get('/bank-accounts/:id', checkPermission('bank_accounts', 'can_view'), BankAccountMasterController.getById);
-router.post('/bank-accounts', checkPermission('bank_accounts', 'can_add'), BankAccountMasterController.create);
-router.put('/bank-accounts/:id', checkPermission('bank_accounts', 'can_edit'), BankAccountMasterController.update);
-router.put('/bank-accounts', checkPermission('bank_accounts', 'can_edit'), BankAccountMasterController.update);
+router.post('/bank-accounts', checkPermission('bank_accounts', 'can_add'), bankImageMiddleware, BankAccountMasterController.create);
+router.put('/bank-accounts/:id', checkPermission('bank_accounts', 'can_edit'), bankImageMiddleware, BankAccountMasterController.update);
+router.put('/bank-accounts', checkPermission('bank_accounts', 'can_edit'), bankImageMiddleware, BankAccountMasterController.update);
 router.delete('/bank-accounts/:id', checkPermission('bank_accounts', 'can_delete'), BankAccountMasterController.delete);
 router.delete('/bank-accounts', checkPermission('bank_accounts', 'can_delete'), BankAccountMasterController.delete);
 router.patch('/bank-accounts/:id/status', checkPermission('bank_accounts', 'can_manage'), BankAccountMasterController.toggleStatus);
