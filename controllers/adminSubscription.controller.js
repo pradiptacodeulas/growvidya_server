@@ -15,6 +15,7 @@ const calculateVerifiedTotal = async ({
   storage_qty = 1,
   selected_machines = [],
   selected_cards = [],
+  selected_notifications = [],
   coupon_code = null,
   school_id = null,
 }) => {
@@ -27,6 +28,7 @@ const calculateVerifiedTotal = async ({
     storage: null,
     machines: [],
     cards: [],
+    notifications: [],
   };
 
   // 1. Subscription child items / Add-ons
@@ -120,7 +122,42 @@ const calculateVerifiedTotal = async ({
     }
   }
 
-  // 5. Coupon validation & discount computation against database records
+  // 5. SMS & Push Notifications from notification_master (Strictly from database - NO FALLBACK DATA)
+  if (Array.isArray(selected_notifications) && selected_notifications.length > 0) {
+    const [notifMasterRows] = await pool.query('SELECT id, type, cost FROM notification_master');
+    const rateMap = {};
+    for (const r of notifMasterRows) {
+      if (r.id) rateMap[r.id] = parseFloat(r.cost || 0);
+      if (r.type && rateMap[r.type.toLowerCase()] === undefined) {
+        rateMap[r.type.toLowerCase()] = parseFloat(r.cost || 0);
+      }
+    }
+
+    for (const entry of selected_notifications) {
+      const nId = parseInt(entry.id, 10);
+      const nType = (entry.type || '').toLowerCase();
+      const nQty = Math.max(0, parseInt(entry.quantity || entry.qty, 10) || 0);
+
+      if (nQty > 0) {
+        const unitRate = (!isNaN(nId) && rateMap[nId] !== undefined)
+          ? rateMap[nId]
+          : (rateMap[nType] !== undefined ? rateMap[nType] : 0);
+
+        const nTotal = Math.round(unitRate * nQty * 100) / 100;
+        totalAmount += nTotal;
+        breakdown.notifications.push({
+          id: !isNaN(nId) ? nId : null,
+          type: nType,
+          name: nType === 'sms' ? 'SMS Notifications' : 'Push Notifications',
+          quantity: nQty,
+          unit_price: unitRate,
+          total_price: nTotal,
+        });
+      }
+    }
+  }
+
+  // 6. Coupon validation & discount computation against database records
   const originalSubtotal = totalAmount;
   let couponInfo = null;
   let discountAmount = 0;
@@ -211,6 +248,8 @@ class AdminSubscriptionController {
         selectedMachines,
         selected_cards,
         selectedCards,
+        selected_notifications,
+        selectedNotifications,
         coupon_code,
         couponCode,
       } = req.body;
@@ -246,6 +285,7 @@ class AdminSubscriptionController {
         storage_qty: storage_qty || storageQty,
         selected_machines: selected_machines || selectedMachines,
         selected_cards: selected_cards || selectedCards,
+        selected_notifications: selected_notifications || selectedNotifications,
         coupon_code: coupon_code || couponCode,
         school_id: schoolId,
       });
@@ -318,6 +358,8 @@ class AdminSubscriptionController {
         selectedMachines,
         selected_cards,
         selectedCards,
+        selected_notifications,
+        selectedNotifications,
         shipping_address,
         coupon_code,
         couponCode,
@@ -358,7 +400,7 @@ class AdminSubscriptionController {
         );
       }
 
-      // Calculate total amount paid including verified add-ons, storage, machines, cards, and coupon
+      // Calculate total amount paid including verified add-ons, storage, machines, cards, notifications, and coupon
       const { totalAmount, originalAmount, discountAmount, couponInfo, breakdown } = await calculateVerifiedTotal({
         plan,
         addon_ids: addon_ids || addonIds,
@@ -366,6 +408,7 @@ class AdminSubscriptionController {
         storage_qty: storage_qty || storageQty,
         selected_machines: selected_machines || selectedMachines,
         selected_cards: selected_cards || selectedCards,
+        selected_notifications: selected_notifications || selectedNotifications,
         coupon_code: coupon_code || couponCode,
         school_id: schoolId,
       });

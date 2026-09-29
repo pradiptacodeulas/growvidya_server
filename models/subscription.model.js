@@ -425,7 +425,7 @@ class SubscriptionModel {
   }
 
   /**
-   * Get active catalog for subscription configuration (Storage, Machines, RFID Cards)
+   * Get active catalog for subscription configuration (Storage, Machines, RFID Cards, Notifications)
    */
   static async getConfigurationCatalog() {
     const [storagePlans] = await pool.query(
@@ -440,12 +440,16 @@ class SubscriptionModel {
     const [bankAccounts] = await pool.query(
       'SELECT id, account_title, beneficiary_name, account_number, bank_name, branch_name, ifsc_code, account_type, upi_id, swift_code, instructions, qr_code_image, is_default FROM bank_account_master WHERE status = 1 ORDER BY is_default DESC, id ASC'
     );
+    const [notificationRecords] = await pool.query(
+      'SELECT id, type, recipient, message, cost, status, created_at FROM notification_master ORDER BY id ASC'
+    );
 
     return {
       storage_plans: storagePlans || [],
       attendance_machines: attendanceMachines || [],
       rfid_cards: rfidCards || [],
       bank_accounts: bankAccounts || [],
+      notification_records: notificationRecords || [],
     };
   }
 }
