@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const SubscriptionModel = require('../models/subscription.model');
+const CouponModel = require('../models/coupon.model');
 const ApiResponse = require('../utils/api.response');
 const { razorpayInstance, keyId, keySecret } = require('../config/razorpay.config');
 const { pool } = require('../config/db.config');
@@ -14,6 +15,8 @@ const calculateVerifiedTotal = async ({
   storage_qty = 1,
   selected_machines = [],
   selected_cards = [],
+  coupon_code = null,
+  school_id = null,
 }) => {
   let totalAmount = parseFloat(plan.price);
   const breakdown = {
@@ -117,7 +120,35 @@ const calculateVerifiedTotal = async ({
     }
   }
 
-  return { totalAmount, breakdown };
+  // 5. Coupon validation & discount computation against database records
+  const originalSubtotal = totalAmount;
+  let couponInfo = null;
+  let discountAmount = 0;
+
+  if (coupon_code && String(coupon_code).trim()) {
+    const couponValidation = await CouponModel.validateCoupon(coupon_code, originalSubtotal, school_id);
+    if (!couponValidation.valid) {
+      const err = new Error(couponValidation.message);
+      err.statusCode = 400;
+      throw err;
+    }
+    couponInfo = couponValidation.coupon;
+    discountAmount = parseFloat(couponValidation.coupon.discountAmount) || 0;
+  }
+
+  const finalPayable = Math.max(0, Math.round((originalSubtotal - discountAmount) * 100) / 100);
+  breakdown.subtotal = originalSubtotal;
+  breakdown.discount_amount = discountAmount;
+  breakdown.final_payable = finalPayable;
+  breakdown.coupon = couponInfo;
+
+  return {
+    totalAmount: finalPayable,
+    originalAmount: originalSubtotal,
+    discountAmount,
+    couponInfo,
+    breakdown,
+  };
 };
 
 class AdminSubscriptionController {
@@ -180,6 +211,8 @@ class AdminSubscriptionController {
         selectedMachines,
         selected_cards,
         selectedCards,
+        coupon_code,
+        couponCode,
       } = req.body;
 
       const targetPlanId = plan_id || planId;
@@ -205,14 +238,16 @@ class AdminSubscriptionController {
         );
       }
 
-      // Calculate total price accurately against database records
-      const { totalAmount, breakdown } = await calculateVerifiedTotal({
+      // Calculate total price accurately against database records including coupon
+      const { totalAmount, originalAmount, discountAmount, couponInfo, breakdown } = await calculateVerifiedTotal({
         plan,
         addon_ids: addon_ids || addonIds,
         storage_plan_id: storage_plan_id || storagePlanId,
         storage_qty: storage_qty || storageQty,
         selected_machines: selected_machines || selectedMachines,
         selected_cards: selected_cards || selectedCards,
+        coupon_code: coupon_code || couponCode,
+        school_id: schoolId,
       });
 
       const amountInPaise = Math.round(totalAmount * 100);
@@ -229,6 +264,8 @@ class AdminSubscriptionController {
           addon_count: String(breakdown.addons.length),
           machines_count: String(breakdown.machines.length),
           cards_count: String(breakdown.cards.length),
+          coupon_code: couponInfo?.code || '',
+          discount_amount: String(discountAmount),
         },
       });
 
@@ -241,6 +278,9 @@ class AdminSubscriptionController {
         plan_name: plan.plan_name,
         price: plan.price,
         total_amount: totalAmount,
+        original_amount: originalAmount,
+        discount_amount: discountAmount,
+        coupon: couponInfo,
         breakdown,
         billing_cycle: plan.billing_cycle,
       });
@@ -279,6 +319,8 @@ class AdminSubscriptionController {
         selected_cards,
         selectedCards,
         shipping_address,
+        coupon_code,
+        couponCode,
       } = req.body;
 
       const orderId = razorpay_order_id || razorpayOrderId;
@@ -316,25 +358,30 @@ class AdminSubscriptionController {
         );
       }
 
-      // Calculate total amount paid including verified add-ons, storage, machines, cards
-      const { totalAmount, breakdown } = await calculateVerifiedTotal({
+      // Calculate total amount paid including verified add-ons, storage, machines, cards, and coupon
+      const { totalAmount, originalAmount, discountAmount, couponInfo, breakdown } = await calculateVerifiedTotal({
         plan,
         addon_ids: addon_ids || addonIds,
         storage_plan_id: storage_plan_id || storagePlanId,
         storage_qty: storage_qty || storageQty,
         selected_machines: selected_machines || selectedMachines,
         selected_cards: selected_cards || selectedCards,
+        coupon_code: coupon_code || couponCode,
+        school_id: schoolId,
       });
 
       const finalAmountPaid = req.body.amount_paid !== undefined ? parseFloat(req.body.amount_paid) : totalAmount;
 
-      // Signature is valid. Activate the school subscription
+      // Signature is valid. Activate the school subscription with coupon tracking
       const upgraded = await SubscriptionModel.upgradeSubscription({
         schoolId,
         planId: targetPlanId,
         amountPaid: finalAmountPaid,
         paymentGateway: 'razorpay',
         paymentTransactionId: paymentId,
+        couponId: couponInfo?.id || null,
+        discountAmount,
+        originalAmount,
       });
 
       // Record RFID card purchase order in school_rfid_orders if cards were ordered
@@ -385,6 +432,26 @@ class AdminSubscriptionController {
   }
 
   /**
+   * Validate a coupon against current checkout amount for the school
+   */
+  static async validateCoupon(req, res, next) {
+    try {
+      const schoolId = req.user?.school_id || req.user?.schoolId;
+      const { code, amount } = req.body;
+      if (!code || !String(code).trim()) {
+        return ApiResponse.error(res, 'Coupon code is required.', null, 400);
+      }
+      const result = await CouponModel.validateCoupon(code, amount || 0, schoolId);
+      if (!result.valid) {
+        return ApiResponse.error(res, result.message, null, 400);
+      }
+      return ApiResponse.success(res, result.message, result.coupon);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Upgrade to a paid subscription plan (Securely handled)
    * Prevents unauthorized free activations.
    */
@@ -404,6 +471,8 @@ class AdminSubscriptionController {
         paymentGateway,
         payment_transaction_id,
         paymentTransactionId,
+        coupon_code,
+        couponCode,
       } = req.body;
 
       const targetPlanId = plan_id || planId;
@@ -425,11 +494,29 @@ class AdminSubscriptionController {
           );
         }
 
+        let couponInfo = null;
+        let discountAmount = 0;
+        let originalSubtotal = amount_paid !== undefined ? parseFloat(amount_paid) : (amountPaid !== undefined ? parseFloat(amountPaid) : null);
+
+        const couponToApply = coupon_code || couponCode;
+        if (couponToApply && String(couponToApply).trim()) {
+          const couponRes = await CouponModel.validateCoupon(couponToApply, originalSubtotal || 0, schoolId);
+          if (couponRes.valid) {
+            couponInfo = couponRes.coupon;
+            discountAmount = parseFloat(couponRes.coupon.discountAmount) || 0;
+          }
+        }
+
+        const finalOfflineAmount = originalSubtotal !== null ? Math.max(0, originalSubtotal - discountAmount) : originalSubtotal;
+
         const offlineReq = await SubscriptionModel.requestOfflineUpgrade({
           schoolId,
           planId: targetPlanId,
-          amountPaid: amount_paid || amountPaid,
+          amountPaid: finalOfflineAmount,
           paymentTransactionId: String(txnId).trim(),
+          couponId: couponInfo?.id || null,
+          discountAmount,
+          originalAmount: originalSubtotal,
         });
 
         return ApiResponse.success(

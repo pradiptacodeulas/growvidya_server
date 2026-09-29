@@ -206,6 +206,9 @@ class SubscriptionModel {
     amountPaid,
     paymentGateway = 'dummy',
     paymentTransactionId = null,
+    couponId = null,
+    discountAmount = 0,
+    originalAmount = null,
   }) {
     const targetSchoolId = parseInt(schoolId, 10);
     const targetPlanId = parseInt(planId, 10);
@@ -241,12 +244,13 @@ class SubscriptionModel {
       [targetSchoolId]
     );
 
-    // Insert new active paid subscription
+    // Insert new active paid subscription with coupon audit fields
     const insertQuery = `
       INSERT INTO school_subscriptions (
         school_id, plan_id, amount_paid, payment_gateway,
-        payment_transaction_id, payment_status, start_date, end_date, status, created_at
-      ) VALUES (?, ?, ?, ?, ?, 'completed', ?, ?, 'active', NOW())
+        payment_transaction_id, coupon_id, discount_amount, original_amount,
+        payment_status, start_date, end_date, status, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, 'active', NOW())
     `;
 
     const [result] = await pool.query(insertQuery, [
@@ -255,16 +259,34 @@ class SubscriptionModel {
       finalAmount,
       paymentGateway,
       finalTxnId,
+      couponId ? parseInt(couponId, 10) : null,
+      parseFloat(discountAmount) || 0,
+      originalAmount !== null && originalAmount !== undefined ? parseFloat(originalAmount) : finalAmount,
       startDateStr,
       endDateStr,
     ]);
 
+    const subscriptionId = result.insertId;
+
+    // Record coupon usage and increment used_count in coupons master table
+    if (couponId && parseFloat(discountAmount) > 0) {
+      try {
+        const CouponModel = require('./coupon.model');
+        await CouponModel.recordCouponUsage(couponId, targetSchoolId, subscriptionId, discountAmount);
+      } catch (couponErr) {
+        console.error('Failed to record coupon usage in coupon_usages:', couponErr.message);
+      }
+    }
+
     return {
-      subscription_id: result.insertId,
+      subscription_id: subscriptionId,
       school_id: targetSchoolId,
       plan_id: targetPlanId,
       plan_name: plan.plan_name,
       amount_paid: finalAmount,
+      coupon_id: couponId,
+      discount_amount: parseFloat(discountAmount) || 0,
+      original_amount: originalAmount !== null && originalAmount !== undefined ? parseFloat(originalAmount) : finalAmount,
       transaction_id: finalTxnId,
       start_date: startDateStr,
       end_date: endDateStr,
@@ -339,6 +361,9 @@ class SubscriptionModel {
     planId,
     amountPaid,
     paymentTransactionId = null,
+    couponId = null,
+    discountAmount = 0,
+    originalAmount = null,
   }) {
     const targetSchoolId = parseInt(schoolId, 10);
     const targetPlanId = parseInt(planId, 10);
@@ -368,8 +393,9 @@ class SubscriptionModel {
     const insertQuery = `
       INSERT INTO school_subscriptions (
         school_id, plan_id, amount_paid, payment_gateway,
-        payment_transaction_id, payment_status, start_date, end_date, status, created_at
-      ) VALUES (?, ?, ?, 'bank_transfer', ?, 'pending', ?, ?, 'suspended', NOW())
+        payment_transaction_id, coupon_id, discount_amount, original_amount,
+        payment_status, start_date, end_date, status, created_at
+      ) VALUES (?, ?, ?, 'bank_transfer', ?, ?, ?, ?, 'pending', ?, ?, 'suspended', NOW())
     `;
 
     const [result] = await pool.query(insertQuery, [
@@ -377,6 +403,9 @@ class SubscriptionModel {
       targetPlanId,
       finalAmount,
       finalTxnId,
+      couponId ? parseInt(couponId, 10) : null,
+      parseFloat(discountAmount) || 0,
+      originalAmount !== null && originalAmount !== undefined ? parseFloat(originalAmount) : finalAmount,
       startDateStr,
       endDateStr,
     ]);
@@ -387,6 +416,9 @@ class SubscriptionModel {
       plan_id: targetPlanId,
       plan_name: plan.plan_name,
       amount: finalAmount,
+      coupon_id: couponId,
+      discount_amount: parseFloat(discountAmount) || 0,
+      original_amount: originalAmount !== null && originalAmount !== undefined ? parseFloat(originalAmount) : finalAmount,
       transaction_id: finalTxnId,
       payment_status: 'pending',
     };

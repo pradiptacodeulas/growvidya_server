@@ -598,9 +598,21 @@ class SaasAdminModel {
 
     // If verified as active and completed, also ensure school is active
     if (result.affectedRows > 0 && paymentStatus === 'completed' && status === 'active') {
-      const [subRows] = await pool.query('SELECT school_id FROM school_subscriptions WHERE id = ?', [id]);
+      const [subRows] = await pool.query('SELECT school_id, coupon_id, discount_amount FROM school_subscriptions WHERE id = ?', [id]);
       if (subRows.length > 0) {
         await pool.query('UPDATE school_master SET status = 1 WHERE id = ?', [subRows[0].school_id]);
+
+        if (subRows[0].coupon_id && parseFloat(subRows[0].discount_amount) > 0) {
+          try {
+            const CouponModel = require('./coupon.model');
+            const [cuExists] = await pool.query('SELECT id FROM coupon_usages WHERE subscription_id = ? LIMIT 1', [id]);
+            if (cuExists.length === 0) {
+              await CouponModel.recordCouponUsage(subRows[0].coupon_id, subRows[0].school_id, id, subRows[0].discount_amount);
+            }
+          } catch (cErr) {
+            console.error('Failed to log coupon_usages on admin verification:', cErr.message);
+          }
+        }
       }
     }
 
