@@ -24,6 +24,8 @@ router.get('/hostel', StudentPortalController.getHostel);
 router.get('/medical', StudentPortalController.getMedical);
 router.get('/documents', StudentPortalController.getDocuments);
 router.get('/document', StudentPortalController.getDocuments);
+router.get('/notices', StudentPortalController.getNotices);
+router.get('/notice', StudentPortalController.getNotices);
 router.get('/assignments', StudentPortalController.getAssignments);
 router.get('/assignment', StudentPortalController.getAssignments);
 router.get('/assignments/:id/attempt', StudentPortalController.getAssignmentForAttempt);

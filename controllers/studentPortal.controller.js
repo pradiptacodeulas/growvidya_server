@@ -131,17 +131,51 @@ class StudentPortalController {
         console.error('Error fetching study materials count:', e.message);
       }
 
-      // 5. Recent Notices
+      // 5. Recent Notices (Target-filtered for this student)
       let notices = [];
       try {
-        const [noticeRows] = await pool.query(
-          `SELECT id, title, message, notice_date, publish_on, created_at 
-           FROM notice 
-           WHERE (school_id = ? OR ? IS NULL) AND status != 4 AND status != 0
-           ORDER BY id DESC LIMIT 5`,
-          [schoolId, schoolId]
-        );
-        notices = noticeRows || [];
+        const allNotices = await AnnouncementModel.getAllNotices(schoolId);
+        const filteredNotices = (allNotices || []).filter((n) => {
+          const type = n.target_type || 'all';
+
+          if (type === 'class_section') {
+            const roles = (n.target_roles || []).map((r) => String(r).toLowerCase());
+            const isTargetedRole = roles.length === 0 || roles.includes('student');
+            if (!isTargetedRole) return false;
+
+            const noticeClasses = (n.target_classes || []).map(Number);
+            const noticeSections = (n.target_sections || []).map(Number);
+
+            if (noticeClasses.length > 0 && (!classId || !noticeClasses.includes(Number(classId)))) {
+              return false;
+            }
+            if (noticeSections.length > 0 && (!sectionId || !noticeSections.includes(Number(sectionId)))) {
+              return false;
+            }
+            return true;
+          }
+
+          if (type === 'specific_users') {
+            const userIds = (n.target_user_ids || []).map((u) => {
+              if (typeof u === 'object' && u !== null) return Number(u.id);
+              return Number(u);
+            });
+            return studentId && userIds.includes(Number(studentId));
+          }
+
+          const roles = (n.target_roles || []).map((r) => String(r).toLowerCase());
+          const msgTo = (n.message_to || []).map((m) => String(m).toLowerCase());
+          if (roles.length === 0 && msgTo.length === 0) return true;
+          return (
+            roles.includes('student') ||
+            roles.includes('all') ||
+            msgTo.includes('student') ||
+            msgTo.includes('1') ||
+            msgTo.includes('all')
+          );
+        });
+
+        notices = filteredNotices.slice(0, 5);
       } catch (e) {
         console.error('Error fetching notices for student:', e.message);
       }
@@ -784,6 +818,75 @@ class StudentPortalController {
       });
     } catch (error) {
       console.error('Error fetching assignment result:', error);
+      next(error);
+    }
+  }
+
+  /**
+   * Get Targeted School Notices for Student
+   */
+  static async getNotices(req, res, next) {
+    try {
+      const studentId = StudentPortalController.getStudentId(req);
+      const schoolId = StudentPortalController.getSchoolId(req);
+
+      const student = await ParentModel.getChildFullProfile(studentId, schoolId);
+      if (!student) {
+        return ApiResponse.error(res, 'Student profile not found.', null, 404);
+      }
+
+      const studentClass = student.class ? Number(student.class) : null;
+      const studentSection = student.section ? Number(student.section) : null;
+
+      const allNotices = await AnnouncementModel.getAllNotices(schoolId);
+
+      const filtered = (allNotices || []).filter((n) => {
+        const type = n.target_type || 'all';
+
+        if (type === 'class_section') {
+          const roles = (n.target_roles || []).map((r) => String(r).toLowerCase());
+          const isTargetedRole = roles.length === 0 || roles.includes('student');
+          if (!isTargetedRole) return false;
+
+          const noticeClasses = (n.target_classes || []).map(Number);
+          const noticeSections = (n.target_sections || []).map(Number);
+
+          // If classes specified, must match student's class
+          if (noticeClasses.length > 0 && (!studentClass || !noticeClasses.includes(studentClass))) {
+            return false;
+          }
+
+          // If sections specified, must match student's section
+          if (noticeSections.length > 0 && (!studentSection || !noticeSections.includes(studentSection))) {
+            return false;
+          }
+
+          return true;
+        }
+
+        if (type === 'specific_users') {
+          const userIds = (n.target_user_ids || []).map((u) => {
+            if (typeof u === 'object' && u !== null) return Number(u.id);
+            return Number(u);
+          });
+          return studentId && userIds.includes(Number(studentId));
+        }
+
+        // Default: 'all' / School-Wide
+        const roles = (n.target_roles || []).map((r) => String(r).toLowerCase());
+        const msgTo = (n.message_to || []).map((m) => String(m).toLowerCase());
+        if (roles.length === 0 && msgTo.length === 0) return true;
+        return (
+          roles.includes('student') ||
+          roles.includes('all') ||
+          msgTo.includes('student') ||
+          msgTo.includes('1') ||
+          msgTo.includes('all')
+        );
+      });
+
+      return ApiResponse.success(res, 'Student notices fetched successfully.', filtered);
+    } catch (error) {
       next(error);
     }
   }

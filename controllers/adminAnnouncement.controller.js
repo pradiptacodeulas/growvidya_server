@@ -30,6 +30,20 @@ exports.getNoticeById = async (req, res) => {
 exports.createNotice = async (req, res) => {
   try {
     const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    let branchId = req.body.branch_id !== undefined ? req.body.branch_id : (req.user?.branchId || req.user?.branch_id || null);
+    if (!branchId) {
+      try {
+        const { pool } = require('../config/db.config');
+        const [branches] = await pool.query(
+          `SELECT id FROM branch_master WHERE school_id = ? AND status = 1 ORDER BY is_main_branch DESC, id ASC LIMIT 1`,
+          [schoolId]
+        );
+        if (branches && branches[0]) {
+          branchId = branches[0].id;
+        }
+      } catch (_) {}
+    }
+
     const {
       title,
       notice_date,
@@ -50,6 +64,7 @@ exports.createNotice = async (req, res) => {
 
     const insertId = await AnnouncementModel.createNotice({
       school_id: schoolId,
+      branch_id: branchId,
       title: title.trim(),
       notice_date,
       publish_on,
@@ -193,6 +208,36 @@ exports.createNotice = async (req, res) => {
           category: 'notice',
         }).catch((pushErr) => console.warn('[Notice Push Error]:', pushErr?.message));
       }
+
+      // Real-time socket broadcast for active users in the school / target groups
+      try {
+        const { getIO } = require('../services/socket.service');
+        const io = getIO();
+        if (io) {
+          const socketNotice = {
+            id: insertId,
+            school_id: schoolId,
+            branch_id: branchId,
+            title: title.trim(),
+            message,
+            notice_date,
+            publish_on,
+            target_type,
+            target_classes,
+            target_sections,
+            target_roles,
+          };
+          if (target_type === 'all') {
+            io.to(`school_${schoolId}`).emit('new_notice', socketNotice);
+          } else if (typeof targetedRecipients !== 'undefined' && Array.isArray(targetedRecipients)) {
+            for (const r of targetedRecipients) {
+              io.to(`user_${r.role}_${r.id}`).emit('new_notice', socketNotice);
+            }
+          }
+        }
+      } catch (socketErr) {
+        console.warn('[Notice Socket Broadcast Error]:', socketErr?.message);
+      }
     } catch (_) {}
 
     return res.status(201).json({
@@ -210,6 +255,7 @@ exports.updateNotice = async (req, res) => {
   try {
     const schoolId = req.user?.schoolId || req.user?.school_id || 1;
     const { id } = req.params;
+    let branchId = req.body.branch_id !== undefined ? req.body.branch_id : (req.user?.branchId || req.user?.branch_id || null);
     const {
       title,
       notice_date,
@@ -229,6 +275,7 @@ exports.updateNotice = async (req, res) => {
     }
 
     await AnnouncementModel.updateNotice(id, schoolId, {
+      branch_id: branchId,
       title: title.trim(),
       notice_date,
       publish_on,

@@ -66,13 +66,15 @@ initAnnouncementTables();
 
 const AnnouncementModel = {
   // --- Notice Operations ---
-  async getAllNotices(schoolId) {
-    const [notices] = await pool.query(
-      `SELECT * FROM notice 
-       WHERE school_id = ? AND status != 4 
-       ORDER BY id DESC`,
-      [schoolId]
-    );
+  async getAllNotices(schoolId, branchId = null) {
+    let query = `SELECT * FROM notice WHERE school_id = ? AND status != 4`;
+    const params = [schoolId];
+    if (branchId) {
+      query += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    query += ` ORDER BY id DESC`;
+    const [notices] = await pool.query(query, params);
 
     // Fetch lookup maps for class_name and section_name
     const [allClasses] = await pool.query(
@@ -168,6 +170,7 @@ const AnnouncementModel = {
 
   async createNotice({
     school_id,
+    branch_id,
     title,
     notice_date,
     publish_on,
@@ -180,13 +183,15 @@ const AnnouncementModel = {
     target_roles = [],
     target_user_ids = [],
   }) {
+    const branchVal = branch_id !== undefined && branch_id !== null ? Number(branch_id) : null;
     const [result] = await pool.query(
       `INSERT INTO notice (
-        school_id, title, notice_date, publish_on, message, status,
+        school_id, branch_id, title, notice_date, publish_on, message, status,
         target_type, target_classes, target_sections, target_roles, target_user_ids
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         school_id,
+        branchVal,
         title,
         notice_date || null,
         publish_on || null,
@@ -218,6 +223,7 @@ const AnnouncementModel = {
     id,
     schoolId,
     {
+      branch_id,
       title,
       notice_date,
       publish_on,
@@ -231,12 +237,14 @@ const AnnouncementModel = {
       target_user_ids = [],
     }
   ) {
+    const branchVal = branch_id !== undefined && branch_id !== null ? Number(branch_id) : null;
     await pool.query(
       `UPDATE notice 
-       SET title = ?, notice_date = ?, publish_on = ?, message = ?, status = ?,
+       SET branch_id = COALESCE(?, branch_id), title = ?, notice_date = ?, publish_on = ?, message = ?, status = ?,
            target_type = ?, target_classes = ?, target_sections = ?, target_roles = ?, target_user_ids = ?
        WHERE id = ? AND school_id = ?`,
       [
+        branchVal,
         title,
         notice_date || null,
         publish_on || null,
