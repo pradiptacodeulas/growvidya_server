@@ -24,6 +24,10 @@ router.get('/hostel', ParentChildController.getHostel);
 router.get('/medical', ParentChildController.getMedical);
 router.get('/activities', ParentChildController.getActivities);
 router.get('/activity', ParentChildController.getActivities);
+router.get('/events', ParentChildController.getEvents);
+router.get('/event', ParentChildController.getEvents);
+router.get('/notices', ParentChildController.getNotices);
+router.get('/notice', ParentChildController.getNotices);
 router.get('/documents', ParentChildController.getDocuments);
 router.get('/document', ParentChildController.getDocuments);
 

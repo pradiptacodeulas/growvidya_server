@@ -29,7 +29,8 @@ router.use((req, res, next) => {
   return authorizeRoles(targetModule, targetAction)(req, res, next);
 });
 
-// --- Notice Routes ---
+// --- Notice & Audience Search Routes ---
+router.get('/search-users', adminAnnouncementController.searchUsers);
 router.get('/notices', adminAnnouncementController.getAllNotices);
 router.get('/notice', adminAnnouncementController.getAllNotices);
 router.get('/notices/:id', adminAnnouncementController.getNoticeById);

@@ -380,6 +380,101 @@ class ParentChildController {
       next(error);
     }
   }
+
+  /**
+   * Get School Events for Parent
+   */
+  static async getEvents(req, res, next) {
+    try {
+      const AnnouncementModel = require('../models/announcement.model');
+      const schoolId = req.user.schoolId;
+      const data = await AnnouncementModel.getAllEvents(schoolId);
+      return ApiResponse.success(res, 'School events fetched successfully.', data || []);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Get School Notices for Parent
+   */
+  static async getNotices(req, res, next) {
+    try {
+      const AnnouncementModel = require('../models/announcement.model');
+      const { pool } = require('../config/db.config');
+      const schoolId = req.user?.schoolId || 1;
+      const studentId = await ParentChildController.getActiveStudentId(req);
+      const parentId = Number(req.user?.parentId || req.user?.userId || req.user?.id);
+
+      // Fetch student's enrolled class and section
+      let studentClass = null;
+      let studentSection = null;
+      if (studentId) {
+        const [studentRows] = await pool.query(
+          `SELECT class, section FROM student_master WHERE id = ? AND school_id = ?`,
+          [studentId, schoolId]
+        ).catch(() => [[]]);
+        if (studentRows && studentRows[0]) {
+          studentClass = Number(studentRows[0].class);
+          studentSection = Number(studentRows[0].section);
+        }
+      }
+
+      const allNotices = await AnnouncementModel.getAllNotices(schoolId);
+
+      const filtered = allNotices.filter((n) => {
+        const type = n.target_type || 'all';
+
+        if (type === 'class_section') {
+          const roles = (n.target_roles || []).map((r) => String(r).toLowerCase());
+          const isTargetedRole = roles.length === 0 || roles.includes('student') || roles.includes('parent');
+          if (!isTargetedRole) return false;
+
+          const noticeClasses = (n.target_classes || []).map(Number);
+          const noticeSections = (n.target_sections || []).map(Number);
+
+          // If classes specified, must match student's class
+          if (noticeClasses.length > 0 && (!studentClass || !noticeClasses.includes(studentClass))) {
+            return false;
+          }
+
+          // If sections specified, must match student's section
+          if (noticeSections.length > 0 && (!studentSection || !noticeSections.includes(studentSection))) {
+            return false;
+          }
+
+          return true;
+        }
+
+        if (type === 'specific_users') {
+          const userIds = (n.target_user_ids || []).map((u) => {
+            if (typeof u === 'object' && u !== null) return Number(u.id);
+            return Number(u);
+          });
+          return (studentId && userIds.includes(studentId)) || (parentId && userIds.includes(parentId));
+        }
+
+        // Default: 'all' / School-Wide
+        const roles = (n.target_roles || []).map((r) => String(r).toLowerCase());
+        const msgTo = (n.message_to || []).map((m) => String(m).toLowerCase());
+        if (roles.length === 0 && msgTo.length === 0) return true;
+        return (
+          roles.includes('student') ||
+          roles.includes('parent') ||
+          roles.includes('all') ||
+          msgTo.includes('student') ||
+          msgTo.includes('parent') ||
+          msgTo.includes('1') ||
+          msgTo.includes('2') ||
+          msgTo.includes('all')
+        );
+      });
+
+      return ApiResponse.success(res, 'School notices fetched successfully.', filtered);
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 module.exports = ParentChildController;

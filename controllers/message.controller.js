@@ -1,6 +1,7 @@
 const MessageModel = require('../models/message.model');
 const ApiResponse = require('../utils/api.response');
 const { getIO, isUserOnline, isCommunicationAllowed } = require('../services/socket.service');
+const PushNotificationService = require('../services/pushNotification.service');
 
 class MessageController {
   /**
@@ -175,6 +176,35 @@ class MessageController {
         const io = getIO();
         io.to(`user_${normalizedReceiverRole}_${Number(receiverId)}`).emit('receive_message', savedMessage);
         io.to(`user_${role}_${userId}`).emit('message_sent', savedMessage);
+      } catch (_) {}
+
+      // Dispatch background push notification (Web Push and Mobile Expo Push)
+      try {
+        const messagePreview = message
+          ? (String(message).length > 100 ? String(message).substring(0, 97) + '...' : String(message))
+          : (fileUrl ? '📎 Sent an attachment' : 'Sent you a message');
+
+        let targetPath = '/messages';
+        if (normalizedReceiverRole === 'teacher') targetPath = '/teacher/messages';
+        else if (normalizedReceiverRole === 'student') targetPath = '/student/messages';
+        else if (normalizedReceiverRole === 'parent') targetPath = '/parent/messages';
+        else if (normalizedReceiverRole === 'admin') targetPath = '/admin/message';
+
+        PushNotificationService.sendToUser({
+          school_id: schoolId,
+          user_id: Number(receiverId),
+          role: normalizedReceiverRole,
+          title: savedMessage.sender_name || 'New Message',
+          body: messagePreview,
+          data: {
+            type: 'chat',
+            senderId: userId,
+            senderRole: role,
+            senderName: savedMessage.sender_name,
+            url: `${targetPath}?contactId=${userId}&contactRole=${role}`,
+          },
+          category: 'chat',
+        }).catch((err) => console.warn('[REST Message Push Error]:', err?.message));
       } catch (_) {}
 
       return ApiResponse.success(res, 'Message sent successfully.', savedMessage, 201);

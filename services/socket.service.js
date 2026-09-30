@@ -1,6 +1,7 @@
 const { Server } = require('socket.io');
 const { verifyToken } = require('../utils/jwt.util');
 const MessageModel = require('../models/message.model');
+const PushNotificationService = require('./pushNotification.service');
 
 let io = null;
 
@@ -52,7 +53,7 @@ function initSocket(server, config) {
         socket.handshake.query?.token;
 
       // Also check cookies if passed in handshake headers
-      if (!token && socket.handshake.headers?.cookie) {
+      if ((!token || token === 'cookie_session') && socket.handshake.headers?.cookie) {
         const cookieStr = socket.handshake.headers.cookie;
         const cookieMatch = cookieStr.match(/(?:growvidya_admin_session|growvidya_teacher_session|growvidya_parent_session|growvidya_student_session|growvidya_session|token)=([^;]+)/);
         if (cookieMatch) {
@@ -177,6 +178,33 @@ function initSocket(server, config) {
 
         // Also broadcast to other sockets of the sender (so other tabs update without echoing back to current socket)
         socket.to(userRoom).emit('message_sent', savedMessage);
+
+        // Dispatch background push notification (Web Push and Mobile Expo Push)
+        const messagePreview = message
+          ? (String(message).length > 100 ? String(message).substring(0, 97) + '...' : String(message))
+          : (file ? '📎 Sent an attachment' : 'Sent you a message');
+
+        let targetPath = '/messages';
+        if (normalizedReceiverRole === 'teacher') targetPath = '/teacher/messages';
+        else if (normalizedReceiverRole === 'student') targetPath = '/student/messages';
+        else if (normalizedReceiverRole === 'parent') targetPath = '/parent/messages';
+        else if (normalizedReceiverRole === 'admin') targetPath = '/admin/message';
+
+        PushNotificationService.sendToUser({
+          school_id: schoolId,
+          user_id: Number(receiverId),
+          role: normalizedReceiverRole,
+          title: savedMessage.sender_name || 'New Message',
+          body: messagePreview,
+          data: {
+            type: 'chat',
+            senderId: userId,
+            senderRole: role,
+            senderName: savedMessage.sender_name,
+            url: `${targetPath}?contactId=${userId}&contactRole=${role}`,
+          },
+          category: 'chat',
+        }).catch((err) => console.warn('[Socket Push Error]:', err?.message));
 
         if (typeof callback === 'function') {
           callback({ success: true, data: savedMessage });

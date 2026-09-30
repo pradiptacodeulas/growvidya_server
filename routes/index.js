@@ -58,6 +58,7 @@ const webhookRoutes = require('./webhook.routes');
 const messageRoutes = require('./message.routes');
 const schoolRoutes = require('./school.routes');
 const branchRoutes = require('./branch.routes');
+const notificationRoutes = require('./notification.routes');
 
 // ==========================================
 // 1. Unprotected / System Routes
@@ -174,5 +175,7 @@ router.use('/upload', uploadRoutes);
 router.use('/v1/common/options', commonOptionsRoutes);
 router.use('/v1/messages', messageRoutes);
 router.use('/messages', messageRoutes);
+router.use('/v1/notifications', notificationRoutes);
+router.use('/notifications', notificationRoutes);
 
 module.exports = router;

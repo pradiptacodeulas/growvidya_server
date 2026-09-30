@@ -36,7 +36,7 @@ var corsOptions = {
     'http://192.168.29.231',
     'http://192.168.29.231:5173',
     'http://192.168.29.243',
-    'http://192.168.29.243:5173'
+    'http://192.168.29.243:5174'
   ],
   credentials: true,
   optionsSuccessStatus: 200,

@@ -74,13 +74,45 @@ const AnnouncementModel = {
       [schoolId]
     );
 
-    // Attach message_to recipients to each notice
+    // Fetch lookup maps for class_name and section_name
+    const [allClasses] = await pool.query(
+      `SELECT id, class_name FROM class_master WHERE school_id = ?`,
+      [schoolId]
+    ).catch(() => [[]]);
+    const classMap = new Map((allClasses || []).map((c) => [c.id, c.class_name]));
+
+    const [allSections] = await pool.query(
+      `SELECT id, section_name, class_id FROM section_master WHERE school_id = ?`,
+      [schoolId]
+    ).catch(() => [[]]);
+    const sectionMap = new Map((allSections || []).map((s) => [s.id, s.section_name]));
+
+    const parseJson = (val) => {
+      if (!val) return [];
+      if (Array.isArray(val)) return val;
+      try {
+        const parsed = JSON.parse(val);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    };
+
+    // Attach message_to recipients and parsed targeting info to each notice
     for (const n of notices) {
       const [messages] = await pool.query(
         `SELECT message_to FROM notice_message WHERE notice_id = ?`,
         [n.id]
       );
       n.message_to = messages.map((m) => m.message_to);
+      n.target_type = n.target_type || 'all';
+      n.target_classes = parseJson(n.target_classes);
+      n.target_sections = parseJson(n.target_sections);
+      n.target_roles = parseJson(n.target_roles);
+      n.target_user_ids = parseJson(n.target_user_ids);
+
+      n.target_class_names = n.target_classes.map((cid) => classMap.get(Number(cid)) || `Class ${cid}`);
+      n.target_section_names = n.target_sections.map((sid) => sectionMap.get(Number(sid)) || `Sec ${sid}`);
     }
     return notices;
   },
@@ -98,13 +130,61 @@ const AnnouncementModel = {
       [notice.id]
     );
     notice.message_to = messages.map((m) => m.message_to);
+
+    const parseJson = (val) => {
+      if (!val) return [];
+      if (Array.isArray(val)) return val;
+      try {
+        const parsed = JSON.parse(val);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    };
+
+    notice.target_type = notice.target_type || 'all';
+    notice.target_classes = parseJson(notice.target_classes);
+    notice.target_sections = parseJson(notice.target_sections);
+    notice.target_roles = parseJson(notice.target_roles);
+    notice.target_user_ids = parseJson(notice.target_user_ids);
+
+    const [allClasses] = await pool.query(
+      `SELECT id, class_name FROM class_master WHERE school_id = ?`,
+      [schoolId]
+    ).catch(() => [[]]);
+    const classMap = new Map((allClasses || []).map((c) => [c.id, c.class_name]));
+
+    const [allSections] = await pool.query(
+      `SELECT id, section_name, class_id FROM section_master WHERE school_id = ?`,
+      [schoolId]
+    ).catch(() => [[]]);
+    const sectionMap = new Map((allSections || []).map((s) => [s.id, s.section_name]));
+
+    notice.target_class_names = notice.target_classes.map((cid) => classMap.get(Number(cid)) || `Class ${cid}`);
+    notice.target_section_names = notice.target_sections.map((sid) => sectionMap.get(Number(sid)) || `Sec ${sid}`);
+
     return notice;
   },
 
-  async createNotice({ school_id, title, notice_date, publish_on, message, message_to, status }) {
+  async createNotice({
+    school_id,
+    title,
+    notice_date,
+    publish_on,
+    message,
+    message_to,
+    status,
+    target_type = 'all',
+    target_classes = [],
+    target_sections = [],
+    target_roles = [],
+    target_user_ids = [],
+  }) {
     const [result] = await pool.query(
-      `INSERT INTO notice (school_id, title, notice_date, publish_on, message, status)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO notice (
+        school_id, title, notice_date, publish_on, message, status,
+        target_type, target_classes, target_sections, target_roles, target_user_ids
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         school_id,
         title,
@@ -112,6 +192,11 @@ const AnnouncementModel = {
         publish_on || null,
         message || null,
         status !== undefined ? parseInt(status, 10) : 1,
+        target_type || 'all',
+        JSON.stringify(target_classes || []),
+        JSON.stringify(target_sections || []),
+        JSON.stringify(target_roles || []),
+        JSON.stringify(target_user_ids || []),
       ]
     );
     const noticeId = result.insertId;
@@ -129,10 +214,27 @@ const AnnouncementModel = {
     return noticeId;
   },
 
-  async updateNotice(id, schoolId, { title, notice_date, publish_on, message, message_to, status }) {
+  async updateNotice(
+    id,
+    schoolId,
+    {
+      title,
+      notice_date,
+      publish_on,
+      message,
+      message_to,
+      status,
+      target_type = 'all',
+      target_classes = [],
+      target_sections = [],
+      target_roles = [],
+      target_user_ids = [],
+    }
+  ) {
     await pool.query(
       `UPDATE notice 
-       SET title = ?, notice_date = ?, publish_on = ?, message = ?, status = ?
+       SET title = ?, notice_date = ?, publish_on = ?, message = ?, status = ?,
+           target_type = ?, target_classes = ?, target_sections = ?, target_roles = ?, target_user_ids = ?
        WHERE id = ? AND school_id = ?`,
       [
         title,
@@ -140,6 +242,11 @@ const AnnouncementModel = {
         publish_on || null,
         message || null,
         status !== undefined ? parseInt(status, 10) : 1,
+        target_type || 'all',
+        JSON.stringify(target_classes || []),
+        JSON.stringify(target_sections || []),
+        JSON.stringify(target_roles || []),
+        JSON.stringify(target_user_ids || []),
         id,
         schoolId,
       ]
