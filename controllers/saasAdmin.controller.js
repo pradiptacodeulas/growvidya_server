@@ -296,6 +296,64 @@ class SaasAdminController {
     }
   }
 
+  /**
+   * Approve a school's pending subscription plan
+   */
+  static async approveSubscription(req, res, next) {
+    try {
+      const { id } = req.params;
+      const { verificationNotes, startDate, endDate } = req.body;
+
+      const existing = await SaasAdminModel.getSubscriptionById(id);
+      if (!existing) {
+        return ApiResponse.notFound(res, 'Subscription record not found.');
+      }
+
+      const approved = await SaasAdminModel.approveSubscription(id, {
+        verifiedBy: req.saasAdmin?.id || null,
+        verificationNotes,
+        startDate,
+        endDate,
+      });
+
+      return ApiResponse.success(
+        res,
+        `🎉 Plan "${approved.plan_name}" for ${approved.school_name} has been approved and is now active!`,
+        approved
+      );
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Reject a school's pending subscription plan
+   */
+  static async rejectSubscription(req, res, next) {
+    try {
+      const { id } = req.params;
+      const { rejectionReason, notes } = req.body;
+
+      const existing = await SaasAdminModel.getSubscriptionById(id);
+      if (!existing) {
+        return ApiResponse.notFound(res, 'Subscription record not found.');
+      }
+
+      const rejected = await SaasAdminModel.rejectSubscription(id, {
+        verifiedBy: req.saasAdmin?.id || null,
+        rejectionReason: rejectionReason || notes || 'Rejected by Super Admin',
+      });
+
+      return ApiResponse.success(
+        res,
+        `Plan request for ${rejected.school_name} has been rejected.`,
+        rejected
+      );
+    } catch (error) {
+      next(error);
+    }
+  }
+
   static async verifySubscriptionPayment(req, res, next) {
     try {
       const { id } = req.params;

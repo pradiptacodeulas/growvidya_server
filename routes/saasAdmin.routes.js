@@ -43,6 +43,8 @@ router.put('/schools/:id', checkPermission('schools', 'can_edit'), SaasAdminCont
 // Subscription & Payment Verification
 router.get('/subscriptions', checkPermission('subscriptions', 'can_view'), SaasAdminController.getSubscriptions);
 router.get('/subscriptions/:id', checkPermission('subscriptions', 'can_view'), SaasAdminController.getSubscriptionById);
+router.post('/subscriptions/:id/approve', checkPermission('subscriptions', 'can_manage'), SaasAdminController.approveSubscription);
+router.post('/subscriptions/:id/reject', checkPermission('subscriptions', 'can_manage'), SaasAdminController.rejectSubscription);
 router.post('/subscriptions/:id/verify', checkPermission('subscriptions', 'can_manage'), SaasAdminController.verifySubscriptionPayment);
 router.patch('/subscriptions/:id/status', checkPermission('subscriptions', 'can_manage'), SaasAdminController.updateSubscriptionStatus);
 router.post('/subscriptions/:id/extend', checkPermission('subscriptions', 'can_manage'), SaasAdminController.extendSubscription);

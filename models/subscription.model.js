@@ -50,15 +50,72 @@ class SubscriptionModel {
     `;
 
     const [rows] = await pool.query(query, [targetSchoolId]);
+
+    // Check if there is any pending subscription request for this school awaiting Super Admin approval
+    const [pendingRows] = await pool.query(
+      `SELECT 
+        s.id AS subscription_id,
+        s.school_id,
+        s.plan_id,
+        s.amount_paid,
+        s.payment_gateway,
+        s.payment_transaction_id,
+        s.payment_status,
+        s.start_date,
+        s.end_date,
+        s.status,
+        s.verification_notes,
+        s.created_at,
+        p.plan_name,
+        p.plan_code,
+        p.description AS plan_description,
+        p.price,
+        p.billing_cycle,
+        p.max_students,
+        p.max_teachers
+      FROM school_subscriptions s
+      JOIN subscription_plans p ON s.plan_id = p.id
+      WHERE s.school_id = ? AND s.status = 'pending'
+      ORDER BY s.id DESC
+      LIMIT 1`,
+      [targetSchoolId]
+    );
+    const pendingSubscription = pendingRows.length > 0 ? pendingRows[0] : null;
+
     if (rows.length === 0) {
+      if (pendingSubscription) {
+        return {
+          subscription_id: pendingSubscription.subscription_id,
+          school_id: targetSchoolId,
+          plan_id: pendingSubscription.plan_id,
+          plan_name: pendingSubscription.plan_name,
+          plan_code: pendingSubscription.plan_code,
+          billing_cycle: pendingSubscription.billing_cycle,
+          amount_paid: pendingSubscription.amount_paid,
+          payment_gateway: pendingSubscription.payment_gateway,
+          payment_transaction_id: pendingSubscription.payment_transaction_id,
+          payment_status: pendingSubscription.payment_status,
+          status: 'pending',
+          isPending: true,
+          isTrial: false,
+          isExpired: false,
+          days_left: 0,
+          pending_subscription: pendingSubscription,
+          pendingSubscription,
+        };
+      }
+
       return {
         subscription_id: null,
         school_id: targetSchoolId,
         plan_name: 'No Active Subscription',
         status: 'expired',
+        isPending: false,
         isTrial: false,
         isExpired: true,
         days_left: 0,
+        pending_subscription: null,
+        pendingSubscription: null,
       };
     }
 
@@ -84,7 +141,10 @@ class SubscriptionModel {
     let liveStatus = sub.status;
     let isExpired = false;
 
-    if (daysLeft <= 0 || sub.status === 'expired') {
+    if (sub.status === 'pending') {
+      liveStatus = 'pending';
+      isExpired = false;
+    } else if (daysLeft <= 0 || sub.status === 'expired') {
       liveStatus = 'expired';
       isExpired = true;
 
@@ -122,13 +182,16 @@ class SubscriptionModel {
 
     return {
       ...sub,
-      days_left: Math.max(0, daysLeft),
+      days_left: sub.status === 'pending' ? 0 : Math.max(0, daysLeft),
       actual_days_left: daysLeft,
       isTrial,
       isExpired,
+      isPending: sub.status === 'pending' || Boolean(pendingSubscription),
       liveStatus,
       features: featuresMap,
       items: planItems,
+      pending_subscription: pendingSubscription,
+      pendingSubscription,
     };
   }
 
@@ -198,18 +261,122 @@ class SubscriptionModel {
   }
 
   /**
-   * Upgrade school subscription to a paid plan
+   * Request a plan selection by a user.
+   * Stored as 'pending' until the Super Admin reviews and approves it.
+   */
+  static async requestPlanSelection({
+    schoolId,
+    planId,
+    amountPaid,
+    paymentGateway = 'direct_selection',
+    paymentTransactionId = null,
+    couponId = null,
+    discountAmount = 0,
+    originalAmount = null,
+    paymentStatus = 'pending',
+  }) {
+    const targetSchoolId = parseInt(schoolId, 10);
+    const targetPlanId = parseInt(planId, 10);
+
+    const [planRows] = await pool.query(
+      'SELECT id, plan_name, price, billing_cycle FROM subscription_plans WHERE id = ? LIMIT 1',
+      [targetPlanId]
+    );
+    const plan = planRows[0];
+    if (!plan) {
+      throw new Error('Selected plan not found.');
+    }
+
+    const finalAmount = amountPaid !== undefined ? parseFloat(amountPaid) : parseFloat(plan.price);
+    const finalTxnId =
+      paymentTransactionId ||
+      `REQ_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
+
+    const startDate = new Date();
+    const endDate = new Date();
+    if (plan.billing_cycle === 'monthly') {
+      endDate.setMonth(endDate.getMonth() + 1);
+    } else {
+      endDate.setFullYear(endDate.getFullYear() + 1);
+    }
+
+    const startDateStr = startDate.toISOString().split('T')[0];
+    const endDateStr = endDate.toISOString().split('T')[0];
+
+    // NOTE: When a user selects a plan, it remains PENDING until Super Admin reviews and approves it!
+    // We do NOT expire existing active plans here! The existing plan stays active until approval.
+    const insertQuery = `
+      INSERT INTO school_subscriptions (
+        school_id, plan_id, amount_paid, payment_gateway,
+        payment_transaction_id, coupon_id, discount_amount, original_amount,
+        payment_status, start_date, end_date, status, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NOW())
+    `;
+
+    const [result] = await pool.query(insertQuery, [
+      targetSchoolId,
+      targetPlanId,
+      finalAmount,
+      paymentGateway,
+      finalTxnId,
+      couponId ? parseInt(couponId, 10) : null,
+      parseFloat(discountAmount) || 0,
+      originalAmount !== null && originalAmount !== undefined ? parseFloat(originalAmount) : finalAmount,
+      paymentStatus,
+      startDateStr,
+      endDateStr,
+    ]);
+
+    const subscriptionId = result.insertId;
+
+    return {
+      subscription_id: subscriptionId,
+      school_id: targetSchoolId,
+      plan_id: targetPlanId,
+      plan_name: plan.plan_name,
+      amount_paid: finalAmount,
+      coupon_id: couponId,
+      discount_amount: parseFloat(discountAmount) || 0,
+      original_amount: originalAmount !== null && originalAmount !== undefined ? parseFloat(originalAmount) : finalAmount,
+      transaction_id: finalTxnId,
+      payment_status: paymentStatus,
+      status: 'pending',
+      start_date: startDateStr,
+      end_date: endDateStr,
+      message: `Plan selection for ${plan.plan_name} has been submitted and is pending Super Admin review and approval.`,
+    };
+  }
+
+  /**
+   * Upgrade school subscription to a paid plan.
+   * If immediateActivate is true (Super Admin override), activates directly.
+   * Otherwise, records as pending for Super Admin approval.
    */
   static async upgradeSubscription({
     schoolId,
     planId,
     amountPaid,
-    paymentGateway = 'dummy',
+    paymentGateway = 'manual',
     paymentTransactionId = null,
     couponId = null,
     discountAmount = 0,
     originalAmount = null,
+    immediateActivate = false,
   }) {
+    if (!immediateActivate) {
+      return await this.requestPlanSelection({
+        schoolId,
+        planId,
+        amountPaid,
+        paymentGateway,
+        paymentTransactionId,
+        couponId,
+        discountAmount,
+        originalAmount,
+        paymentStatus: paymentGateway === 'razorpay' ? 'completed' : 'pending',
+      });
+    }
+
     const targetSchoolId = parseInt(schoolId, 10);
     const targetPlanId = parseInt(planId, 10);
 
@@ -389,39 +556,17 @@ class SubscriptionModel {
     const startDateStr = startDate.toISOString().split('T')[0];
     const endDateStr = endDate.toISOString().split('T')[0];
 
-    // Insert as pending record without replacing active license until manual DB verification
-    const insertQuery = `
-      INSERT INTO school_subscriptions (
-        school_id, plan_id, amount_paid, payment_gateway,
-        payment_transaction_id, coupon_id, discount_amount, original_amount,
-        payment_status, start_date, end_date, status, created_at
-      ) VALUES (?, ?, ?, 'bank_transfer', ?, ?, ?, ?, 'pending', ?, ?, 'suspended', NOW())
-    `;
-
-    const [result] = await pool.query(insertQuery, [
-      targetSchoolId,
-      targetPlanId,
-      finalAmount,
-      finalTxnId,
-      couponId ? parseInt(couponId, 10) : null,
-      parseFloat(discountAmount) || 0,
-      originalAmount !== null && originalAmount !== undefined ? parseFloat(originalAmount) : finalAmount,
-      startDateStr,
-      endDateStr,
-    ]);
-
-    return {
-      request_id: result.insertId,
-      school_id: targetSchoolId,
-      plan_id: targetPlanId,
-      plan_name: plan.plan_name,
-      amount: finalAmount,
-      coupon_id: couponId,
-      discount_amount: parseFloat(discountAmount) || 0,
-      original_amount: originalAmount !== null && originalAmount !== undefined ? parseFloat(originalAmount) : finalAmount,
-      transaction_id: finalTxnId,
-      payment_status: 'pending',
-    };
+    return await this.requestPlanSelection({
+      schoolId: targetSchoolId,
+      planId: targetPlanId,
+      amountPaid: finalAmount,
+      paymentGateway: 'bank_transfer',
+      paymentTransactionId: finalTxnId,
+      couponId,
+      discountAmount,
+      originalAmount,
+      paymentStatus: 'pending',
+    });
   }
 
   /**

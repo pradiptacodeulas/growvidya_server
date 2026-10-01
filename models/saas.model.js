@@ -189,9 +189,10 @@ class SaasModel {
       const finalAmount = isTrialMode ? 0 : (amountPaid !== undefined ? parseFloat(amountPaid) : Math.max(0, originalAmount - discountAmount));
       const finalTxnId = isTrialMode
         ? (paymentTransactionId || `TRIAL_14DAYS_${Date.now()}_${Math.floor(Math.random() * 10000)}`)
-        : (paymentTransactionId || `PAY_DUMMY_${Date.now()}_${Math.floor(Math.random() * 10000)}`);
-      const finalGateway = isTrialMode ? 'free_trial' : (paymentGateway || 'dummy');
-      const subStatus = isTrialMode ? 'trial' : 'active';
+        : (paymentTransactionId || `REG_REQ_${Date.now()}_${Math.floor(Math.random() * 10000)}`);
+      const finalGateway = isTrialMode ? 'free_trial' : (paymentGateway || 'registration');
+      const subStatus = 'pending';
+      const paymentStatus = isTrialMode ? 'pending' : (paymentTransactionId ? 'completed' : 'pending');
 
       // Calculate subscription end date (14 days for trial, 1 year for annual, 30 days for monthly)
       const startDate = new Date();
@@ -207,13 +208,13 @@ class SaasModel {
       const startDateStr = startDate.toISOString().split('T')[0];
       const endDateStr = endDate.toISOString().split('T')[0];
 
-      // Insert into school_subscriptions
+      // Insert into school_subscriptions as pending until Super Admin reviews and approves it
       const insertSubQuery = `
         INSERT INTO school_subscriptions (
           school_id, plan_id, coupon_id, original_amount, discount_amount,
           amount_paid, payment_gateway, payment_transaction_id, payment_status,
           start_date, end_date, status, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, NOW())
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NOW())
       `;
       const [subResult] = await connection.query(insertSubQuery, [
         schoolId,
@@ -224,9 +225,9 @@ class SaasModel {
         finalAmount,
         finalGateway,
         finalTxnId,
+        paymentStatus,
         startDateStr,
         endDateStr,
-        subStatus,
       ]);
       const subscriptionId = subResult.insertId;
 

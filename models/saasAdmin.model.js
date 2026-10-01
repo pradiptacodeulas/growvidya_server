@@ -542,6 +542,20 @@ class SaasAdminModel {
     const queryParams = [...params, limitNum, offset];
     const [subscriptions] = await pool.query(selectQuery, queryParams);
 
+    // Live status counts strictly from database
+    const [countsResult] = await pool.query(`
+      SELECT 
+        COUNT(*) AS total,
+        SUM(CASE WHEN ss.status = 'pending' THEN 1 ELSE 0 END) AS pending,
+        SUM(CASE WHEN ss.status = 'active' THEN 1 ELSE 0 END) AS active,
+        SUM(CASE WHEN ss.status = 'expired' THEN 1 ELSE 0 END) AS expired,
+        SUM(CASE WHEN ss.status = 'suspended' THEN 1 ELSE 0 END) AS suspended,
+        SUM(CASE WHEN ss.status = 'trial' THEN 1 ELSE 0 END) AS trial
+      FROM school_subscriptions ss
+      JOIN school_master s ON ss.school_id = s.id
+    `);
+    const counts = countsResult[0] || { total: 0, pending: 0, active: 0, expired: 0, suspended: 0, trial: 0 };
+
     return {
       subscriptions,
       pagination: {
@@ -549,6 +563,14 @@ class SaasAdminModel {
         page: pageNum,
         limit: limitNum,
         totalPages: Math.ceil(total / limitNum) || 1,
+      },
+      counts: {
+        total: Number(counts.total || 0),
+        pending: Number(counts.pending || 0),
+        active: Number(counts.active || 0),
+        expired: Number(counts.expired || 0),
+        suspended: Number(counts.suspended || 0),
+        trial: Number(counts.trial || 0),
       },
     };
   }
@@ -571,7 +593,116 @@ class SaasAdminModel {
     return rows[0] || null;
   }
 
+  /**
+   * Approve a plan for a school.
+   * Activates the subscription, sets start/end dates, activates school & admin user,
+   * and expires any previous active subscription so the approved plan is now active.
+   */
+  static async approveSubscription(id, { verifiedBy = null, verificationNotes = '', startDate = null, endDate = null } = {}) {
+    const [subRows] = await pool.query(
+      `SELECT ss.*, sp.billing_cycle, sp.plan_name 
+       FROM school_subscriptions ss
+       JOIN subscription_plans sp ON ss.plan_id = sp.id
+       WHERE ss.id = ? LIMIT 1`,
+      [id]
+    );
+
+    if (subRows.length === 0) {
+      throw new Error('Subscription record not found.');
+    }
+
+    const sub = subRows[0];
+    const schoolId = sub.school_id;
+
+    // Determine start and end dates
+    const effectiveStart = startDate ? new Date(startDate) : new Date();
+    const effectiveEnd = endDate ? new Date(endDate) : new Date(effectiveStart);
+
+    if (!endDate) {
+      if (sub.billing_cycle === 'monthly') {
+        effectiveEnd.setMonth(effectiveEnd.getMonth() + 1);
+      } else if (sub.billing_cycle === 'trial') {
+        effectiveEnd.setDate(effectiveEnd.getDate() + 14);
+      } else {
+        effectiveEnd.setFullYear(effectiveEnd.getFullYear() + 1);
+      }
+    }
+
+    const startStr = effectiveStart.toISOString().split('T')[0];
+    const endStr = effectiveEnd.toISOString().split('T')[0];
+    const notes = verificationNotes || `Approved by Super Admin on ${new Date().toLocaleDateString()}`;
+
+    // 1. Expire any OTHER active or trial subscriptions for this school
+    await pool.query(
+      "UPDATE school_subscriptions SET status = 'expired' WHERE school_id = ? AND id != ? AND status IN ('active', 'trial')",
+      [schoolId, id]
+    );
+
+    // 2. Activate this subscription
+    await pool.query(
+      `UPDATE school_subscriptions SET
+        status = 'active',
+        payment_status = 'completed',
+        start_date = ?,
+        end_date = ?,
+        verified_by = ?,
+        verified_at = NOW(),
+        verification_notes = ?
+       WHERE id = ?`,
+      [startStr, endStr, verifiedBy, notes, id]
+    );
+
+    // 3. Ensure the school is active
+    await pool.query('UPDATE school_master SET status = 1, updated_at = NOW() WHERE id = ?', [schoolId]);
+
+    // 4. Ensure school superadmin user is active
+    await pool.query('UPDATE user_master SET status = 1 WHERE school_id = ? AND admin_type = 1', [schoolId]);
+
+    // 5. If coupon used, record usage
+    if (sub.coupon_id && parseFloat(sub.discount_amount) > 0) {
+      try {
+        const CouponModel = require('./coupon.model');
+        const [cuExists] = await pool.query('SELECT id FROM coupon_usages WHERE subscription_id = ? LIMIT 1', [id]);
+        if (cuExists.length === 0) {
+          await CouponModel.recordCouponUsage(sub.coupon_id, schoolId, id, sub.discount_amount);
+        }
+      } catch (cErr) {
+        console.error('Failed to log coupon_usages on admin approval:', cErr.message);
+      }
+    }
+
+    return await this.getSubscriptionById(id);
+  }
+
+  /**
+   * Reject a pending subscription request
+   */
+  static async rejectSubscription(id, { verifiedBy = null, rejectionReason = '' } = {}) {
+    const reason = rejectionReason || 'Rejected by Super Admin';
+    await pool.query(
+      `UPDATE school_subscriptions SET
+        status = 'suspended',
+        payment_status = 'failed',
+        verified_by = ?,
+        verified_at = NOW(),
+        verification_notes = CONCAT(IFNULL(verification_notes, ''), '\n[Rejected]: ', ?)
+       WHERE id = ?`,
+      [verifiedBy, reason, id]
+    );
+    return await this.getSubscriptionById(id);
+  }
+
   static async verifySubscriptionPayment(id, { paymentStatus = 'completed', status = 'active', verificationNotes = '', verifiedBy = null, startDate = null, endDate = null }) {
+    if (status === 'active' && paymentStatus === 'completed') {
+      const approved = await this.approveSubscription(id, {
+        verifiedBy,
+        verificationNotes,
+        startDate,
+        endDate,
+      });
+      return Boolean(approved);
+    }
+
     let query = `
       UPDATE school_subscriptions SET
         payment_status = ?,
@@ -595,27 +726,6 @@ class SaasAdminModel {
     params.push(id);
 
     const [result] = await pool.query(query, params);
-
-    // If verified as active and completed, also ensure school is active
-    if (result.affectedRows > 0 && paymentStatus === 'completed' && status === 'active') {
-      const [subRows] = await pool.query('SELECT school_id, coupon_id, discount_amount FROM school_subscriptions WHERE id = ?', [id]);
-      if (subRows.length > 0) {
-        await pool.query('UPDATE school_master SET status = 1 WHERE id = ?', [subRows[0].school_id]);
-
-        if (subRows[0].coupon_id && parseFloat(subRows[0].discount_amount) > 0) {
-          try {
-            const CouponModel = require('./coupon.model');
-            const [cuExists] = await pool.query('SELECT id FROM coupon_usages WHERE subscription_id = ? LIMIT 1', [id]);
-            if (cuExists.length === 0) {
-              await CouponModel.recordCouponUsage(subRows[0].coupon_id, subRows[0].school_id, id, subRows[0].discount_amount);
-            }
-          } catch (cErr) {
-            console.error('Failed to log coupon_usages on admin verification:', cErr.message);
-          }
-        }
-      }
-    }
-
     return result.affectedRows > 0;
   }
 

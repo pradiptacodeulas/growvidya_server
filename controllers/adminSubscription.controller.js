@@ -415,8 +415,8 @@ class AdminSubscriptionController {
 
       const finalAmountPaid = req.body.amount_paid !== undefined ? parseFloat(req.body.amount_paid) : totalAmount;
 
-      // Signature is valid. Activate the school subscription with coupon tracking
-      const upgraded = await SubscriptionModel.upgradeSubscription({
+      // Signature is valid. Create plan request in PENDING state awaiting Super Admin review and approval!
+      const planRequest = await SubscriptionModel.requestPlanSelection({
         schoolId,
         planId: targetPlanId,
         amountPaid: finalAmountPaid,
@@ -425,6 +425,7 @@ class AdminSubscriptionController {
         couponId: couponInfo?.id || null,
         discountAmount,
         originalAmount,
+        paymentStatus: 'completed',
       });
 
       // Record RFID card purchase order in school_rfid_orders if cards were ordered
@@ -435,7 +436,7 @@ class AdminSubscriptionController {
             await pool.query(
               `INSERT INTO school_rfid_orders 
                (order_no, school_id, rfid_card_id, quantity, unit_price, total_amount, order_status, shipping_address, remarks, created_at, updated_at) 
-               VALUES (?, ?, ?, ?, ?, ?, 'approved', ?, 'Ordered with subscription configuration', NOW(), NOW())`,
+               VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, 'Ordered with subscription configuration (Pending Super Admin Approval)', NOW(), NOW())`,
               [orderNo, schoolId, card.id, card.quantity, card.unit_price, card.total_price, shipping_address || 'School Campus Delivery']
             );
           } catch (rfidErr) {
@@ -453,7 +454,7 @@ class AdminSubscriptionController {
               await pool.query(
                 `INSERT INTO school_attendance_machines 
                  (school_id, machine_master_id, device_serial_number, device_location, status, created_at, updated_at)
-                 VALUES (?, ?, ?, 'Main School Gate - Scheduled Setup', 1, NOW(), NOW())`,
+                 VALUES (?, ?, ?, 'Main School Gate - Scheduled Setup', 0, NOW(), NOW())`,
                 [schoolId, machine.id, serialNo]
               );
             }
@@ -465,8 +466,8 @@ class AdminSubscriptionController {
 
       return ApiResponse.success(
         res,
-        `🎉 Payment verified successfully! Your school has been upgraded to ${plan.plan_name}.`,
-        { ...upgraded, breakdown },
+        `🎉 Payment verified successfully! Your plan request for ${plan.plan_name} has been submitted and is currently pending Super Admin review and approval. Once approved, your new plan will become active.`,
+        { ...planRequest, breakdown },
         200
       );
     } catch (error) {
@@ -564,13 +565,37 @@ class AdminSubscriptionController {
 
         return ApiResponse.success(
           res,
-          `Offline payment request recorded with reference "${txnId}". Our team will verify the payment and activate your subscription within 24 hours.`,
+          `Offline payment request recorded with reference "${txnId}". Your plan will remain pending until the Super Admin reviews and approves it.`,
           offlineReq,
           200
         );
       }
 
-      // 2. Check for Platform Owner Authorization Secret (for internal scripts or emergency manual overrides)
+      // 2. Direct Plan Selection / Request
+      if (gateway === 'direct_selection' || gateway === 'request' || !gateway) {
+        const plan = await SubscriptionModel.getPlanById(targetPlanId);
+        if (!plan) {
+          return ApiResponse.error(res, 'Selected subscription plan not found.', null, 404);
+        }
+
+        const planReq = await SubscriptionModel.requestPlanSelection({
+          schoolId,
+          planId: targetPlanId,
+          amountPaid: amount_paid !== undefined ? amount_paid : (amountPaid !== undefined ? amountPaid : plan.price),
+          paymentGateway: 'direct_selection',
+          paymentTransactionId: txnId || `SEL_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`,
+          paymentStatus: 'pending',
+        });
+
+        return ApiResponse.success(
+          res,
+          `Plan selection for "${plan.plan_name}" submitted successfully. It will remain pending until the Super Admin reviews and approves it.`,
+          planReq,
+          200
+        );
+      }
+
+      // 3. Check for Platform Owner Authorization Secret (for internal scripts or emergency manual overrides)
       const platformSecret = req.headers['x-platform-admin-secret'];
       const isAuthorizedManual =
         platformSecret &&
@@ -584,6 +609,7 @@ class AdminSubscriptionController {
           amountPaid: amount_paid || amountPaid,
           paymentGateway: gateway || 'platform_admin',
           paymentTransactionId: txnId || `MANUAL_${Date.now()}`,
+          immediateActivate: true,
         });
         return ApiResponse.success(
           res,
@@ -593,12 +619,53 @@ class AdminSubscriptionController {
         );
       }
 
-      // 3. Reject all unverified/dummy free upgrades
       return ApiResponse.error(
         res,
-        'Direct unverified upgrades are not permitted. Please use Instant Online Checkout (Razorpay) or submit an Offline Bank Transfer request with your transfer reference number.',
+        'Invalid upgrade request. Please select a valid plan and payment option.',
         null,
-        403
+        400
+      );
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Direct Plan Selection Endpoint:
+   * When a user selects a plan, it remains pending until Super Admin reviews and approves it.
+   */
+  static async selectPlan(req, res, next) {
+    try {
+      const schoolId = req.user?.school_id || req.user?.schoolId;
+      if (!schoolId) {
+        return ApiResponse.error(res, 'School ID not found in session.', null, 400);
+      }
+
+      const { plan_id, planId } = req.body;
+      const targetPlanId = plan_id || planId;
+      if (!targetPlanId) {
+        return ApiResponse.error(res, 'Please specify a plan_id to select a plan.', null, 400);
+      }
+
+      const plan = await SubscriptionModel.getPlanById(targetPlanId);
+      if (!plan) {
+        return ApiResponse.error(res, 'Selected subscription plan not found.', null, 404);
+      }
+
+      const planReq = await SubscriptionModel.requestPlanSelection({
+        schoolId,
+        planId: targetPlanId,
+        amountPaid: plan.price,
+        paymentGateway: 'direct_selection',
+        paymentTransactionId: `SEL_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`,
+        paymentStatus: 'pending',
+      });
+
+      return ApiResponse.success(
+        res,
+        `Plan selection for "${plan.plan_name}" submitted successfully. It will remain pending until the Super Admin reviews and approves it.`,
+        planReq,
+        200
       );
     } catch (error) {
       next(error);

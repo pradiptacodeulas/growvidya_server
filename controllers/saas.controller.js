@@ -111,7 +111,7 @@ class SaasController {
       const result = await SaasModel.registerSchoolWithPlan({
         planId: selectedPlanId,
         amountPaid: amount_paid !== undefined ? amount_paid : amountPaid,
-        paymentGateway: payment_gateway || paymentGateway || 'dummy',
+        paymentGateway: payment_gateway || paymentGateway || 'registration',
         paymentTransactionId: payment_transaction_id || paymentTransactionId,
         schoolData: school,
         academicYearData: academic_year || academicYear || {},
