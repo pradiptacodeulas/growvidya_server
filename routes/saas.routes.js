@@ -12,6 +12,8 @@ router.post('/create-order', SaasController.createRegistrationOrder);
 // Storage Plans requires authentication
 router.get('/storage-plans', couponAuthMiddleware, StorageMasterController.getActive);
 router.post('/register-school', SaasController.registerSchool);
+router.post('/register', SaasController.registerSchool);
+router.post('/auth/exchange-handover', SaasController.exchangeHandoverToken);
 router.get('/locations/countries', SaasController.getCountries);
 router.get('/locations/states/:countryId', SaasController.getStates);
 router.get('/locations/cities/:stateId', SaasController.getCities);

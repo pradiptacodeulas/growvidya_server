@@ -121,10 +121,23 @@ class SaasController {
       });
 
 
+      const { generateToken } = require('../utils/jwt.util');
+      const handoverToken = generateToken(
+        {
+          schoolId: result.schoolId,
+          email: result.adminEmail,
+          type: 'onboarding_handover',
+        },
+        { expiresIn: '5m' }
+      );
+
       return ApiResponse.success(
         res,
         'School and Super Admin registered successfully! You can now log in.',
-        result,
+        {
+          ...result,
+          handover_token: handoverToken,
+        },
         201
       );
     } catch (error) {
@@ -278,6 +291,95 @@ class SaasController {
       }
 
       return ApiResponse.success(res, result.message, result.coupon);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Exchange one-time onboarding handover token for full portal session
+   */
+  static async exchangeHandoverToken(req, res, next) {
+    try {
+      const { token } = req.body;
+      if (!token) {
+        return ApiResponse.error(res, 'Handover token is required.', null, 400);
+      }
+
+      const { verifyToken, generateToken } = require('../utils/jwt.util');
+      const decoded = verifyToken(token);
+      if (!decoded || decoded.type !== 'onboarding_handover' || !decoded.email) {
+        return ApiResponse.error(res, 'Invalid or expired onboarding handover token.', null, 401);
+      }
+
+      const AdminUserModel = require('../models/adminUser.model');
+      const SubscriptionModel = require('../models/subscription.model');
+      const PermissionModel = require('../models/permission.model');
+      const config = require('../config/app.config');
+
+      const user = await AdminUserModel.findByEmail(decoded.email.trim());
+      if (!user) {
+        return ApiResponse.error(res, 'User record not found.', null, 404);
+      }
+
+      const adminType = Number(user.admin_type);
+      const isSuperAdmin = adminType === 1 || user.role_name === 'Super Admin';
+      const roleName = isSuperAdmin ? 'Super Admin' : (user.role_name || 'Staff');
+      const permissions = isSuperAdmin ? {} : await PermissionModel.getUserPermissionMap(user.role_id);
+      const sub = await SubscriptionModel.getSchoolSubscription(user.school_id);
+
+      const tokenPayload = {
+        userId: user.id,
+        schoolId: user.school_id,
+        schoolName: user.school_name,
+        schoolLogo: user.school_logo,
+        email: user.email,
+        roleId: user.role_id,
+        adminType: adminType,
+        isSuperAdmin: Boolean(isSuperAdmin),
+        roleName,
+        portalType: 'AdminPortal',
+      };
+
+      const sessionToken = generateToken(tokenPayload);
+
+      const cookieOptions = {
+        httpOnly: true,
+        secure: config.nodeEnv === 'production',
+        sameSite: config.nodeEnv === 'production' ? 'none' : 'lax',
+        maxAge: config.cookie?.maxAge || 30 * 24 * 60 * 60 * 1000,
+        path: '/',
+      };
+
+      const cookieName = config.cookie?.name || 'growvidya_session';
+      res.cookie('growvidya_admin_session', sessionToken, cookieOptions);
+      res.cookie(cookieName, sessionToken, cookieOptions);
+
+      return ApiResponse.success(res, 'Authentication successful via onboarding handover.', {
+        authType: 'hybrid (session + token)',
+        token: sessionToken,
+        user: {
+          id: user.id,
+          schoolId: user.school_id,
+          schoolName: user.school_name || '',
+          schoolLogo: user.school_logo || null,
+          schoolFooter: user.school_footer || null,
+          firstName: user.first_name,
+          lastName: user.last_name,
+          email: user.email,
+          phone: user.phone,
+          picture: user.picture,
+          roleId: user.role_id,
+          roleName,
+          adminType: adminType,
+          admin_type: adminType,
+          isSuperAdmin: Boolean(isSuperAdmin),
+          isTrial: Boolean(sub?.isTrial),
+          isExpired: Boolean(sub?.isExpired),
+          subscription: sub,
+          permissions,
+        },
+      });
     } catch (error) {
       next(error);
     }
