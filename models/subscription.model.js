@@ -196,9 +196,10 @@ class SubscriptionModel {
   }
 
   /**
-   * Get all available paid plans for upgrading
+   * Get all available paid plans for upgrading.
+   * If schoolId is provided, checks active plan tier to prevent downgrades.
    */
-  static async getUpgradePlans() {
+  static async getUpgradePlans(schoolId = null) {
     const query = `
       SELECT id, plan_name, plan_code, description, price, billing_cycle,
              free_trial_days, max_students
@@ -207,6 +208,20 @@ class SubscriptionModel {
       ORDER BY price ASC
     `;
     const [rows] = await pool.query(query);
+
+    let currentSub = null;
+    if (schoolId) {
+      try {
+        currentSub = await this.getSchoolSubscription(schoolId);
+      } catch (e) {
+        currentSub = null;
+      }
+    }
+
+    const currentPrice = currentSub && currentSub.status === 'active' && !currentSub.isTrial && currentSub.price !== null
+      ? parseFloat(currentSub.price)
+      : 0;
+
     const plans = [];
     for (const row of rows) {
       const [items] = await pool.query(
@@ -217,8 +232,26 @@ class SubscriptionModel {
       (items || []).forEach(it => {
         if (it.item_code) featuresMap[it.item_code.toLowerCase()] = true;
       });
+
+      const planPrice = parseFloat(row.price);
+      const isCurrent = Boolean(currentSub && Number(currentSub.plan_id) === Number(row.id));
+      const isDowngrade = Boolean(currentPrice > 0 && planPrice < currentPrice);
+      const canSwitch = !isDowngrade;
+      const isUpgrade = Boolean(currentPrice > 0 && planPrice > currentPrice);
+      const isEqualTier = Boolean(currentPrice > 0 && planPrice === currentPrice);
+
       plans.push({
         ...row,
+        is_current: isCurrent,
+        is_downgrade: isDowngrade,
+        is_upgrade: isUpgrade,
+        is_equal_tier: isEqualTier,
+        can_switch: canSwitch,
+        current_plan_name: currentSub?.plan_name || null,
+        current_plan_price: currentPrice,
+        downgrade_message: isDowngrade
+          ? `Downgrading to a lower-tier plan is not permitted. You are currently subscribed to the "${currentSub.plan_name}" plan (₹${currentPrice.toFixed(2)}). You may only remain on your current plan or upgrade to an equal or higher-tier plan.`
+          : null,
         features: featuresMap,
         items: items || [],
       });
@@ -285,6 +318,19 @@ class SubscriptionModel {
     const plan = planRows[0];
     if (!plan) {
       throw new Error('Selected plan not found.');
+    }
+
+    // STRICT DOWNGRADE PREVENTION:
+    // If school has an active paid subscription, prevent moving to a lower-tier plan
+    const currentSub = await this.getSchoolSubscription(targetSchoolId);
+    if (currentSub && currentSub.status === 'active' && !currentSub.isTrial && currentSub.price !== null) {
+      const currentPrice = parseFloat(currentSub.price);
+      const targetPrice = parseFloat(plan.price);
+      if (currentPrice > 0 && targetPrice < currentPrice) {
+        throw new Error(
+          `Downgrading to a lower-tier plan is not permitted. You are currently subscribed to the "${currentSub.plan_name}" plan (₹${currentPrice.toFixed(2)}). You may only remain on your current plan or upgrade to an equal or higher-tier plan.`
+        );
+      }
     }
 
     const finalAmount = amountPaid !== undefined ? parseFloat(amountPaid) : parseFloat(plan.price);
@@ -387,6 +433,19 @@ class SubscriptionModel {
     const plan = planRows[0];
     if (!plan) {
       throw new Error('Selected upgrade plan not found.');
+    }
+
+    // STRICT DOWNGRADE PREVENTION:
+    // If school has an active paid subscription, prevent moving to a lower-tier plan
+    const currentSub = await this.getSchoolSubscription(targetSchoolId);
+    if (currentSub && currentSub.status === 'active' && !currentSub.isTrial && currentSub.price !== null) {
+      const currentPrice = parseFloat(currentSub.price);
+      const targetPrice = parseFloat(plan.price);
+      if (currentPrice > 0 && targetPrice < currentPrice) {
+        throw new Error(
+          `Downgrading to a lower-tier plan is not permitted. You are currently subscribed to the "${currentSub.plan_name}" plan (₹${currentPrice.toFixed(2)}). You may only remain on your current plan or upgrade to an equal or higher-tier plan.`
+        );
+      }
     }
 
     const finalAmount = amountPaid !== undefined ? parseFloat(amountPaid) : parseFloat(plan.price);

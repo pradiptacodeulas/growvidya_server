@@ -200,7 +200,7 @@ class AdminSubscriptionController {
       }
 
       const subscription = await SubscriptionModel.getSchoolSubscription(schoolId);
-      const upgradePlans = await SubscriptionModel.getUpgradePlans();
+      const upgradePlans = await SubscriptionModel.getUpgradePlans(schoolId);
       const catalog = await SubscriptionModel.getConfigurationCatalog();
 
       return ApiResponse.success(res, 'Subscription status retrieved successfully.', {
@@ -262,6 +262,21 @@ class AdminSubscriptionController {
       const plan = await SubscriptionModel.getPlanById(targetPlanId);
       if (!plan) {
         return ApiResponse.error(res, 'The selected subscription plan was not found.', null, 404);
+      }
+
+      // Check downgrade prevention against current active subscription
+      const currentSub = await SubscriptionModel.getSchoolSubscription(schoolId);
+      if (currentSub && currentSub.status === 'active' && !currentSub.isTrial && currentSub.price !== null) {
+        const currentPrice = parseFloat(currentSub.price);
+        const targetPrice = parseFloat(plan.price);
+        if (currentPrice > 0 && targetPrice < currentPrice) {
+          return ApiResponse.error(
+            res,
+            `Downgrading to a lower-tier plan is not permitted. You are currently subscribed to the "${currentSub.plan_name}" plan (₹${currentPrice.toFixed(2)}). You may only remain on your current plan or upgrade to an equal or higher-tier plan.`,
+            null,
+            400
+          );
+        }
       }
 
       if (parseFloat(plan.price) <= 0) {
@@ -382,6 +397,21 @@ class AdminSubscriptionController {
       const plan = await SubscriptionModel.getPlanById(targetPlanId);
       if (!plan) {
         return ApiResponse.error(res, 'Target subscription plan was not found.', null, 404);
+      }
+
+      // Check downgrade prevention against current active subscription
+      const currentSub = await SubscriptionModel.getSchoolSubscription(schoolId);
+      if (currentSub && currentSub.status === 'active' && !currentSub.isTrial && currentSub.price !== null) {
+        const currentPrice = parseFloat(currentSub.price);
+        const targetPrice = parseFloat(plan.price);
+        if (currentPrice > 0 && targetPrice < currentPrice) {
+          return ApiResponse.error(
+            res,
+            `Downgrading to a lower-tier plan is not permitted. You are currently subscribed to the "${currentSub.plan_name}" plan (₹${currentPrice.toFixed(2)}). You may only remain on your current plan or upgrade to an equal or higher-tier plan.`,
+            null,
+            400
+          );
+        }
       }
 
       // Cryptographically verify signature using HMAC SHA256
@@ -650,6 +680,21 @@ class AdminSubscriptionController {
       const plan = await SubscriptionModel.getPlanById(targetPlanId);
       if (!plan) {
         return ApiResponse.error(res, 'Selected subscription plan not found.', null, 404);
+      }
+
+      // Check downgrade prevention against current active subscription
+      const currentSub = await SubscriptionModel.getSchoolSubscription(schoolId);
+      if (currentSub && currentSub.status === 'active' && !currentSub.isTrial && currentSub.price !== null) {
+        const currentPrice = parseFloat(currentSub.price);
+        const targetPrice = parseFloat(plan.price);
+        if (currentPrice > 0 && targetPrice < currentPrice) {
+          return ApiResponse.error(
+            res,
+            `Downgrading to a lower-tier plan is not permitted. You are currently subscribed to the "${currentSub.plan_name}" plan (₹${currentPrice.toFixed(2)}). You may only remain on your current plan or upgrade to an equal or higher-tier plan.`,
+            null,
+            400
+          );
+        }
       }
 
       const planReq = await SubscriptionModel.requestPlanSelection({

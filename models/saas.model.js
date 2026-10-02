@@ -72,7 +72,52 @@ class SaasModel {
     const cleanSchoolId = schoolId ? parseInt(schoolId, 10) : null;
 
     if (cleanEmail || cleanPhone || cleanCode || cleanSchoolId) {
-      // Check for any prior free trial subscriptions for this plan associated with this user or school
+      // 1. Check if school or user already has an active higher-tier plan (prohibiting downgrade)
+      const [activeSubs] = await pool.query(
+        `SELECT ss.id, ss.status, ss.plan_id, p.plan_name, p.price
+         FROM school_subscriptions ss
+         JOIN subscription_plans p ON ss.plan_id = p.id
+         LEFT JOIN school_master sm ON ss.school_id = sm.id
+         LEFT JOIN user_master um ON um.school_id = sm.id
+         WHERE ss.status = 'active'
+           AND ss.payment_gateway != 'free_trial'
+           AND (
+             (? IS NOT NULL AND LOWER(um.email) = ?)
+             OR (? IS NOT NULL AND LOWER(sm.email) = ?)
+             OR (? IS NOT NULL AND sm.phone_number = ?)
+             OR (? IS NOT NULL AND sm.school_code = ?)
+             OR (? IS NOT NULL AND ss.school_id = ?)
+           )
+         ORDER BY p.price DESC
+         LIMIT 1`,
+        [
+          cleanEmail, cleanEmail,
+          cleanEmail, cleanEmail,
+          cleanPhone, cleanPhone,
+          cleanCode, cleanCode,
+          cleanSchoolId, cleanSchoolId,
+        ]
+      );
+
+      if (activeSubs.length > 0) {
+        const activeSub = activeSubs[0];
+        const activePrice = parseFloat(activeSub.price || 0);
+        const targetPrice = parseFloat(plan.price || 0);
+        if (activePrice > 0 && targetPrice < activePrice) {
+          return {
+            is_eligible: false,
+            is_downgrade: true,
+            plan_id: plan.id,
+            plan_name: plan.plan_name,
+            current_plan_name: activeSub.plan_name,
+            current_plan_price: activePrice,
+            free_trial_days: freeTrialDays,
+            reason: `Downgrading to a lower-tier plan is not permitted. You are currently subscribed to the "${activeSub.plan_name}" plan (₹${activePrice.toFixed(2)}). You may only remain on your current plan or move to an equal or higher-tier plan.`,
+          };
+        }
+      }
+
+      // 2. Check for any prior free trial subscriptions for this plan associated with this user or school
       const [existingTrial] = await pool.query(
         `SELECT ss.id, ss.status, ss.start_date, ss.end_date, ss.payment_gateway, ss.created_at
          FROM school_subscriptions ss
