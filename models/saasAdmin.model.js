@@ -579,7 +579,7 @@ class SaasAdminModel {
     const [rows] = await pool.query(
       `SELECT ss.*,
               s.school_name, s.school_code, s.email AS school_email, s.phone_number AS school_phone, s.address AS school_address,
-              sp.plan_name, sp.plan_code, sp.price AS plan_price, sp.billing_cycle, sp.max_students, sp.max_teachers,
+              sp.plan_name, sp.plan_code, sp.price AS plan_price, sp.billing_cycle, sp.max_students,
               c.code AS coupon_code, c.discount_type AS coupon_discount_type, c.discount_value AS coupon_discount_val,
               CONCAT_WS(' ', sau.first_name, sau.last_name) AS verified_by_name
        FROM school_subscriptions ss
@@ -814,9 +814,9 @@ class SaasAdminModel {
     return pkg;
   }
 
-  static async createPackage({ plan_name, plan_code, description, price, billing_cycle = 'annual', max_students = 0, max_teachers = 0, status = 1, items = [] }) {
+  static async createPackage({ plan_name, plan_code, description, price, billing_cycle = 'annual', free_trial_days = 0, max_students = 0, status = 1, items = [] }) {
     const [result] = await pool.query(
-      `INSERT INTO subscription_plans (plan_name, plan_code, description, price, billing_cycle, max_students, max_teachers, status, created_at)
+      `INSERT INTO subscription_plans (plan_name, plan_code, description, price, billing_cycle, free_trial_days, max_students, status, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
       [
         plan_name.trim(),
@@ -824,8 +824,8 @@ class SaasAdminModel {
         description || '',
         parseFloat(price) || 0,
         billing_cycle,
+        parseInt(free_trial_days, 10) || 0,
         parseInt(max_students, 10) || 0,
-        parseInt(max_teachers, 10) || 0,
         parseInt(status, 10) === 0 ? 0 : 1,
       ]
     );
@@ -838,7 +838,7 @@ class SaasAdminModel {
     return newId;
   }
 
-  static async updatePackage(id, { plan_name, plan_code, description, price, billing_cycle, max_students, max_teachers, status, items }) {
+  static async updatePackage(id, { plan_name, plan_code, description, price, billing_cycle, free_trial_days, max_students, status, items }) {
     const updates = [];
     const params = [];
 
@@ -847,8 +847,8 @@ class SaasAdminModel {
     if (description !== undefined) { updates.push('description = ?'); params.push(description); }
     if (price !== undefined) { updates.push('price = ?'); params.push(parseFloat(price) || 0); }
     if (billing_cycle !== undefined) { updates.push('billing_cycle = ?'); params.push(billing_cycle); }
+    if (free_trial_days !== undefined) { updates.push('free_trial_days = ?'); params.push(parseInt(free_trial_days, 10) || 0); }
     if (max_students !== undefined) { updates.push('max_students = ?'); params.push(parseInt(max_students, 10) || 0); }
-    if (max_teachers !== undefined) { updates.push('max_teachers = ?'); params.push(parseInt(max_teachers, 10) || 0); }
     if (status !== undefined) { updates.push('status = ?'); params.push(parseInt(status, 10)); }
 
     if (updates.length > 0) {

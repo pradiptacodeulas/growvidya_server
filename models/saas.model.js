@@ -9,7 +9,7 @@ class SaasModel {
   static async getActivePlans() {
     const query = `
       SELECT id, plan_name, plan_code, description, price, billing_cycle,
-             max_students, max_teachers, status, created_at
+             free_trial_days, max_students, status, created_at
       FROM subscription_plans
       WHERE status = 1
       ORDER BY price ASC
@@ -194,11 +194,12 @@ class SaasModel {
       const subStatus = 'pending';
       const paymentStatus = isTrialMode ? 'pending' : (paymentTransactionId ? 'completed' : 'pending');
 
-      // Calculate subscription end date (14 days for trial, 1 year for annual, 30 days for monthly)
+      // Calculate subscription end date (dynamic trial days, 1 year for annual, 30 days for monthly)
       const startDate = new Date();
       const endDate = new Date();
       if (isTrialMode) {
-        endDate.setDate(endDate.getDate() + 14);
+        const trialDays = plan.free_trial_days && parseInt(plan.free_trial_days, 10) > 0 ? parseInt(plan.free_trial_days, 10) : 14;
+        endDate.setDate(endDate.getDate() + trialDays);
       } else if (plan.billing_cycle === 'monthly') {
         endDate.setMonth(endDate.getMonth() + 1);
       } else {

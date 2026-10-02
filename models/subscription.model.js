@@ -29,8 +29,8 @@ class SubscriptionModel {
         p.description AS plan_description,
         p.price,
         p.billing_cycle,
-        p.max_students,
-        p.max_teachers
+        p.free_trial_days,
+        p.max_students
       FROM school_subscriptions s
       JOIN subscription_plans p ON s.plan_id = p.id
       WHERE s.school_id = ?
@@ -71,8 +71,8 @@ class SubscriptionModel {
         p.description AS plan_description,
         p.price,
         p.billing_cycle,
-        p.max_students,
-        p.max_teachers
+        p.free_trial_days,
+        p.max_students
       FROM school_subscriptions s
       JOIN subscription_plans p ON s.plan_id = p.id
       WHERE s.school_id = ? AND s.status = 'pending'
@@ -201,7 +201,7 @@ class SubscriptionModel {
   static async getUpgradePlans() {
     const query = `
       SELECT id, plan_name, plan_code, description, price, billing_cycle,
-             max_students, max_teachers
+             free_trial_days, max_students
       FROM subscription_plans
       WHERE status = 1 AND billing_cycle != 'trial' AND price > 0
       ORDER BY price ASC
@@ -235,7 +235,7 @@ class SubscriptionModel {
 
     const [rows] = await pool.query(
       `SELECT id, plan_name, plan_code, description, price, billing_cycle,
-              max_students, max_teachers
+              free_trial_days, max_students
        FROM subscription_plans
        WHERE id = ? LIMIT 1`,
       [targetPlanId]
@@ -494,27 +494,8 @@ class SubscriptionModel {
         }
       }
     } else if (type === 'teachers') {
-      const maxTeachers =
-        sub.max_teachers !== null && sub.max_teachers !== undefined
-          ? Number(sub.max_teachers)
-          : 0;
-      // 0 indicates unlimited quota (e.g. Enterprise)
-      if (maxTeachers > 0) {
-        const [rows] = await pool.query(
-          'SELECT COUNT(id) AS count FROM teacher_master WHERE school_id = ? AND status != 0',
-          [targetSchoolId]
-        );
-        const currentCount = rows[0]?.count || 0;
-        if (currentCount >= maxTeachers) {
-          return {
-            allowed: false,
-            currentCount,
-            maxQuota: maxTeachers,
-            planName: sub.plan_name,
-            message: `Teacher & staff quota reached (${currentCount}/${maxTeachers}) for your ${sub.plan_name}. Please upgrade your subscription plan to add more staff.`,
-          };
-        }
-      }
+      // Teacher limit removed - unlimited teachers allowed on all plans
+      return { allowed: true };
     }
 
     return { allowed: true };

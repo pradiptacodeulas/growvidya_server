@@ -462,7 +462,7 @@ class SaasAdminController {
 
   static async createPackage(req, res, next) {
     try {
-      const { plan_name, plan_code, description, price, billing_cycle, max_students, max_teachers, status, items } = req.body;
+      const { plan_name, plan_code, description, price, billing_cycle, free_trial_days, max_students, status, items } = req.body;
 
       if (!plan_name || plan_name.trim() === '') {
         return ApiResponse.error(res, 'Plan name is required.', null, 400);
@@ -478,8 +478,8 @@ class SaasAdminController {
         description,
         price,
         billing_cycle,
+        free_trial_days,
         max_students,
-        max_teachers,
         status: status !== undefined ? status : 1,
         items: items || [],
       });
