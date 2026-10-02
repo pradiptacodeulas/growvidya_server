@@ -37,6 +37,99 @@ class SaasModel {
   }
 
   /**
+   * Check if a user / school is eligible to activate a free trial for a specific plan.
+   * Prevents repeatedly claiming the same free trial dynamically from the backend.
+   */
+  static async checkTrialEligibility({ planId, email = null, schoolCode = null, phone = null, schoolId = null }) {
+    const targetPlanId = parseInt(planId, 10);
+    if (!targetPlanId) {
+      return { is_eligible: false, reason: 'Invalid or missing plan ID.' };
+    }
+
+    const [planRows] = await pool.query(
+      `SELECT id, plan_name, price, billing_cycle, free_trial_days FROM subscription_plans WHERE id = ? LIMIT 1`,
+      [targetPlanId]
+    );
+    const plan = planRows[0];
+    if (!plan) {
+      return { is_eligible: false, reason: 'The requested plan was not found.' };
+    }
+
+    const freeTrialDays = parseInt(plan.free_trial_days, 10) || 0;
+    if (freeTrialDays <= 0 && plan.billing_cycle !== 'trial') {
+      return {
+        is_eligible: false,
+        plan_id: plan.id,
+        plan_name: plan.plan_name,
+        free_trial_days: 0,
+        reason: `The "${plan.plan_name}" plan does not offer a free trial.`,
+      };
+    }
+
+    const cleanEmail = email ? email.trim().toLowerCase() : null;
+    const cleanPhone = phone ? phone.trim() : null;
+    const cleanCode = schoolCode ? schoolCode.trim().toUpperCase() : null;
+    const cleanSchoolId = schoolId ? parseInt(schoolId, 10) : null;
+
+    if (cleanEmail || cleanPhone || cleanCode || cleanSchoolId) {
+      // Check for any prior free trial subscriptions for this plan associated with this user or school
+      const [existingTrial] = await pool.query(
+        `SELECT ss.id, ss.status, ss.start_date, ss.end_date, ss.payment_gateway, ss.created_at
+         FROM school_subscriptions ss
+         LEFT JOIN school_master sm ON ss.school_id = sm.id
+         LEFT JOIN user_master um ON um.school_id = sm.id
+         WHERE ss.plan_id = ?
+           AND (
+             (ss.payment_gateway IN ('free_trial', 'trial'))
+             OR (ss.status IN ('trial', 'expired'))
+           )
+           AND (
+             (? IS NOT NULL AND LOWER(um.email) = ?)
+             OR (? IS NOT NULL AND LOWER(sm.email) = ?)
+             OR (? IS NOT NULL AND sm.phone_number = ?)
+             OR (? IS NOT NULL AND sm.school_code = ?)
+             OR (? IS NOT NULL AND ss.school_id = ?)
+           )
+         ORDER BY ss.id DESC
+         LIMIT 1`,
+        [
+          targetPlanId,
+          cleanEmail, cleanEmail,
+          cleanEmail, cleanEmail,
+          cleanPhone, cleanPhone,
+          cleanCode, cleanCode,
+          cleanSchoolId, cleanSchoolId,
+        ]
+      );
+
+      if (existingTrial.length > 0) {
+        const trialRecord = existingTrial[0];
+        const isExpired = trialRecord.status === 'expired' || new Date(trialRecord.end_date) < new Date();
+        return {
+          is_eligible: false,
+          plan_id: plan.id,
+          plan_name: plan.plan_name,
+          free_trial_days: freeTrialDays,
+          trial_status: trialRecord.status,
+          is_expired: isExpired,
+          already_claimed: true,
+          reason: isExpired
+            ? `Your free trial for the "${plan.plan_name}" plan has expired. Free trials can only be activated once per plan. Please purchase a subscription to continue using this plan.`
+            : `You have already activated or claimed a free trial for the "${plan.plan_name}" plan. Free trials can only be activated once per plan.`,
+        };
+      }
+    }
+
+    return {
+      is_eligible: true,
+      plan_id: plan.id,
+      plan_name: plan.plan_name,
+      free_trial_days: freeTrialDays,
+      reason: `Eligible for a ${freeTrialDays}-day free trial of "${plan.plan_name}".`,
+    };
+  }
+
+  /**
    * Register a new school with chosen plan and create the first Super Admin user.
    * All operations are executed atomically in a single transaction.
    */
@@ -164,7 +257,7 @@ class SaasModel {
       // 5. Get plan details to calculate subscription duration
       let effectivePlanId = parseInt(planId, 10);
       const [planRows] = await connection.query(
-        `SELECT id, plan_name, price, billing_cycle FROM subscription_plans WHERE id = ? LIMIT 1`,
+        `SELECT id, plan_name, price, billing_cycle, free_trial_days FROM subscription_plans WHERE id = ? LIMIT 1`,
         [effectivePlanId]
       );
       const plan = planRows[0];
@@ -173,6 +266,20 @@ class SaasModel {
       }
 
       const isTrialMode = Boolean(isTrial) || plan.billing_cycle === 'trial' || parseFloat(plan.price) === 0;
+
+      // Enforce trial eligibility dynamically from the backend
+      if (isTrialMode) {
+        const eligibility = await SaasModel.checkTrialEligibility({
+          planId: effectivePlanId,
+          email: adminEmail,
+          schoolCode: schoolData.school_code,
+          phone: schoolData.phone_number || adminData.phone,
+        });
+        if (!eligibility.is_eligible) {
+          throw new Error(eligibility.reason || 'You are not eligible for a free trial on this plan.');
+        }
+      }
+
       let couponId = null;
       let discountAmount = 0;
       let originalAmount = parseFloat(plan.price) || 0;
@@ -188,17 +295,20 @@ class SaasModel {
 
       const finalAmount = isTrialMode ? 0 : (amountPaid !== undefined ? parseFloat(amountPaid) : Math.max(0, originalAmount - discountAmount));
       const finalTxnId = isTrialMode
-        ? (paymentTransactionId || `TRIAL_14DAYS_${Date.now()}_${Math.floor(Math.random() * 10000)}`)
+        ? (paymentTransactionId || `TRIAL_${parseInt(plan.free_trial_days, 10) || 0}D_${Date.now()}_${Math.floor(Math.random() * 10000)}`)
         : (paymentTransactionId || `REG_REQ_${Date.now()}_${Math.floor(Math.random() * 10000)}`);
       const finalGateway = isTrialMode ? 'free_trial' : (paymentGateway || 'registration');
-      const subStatus = 'pending';
-      const paymentStatus = isTrialMode ? 'pending' : (paymentTransactionId ? 'completed' : 'pending');
+      const subStatus = isTrialMode ? 'trial' : 'pending';
+      const paymentStatus = isTrialMode ? 'completed' : (paymentTransactionId ? 'completed' : 'pending');
 
-      // Calculate subscription end date (dynamic trial days, 1 year for annual, 30 days for monthly)
+      // Calculate subscription end date (dynamic trial days from backend, 1 year for annual, 30 days for monthly)
       const startDate = new Date();
       const endDate = new Date();
       if (isTrialMode) {
-        const trialDays = plan.free_trial_days && parseInt(plan.free_trial_days, 10) > 0 ? parseInt(plan.free_trial_days, 10) : 14;
+        const trialDays = plan.free_trial_days !== undefined && plan.free_trial_days !== null ? parseInt(plan.free_trial_days, 10) : 0;
+        if (trialDays <= 0 && plan.billing_cycle !== 'trial') {
+          throw new Error(`The selected plan "${plan.plan_name}" does not offer a free trial.`);
+        }
         endDate.setDate(endDate.getDate() + trialDays);
       } else if (plan.billing_cycle === 'monthly') {
         endDate.setMonth(endDate.getMonth() + 1);
@@ -209,13 +319,13 @@ class SaasModel {
       const startDateStr = startDate.toISOString().split('T')[0];
       const endDateStr = endDate.toISOString().split('T')[0];
 
-      // Insert into school_subscriptions as pending until Super Admin reviews and approves it
+      // Insert into school_subscriptions (active immediately for free trials, pending for manual review of paid plans)
       const insertSubQuery = `
         INSERT INTO school_subscriptions (
           school_id, plan_id, coupon_id, original_amount, discount_amount,
           amount_paid, payment_gateway, payment_transaction_id, payment_status,
           start_date, end_date, status, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NOW())
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
       `;
       const [subResult] = await connection.query(insertSubQuery, [
         schoolId,
@@ -229,6 +339,7 @@ class SaasModel {
         paymentStatus,
         startDateStr,
         endDateStr,
+        subStatus,
       ]);
       const subscriptionId = subResult.insertId;
 

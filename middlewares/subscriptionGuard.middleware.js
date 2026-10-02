@@ -97,7 +97,7 @@ async function subscriptionGuard(req, res, next) {
       return res.status(402).json({
         status: false,
         code: 'SUBSCRIPTION_EXPIRED',
-        message: 'Your school subscription or 14-day free trial has expired. Operations are temporarily locked. Please contact your administrator or renew your subscription.',
+        message: `Your school subscription or free trial for "${sub.plan_name}" has expired. Operations are temporarily locked. Please contact your administrator or renew your subscription.`,
         data: {
           subscription_id: sub.subscription_id,
           school_id: sub.school_id,

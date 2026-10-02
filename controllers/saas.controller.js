@@ -28,6 +28,35 @@ class SaasController {
   }
 
   /**
+   * Check trial eligibility dynamically for a specific plan and user/school
+   */
+  static async checkTrialEligibility(req, res, next) {
+    try {
+      const planId = req.query.plan_id || req.body.plan_id || req.body.planId;
+      const email = req.query.email || req.body.email || (req.user?.email || null);
+      const schoolCode = req.query.school_code || req.body.school_code || req.body.schoolCode;
+      const phone = req.query.phone || req.body.phone;
+      const schoolId = req.query.school_id || req.body.school_id || req.body.schoolId || (req.user?.schoolId || req.user?.school_id || null);
+
+      if (!planId) {
+        return ApiResponse.error(res, 'Please provide a plan ID to check trial eligibility.', null, 400);
+      }
+
+      const eligibility = await SaasModel.checkTrialEligibility({
+        planId,
+        email,
+        schoolCode,
+        phone,
+        schoolId,
+      });
+
+      return ApiResponse.success(res, eligibility.reason, eligibility);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Register a new school along with plan & superadmin
    */
   static async registerSchool(req, res, next) {
@@ -70,7 +99,7 @@ class SaasController {
 
       const { pool } = require('../config/db.config');
       const [planRows] = await pool.query(
-        'SELECT id, plan_name, price, billing_cycle FROM subscription_plans WHERE id = ? LIMIT 1',
+        'SELECT id, plan_name, price, billing_cycle, free_trial_days FROM subscription_plans WHERE id = ? LIMIT 1',
         [parseInt(selectedPlanId, 10)]
       );
       const targetPlan = planRows[0];
@@ -78,7 +107,23 @@ class SaasController {
         return ApiResponse.error(res, 'Selected subscription plan not found.', null, 404);
       }
 
-      const isTrialMode = Boolean(is_trial !== undefined ? is_trial : isTrial) || targetPlan.billing_cycle === 'trial' || parseFloat(targetPlan.price) === 0;
+      const isTrialRequested = Boolean(is_trial !== undefined ? is_trial : isTrial) || targetPlan.billing_cycle === 'trial';
+      const freeTrialDays = parseInt(targetPlan.free_trial_days, 10) || 0;
+      const isTrialMode = isTrialRequested || parseFloat(targetPlan.price) === 0;
+
+      // Enforce trial eligibility and prevent repeated trial activations dynamically
+      if (isTrialRequested) {
+        const eligibility = await SaasModel.checkTrialEligibility({
+          planId: targetPlan.id,
+          email: admin.email,
+          schoolCode: school.school_code,
+          phone: school.phone_number || admin.phone,
+        });
+
+        if (!eligibility.is_eligible) {
+          return ApiResponse.error(res, eligibility.reason, { eligibility }, 403);
+        }
+      }
 
       // Enforce strict Razorpay signature verification for all paid subscriptions
       if (!isTrialMode && parseFloat(targetPlan.price) > 0) {
