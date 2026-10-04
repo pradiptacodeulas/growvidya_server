@@ -19,11 +19,12 @@ class TransportModel {
   // 1. ROUTES (trans_route_master)
   // ==========================================
 
-  static async getAllRoutes(schoolId, { search, status } = {}) {
+  static async getAllRoutes(schoolId, { search, status, branchId = null } = {}) {
     let sql = `
       SELECT 
         r.id,
         r.school_id,
+        r.branch_id,
         r.transport_route,
         r.bus_id,
         r.sort_order,
@@ -37,6 +38,11 @@ class TransportModel {
       WHERE r.school_id = ?
     `;
     const params = [schoolId];
+
+    if (branchId) {
+      sql += ` AND (r.branch_id = ? OR r.branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
 
     const parsedStatus = parseStatus(status);
     if (parsedStatus !== null) {
@@ -120,13 +126,22 @@ class TransportModel {
     return route;
   }
 
-  static async createRoute(schoolId, { transport_route, bus_id, bus, driver_id, driver, helpers, helper, fare, sort_order, status }) {
+  static async createRoute(schoolId, { branch_id = null, transport_route, bus_id, bus, driver_id, driver, helpers, helper, fare, sort_order, status }) {
+    let resolvedBranchId = branch_id;
+    if (!resolvedBranchId) {
+      const [mb] = await pool.query(
+        'SELECT id FROM branch_master WHERE school_id = ? AND (is_main_branch = 1 OR id > 0) ORDER BY is_main_branch DESC LIMIT 1',
+        [schoolId]
+      );
+      if (mb.length) resolvedBranchId = mb[0].id;
+    }
     const selectedBusId = bus_id || bus;
     const [res] = await pool.query(
-      `INSERT INTO trans_route_master (school_id, transport_route, bus_id, fare, sort_order, status)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO trans_route_master (school_id, branch_id, transport_route, bus_id, fare, sort_order, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
         schoolId,
+        resolvedBranchId,
         transport_route.trim(),
         selectedBusId ? Number(selectedBusId) : null,
         Number(fare || 0),
@@ -223,11 +238,12 @@ class TransportModel {
   // 2. VEHICLES / BUSES (bus_master)
   // ==========================================
 
-  static async getAllVehicles(schoolId, { search, status } = {}) {
+  static async getAllVehicles(schoolId, { search, status, branchId = null } = {}) {
     let sql = `
       SELECT 
         b.id,
         b.school_id,
+        b.branch_id,
         b.name,
         b.number_plate,
         b.seat,
@@ -242,6 +258,11 @@ class TransportModel {
       WHERE b.school_id = ?
     `;
     const params = [schoolId, schoolId];
+
+    if (branchId) {
+      sql += ` AND (b.branch_id = ? OR b.branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
 
     const parsedStatus = parseStatus(status);
     if (parsedStatus !== null) {
@@ -288,12 +309,21 @@ class TransportModel {
     return rows && rows.length > 0 ? rows[0] : null;
   }
 
-  static async createVehicle(schoolId, { name, number_plate, seat, color, driver_id, status }) {
+  static async createVehicle(schoolId, { branch_id = null, name, number_plate, seat, color, driver_id, status }) {
+    let resolvedBranchId = branch_id;
+    if (!resolvedBranchId) {
+      const [mb] = await pool.query(
+        'SELECT id FROM branch_master WHERE school_id = ? AND (is_main_branch = 1 OR id > 0) ORDER BY is_main_branch DESC LIMIT 1',
+        [schoolId]
+      );
+      if (mb.length) resolvedBranchId = mb[0].id;
+    }
     const [res] = await pool.query(
-      `INSERT INTO bus_master (school_id, name, number_plate, seat, color, status)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO bus_master (school_id, branch_id, name, number_plate, seat, color, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
         schoolId,
+        resolvedBranchId,
         name.trim(),
         number_plate ? number_plate.trim() : '',
         Number(seat || 0),
@@ -672,7 +702,7 @@ class TransportModel {
   // 5. ASSIGN TRANSPORT (student_transport)
   // ==========================================
 
-  static async getAllAllocations(schoolId, { search, route_id, class_id, section_id } = {}) {
+  static async getAllAllocations(schoolId, { search, route_id, class_id, section_id, branchId = null } = {}) {
     let sql = `
       SELECT 
         st.id,
@@ -704,6 +734,11 @@ class TransportModel {
       WHERE st.school_id = ? AND st.status != 0
     `;
     const params = [schoolId];
+
+    if (branchId) {
+      sql += ` AND (s.branch_id = ? OR r.branch_id = ? OR s.branch_id IS NULL)`;
+      params.push(Number(branchId), Number(branchId));
+    }
 
     if (search) {
       sql += ` AND (CONCAT(IFNULL(s.first_name, ''), ' ', IFNULL(s.last_name, '')) LIKE ? OR s.admission_number LIKE ? OR st.pickup_point LIKE ? OR st.drop_point LIKE ?)`;

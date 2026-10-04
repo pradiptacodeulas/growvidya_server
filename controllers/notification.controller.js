@@ -43,7 +43,10 @@ class NotificationController {
       }
 
       // Extract user info from authenticated request
-      const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+      const schoolId = req.user?.schoolId || req.user?.school_id;
+      if (!schoolId) {
+        return res.status(401).json({ success: false, message: 'Authentication required: school ID missing.' });
+      }
       let role = 'admin';
       const rawRole = String(req.user?.roleName || req.user?.role || req.user?.portalType || '').toLowerCase();
       if (rawRole.includes('student')) role = 'student';
@@ -136,7 +139,10 @@ class NotificationController {
     try {
       const { title = 'Growvidya Test Notification', body = 'Push notifications are working perfectly!' } = req.body;
 
-      const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+      const schoolId = req.user?.schoolId || req.user?.school_id;
+      if (!schoolId) {
+        return res.status(401).json({ success: false, message: 'Authentication required: school ID missing.' });
+      }
       const rawRole = (req.user?.roleName || req.user?.role || req.user?.portalType || '').toLowerCase();
       let role = 'other';
       if (rawRole.includes('student')) role = 'student';

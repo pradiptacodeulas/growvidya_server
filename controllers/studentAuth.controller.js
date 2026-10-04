@@ -125,10 +125,14 @@ class StudentAuthController {
    * Helper to issue session cookie & JWT token for student
    */
   static async _issueSession(student, res, message = 'Student login successful.') {
+    if (!student.school_id) {
+      return ApiResponse.error(res, 'Account configuration error: No school associated with this student account.', null, 400);
+    }
+
     const tokenPayload = {
       userId: student.id,
       studentId: student.id,
-      schoolId: student.school_id || 1,
+      schoolId: Number(student.school_id),
       schoolName: student.school_name || 'Growvidya School',
       schoolLogo: student.school_logo || null,
       email: student.email_address,
@@ -344,9 +348,9 @@ class StudentAuthController {
   static async getMe(req, res, next) {
     try {
       const studentId = req.user?.studentId || req.user?.userId || req.user?.id;
-      const schoolId = req.user?.schoolId || 1;
+      const schoolId = req.user?.schoolId || req.user?.school_id;
 
-      if (!studentId) {
+      if (!studentId || !schoolId) {
         return ApiResponse.error(res, 'Not authenticated as a student.', null, 401);
       }
 
@@ -394,7 +398,11 @@ class StudentAuthController {
   static async changePassword(req, res, next) {
     try {
       const studentId = req.user?.studentId || req.user?.userId || req.user?.id;
-      const schoolId = req.user?.schoolId || 1;
+      const schoolId = req.user?.schoolId || req.user?.school_id;
+
+      if (!studentId || !schoolId) {
+        return ApiResponse.error(res, 'Authentication required: session or school ID missing.', null, 401);
+      }
       const oldPassword = req.body.oldPassword || req.body.currentPassword || req.body.cur_pass || req.body.current_password;
       const newPassword = req.body.newPassword || req.body.new_password || req.body.new_pass;
 

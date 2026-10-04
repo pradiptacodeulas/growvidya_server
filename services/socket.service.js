@@ -15,9 +15,23 @@ function isCommunicationAllowed(senderRole, receiverRole) {
   const s = String(senderRole).toLowerCase();
   const r = String(receiverRole).toLowerCase();
 
-  // Admin <-> Teacher
+  // Admin / Staff <-> Admin / Staff (internal staff communication)
+  if (s === 'admin' && r === 'admin') return true;
+
+  // Admin / Staff <-> Teacher
   if (s === 'admin' && r === 'teacher') return true;
   if (s === 'teacher' && r === 'admin') return true;
+
+  // Admin / Staff <-> Parent
+  if (s === 'admin' && r === 'parent') return true;
+  if (s === 'parent' && r === 'admin') return true;
+
+  // Admin / Staff <-> Student
+  if (s === 'admin' && r === 'student') return true;
+  if (s === 'student' && r === 'admin') return true;
+
+  // Teacher <-> Teacher
+  if (s === 'teacher' && r === 'teacher') return true;
 
   // Teacher <-> Parent
   if (s === 'teacher' && r === 'parent') return true;

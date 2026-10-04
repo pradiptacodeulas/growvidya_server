@@ -882,7 +882,7 @@ class AcademicModel {
   }
 
   // ==================== ROUTINES ====================
-  static async getRoutines(schoolId, { classId, sectionId, day, teacherId } = {}) {
+  static async getRoutines(schoolId, { classId, sectionId, day, teacherId, branchId = null } = {}) {
     try {
       let sql = `
         SELECT r.*, cm.class_name, sec.section_name, sm.subject_name, 
@@ -903,6 +903,10 @@ class AcademicModel {
         AND (r.status != 4 OR r.status IS NULL)
       `;
       const params = [schoolId];
+      if (branchId) {
+        sql += ` AND (r.branch_id = ? OR cm.branch_id = ? OR tm.branch_id = ? OR r.branch_id IS NULL)`;
+        params.push(Number(branchId), Number(branchId), Number(branchId));
+      }
       if (classId) {
         sql += ` AND r.class_id = ?`;
         params.push(classId);
@@ -928,7 +932,17 @@ class AcademicModel {
     }
   }
 
-  static async createRoutine(schoolId, { class_id, section_id, day, period_id, teacher_id, subject_id, shift_id }) {
+  static async createRoutine(schoolId, { branch_id = null, class_id, section_id, day, period_id, teacher_id, subject_id, shift_id }) {
+    let resolvedBranchId = branch_id;
+    if (!resolvedBranchId && class_id) {
+      const [cm] = await pool.query(`SELECT branch_id FROM class_master WHERE id = ?`, [class_id]);
+      if (cm.length && cm[0].branch_id) resolvedBranchId = cm[0].branch_id;
+    }
+    if (!resolvedBranchId) {
+      const [mb] = await pool.query(`SELECT id FROM branch_master WHERE school_id = ? AND (is_main_branch = 1 OR id > 0) ORDER BY is_main_branch DESC LIMIT 1`, [schoolId]);
+      if (mb.length) resolvedBranchId = mb[0].id;
+    }
+
     let finalShiftId = shift_id;
     if (!finalShiftId && period_id) {
       const [perRows] = await pool.query(`SELECT shift_id FROM period_master WHERE id = ?`, [period_id]);
@@ -943,9 +957,9 @@ class AcademicModel {
       }
     }
     const [result] = await pool.query(
-      `INSERT INTO routine (school_id, class_id, section_id, day, period_id, teacher_id, subject_id, shift_id, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())`,
-      [schoolId, class_id, section_id, day, period_id, teacher_id || null, subject_id, finalShiftId || null]
+      `INSERT INTO routine (school_id, branch_id, class_id, section_id, day, period_id, teacher_id, subject_id, shift_id, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())`,
+      [schoolId, resolvedBranchId, class_id, section_id, day, period_id, teacher_id || null, subject_id, finalShiftId || null]
     );
     return result.insertId;
   }
@@ -1040,7 +1054,7 @@ class AcademicModel {
   }
 
   // ==================== LESSONS / SYLLABUS ====================
-  static async getSyllabusList(schoolId, { academic_year, academic_year_id, class_id, classId, subject_id, subjectId, status, search, page = 1, limit = 10 } = {}) {
+  static async getSyllabusList(schoolId, { academic_year, academic_year_id, class_id, classId, subject_id, subjectId, status, search, page = 1, limit = 10, branchId = null } = {}) {
     try {
       let baseSql = `
         FROM syllabus s
@@ -1051,6 +1065,11 @@ class AcademicModel {
           AND (s.status != 4 OR s.status IS NULL)
       `;
       const params = [schoolId];
+
+      if (branchId) {
+        baseSql += ` AND (s.branch_id = ? OR cm.branch_id = ? OR s.branch_id IS NULL)`;
+        params.push(Number(branchId), Number(branchId));
+      }
 
       const effectiveYear = academic_year || academic_year_id;
       if (effectiveYear) {
@@ -1144,11 +1163,21 @@ class AcademicModel {
     }
   }
 
-  static async createSyllabus(schoolId, { academic_year, class_id, subject_id, lession, status = 1 }) {
+  static async createSyllabus(schoolId, { branch_id = null, academic_year, class_id, subject_id, lession, status = 1 }) {
+    let resolvedBranchId = branch_id;
+    if (!resolvedBranchId && class_id) {
+      const [cm] = await pool.query(`SELECT branch_id FROM class_master WHERE id = ?`, [class_id]);
+      if (cm.length && cm[0].branch_id) resolvedBranchId = cm[0].branch_id;
+    }
+    if (!resolvedBranchId) {
+      const [mb] = await pool.query(`SELECT id FROM branch_master WHERE school_id = ? AND (is_main_branch = 1 OR id > 0) ORDER BY is_main_branch DESC LIMIT 1`, [schoolId]);
+      if (mb.length) resolvedBranchId = mb[0].id;
+    }
+
     const [result] = await pool.query(
-      `INSERT INTO syllabus (school_id, academic_year, class_id, subject_id, lession, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, NOW())`,
-      [schoolId, academic_year, class_id, subject_id, lession, status || 1]
+      `INSERT INTO syllabus (school_id, branch_id, academic_year, class_id, subject_id, lession, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`,
+      [schoolId, resolvedBranchId, academic_year, class_id, subject_id, lession, status || 1]
     );
     return result.insertId;
   }
@@ -1318,7 +1347,7 @@ class AcademicModel {
     return result.affectedRows > 0;
   }
 
-  static async getAssignments(schoolId, { classId, class_id, sectionId, section_id, subjectId, subject_id, assignmentTypeId, assignment_type_id, search, status, page, limit } = {}) {
+  static async getAssignments(schoolId, { classId, class_id, sectionId, section_id, subjectId, subject_id, assignmentTypeId, assignment_type_id, search, status, page, limit, branchId = null } = {}) {
     try {
       const cId = classId || class_id;
       const sId = sectionId || section_id;
@@ -1335,6 +1364,11 @@ class AcademicModel {
           AND (a.status != 4 OR a.status IS NULL)
       `;
       const params = [schoolId];
+
+      if (branchId) {
+        baseSql += ` AND (a.branch_id = ? OR cm.branch_id = ? OR a.branch_id IS NULL)`;
+        params.push(Number(branchId), Number(branchId));
+      }
 
       if (cId) {
         baseSql += ` AND a.class_id = ?`;
@@ -1463,15 +1497,25 @@ class AcademicModel {
     return result.affectedRows > 0;
   }
 
-  static async createAssignment(schoolId, { assignment_type_id, title, class_id, section_id, subject_id, assigned_date, due_date, is_published = 0, questions = [] }) {
+  static async createAssignment(schoolId, { branch_id = null, assignment_type_id, title, class_id, section_id, subject_id, assigned_date, due_date, is_published = 0, questions = [] }) {
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
 
+      let resolvedBranchId = branch_id;
+      if (!resolvedBranchId && class_id) {
+        const [cm] = await connection.query(`SELECT branch_id FROM class_master WHERE id = ?`, [class_id]);
+        if (cm.length && cm[0].branch_id) resolvedBranchId = cm[0].branch_id;
+      }
+      if (!resolvedBranchId) {
+        const [mb] = await connection.query(`SELECT id FROM branch_master WHERE school_id = ? AND (is_main_branch = 1 OR id > 0) ORDER BY is_main_branch DESC LIMIT 1`, [schoolId]);
+        if (mb.length) resolvedBranchId = mb[0].id;
+      }
+
       const [result] = await connection.query(
-        `INSERT INTO assignments (school_id, assignment_type_id, title, class_id, section_id, subject_id, assigned_date, due_date, status, is_published, created_on)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, NOW())`,
-        [schoolId, assignment_type_id || null, title, class_id, section_id || null, subject_id, assigned_date || new Date().toISOString().split('T')[0], due_date, is_published]
+        `INSERT INTO assignments (school_id, branch_id, assignment_type_id, title, class_id, section_id, subject_id, assigned_date, due_date, status, is_published, created_on)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, NOW())`,
+        [schoolId, resolvedBranchId, assignment_type_id || null, title, class_id, section_id || null, subject_id, assigned_date || new Date().toISOString().split('T')[0], due_date, is_published]
       );
       const assignmentId = result.insertId;
 
@@ -1680,13 +1724,18 @@ class AcademicModel {
     return result.affectedRows > 0;
   }
 
-  static async getStudyMaterials(schoolId, { academic_year_id, class_id, section_id, subject_id, material_type_id, status, search, uploaded_by, uploader_type, page = 1, limit = 10 } = {}) {
+  static async getStudyMaterials(schoolId, { academic_year_id, class_id, section_id, subject_id, material_type_id, status, search, uploaded_by, uploader_type, page = 1, limit = 10, branchId = null } = {}) {
     try {
       let whereClauses = [
         'sm.school_id = ?',
         '(sm.status != 4 OR sm.status IS NULL)'
       ];
       const params = [schoolId];
+
+      if (branchId) {
+        whereClauses.push('(sm.branch_id = ? OR cm.branch_id = ? OR sm.branch_id IS NULL)');
+        params.push(Number(branchId), Number(branchId));
+      }
 
       const isValidVal = (v) => v !== undefined && v !== null && String(v).trim() !== '' && String(v).trim() !== 'undefined' && String(v).trim() !== 'null';
 
@@ -1849,6 +1898,8 @@ class AcademicModel {
 
   static async createStudyMaterial(schoolId, data, userId) {
     const {
+      branch_id,
+      branchId,
       academic_year_id,
       class_id,
       section_id,
@@ -1868,17 +1919,28 @@ class AcademicModel {
       status = 1
     } = data;
 
+    let resolvedBranchId = branch_id || branchId || null;
+    if (!resolvedBranchId && class_id) {
+      const [cm] = await pool.query(`SELECT branch_id FROM class_master WHERE id = ?`, [class_id]);
+      if (cm.length && cm[0].branch_id) resolvedBranchId = cm[0].branch_id;
+    }
+    if (!resolvedBranchId) {
+      const [mb] = await pool.query(`SELECT id FROM branch_master WHERE school_id = ? AND (is_main_branch = 1 OR id > 0) ORDER BY is_main_branch DESC LIMIT 1`, [schoolId]);
+      if (mb.length) resolvedBranchId = mb[0].id;
+    }
+
     const formattedPublishDate = publish_date || new Date().toISOString().slice(0, 10);
 
     const [result] = await pool.query(
       `INSERT INTO study_materials (
-        school_id, academic_year_id, class_id, section_id, subject_id, material_type_id,
+        school_id, branch_id, academic_year_id, class_id, section_id, subject_id, material_type_id,
         title, chapter, description, attachment, attachment_original_name, attachment_size,
         attachment_extension, publish_date, expiry_date, allow_download, display_order, status,
         uploaded_by, uploader_type, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'admin', NOW())`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'admin', NOW())`,
       [
         schoolId,
+        resolvedBranchId,
         academic_year_id || null,
         class_id,
         section_id || null,
@@ -1896,7 +1958,7 @@ class AcademicModel {
         allow_download !== undefined ? allow_download : 1,
         display_order || 0,
         status !== undefined ? Number(status) : 1,
-        userId || 1
+        userId || null
       ]
     );
     return result.insertId;

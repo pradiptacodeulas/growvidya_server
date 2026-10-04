@@ -1187,7 +1187,8 @@ class ParentModel {
 
     if (updates.length > 0) {
       params.push(parentId);
-      await pool.query(`UPDATE parent_master SET ${updates.join(', ')} WHERE id = ?`, params);
+      params.push(schoolId);
+      await pool.query(`UPDATE parent_master SET ${updates.join(', ')} WHERE id = ? AND school_id = ?`, params);
     }
 
     // Sync Address into parent_master_address

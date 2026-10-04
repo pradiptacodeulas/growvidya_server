@@ -110,7 +110,10 @@ class TeacherDashboardController {
   static async getDashboardData(req, res, next) {
     try {
       const teacherId = req.user.teacherId || req.user.userId;
-      const schoolId = req.user.schoolId || req.user.school_id || 1;
+      const schoolId = req.user.schoolId || req.user.school_id;
+      if (!schoolId) {
+        return ApiResponse.error(res, 'Authentication required: school ID missing.', null, 401);
+      }
 
       // 1. Get Teacher Profile
       const teacher = await TeacherModel.findAuthProfileById(teacherId);

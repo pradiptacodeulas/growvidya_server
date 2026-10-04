@@ -28,22 +28,36 @@ function getJpegDimensions(buffer) {
   return null;
 }
 
+const getSchoolId = (req) => {
+  const schoolId = req.user?.schoolId || req.user?.school_id;
+  if (!schoolId) {
+    const err = new Error('School context required. Please log in again.');
+    err.statusCode = 401;
+    throw err;
+  }
+  return Number(schoolId);
+};
+
+const getUserId = (req) => {
+  return Number(req.user?.id || req.user?.userId || req.user?.staff_id) || null;
+};
+
 // ================= CATEGORIES =================
 exports.getAllCategories = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getSchoolId(req);
     const { search, status } = req.query;
     const categories = await CertificateModel.getAllCategories(schoolId, { search, status });
     return ApiResponse.success(res, 'Certificate categories retrieved successfully', categories);
   } catch (err) {
     console.error('Error in getAllCategories:', err);
-    return ApiResponse.error(res, 'Internal server error', null, 500);
+    return ApiResponse.error(res, err.message || 'Internal server error', null, err.statusCode || 500);
   }
 };
 
 exports.getCategoryById = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getSchoolId(req);
     const { id } = req.params;
     const category = await CertificateModel.getCategoryById(id, schoolId);
     if (!category) {
@@ -52,14 +66,14 @@ exports.getCategoryById = async (req, res) => {
     return ApiResponse.success(res, 'Category retrieved successfully', category);
   } catch (err) {
     console.error('Error in getCategoryById:', err);
-    return ApiResponse.error(res, 'Internal server error', null, 500);
+    return ApiResponse.error(res, err.message || 'Internal server error', null, err.statusCode || 500);
   }
 };
 
 exports.createCategory = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
-    const userId = req.user?.id || 1;
+    const schoolId = getSchoolId(req);
+    const userId = getUserId(req);
     const { category_name, sort_order, status } = req.body;
 
     const errors = {};
@@ -114,14 +128,14 @@ exports.createCategory = async (req, res) => {
     return ApiResponse.success(res, 'Certificate category created successfully.', { id: insertId }, 201);
   } catch (err) {
     console.error('Error in createCategory:', err);
-    return ApiResponse.error(res, 'Internal server error', null, 500);
+    return ApiResponse.error(res, err.message || 'Internal server error', null, err.statusCode || 500);
   }
 };
 
 exports.updateCategory = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
-    const userId = req.user?.id || 1;
+    const schoolId = getSchoolId(req);
+    const userId = getUserId(req);
     const { id } = req.params;
     const { category_name, sort_order, status } = req.body;
 
@@ -183,13 +197,13 @@ exports.updateCategory = async (req, res) => {
     return ApiResponse.success(res, 'Certificate category updated successfully.');
   } catch (err) {
     console.error('Error in updateCategory:', err);
-    return ApiResponse.error(res, 'Internal server error', null, 500);
+    return ApiResponse.error(res, err.message || 'Internal server error', null, err.statusCode || 500);
   }
 };
 
 exports.deleteCategory = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getSchoolId(req);
     const { id } = req.params;
     const success = await CertificateModel.deleteCategory(id, schoolId);
     if (!success) {
@@ -198,26 +212,26 @@ exports.deleteCategory = async (req, res) => {
     return ApiResponse.success(res, 'Certificate category deleted successfully');
   } catch (err) {
     console.error('Error in deleteCategory:', err);
-    return ApiResponse.error(res, 'Internal server error', null, 500);
+    return ApiResponse.error(res, err.message || 'Internal server error', null, err.statusCode || 500);
   }
 };
 
 // ================= TEMPLATES =================
 exports.getAllTemplates = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getSchoolId(req);
     const { categoryId, search, status } = req.query;
     const templates = await CertificateModel.getAllTemplates(schoolId, { categoryId, search, status });
     return ApiResponse.success(res, 'Certificate templates retrieved successfully', templates);
   } catch (err) {
     console.error('Error in getAllTemplates:', err);
-    return ApiResponse.error(res, 'Internal server error', null, 500);
+    return ApiResponse.error(res, err.message || 'Internal server error', null, err.statusCode || 500);
   }
 };
 
 exports.getTemplateById = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getSchoolId(req);
     const { id } = req.params;
     const template = await CertificateModel.getTemplateById(id, schoolId);
     if (!template) {
@@ -226,14 +240,14 @@ exports.getTemplateById = async (req, res) => {
     return ApiResponse.success(res, 'Template retrieved successfully', template);
   } catch (err) {
     console.error('Error in getTemplateById:', err);
-    return ApiResponse.error(res, 'Internal server error', null, 500);
+    return ApiResponse.error(res, err.message || 'Internal server error', null, err.statusCode || 500);
   }
 };
 
 exports.createTemplate = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
-    const userId = req.user?.id || 1;
+    const schoolId = getSchoolId(req);
+    const userId = getUserId(req);
     const {
       certificate_category,
       template_name,
@@ -271,14 +285,14 @@ exports.createTemplate = async (req, res) => {
     return ApiResponse.success(res, 'Certificate template created successfully', { id: insertId }, 201);
   } catch (err) {
     console.error('Error in createTemplate:', err);
-    return ApiResponse.error(res, 'Internal server error', null, 500);
+    return ApiResponse.error(res, err.message || 'Internal server error', null, err.statusCode || 500);
   }
 };
 
 exports.updateTemplate = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
-    const userId = req.user?.id || 1;
+    const schoolId = getSchoolId(req);
+    const userId = getUserId(req);
     const { id } = req.params;
     const {
       certificate_category,
@@ -310,13 +324,13 @@ exports.updateTemplate = async (req, res) => {
     return ApiResponse.success(res, 'Certificate template updated successfully');
   } catch (err) {
     console.error('Error in updateTemplate:', err);
-    return ApiResponse.error(res, 'Internal server error', null, 500);
+    return ApiResponse.error(res, err.message || 'Internal server error', null, err.statusCode || 500);
   }
 };
 
 exports.deleteTemplate = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getSchoolId(req);
     const { id } = req.params;
     const success = await CertificateModel.deleteTemplate(id, schoolId);
     if (!success) {
@@ -325,26 +339,26 @@ exports.deleteTemplate = async (req, res) => {
     return ApiResponse.success(res, 'Certificate template deleted successfully');
   } catch (err) {
     console.error('Error in deleteTemplate:', err);
-    return ApiResponse.error(res, 'Internal server error', null, 500);
+    return ApiResponse.error(res, err.message || 'Internal server error', null, err.statusCode || 500);
   }
 };
 
 // ================= BORDERS =================
 exports.getAllBorders = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getSchoolId(req);
     const { search, status, page, limit } = req.query;
     const borders = await CertificateModel.getAllBorders(schoolId, { search, status, page, limit });
     return ApiResponse.success(res, 'Certificate borders retrieved successfully', borders);
   } catch (err) {
     console.error('Error in getAllBorders:', err);
-    return ApiResponse.error(res, 'Internal server error', null, 500);
+    return ApiResponse.error(res, err.message || 'Internal server error', null, err.statusCode || 500);
   }
 };
 
 exports.getBorderById = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getSchoolId(req);
     const { id } = req.params;
     const border = await CertificateModel.getBorderById(id, schoolId);
     if (!border) {
@@ -353,13 +367,13 @@ exports.getBorderById = async (req, res) => {
     return ApiResponse.success(res, 'Certificate border retrieved successfully', border);
   } catch (err) {
     console.error('Error in getBorderById:', err);
-    return ApiResponse.error(res, 'Internal server error', null, 500);
+    return ApiResponse.error(res, err.message || 'Internal server error', null, err.statusCode || 500);
   }
 };
 
 exports.createBorder = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getSchoolId(req);
     let imagePath = '';
     const status = req.body.status !== undefined && req.body.status !== null ? Number(req.body.status) : 1;
 
@@ -433,13 +447,13 @@ exports.createBorder = async (req, res) => {
     return ApiResponse.success(res, 'A4 Portrait Certificate border uploaded successfully', newBorder, 201);
   } catch (err) {
     console.error('Error in createBorder:', err);
-    return ApiResponse.error(res, 'Internal server error', null, 500);
+    return ApiResponse.error(res, err.message || 'Internal server error', null, err.statusCode || 500);
   }
 };
 
 exports.updateBorder = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getSchoolId(req);
     const { id } = req.params;
     let imagePath = undefined;
     let status = req.body.status !== undefined && req.body.status !== null ? Number(req.body.status) : undefined;
@@ -507,13 +521,13 @@ exports.updateBorder = async (req, res) => {
     return ApiResponse.success(res, 'Certificate border updated successfully', updated);
   } catch (err) {
     console.error('Error in updateBorder:', err);
-    return ApiResponse.error(res, 'Internal server error', null, 500);
+    return ApiResponse.error(res, err.message || 'Internal server error', null, err.statusCode || 500);
   }
 };
 
 exports.deleteBorder = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getSchoolId(req);
     const { id } = req.params;
     const success = await CertificateModel.deleteBorder(id, schoolId);
     if (!success) {
@@ -522,14 +536,15 @@ exports.deleteBorder = async (req, res) => {
     return ApiResponse.success(res, 'Certificate border deleted successfully');
   } catch (err) {
     console.error('Error in deleteBorder:', err);
-    return ApiResponse.error(res, 'Internal server error', null, 500);
+    return ApiResponse.error(res, err.message || 'Internal server error', null, err.statusCode || 500);
   }
 };
 
 // ================= ISSUED CERTIFICATES (CERTIFICATE CREATE) =================
 exports.getAllIssuedCertificates = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getSchoolId(req);
+    const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
     const { classId, sectionId, academicYear, studentId, categoryId, templateId, search, page, limit } = req.query;
 
     const list = await CertificateModel.getAllIssuedCertificates(schoolId, {
@@ -542,18 +557,19 @@ exports.getAllIssuedCertificates = async (req, res) => {
       search,
       page: page ? parseInt(page, 10) : null,
       limit: limit ? parseInt(limit, 10) : null,
+      branchId,
     });
 
     return ApiResponse.success(res, 'Issued certificates retrieved successfully', list);
   } catch (err) {
     console.error('Error in getAllIssuedCertificates:', err);
-    return ApiResponse.error(res, 'Internal server error', null, 500);
+    return ApiResponse.error(res, err.message || 'Internal server error', null, err.statusCode || 500);
   }
 };
 
 exports.getIssuedCertificateById = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getSchoolId(req);
     const { id } = req.params;
     const cert = await CertificateModel.getIssuedCertificateById(id, schoolId);
     if (!cert) {
@@ -562,7 +578,7 @@ exports.getIssuedCertificateById = async (req, res) => {
     return ApiResponse.success(res, 'Certificate retrieved successfully', cert);
   } catch (err) {
     console.error('Error in getIssuedCertificateById:', err);
-    return ApiResponse.error(res, 'Internal server error', null, 500);
+    return ApiResponse.error(res, err.message || 'Internal server error', null, err.statusCode || 500);
   }
 };
 
@@ -626,7 +642,7 @@ const replaceCertificatePlaceholders = (templateText, student, extra = {}) => {
 
 exports.populateTemplate = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getSchoolId(req);
     const { templateId, studentId, date } = req.body;
 
     if (!templateId || !studentId) {
@@ -660,14 +676,14 @@ exports.populateTemplate = async (req, res) => {
     });
   } catch (err) {
     console.error('Error in populateTemplate:', err);
-    return ApiResponse.error(res, 'Internal server error', null, 500);
+    return ApiResponse.error(res, err.message || 'Internal server error', null, err.statusCode || 500);
   }
 };
 
 exports.createIssuedCertificate = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
-    const userId = req.user?.id || 1;
+    const schoolId = getSchoolId(req);
+    const userId = getUserId(req);
     const {
       certificate_category_id,
       certificate_template_id,
@@ -722,8 +738,11 @@ exports.createIssuedCertificate = async (req, res) => {
       });
     }
 
+    const branchId = req.branchId || req.body?.branch_id || null;
+
     const insertId = await CertificateModel.createIssuedCertificate({
       school_id: schoolId,
+      branch_id: branchId,
       certificate_category_id: Number(certificate_category_id),
       certificate_template_id: Number(certificate_template_id),
       student_id: Number(student_id),
@@ -736,13 +755,13 @@ exports.createIssuedCertificate = async (req, res) => {
     return ApiResponse.success(res, 'Certificate issued successfully', { id: insertId }, 201);
   } catch (err) {
     console.error('Error in createIssuedCertificate:', err);
-    return ApiResponse.error(res, 'Internal server error', null, 500);
+    return ApiResponse.error(res, err.message || 'Internal server error', null, err.statusCode || 500);
   }
 };
 
 exports.deleteIssuedCertificate = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getSchoolId(req);
     const { id } = req.params;
     const success = await CertificateModel.deleteIssuedCertificate(id, schoolId);
     if (!success) {
@@ -751,13 +770,13 @@ exports.deleteIssuedCertificate = async (req, res) => {
     return ApiResponse.success(res, 'Certificate deleted successfully');
   } catch (err) {
     console.error('Error in deleteIssuedCertificate:', err);
-    return ApiResponse.error(res, 'Internal server error', null, 500);
+    return ApiResponse.error(res, err.message || 'Internal server error', null, err.statusCode || 500);
   }
 };
 
 exports.downloadIssuedCertificate = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getSchoolId(req);
     const { id } = req.params;
 
     const cert = await CertificateModel.getIssuedCertificateById(id, schoolId);
@@ -802,7 +821,7 @@ exports.downloadIssuedCertificate = async (req, res) => {
 
 exports.downloadBulkIssuedCertificates = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getSchoolId(req);
     const { ids, categoryId, classId, sectionId } = req.body || {};
 
     let certList = [];

@@ -1,7 +1,7 @@
 const { pool } = require('../config/db.config');
 
 class PayrollModel {
-  static async getAllBeneficiaries(schoolId, { search } = {}) {
+  static async getAllBeneficiaries(schoolId, { search, branchId = null } = {}) {
     let sql = `
       SELECT 
         bm.id,
@@ -43,6 +43,15 @@ class PayrollModel {
       WHERE bm.status != 4 AND bm.school_id = ?
     `;
     const params = [schoolId];
+
+    if (branchId) {
+      sql += ` AND (
+        (bm.branch_id = ?) OR 
+        (bm.user_type = 2 AND (t.branch_id = ? OR t.branch_id IS NULL)) OR 
+        (bm.user_type != 2 AND (u.branch_id = ? OR u.branch_id IS NULL))
+      )`;
+      params.push(Number(branchId), Number(branchId), Number(branchId));
+    }
 
     if (search && search.trim() !== '') {
       sql += ` AND (
@@ -116,15 +125,30 @@ class PayrollModel {
     return rows && rows.length > 0 ? rows[0] : null;
   }
 
-  static async createBeneficiary(schoolId, { user_type, employee_id, basic_salary, bank_name, account_name, account_no, ifsc_code, branch_name, status = 1 }) {
+  static async createBeneficiary(schoolId, { branch_id = null, user_type, employee_id, basic_salary, bank_name, account_name, account_no, ifsc_code, branch_name, status = 1 }) {
     const sId = schoolId;
     const uType = Number(user_type) || 1;
     const empId = Number(employee_id);
 
+    let resolvedBranchId = branch_id;
+    if (!resolvedBranchId) {
+      if (uType === 2) {
+        const [tm] = await pool.query('SELECT branch_id FROM teacher_master WHERE id = ? AND school_id = ?', [empId, sId]);
+        if (tm.length && tm[0].branch_id) resolvedBranchId = tm[0].branch_id;
+      } else {
+        const [um] = await pool.query('SELECT branch_id FROM user_master WHERE id = ? AND school_id = ?', [empId, sId]);
+        if (um.length && um[0].branch_id) resolvedBranchId = um[0].branch_id;
+      }
+    }
+    if (!resolvedBranchId) {
+      const [mb] = await pool.query('SELECT id FROM branch_master WHERE school_id = ? AND is_main = 1 LIMIT 1', [sId]);
+      if (mb.length) resolvedBranchId = mb[0].id;
+    }
+
     const [res] = await pool.query(
-      `INSERT INTO beneficiary_master (school_id, user_type, employee_id, basic_salary, status)
-       VALUES (?, ?, ?, ?, ?)`,
-      [sId, uType, empId, Number(basic_salary) || 0, status]
+      `INSERT INTO beneficiary_master (school_id, branch_id, user_type, employee_id, basic_salary, status)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [sId, resolvedBranchId, uType, empId, Number(basic_salary) || 0, status]
     );
     const beneficiaryId = res.insertId;
 
@@ -230,14 +254,14 @@ class PayrollModel {
     return true;
   }
 
-  static async getEmployeesByType(schoolId, userType) {
+  static async getEmployeesByType(schoolId, userType, branchId = null) {
     const sId = schoolId;
     const uType = Number(userType) || 1;
 
     if (uType === 2) {
       // Teachers
-      const [rows] = await pool.query(
-        `SELECT 
+      let sql = `
+        SELECT 
            t.id,
            CONCAT(IFNULL(t.first_name, ''), ' ', IFNULL(t.last_name, '')) AS name,
            IFNULL(bm.basic_salary, 0) AS basic_salary,
@@ -250,14 +274,19 @@ class PayrollModel {
          LEFT JOIN beneficiary_master bm ON bm.user_type = 2 AND bm.employee_id = t.id AND bm.status != 0
          LEFT JOIN teacher_bank tb ON t.id = tb.teacher_id AND tb.status != 0
          WHERE t.status != 0 AND t.school_id = ?
-         ORDER BY t.first_name ASC`,
-        [sId]
-      );
+      `;
+      const params = [sId];
+      if (branchId) {
+        sql += ` AND (t.branch_id = ? OR t.branch_id IS NULL)`;
+        params.push(Number(branchId));
+      }
+      sql += ` ORDER BY t.first_name ASC`;
+      const [rows] = await pool.query(sql, params);
       return rows || [];
     } else {
       // Users / Staff
-      const [rows] = await pool.query(
-        `SELECT 
+      let sql = `
+        SELECT 
            u.id,
            CONCAT(IFNULL(u.first_name, ''), ' ', IFNULL(u.last_name, '')) AS name,
            IFNULL(bm.basic_salary, 0) AS basic_salary,
@@ -270,22 +299,46 @@ class PayrollModel {
          LEFT JOIN beneficiary_master bm ON bm.user_type = 1 AND bm.employee_id = u.id AND bm.status != 0
          LEFT JOIN user_bank ub ON u.id = ub.user_id AND ub.status != 0
          WHERE u.status != 0 AND u.school_id = ?
-         ORDER BY u.first_name ASC`,
-        [sId]
-      );
+      `;
+      const params = [sId];
+      if (branchId) {
+        sql += ` AND (u.branch_id = ? OR u.branch_id IS NULL)`;
+        params.push(Number(branchId));
+      }
+      sql += ` ORDER BY u.first_name ASC`;
+      const [rows] = await pool.query(sql, params);
       return rows || [];
     }
   }
 
-  static async createSalary(schoolId, { user_type, employee_id, leave_id, basic_salary, total_deductions, net_salary, payment_date, transaction_id, slip, payment_status = 1 }) {
+  static async createSalary(schoolId, { branch_id = null, user_type, employee_id, leave_id, basic_salary, total_deductions, net_salary, payment_date, transaction_id, slip, payment_status = 1 }) {
     const sId = schoolId;
+    const uType = Number(user_type) || 1;
+    const empId = Number(employee_id);
+
+    let resolvedBranchId = branch_id;
+    if (!resolvedBranchId) {
+      if (uType === 2) {
+        const [tm] = await pool.query('SELECT branch_id FROM teacher_master WHERE id = ? AND school_id = ?', [empId, sId]);
+        if (tm.length && tm[0].branch_id) resolvedBranchId = tm[0].branch_id;
+      } else {
+        const [um] = await pool.query('SELECT branch_id FROM user_master WHERE id = ? AND school_id = ?', [empId, sId]);
+        if (um.length && um[0].branch_id) resolvedBranchId = um[0].branch_id;
+      }
+    }
+    if (!resolvedBranchId) {
+      const [mb] = await pool.query('SELECT id FROM branch_master WHERE school_id = ? AND is_main = 1 LIMIT 1', [sId]);
+      if (mb.length) resolvedBranchId = mb[0].id;
+    }
+
     const [res] = await pool.query(
-      `INSERT INTO employee_salary (school_id, user_type, employee_id, leave_id, basic_salary, total_deductions, net_salary, payment_date, transaction_id, slip, payment_status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO employee_salary (school_id, branch_id, user_type, employee_id, leave_id, basic_salary, total_deductions, net_salary, payment_date, transaction_id, slip, payment_status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         sId,
-        Number(user_type) || 1,
-        Number(employee_id),
+        resolvedBranchId,
+        uType,
+        empId,
         leave_id ? Number(leave_id) : null,
         Number(basic_salary) || 0,
         Number(total_deductions) || 0,
@@ -309,7 +362,7 @@ class PayrollModel {
     return true;
   }
 
-  static async getAllSalaries(schoolId, { search, user_type, employee_id } = {}) {
+  static async getAllSalaries(schoolId, { search, user_type, employee_id, branchId = null } = {}) {
     let sql = `
       SELECT 
         es.id,
@@ -335,6 +388,15 @@ class PayrollModel {
       WHERE es.school_id = ?
     `;
     const params = [schoolId];
+
+    if (branchId) {
+      sql += ` AND (
+        (es.branch_id = ?) OR
+        (es.user_type = 2 AND (t.branch_id = ? OR t.branch_id IS NULL)) OR
+        (es.user_type != 2 AND (u.branch_id = ? OR u.branch_id IS NULL))
+      )`;
+      params.push(Number(branchId), Number(branchId), Number(branchId));
+    }
 
     if (user_type !== undefined && user_type !== null) {
       sql += ` AND es.user_type = ?`;

@@ -811,7 +811,7 @@ class AdminExaminationModel {
   // 5. EXAM SCHEDULES
   // =========================================================
 
-  static async getExamSchedules({ schoolId, examId, classId, subjectId, academicYearId, teacherId, assignedOnly = false }) {
+  static async getExamSchedules({ schoolId, examId, classId, subjectId, academicYearId, teacherId, assignedOnly = false, branchId = null }) {
     let query = `
       SELECT 
         es.id,
@@ -855,6 +855,10 @@ class AdminExaminationModel {
     if (academicYearId) {
       query += ` AND (es.academic_year_id = ? OR (es.academic_year_id IS NULL AND e.academic_year = ?) OR (es.academic_year_id = 0 AND e.academic_year = ?))`;
       params.push(academicYearId, academicYearId, academicYearId);
+    }
+    if (branchId) {
+      query += ` AND (es.branch_id = ? OR c.branch_id = ? OR c.branch_id IS NULL)`;
+      params.push(Number(branchId), Number(branchId));
     }
 
     query += ` GROUP BY es.id ORDER BY es.date ASC, es.start_time ASC, es.id ASC`;
@@ -938,17 +942,26 @@ class AdminExaminationModel {
     startTime,
     endTime,
     status,
+    branchId = null,
   }) {
     let resolvedYear = academicYearId ? parseInt(academicYearId, 10) : null;
     if (!resolvedYear) {
       resolvedYear = await AdminExaminationModel.getCurrentAcademicYearId(schoolId, examId);
     }
+    let resolvedBranchId = branchId ? Number(branchId) : null;
+    if (!resolvedBranchId && classId) {
+      try {
+        const [cls] = await pool.query('SELECT branch_id FROM class_master WHERE id = ? LIMIT 1', [classId]);
+        if (cls && cls[0]?.branch_id) resolvedBranchId = cls[0].branch_id;
+      } catch (_) {}
+    }
     const query = `
-      INSERT INTO exam_schedule (school_id, academic_year_id, exam_id, class_id, subject_id, date, start_time, end_time, status, created_on)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+      INSERT INTO exam_schedule (school_id, branch_id, academic_year_id, exam_id, class_id, subject_id, date, start_time, end_time, status, created_on)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
     `;
     const [result] = await pool.query(query, [
       schoolId,
+      resolvedBranchId,
       resolvedYear,
       examId,
       classId,
@@ -1038,7 +1051,7 @@ class AdminExaminationModel {
   // 5. EXAM ATTENDANCE
   // =========================================================
 
-  static async getStudentsForExamAttendance({ schoolId, examId, classId, sectionId, subjectId, examScheduleId, academicYearId, roster, page = 1, limit = 10, search, teacherId }) {
+  static async getStudentsForExamAttendance({ schoolId, examId, classId, sectionId, subjectId, examScheduleId, academicYearId, roster, page = 1, limit = 10, search, teacherId, branchId = null }) {
     // 1. Query existing attendance records for this exam & class (and subject if provided)
     let attQuery = `
       SELECT 
@@ -1075,6 +1088,10 @@ class AdminExaminationModel {
     if (sectionId) {
       attQuery += ` AND sm.section = ?`;
       attParams.push(sectionId);
+    }
+    if (branchId) {
+      attQuery += ` AND (sm.branch_id = ? OR sm.branch_id IS NULL)`;
+      attParams.push(Number(branchId));
     }
     if (search && String(search).trim()) {
       const sp = `%${String(search).trim()}%`;
@@ -1146,6 +1163,10 @@ class AdminExaminationModel {
       if (sectionId) {
         studentQuery += ` AND s.section = ?`;
         studentParams.push(sectionId);
+      }
+      if (branchId) {
+        studentQuery += ` AND (s.branch_id = ? OR s.branch_id IS NULL)`;
+        studentParams.push(Number(branchId));
       }
       studentQuery += ` ORDER BY sec.sort_order ASC, sec.section_name ASC, CAST(s.roll_number AS UNSIGNED) ASC, s.first_name ASC`;
       const [students] = await pool.query(studentQuery, studentParams);
@@ -1442,7 +1463,7 @@ class AdminExaminationModel {
   // 6. EXAM RESULTS & MARKS
   // =========================================================
 
-  static async getExamResultsList({ schoolId, examId, classId, sectionId, academicYearId }) {
+  static async getExamResultsList({ schoolId, examId, classId, sectionId, academicYearId, branchId = null }) {
     let query = `
       SELECT 
         er.id,
@@ -1485,6 +1506,10 @@ class AdminExaminationModel {
     if (academicYearId) {
       query += ` AND er.academic_year_id = ?`;
       params.push(academicYearId);
+    }
+    if (branchId) {
+      query += ` AND (s.branch_id = ? OR s.branch_id IS NULL)`;
+      params.push(Number(branchId));
     }
 
     query += ` ORDER BY s.roll_number ASC, s.first_name ASC`;
@@ -1780,13 +1805,14 @@ class AdminExaminationModel {
   // =========================================================
 
   static async getMarksheetStudentsPaginated({
-    schoolId = 1,
+    schoolId,
     academicYearId = null,
     classId = null,
     sectionId = null,
     search = '',
     page = 1,
     limit = 10,
+    branchId = null,
   }) {
     const p = parseInt(page, 10) || 1;
     const l = parseInt(limit, 10) || 10;
@@ -1806,6 +1832,10 @@ class AdminExaminationModel {
     if (sectionId) {
       whereClause += ` AND s.section = ?`;
       params.push(sectionId);
+    }
+    if (branchId) {
+      whereClause += ` AND (s.branch_id = ? OR s.branch_id IS NULL)`;
+      params.push(Number(branchId));
     }
     if (search && search.trim()) {
       whereClause += ` AND (s.first_name LIKE ? OR s.last_name LIKE ? OR s.admission_number LIKE ? OR s.roll_number LIKE ? OR s.primary_contact_number LIKE ?)`;
@@ -1872,6 +1902,7 @@ class AdminExaminationModel {
     classId = null,
     sectionId = null,
     academicYearId = null,
+    branchId = null,
   }) {
     if (!schoolId) return [];
 
@@ -2041,6 +2072,10 @@ class AdminExaminationModel {
         q += ` AND s.section = ?`;
         p.push(sectionId);
       }
+      if (branchId) {
+        q += ` AND (s.branch_id = ? OR s.branch_id IS NULL)`;
+        p.push(Number(branchId));
+      }
       q += ` GROUP BY s.id ORDER BY s.roll_number ASC, s.first_name ASC`;
       const [sRows] = await pool.query(q, p);
       studentList = sRows;
@@ -2193,6 +2228,7 @@ class AdminExaminationModel {
     sectionId = null,
     academicYearId = null,
     examId = null,
+    branchId = null,
   }) {
     // 1. Fetch School Info
     const [schoolRows] = await pool.query(
@@ -2331,6 +2367,10 @@ class AdminExaminationModel {
         q += ` AND s.section = ?`;
         qParams.push(sectionId);
       }
+      if (branchId) {
+        q += ` AND (s.branch_id = ? OR s.branch_id IS NULL)`;
+        qParams.push(Number(branchId));
+      }
       q += ` GROUP BY s.id ORDER BY s.roll_number ASC, s.first_name ASC`;
       const [sRows] = await pool.query(q, qParams);
       studentList = sRows;
@@ -2352,6 +2392,10 @@ class AdminExaminationModel {
       if (targetExamId) {
         scheduleQuery += ` AND es.exam_id = ?`;
         sParams.push(targetExamId);
+      }
+      if (branchId) {
+        scheduleQuery += ` AND (es.branch_id = ? OR es.branch_id IS NULL)`;
+        sParams.push(Number(branchId));
       }
       scheduleQuery += ` ORDER BY es.date ASC, es.start_time ASC`;
       const [schedules] = await pool.query(scheduleQuery, sParams);

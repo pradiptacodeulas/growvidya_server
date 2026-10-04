@@ -48,6 +48,19 @@ class BranchModel {
         'leaves',
         'notice',
         'student_activity',
+        'student_certificate',
+        'trans_route_master',
+        'bus_master',
+        'hostel_name_master',
+        'hostel_room_master',
+        'exam_schedule',
+        'beneficiary_master',
+        'employee_salary',
+        'routine',
+        'syllabus',
+        'assignments',
+        'study_materials',
+        'student_transport',
       ];
 
       for (const tableName of tablesToScope) {
@@ -112,7 +125,12 @@ class BranchModel {
   /**
    * Get all branches for a school
    */
-  static async getAllBranches({ school_id = 1, status = null }) {
+  static async getAllBranches({ school_id, status = null }) {
+    const parsedSchoolId = Number(school_id);
+    if (!parsedSchoolId) {
+      throw new Error('Valid school_id is required.');
+    }
+
     let sql = `
       SELECT 
         b.id,
@@ -141,7 +159,7 @@ class BranchModel {
       WHERE b.school_id = ?
     `;
 
-    const params = [Number(school_id) || 1];
+    const params = [parsedSchoolId];
 
     if (status !== null && status !== undefined && status !== '') {
       sql += ` AND b.status = ?`;
@@ -159,7 +177,12 @@ class BranchModel {
   /**
    * Get single branch by ID
    */
-  static async getBranchById(id, school_id = 1) {
+  static async getBranchById(id, school_id) {
+    const parsedSchoolId = Number(school_id);
+    if (!parsedSchoolId) {
+      throw new Error('Valid school_id is required.');
+    }
+
     const sql = `
       SELECT 
         b.id,
@@ -188,7 +211,7 @@ class BranchModel {
       WHERE b.id = ? AND b.school_id = ?
       LIMIT 1
     `;
-    const [rows] = await pool.query(sql, [Number(id), Number(school_id) || 1]);
+    const [rows] = await pool.query(sql, [Number(id), parsedSchoolId]);
     return rows[0] || null;
   }
 
@@ -196,7 +219,7 @@ class BranchModel {
    * Create a new branch
    */
   static async createBranch({
-    school_id = 1,
+    school_id,
     branch_name,
     branch_code,
     address = null,
@@ -210,11 +233,16 @@ class BranchModel {
     is_main_branch = 0,
     status = 1,
   }) {
+    const parsedSchoolId = Number(school_id);
+    if (!parsedSchoolId) {
+      throw new Error('Valid school_id is required.');
+    }
+
     // If setting as main branch, reset other branches
     if (Number(is_main_branch) === 1) {
       await pool.execute(
         `UPDATE branch_master SET is_main_branch = 0 WHERE school_id = ?`,
-        [Number(school_id) || 1]
+        [parsedSchoolId]
       );
     }
 
@@ -226,7 +254,7 @@ class BranchModel {
     `;
 
     const [result] = await pool.execute(sql, [
-      Number(school_id) || 1,
+      parsedSchoolId,
       String(branch_name).trim(),
       String(branch_code).trim().toUpperCase(),
       address || null,
@@ -243,7 +271,7 @@ class BranchModel {
 
     return {
       id: result.insertId,
-      school_id: Number(school_id) || 1,
+      school_id: parsedSchoolId,
       branch_name,
       branch_code: String(branch_code).trim().toUpperCase(),
       country_id: country_id ? Number(country_id) : null,
@@ -257,7 +285,12 @@ class BranchModel {
   /**
    * Update an existing branch
    */
-  static async updateBranch(id, school_id = 1, data = {}) {
+  static async updateBranch(id, school_id, data = {}) {
+    const parsedSchoolId = Number(school_id);
+    if (!parsedSchoolId) {
+      throw new Error('Valid school_id is required.');
+    }
+
     const {
       branch_name,
       branch_code,
@@ -277,7 +310,7 @@ class BranchModel {
     if (Number(is_main_branch) === 1) {
       await pool.execute(
         `UPDATE branch_master SET is_main_branch = 0 WHERE school_id = ? AND id != ?`,
-        [Number(school_id) || 1, Number(id)]
+        [parsedSchoolId, Number(id)]
       );
     }
 
@@ -313,7 +346,7 @@ class BranchModel {
       is_main_branch !== undefined ? (Number(is_main_branch) === 1 ? 1 : 0) : null,
       status !== undefined ? Number(status) : null,
       Number(id),
-      Number(school_id) || 1,
+      parsedSchoolId,
     ]);
 
     return result.affectedRows > 0;
@@ -322,13 +355,18 @@ class BranchModel {
   /**
    * Set a branch as the main campus
    */
-  static async setMainBranch(id, school_id = 1) {
+  static async setMainBranch(id, school_id) {
+    const parsedSchoolId = Number(school_id);
+    if (!parsedSchoolId) {
+      throw new Error('Valid school_id is required.');
+    }
+
     await pool.execute(`UPDATE branch_master SET is_main_branch = 0 WHERE school_id = ?`, [
-      Number(school_id) || 1,
+      parsedSchoolId,
     ]);
     const [result] = await pool.execute(
       `UPDATE branch_master SET is_main_branch = 1 WHERE id = ? AND school_id = ?`,
-      [Number(id), Number(school_id) || 1]
+      [Number(id), parsedSchoolId]
     );
     return result.affectedRows > 0;
   }
@@ -336,9 +374,12 @@ class BranchModel {
   /**
    * Soft delete a branch with safety check (sets status = 4)
    */
-  static async deleteBranch(id, school_id = 1) {
+  static async deleteBranch(id, school_id) {
     const parsedId = Number(id);
-    const parsedSchoolId = Number(school_id) || 1;
+    const parsedSchoolId = Number(school_id);
+    if (!parsedSchoolId) {
+      throw new Error('Valid school_id is required.');
+    }
 
     // Check if it's the main branch
     const branch = await BranchModel.getBranchById(parsedId, parsedSchoolId);
@@ -390,8 +431,11 @@ class BranchModel {
   /**
    * Get branches summary with student, teacher, and class counts for dashboard/reporting
    */
-  static async getBranchesSummary(school_id = 1) {
-    const parsedSchoolId = Number(school_id) || 1;
+  static async getBranchesSummary(school_id) {
+    const parsedSchoolId = Number(school_id);
+    if (!parsedSchoolId) {
+      throw new Error('Valid school_id is required.');
+    }
 
     const [branches] = await pool.query(
       `SELECT 

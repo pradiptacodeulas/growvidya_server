@@ -6,7 +6,13 @@ class BranchController {
    * Helper to get schoolId from req.user
    */
   static getSchoolId(req) {
-    return Number(req.user?.schoolId || req.user?.school_id) || 1;
+    const schoolId = Number(req.user?.schoolId || req.user?.school_id);
+    if (!schoolId) {
+      const err = new Error('School context required. Please log in again.');
+      err.statusCode = 401;
+      throw err;
+    }
+    return schoolId;
   }
 
   /**

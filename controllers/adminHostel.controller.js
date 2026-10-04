@@ -1,10 +1,21 @@
 const HostelModel = require('../models/hostel.model');
 
+const getHostelSchoolId = (req) => {
+  const schoolId = req.user?.schoolId || req.user?.school_id;
+  if (!schoolId) {
+    const err = new Error('School context required. Please log in again.');
+    err.statusCode = 401;
+    throw err;
+  }
+  return Number(schoolId);
+};
+
 // --- Hostel Master Controller ---
 exports.getAllHostels = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
-    const hostels = await HostelModel.getAllHostels(schoolId);
+    const schoolId = getHostelSchoolId(req);
+    const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+    const hostels = await HostelModel.getAllHostels(schoolId, branchId);
     return res.status(200).json({
       success: true,
       data: hostels,
@@ -12,13 +23,13 @@ exports.getAllHostels = async (req, res) => {
     });
   } catch (err) {
     console.error('Error in getAllHostels:', err);
-    return res.status(500).json({ success: false, message: 'Internal server error' });
+    return res.status(err.statusCode || 500).json({ success: false, message: err.message || 'Internal server error' });
   }
 };
 
 exports.getHostelById = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getHostelSchoolId(req);
     const { id } = req.params;
     const hostel = await HostelModel.getHostelById(id, schoolId);
     if (!hostel) {
@@ -27,13 +38,14 @@ exports.getHostelById = async (req, res) => {
     return res.status(200).json({ success: true, data: hostel });
   } catch (err) {
     console.error('Error in getHostelById:', err);
-    return res.status(500).json({ success: false, message: 'Internal server error' });
+    return res.status(err.statusCode || 500).json({ success: false, message: err.message || 'Internal server error' });
   }
 };
 
 exports.createHostel = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getHostelSchoolId(req);
+    const branchId = req.branchId || req.body?.branch_id || null;
     const { hostel_name, hostel_fee, sort_order, status } = req.body;
 
     if (!hostel_name || !hostel_name.trim()) {
@@ -42,6 +54,7 @@ exports.createHostel = async (req, res) => {
 
     const insertId = await HostelModel.createHostel({
       school_id: schoolId,
+      branch_id: branchId,
       hostel_name: hostel_name.trim(),
       hostel_fee: hostel_fee || 0,
       sort_order: sort_order || 0,
@@ -55,13 +68,13 @@ exports.createHostel = async (req, res) => {
     });
   } catch (err) {
     console.error('Error in createHostel:', err);
-    return res.status(500).json({ success: false, message: 'Internal server error' });
+    return res.status(err.statusCode || 500).json({ success: false, message: err.message || 'Internal server error' });
   }
 };
 
 exports.updateHostel = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getHostelSchoolId(req);
     const { id } = req.params;
     const { hostel_name, hostel_fee, sort_order, status } = req.body;
 
@@ -82,13 +95,13 @@ exports.updateHostel = async (req, res) => {
     });
   } catch (err) {
     console.error('Error in updateHostel:', err);
-    return res.status(500).json({ success: false, message: 'Internal server error' });
+    return res.status(err.statusCode || 500).json({ success: false, message: err.message || 'Internal server error' });
   }
 };
 
 exports.deleteHostel = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getHostelSchoolId(req);
     const { id } = req.params;
     await HostelModel.deleteHostel(id, schoolId);
     return res.status(200).json({
@@ -97,15 +110,16 @@ exports.deleteHostel = async (req, res) => {
     });
   } catch (err) {
     console.error('Error in deleteHostel:', err);
-    return res.status(500).json({ success: false, message: 'Internal server error' });
+    return res.status(err.statusCode || 500).json({ success: false, message: err.message || 'Internal server error' });
   }
 };
 
 // --- Hostel Rooms Controller ---
 exports.getAllHostelRooms = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
-    const rooms = await HostelModel.getAllHostelRooms(schoolId);
+    const schoolId = getHostelSchoolId(req);
+    const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+    const rooms = await HostelModel.getAllHostelRooms(schoolId, branchId);
     return res.status(200).json({
       success: true,
       data: rooms,
@@ -113,13 +127,13 @@ exports.getAllHostelRooms = async (req, res) => {
     });
   } catch (err) {
     console.error('Error in getAllHostelRooms:', err);
-    return res.status(500).json({ success: false, message: 'Internal server error' });
+    return res.status(err.statusCode || 500).json({ success: false, message: err.message || 'Internal server error' });
   }
 };
 
 exports.getHostelRoomById = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getHostelSchoolId(req);
     const { id } = req.params;
     const room = await HostelModel.getHostelRoomById(id, schoolId);
     if (!room) {
@@ -128,13 +142,14 @@ exports.getHostelRoomById = async (req, res) => {
     return res.status(200).json({ success: true, data: room });
   } catch (err) {
     console.error('Error in getHostelRoomById:', err);
-    return res.status(500).json({ success: false, message: 'Internal server error' });
+    return res.status(err.statusCode || 500).json({ success: false, message: err.message || 'Internal server error' });
   }
 };
 
 exports.createHostelRoom = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getHostelSchoolId(req);
+    const branchId = req.branchId || req.body?.branch_id || null;
     const { hostel_id, room_number, sort_order, status } = req.body;
 
     if (!hostel_id) {
@@ -146,6 +161,7 @@ exports.createHostelRoom = async (req, res) => {
 
     const insertId = await HostelModel.createHostelRoom({
       school_id: schoolId,
+      branch_id: branchId,
       hostel_id,
       room_number: room_number.trim(),
       sort_order: sort_order || 0,
@@ -159,13 +175,13 @@ exports.createHostelRoom = async (req, res) => {
     });
   } catch (err) {
     console.error('Error in createHostelRoom:', err);
-    return res.status(500).json({ success: false, message: 'Internal server error' });
+    return res.status(err.statusCode || 500).json({ success: false, message: err.message || 'Internal server error' });
   }
 };
 
 exports.updateHostelRoom = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getHostelSchoolId(req);
     const { id } = req.params;
     const { hostel_id, room_number, sort_order, status } = req.body;
 
@@ -189,13 +205,13 @@ exports.updateHostelRoom = async (req, res) => {
     });
   } catch (err) {
     console.error('Error in updateHostelRoom:', err);
-    return res.status(500).json({ success: false, message: 'Internal server error' });
+    return res.status(err.statusCode || 500).json({ success: false, message: err.message || 'Internal server error' });
   }
 };
 
 exports.deleteHostelRoom = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getHostelSchoolId(req);
     const { id } = req.params;
     await HostelModel.deleteHostelRoom(id, schoolId);
     return res.status(200).json({
@@ -204,6 +220,6 @@ exports.deleteHostelRoom = async (req, res) => {
     });
   } catch (err) {
     console.error('Error in deleteHostelRoom:', err);
-    return res.status(500).json({ success: false, message: 'Internal server error' });
+    return res.status(err.statusCode || 500).json({ success: false, message: err.message || 'Internal server error' });
   }
 };

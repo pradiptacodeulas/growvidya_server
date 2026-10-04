@@ -708,6 +708,7 @@ class AdminAcademicController {
   static async getRoutines(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { class_id, classId, section_id, sectionId, day, teacher_id, teacherId } = req.query;
 
       let resolvedTeacherId = teacher_id || teacherId;
@@ -725,6 +726,7 @@ class AdminAcademicController {
         sectionId: section_id || sectionId,
         day,
         teacherId: resolvedTeacherId,
+        branchId,
       });
       return ApiResponse.success(res, 'Routines fetched successfully', data);
     } catch (error) {
@@ -735,7 +737,8 @@ class AdminAcademicController {
   static async createRoutine(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const insertId = await AcademicModel.createRoutine(schoolId, req.body);
+      const branchId = req.branchId || req.body?.branch_id || req.body?.branchId || null;
+      const insertId = await AcademicModel.createRoutine(schoolId, { ...req.body, branch_id: branchId });
       return ApiResponse.success(res, 'Routine period scheduled', { id: insertId }, 201);
     } catch (error) {
       next(error);
@@ -783,6 +786,7 @@ class AdminAcademicController {
   static async getSyllabusList(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { academic_year, academicYear, class_id, classId, subject_id, subjectId, status, search, page, limit } = req.query;
       const data = await AcademicModel.getSyllabusList(schoolId, {
         academic_year: academic_year || academicYear,
@@ -792,6 +796,7 @@ class AdminAcademicController {
         search,
         page: Number(page) || 1,
         limit: Number(limit) || 10,
+        branchId,
       });
       return ApiResponse.success(res, 'Syllabus list fetched successfully', data);
     } catch (error) {
@@ -814,7 +819,8 @@ class AdminAcademicController {
   static async createSyllabus(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const insertId = await AcademicModel.createSyllabus(schoolId, req.body);
+      const branchId = req.branchId || req.body?.branch_id || req.body?.branchId || null;
+      const insertId = await AcademicModel.createSyllabus(schoolId, { ...req.body, branch_id: branchId });
       return ApiResponse.success(res, 'Syllabus added successfully', { id: insertId }, 201);
     } catch (error) {
       next(error);
@@ -951,6 +957,7 @@ class AdminAcademicController {
   static async getAssignments(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { class_id, classId, section_id, sectionId, subject_id, subjectId, search, status, page, limit } = req.query;
       const data = await AcademicModel.getAssignments(schoolId, {
         classId: class_id || classId,
@@ -960,6 +967,7 @@ class AdminAcademicController {
         status,
         page,
         limit,
+        branchId,
       });
       return ApiResponse.success(res, 'Assignments fetched successfully', data);
     } catch (error) {
@@ -1005,7 +1013,8 @@ class AdminAcademicController {
   static async createAssignment(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const insertId = await AcademicModel.createAssignment(schoolId, req.body);
+      const branchId = req.branchId || req.body?.branch_id || req.body?.branchId || null;
+      const insertId = await AcademicModel.createAssignment(schoolId, { ...req.body, branch_id: branchId });
       return ApiResponse.success(res, 'Assignment created successfully', { id: insertId }, 201);
     } catch (error) {
       next(error);
@@ -1099,6 +1108,7 @@ class AdminAcademicController {
   static async getStudyMaterials(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { academic_year_id, class_id, classId, section_id, sectionId, subject_id, subjectId, material_type_id, status, search, page, limit } = req.query;
       const data = await AcademicModel.getStudyMaterials(schoolId, {
         academic_year_id,
@@ -1110,6 +1120,7 @@ class AdminAcademicController {
         search,
         page,
         limit,
+        branchId,
       });
       return ApiResponse.success(res, 'Study materials fetched successfully', data);
     } catch (error) {
@@ -1132,8 +1143,9 @@ class AdminAcademicController {
   static async createStudyMaterial(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const userId = req.user?.id || 1;
-      const insertId = await AcademicModel.createStudyMaterial(schoolId, req.body, userId);
+      const userId = req.user?.id || req.user?.userId || null;
+      const branchId = req.branchId || req.body?.branch_id || req.body?.branchId || null;
+      const insertId = await AcademicModel.createStudyMaterial(schoolId, { ...req.body, branch_id: branchId }, userId);
       return ApiResponse.success(res, 'Study material created successfully', { id: insertId }, 201);
     } catch (error) {
       next(error);

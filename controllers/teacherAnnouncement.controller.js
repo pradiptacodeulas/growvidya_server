@@ -1,9 +1,19 @@
 const AnnouncementModel = require('../models/announcement.model');
 
+const getTeacherSchoolId = (req) => {
+  const schoolId = req.user?.schoolId || req.user?.school_id;
+  if (!schoolId) {
+    const err = new Error('School context required. Please log in again.');
+    err.statusCode = 401;
+    throw err;
+  }
+  return Number(schoolId);
+};
+
 // ================= TEACHER NOTICE CONTROLLERS =================
 exports.getTeacherNotices = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getTeacherSchoolId(req);
     const teacherId = Number(req.user?.teacherId || req.user?.userId || req.user?.id);
     const { pool } = require('../config/db.config');
 
@@ -56,13 +66,13 @@ exports.getTeacherNotices = async (req, res) => {
     return res.status(200).json({ success: true, data: filtered, notices: filtered });
   } catch (err) {
     console.error('Error in getTeacherNotices:', err);
-    return res.status(500).json({ success: false, message: 'Internal server error' });
+    return res.status(err.statusCode || 500).json({ success: false, message: err.message || 'Internal server error' });
   }
 };
 
 exports.getTeacherNoticeById = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getTeacherSchoolId(req);
     const { id } = req.params;
     const notice = await AnnouncementModel.getNoticeById(id, schoolId);
     if (!notice) {
@@ -71,25 +81,25 @@ exports.getTeacherNoticeById = async (req, res) => {
     return res.status(200).json({ success: true, data: notice });
   } catch (err) {
     console.error('Error in getTeacherNoticeById:', err);
-    return res.status(500).json({ success: false, message: 'Internal server error' });
+    return res.status(err.statusCode || 500).json({ success: false, message: err.message || 'Internal server error' });
   }
 };
 
 // ================= TEACHER EVENT CONTROLLERS =================
 exports.getTeacherEvents = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getTeacherSchoolId(req);
     const events = await AnnouncementModel.getAllEvents(schoolId);
     return res.status(200).json({ success: true, data: events, events });
   } catch (err) {
     console.error('Error in getTeacherEvents:', err);
-    return res.status(500).json({ success: false, message: 'Internal server error' });
+    return res.status(err.statusCode || 500).json({ success: false, message: err.message || 'Internal server error' });
   }
 };
 
 exports.getTeacherEventById = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getTeacherSchoolId(req);
     const { id } = req.params;
     const event = await AnnouncementModel.getEventById(id, schoolId);
     if (!event) {
@@ -98,25 +108,25 @@ exports.getTeacherEventById = async (req, res) => {
     return res.status(200).json({ success: true, data: event });
   } catch (err) {
     console.error('Error in getTeacherEventById:', err);
-    return res.status(500).json({ success: false, message: 'Internal server error' });
+    return res.status(err.statusCode || 500).json({ success: false, message: err.message || 'Internal server error' });
   }
 };
 
 // ================= TEACHER HOLIDAY CONTROLLERS =================
 exports.getTeacherHolidays = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getTeacherSchoolId(req);
     const holidays = await AnnouncementModel.getAllHolidays(schoolId);
     return res.status(200).json({ success: true, data: holidays, holidays });
   } catch (err) {
     console.error('Error in getTeacherHolidays:', err);
-    return res.status(500).json({ success: false, message: 'Internal server error' });
+    return res.status(err.statusCode || 500).json({ success: false, message: err.message || 'Internal server error' });
   }
 };
 
 exports.getTeacherHolidayById = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getTeacherSchoolId(req);
     const { id } = req.params;
     const holiday = await AnnouncementModel.getHolidayById(id, schoolId);
     if (!holiday) {
@@ -125,6 +135,6 @@ exports.getTeacherHolidayById = async (req, res) => {
     return res.status(200).json({ success: true, data: holiday });
   } catch (err) {
     console.error('Error in getTeacherHolidayById:', err);
-    return res.status(500).json({ success: false, message: 'Internal server error' });
+    return res.status(err.statusCode || 500).json({ success: false, message: err.message || 'Internal server error' });
   }
 };

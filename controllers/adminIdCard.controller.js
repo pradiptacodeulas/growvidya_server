@@ -35,6 +35,8 @@ class AdminIdCardController {
 
       let cardData = [];
 
+      const branchId = req.branchId || params.branch_id || params.branchId || null;
+
       if (type === 'student') {
         const classId = params.classId || params.class_id ? parseInt(params.classId || params.class_id, 10) : null;
         const sectionId = params.sectionId || params.section_id ? parseInt(params.sectionId || params.section_id, 10) : null;
@@ -46,11 +48,13 @@ class AdminIdCardController {
           classId,
           sectionId,
           academicYearId,
+          branchId,
         });
       } else if (type === 'teacher') {
         cardData = await AdminIdCardModel.getTeacherIdCardData({
           schoolId,
           teacherIds: parsedIds,
+          branchId,
         });
       } else {
         // Staff
@@ -59,6 +63,7 @@ class AdminIdCardController {
           schoolId,
           staffIds: parsedIds,
           roleId,
+          branchId,
         });
       }
 

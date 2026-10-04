@@ -1,6 +1,16 @@
 const TransportModel = require('../models/transport.model');
 const ApiResponse = require('../utils/api.response');
 
+const getSchoolId = (req) => {
+  const schoolId = req.user?.schoolId || req.user?.school_id;
+  if (!schoolId) {
+    const err = new Error('School context required. Please log in again.');
+    err.statusCode = 401;
+    throw err;
+  }
+  return Number(schoolId);
+};
+
 class AdminTransportController {
   // ==========================================
   // 1. ROUTES
@@ -8,10 +18,11 @@ class AdminTransportController {
 
   static async getAllRoutes(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
+      const schoolId = getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { search, status } = req.query;
 
-      const routes = await TransportModel.getAllRoutes(schoolId, { search, status });
+      const routes = await TransportModel.getAllRoutes(schoolId, { search, status, branchId });
       return ApiResponse.success(res, 'Routes fetched successfully.', { routes });
     } catch (error) {
       next(error);
@@ -20,7 +31,7 @@ class AdminTransportController {
 
   static async getRouteById(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
+      const schoolId = getSchoolId(req);
       const { id } = req.params;
 
       const route = await TransportModel.getRouteById(schoolId, id);
@@ -35,7 +46,8 @@ class AdminTransportController {
 
   static async createRoute(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
+      const schoolId = getSchoolId(req);
+      const branchId = req.branchId || req.body?.branch_id || null;
       const { transport_route, bus_id, bus, driver_id, driver, helpers, helper, fare, sort_order, status } = req.body;
 
       if (!transport_route) {
@@ -43,6 +55,7 @@ class AdminTransportController {
       }
 
       const id = await TransportModel.createRoute(schoolId, {
+        branch_id: branchId,
         transport_route,
         bus_id: bus_id || bus,
         driver_id: driver_id || driver,
@@ -59,7 +72,7 @@ class AdminTransportController {
 
   static async updateRoute(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
+      const schoolId = getSchoolId(req);
       const { id } = req.params;
       const { transport_route, bus_id, bus, driver_id, driver, helpers, helper, fare, sort_order, status } = req.body;
 
@@ -84,7 +97,7 @@ class AdminTransportController {
 
   static async deleteRoute(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
+      const schoolId = getSchoolId(req);
       const { id } = req.params;
 
       await TransportModel.deleteRoute(schoolId, id);
@@ -100,10 +113,11 @@ class AdminTransportController {
 
   static async getAllVehicles(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
+      const schoolId = getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { search, status } = req.query;
 
-      const vehicles = await TransportModel.getAllVehicles(schoolId, { search, status });
+      const vehicles = await TransportModel.getAllVehicles(schoolId, { search, status, branchId });
       return ApiResponse.success(res, 'Vehicles fetched successfully.', { vehicles });
     } catch (error) {
       next(error);
@@ -112,7 +126,7 @@ class AdminTransportController {
 
   static async getVehicleById(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
+      const schoolId = getSchoolId(req);
       const { id } = req.params;
 
       const vehicle = await TransportModel.getVehicleById(schoolId, id);
@@ -127,7 +141,8 @@ class AdminTransportController {
 
   static async createVehicle(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
+      const schoolId = getSchoolId(req);
+      const branchId = req.branchId || req.body?.branch_id || null;
       const { name, number_plate, seat, color, driver_id, status } = req.body;
 
       if (!name) {
@@ -135,6 +150,7 @@ class AdminTransportController {
       }
 
       const id = await TransportModel.createVehicle(schoolId, {
+        branch_id: branchId,
         name,
         number_plate,
         seat,
@@ -150,7 +166,7 @@ class AdminTransportController {
 
   static async updateVehicle(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
+      const schoolId = getSchoolId(req);
       const { id } = req.params;
       const { name, number_plate, seat, color, driver_id, status } = req.body;
 
@@ -174,7 +190,7 @@ class AdminTransportController {
 
   static async deleteVehicle(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
+      const schoolId = getSchoolId(req);
       const { id } = req.params;
 
       await TransportModel.deleteVehicle(schoolId, id);
@@ -190,7 +206,7 @@ class AdminTransportController {
 
   static async getAllDrivers(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
+      const schoolId = getSchoolId(req);
       const { search, status } = req.query;
 
       const drivers = await TransportModel.getAllDrivers(schoolId, { search, status });
@@ -202,7 +218,7 @@ class AdminTransportController {
 
   static async getDriverById(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
+      const schoolId = getSchoolId(req);
       const { id } = req.params;
 
       const driver = await TransportModel.getDriverById(schoolId, id);
@@ -217,7 +233,7 @@ class AdminTransportController {
 
   static async checkDriverDuplicate(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
+      const schoolId = getSchoolId(req);
       const { email, phone, license_number, exclude_id } = req.query;
 
       const { isEmailDuplicate, isPhoneDuplicate, isLicenseDuplicate } =
@@ -245,7 +261,7 @@ class AdminTransportController {
 
   static async createDriver(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
+      const schoolId = getSchoolId(req);
       const { first_name, last_name, email, phone, license_number, lisence_number, gender, picture, status } = req.body || {};
 
       if (!first_name || !first_name.trim()) {
@@ -317,7 +333,7 @@ class AdminTransportController {
 
   static async updateDriver(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
+      const schoolId = getSchoolId(req);
       const { id } = req.params;
       const { first_name, last_name, email, phone, license_number, lisence_number, gender, picture, status } = req.body || {};
 
@@ -390,7 +406,7 @@ class AdminTransportController {
 
   static async deleteDriver(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
+      const schoolId = getSchoolId(req);
       const { id } = req.params;
 
       await TransportModel.deleteDriver(schoolId, id);
@@ -406,7 +422,7 @@ class AdminTransportController {
 
   static async getAllHelpers(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
+      const schoolId = getSchoolId(req);
       const { search, status } = req.query;
 
       const helpers = await TransportModel.getAllHelpers(schoolId, { search, status });
@@ -418,7 +434,7 @@ class AdminTransportController {
 
   static async getHelperById(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
+      const schoolId = getSchoolId(req);
       const { id } = req.params;
 
       const helper = await TransportModel.getHelperById(schoolId, id);
@@ -433,7 +449,7 @@ class AdminTransportController {
 
   static async checkHelperDuplicate(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
+      const schoolId = getSchoolId(req);
       const { email, phone, exclude_id } = req.query;
 
       const { isEmailDuplicate, isPhoneDuplicate } = await TransportModel.checkHelperDuplicate(
@@ -458,7 +474,7 @@ class AdminTransportController {
 
   static async createHelper(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
+      const schoolId = getSchoolId(req);
       const { first_name, last_name, email, phone, gender, picture, status } = req.body || {};
 
       if (!first_name || !first_name.trim()) {
@@ -514,7 +530,7 @@ class AdminTransportController {
 
   static async updateHelper(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
+      const schoolId = getSchoolId(req);
       const { id } = req.params;
       const { first_name, last_name, email, phone, gender, picture, status } = req.body || {};
 
@@ -571,7 +587,7 @@ class AdminTransportController {
 
   static async deleteHelper(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
+      const schoolId = getSchoolId(req);
       const { id } = req.params;
 
       await TransportModel.deleteHelper(schoolId, id);
@@ -587,7 +603,8 @@ class AdminTransportController {
 
   static async getAllAllocations(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
+      const schoolId = getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { search, route_id, class_id, section_id } = req.query;
 
       const allocations = await TransportModel.getAllAllocations(schoolId, {
@@ -595,6 +612,7 @@ class AdminTransportController {
         route_id,
         class_id,
         section_id,
+        branchId,
       });
       return ApiResponse.success(res, 'Transport allocations fetched successfully.', { allocations });
     } catch (error) {
@@ -604,7 +622,7 @@ class AdminTransportController {
 
   static async getAllocateById(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
+      const schoolId = getSchoolId(req);
       const { id } = req.params;
 
       const allocation = await TransportModel.getAllocateById(schoolId, id);
@@ -619,7 +637,7 @@ class AdminTransportController {
 
   static async createAllocation(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
+      const schoolId = getSchoolId(req);
       const { student_id, route, vehicle_number, pickup_point, drop_point, status } = req.body;
 
       if (!student_id || !route) {
@@ -642,7 +660,7 @@ class AdminTransportController {
 
   static async updateAllocation(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
+      const schoolId = getSchoolId(req);
       const { id } = req.params;
       const { student_id, route, vehicle_number, pickup_point, drop_point, status } = req.body;
 
@@ -666,7 +684,7 @@ class AdminTransportController {
 
   static async deleteAllocation(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
+      const schoolId = getSchoolId(req);
       const { id } = req.params;
 
       await TransportModel.deleteAllocation(schoolId, id);

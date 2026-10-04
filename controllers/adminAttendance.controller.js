@@ -107,12 +107,27 @@ class AdminAttendanceController {
       const todayStr = `${yyyy}-${mm}-${dd}`;
       const formattedDate = String(attendanceDate).split('T')[0].trim();
 
-      if (formattedDate < todayStr) {
+      const roleStr = String(req.user?.roleName || req.user?.role || '').toLowerCase();
+      const isAdmin = roleStr.includes('admin') || req.user?.role === 1 || req.user?.admin_type === 1 || Boolean(req.user?.isSuperAdmin);
+
+      if (!isAdmin && formattedDate < todayStr) {
         return ApiResponse.error(
           res,
           `Previous student attendance cannot be modified. Only current date (${todayStr}) attendance can be updated.`,
           null,
           403
+        );
+      }
+
+      const ninetyDaysAgo = new Date();
+      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+      const ninetyDaysAgoStr = ninetyDaysAgo.toISOString().split('T')[0];
+      if (formattedDate < ninetyDaysAgoStr) {
+        return ApiResponse.error(
+          res,
+          'Attendance records older than 90 days cannot be modified.',
+          null,
+          400
         );
       }
 
@@ -220,12 +235,27 @@ class AdminAttendanceController {
       const todayStr = `${yyyy}-${mm}-${dd}`;
       const formattedDate = String(attendanceDate).split('T')[0].trim();
 
-      if (formattedDate < todayStr) {
+      const roleStr = String(req.user?.roleName || req.user?.role || '').toLowerCase();
+      const isAdmin = roleStr.includes('admin') || req.user?.role === 1 || req.user?.admin_type === 1 || Boolean(req.user?.isSuperAdmin);
+
+      if (!isAdmin && formattedDate < todayStr) {
         return ApiResponse.error(
           res,
           `Previous teacher attendance cannot be modified. Only current date (${todayStr}) attendance can be updated.`,
           null,
           403
+        );
+      }
+
+      const ninetyDaysAgo = new Date();
+      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+      const ninetyDaysAgoStr = ninetyDaysAgo.toISOString().split('T')[0];
+      if (formattedDate < ninetyDaysAgoStr) {
+        return ApiResponse.error(
+          res,
+          'Attendance records older than 90 days cannot be modified.',
+          null,
+          400
         );
       }
 
@@ -332,12 +362,27 @@ class AdminAttendanceController {
       const todayStr = `${yyyy}-${mm}-${dd}`;
       const formattedDate = String(attendanceDate).split('T')[0].trim();
 
-      if (formattedDate < todayStr) {
+      const roleStr = String(req.user?.roleName || req.user?.role || '').toLowerCase();
+      const isAdmin = roleStr.includes('admin') || req.user?.role === 1 || req.user?.admin_type === 1 || Boolean(req.user?.isSuperAdmin);
+
+      if (!isAdmin && formattedDate < todayStr) {
         return ApiResponse.error(
           res,
           `Previous staff attendance cannot be modified. Only current date (${todayStr}) attendance can be updated.`,
           null,
           403
+        );
+      }
+
+      const ninetyDaysAgo = new Date();
+      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+      const ninetyDaysAgoStr = ninetyDaysAgo.toISOString().split('T')[0];
+      if (formattedDate < ninetyDaysAgoStr) {
+        return ApiResponse.error(
+          res,
+          'Attendance records older than 90 days cannot be modified.',
+          null,
+          400
         );
       }
 

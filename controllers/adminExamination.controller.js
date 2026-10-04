@@ -23,7 +23,8 @@ class AdminExaminationController {
   static async getGradeById(req, res, next) {
     try {
       const { id } = req.params;
-      const grade = await AdminExaminationModel.getGradeById(id);
+      const schoolId = req.user?.schoolId;
+      const grade = await AdminExaminationModel.getGradeById(id, schoolId);
       if (!grade) {
         return ApiResponse.error(res, 'Grade setting not found.', null, 404);
       }
@@ -461,6 +462,7 @@ class AdminExaminationController {
         assigned_only === '1' || assigned_only === 'true' || assignedOnly === '1' || assignedOnly === 'true'
       );
 
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const schedules = await AdminExaminationModel.getExamSchedules({
         schoolId,
         examId: exam_id ? parseInt(exam_id, 10) : undefined,
@@ -469,6 +471,7 @@ class AdminExaminationController {
         academicYearId: academic_year_id ? parseInt(academic_year_id, 10) : undefined,
         teacherId,
         assignedOnly: shouldFilterAssigned,
+        branchId,
       });
 
       return ApiResponse.success(res, 'Exam schedules retrieved successfully.', {
@@ -624,6 +627,7 @@ class AdminExaminationController {
       const isTeacher = req.user?.roleName === 'Teacher' || req.user?.portalType === 'TeacherPortal';
       const teacherId = isTeacher ? (req.user?.teacherId || req.user?.id) : undefined;
 
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const result = await AdminExaminationModel.getStudentsForExamAttendance({
         schoolId,
         examId: parseInt(exam_id, 10),
@@ -637,6 +641,7 @@ class AdminExaminationController {
         limit: limit !== undefined ? (Number(limit) || 10) : 10,
         search: typeof search === 'string' ? search.trim() : undefined,
         teacherId,
+        branchId,
       });
 
       return ApiResponse.success(res, 'Students for exam attendance retrieved.', {
@@ -724,12 +729,14 @@ class AdminExaminationController {
       const schoolId = req.user.schoolId;
       const { exam_id, class_id, section_id, academic_year_id } = req.query;
 
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const data = await AdminExaminationModel.getExamResultsList({
         schoolId,
         examId: exam_id ? parseInt(exam_id, 10) : undefined,
         classId: class_id ? parseInt(class_id, 10) : undefined,
         sectionId: section_id ? parseInt(section_id, 10) : undefined,
         academicYearId: academic_year_id ? parseInt(academic_year_id, 10) : undefined,
+        branchId,
       });
 
       return ApiResponse.success(res, 'Exam results list retrieved.', data);
@@ -926,6 +933,7 @@ class AdminExaminationController {
       const finalClassId = classId || class_id ? parseInt(classId || class_id, 10) : null;
       const finalSectionId = sectionId || section_id ? parseInt(sectionId || section_id, 10) : null;
 
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const result = await AdminExaminationModel.getMarksheetStudentsPaginated({
         schoolId,
         academicYearId: finalYearId,
@@ -934,6 +942,7 @@ class AdminExaminationController {
         search,
         page,
         limit,
+        branchId,
       });
 
       return ApiResponse.success(res, 'Marksheet student list retrieved successfully.', result);
@@ -971,6 +980,7 @@ class AdminExaminationController {
       const finalClassId = classId || class_id ? parseInt(classId || class_id, 10) : null;
       const finalSectionId = sectionId || section_id ? parseInt(sectionId || section_id, 10) : null;
       const finalYearId = academicYearId || academic_year_id ? parseInt(academicYearId || academic_year_id, 10) : null;
+      const branchId = req.branchId || params.branch_id || params.branchId || null;
 
       const marksheetData = await AdminExaminationModel.getMarksheetDataForPdf({
         schoolId,
@@ -978,6 +988,7 @@ class AdminExaminationController {
         classId: finalClassId,
         sectionId: finalSectionId,
         academicYearId: finalYearId,
+        branchId,
       });
 
       if (!marksheetData || marksheetData.length === 0) {
@@ -1045,6 +1056,7 @@ class AdminExaminationController {
       const finalSectionId = sectionId || section_id ? parseInt(sectionId || section_id, 10) : null;
       const finalYearId = academicYearId || academic_year_id ? parseInt(academicYearId || academic_year_id, 10) : null;
       const finalExamId = examId || exam_id ? parseInt(examId || exam_id, 10) : null;
+      const branchId = req.branchId || params.branch_id || params.branchId || null;
 
       const admitCardData = await AdminExaminationModel.getAdmitCardDataForPdf({
         schoolId,
@@ -1053,6 +1065,7 @@ class AdminExaminationController {
         sectionId: finalSectionId,
         academicYearId: finalYearId,
         examId: finalExamId,
+        branchId,
       });
 
       if (!admitCardData || admitCardData.length === 0) {

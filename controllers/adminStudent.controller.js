@@ -6,7 +6,10 @@ const { getBase64FileSize } = require('../utils/file.util');
 class AdminStudentController {
   static async getAllStudents(req, res, next) {
     try {
-      const schoolId = req.user.schoolId || req.user.school_id || 1;
+      const schoolId = req.user?.schoolId || req.user?.school_id;
+      if (!schoolId) {
+        return ApiResponse.error(res, 'School context required. Please log in again.', null, 401);
+      }
       const paramsSrc = { ...req.query, ...req.body };
       
       const search = paramsSrc.search || paramsSrc.name || '';
@@ -74,7 +77,10 @@ class AdminStudentController {
 
   static async checkEmail(req, res, next) {
     try {
-      const schoolId = req.user.schoolId || req.user.school_id || 1;
+      const schoolId = req.user?.schoolId || req.user?.school_id;
+      if (!schoolId) {
+        return ApiResponse.error(res, 'School context required. Please log in again.', null, 401);
+      }
       const email = req.query.email || req.body.email;
       const studentId = req.query.studentId || req.query.id || null;
 

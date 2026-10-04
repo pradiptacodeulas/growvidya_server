@@ -6,8 +6,9 @@ class AdminLeaveController {
     try {
       const schoolId = req.user.schoolId;
       const { name, role, date, status } = req.query;
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
 
-      const leaves = await LeaveModel.getAllLeaves(schoolId, { name, role, date, status });
+      const leaves = await LeaveModel.getAllLeaves(schoolId, { name, role, date, status, branchId });
       return ApiResponse.success(res, 'Leaves fetched successfully.', { leaves });
     } catch (error) {
       next(error);
@@ -34,6 +35,7 @@ class AdminLeaveController {
     try {
       const schoolId = req.user.schoolId;
       const { role, staff_id, leave_id, duration, document, leave_reason, dates } = req.body;
+      const branchId = req.body?.branch_id || req.branchId || null;
 
       if (!role || !staff_id || !leave_id || !duration) {
         return ApiResponse.error(res, 'Role, staff, leave type, and duration are required.', null, 400);
@@ -76,6 +78,7 @@ class AdminLeaveController {
         document,
         leave_reason,
         dates,
+        branch_id: branchId,
       });
 
       return ApiResponse.success(res, 'Leave applied successfully.', { leaveId }, 201);

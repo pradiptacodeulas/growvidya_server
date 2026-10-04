@@ -38,6 +38,9 @@ class MessageModel {
       if (!colNames.includes('school_id')) {
         await pool.query(`ALTER TABLE message ADD COLUMN school_id INT(11) NOT NULL DEFAULT 1 AFTER id`);
       }
+      if (!colNames.includes('branch_id')) {
+        await pool.query(`ALTER TABLE message ADD COLUMN branch_id INT(11) NULL AFTER school_id`);
+      }
       if (!colNames.includes('sender_role')) {
         await pool.query(`ALTER TABLE message ADD COLUMN sender_role VARCHAR(20) NOT NULL DEFAULT 'admin' AFTER sender`);
       }
@@ -73,7 +76,8 @@ class MessageModel {
    * Save a new message
    */
   static async saveMessage({
-    school_id = 1,
+    school_id,
+    branch_id = null,
     sender,
     sender_role,
     reciver,
@@ -83,6 +87,10 @@ class MessageModel {
     file_type = null,
     type = 1,
   }) {
+    if (!school_id) {
+      throw new Error('school_id is required to save message');
+    }
+
     // Map role to integer type (1 = user/admin, 2 = teacher, 3 = student, 4 = parent/guardian)
     let mappedType = type;
     if (sender_role === 'teacher') mappedType = 2;
@@ -92,12 +100,13 @@ class MessageModel {
 
     const sql = `
       INSERT INTO message (
-        school_id, sender, sender_role, reciver, receiver_role, type, message, file, file_type, seen, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)
+        school_id, branch_id, sender, sender_role, reciver, receiver_role, type, message, file, file_type, seen, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)
     `;
 
     const [result] = await pool.execute(sql, [
-      Number(school_id) || 1,
+      Number(school_id),
+      branch_id ? Number(branch_id) : null,
       Number(sender),
       String(sender_role).toLowerCase(),
       Number(reciver),
@@ -110,7 +119,8 @@ class MessageModel {
 
     return {
       id: result.insertId,
-      school_id: Number(school_id) || 1,
+      school_id: Number(school_id),
+      branch_id: branch_id ? Number(branch_id) : null,
       sender: Number(sender),
       sender_role: String(sender_role).toLowerCase(),
       reciver: Number(reciver),
@@ -129,7 +139,7 @@ class MessageModel {
    * Get chat history between two users
    */
   static async getConversation({
-    school_id = 1,
+    school_id,
     user1Id,
     user1Role,
     user2Id,
@@ -137,6 +147,9 @@ class MessageModel {
     limit = 50,
     offset = 0,
   }) {
+    if (!school_id) {
+      throw new Error('school_id is required for conversation');
+    }
     const parsedLimit = Math.max(1, Math.min(200, Number(limit) || 50));
     const parsedOffset = Math.max(0, Number(offset) || 0);
 
@@ -254,17 +267,46 @@ class MessageModel {
   /**
    * Get all permitted contacts for a user based on their role
    */
-  static async getContactsForUser({ school_id = 1, userId, role }) {
+  static async getContactsForUser({ school_id, branch_id = null, userId, role }) {
+    if (!school_id) {
+      throw new Error('school_id is required to fetch contacts');
+    }
     const normalizedRole = String(role).toLowerCase();
-    const parsedSchoolId = Number(school_id) || 1;
+    const parsedSchoolId = Number(school_id);
     const parsedUserId = Number(userId);
+    const parsedBranchId = branch_id ? Number(branch_id) : null;
 
     let contacts = [];
 
     if (normalizedRole === 'admin') {
-      // Admins can chat with Teachers
-      const [teachers] = await pool.query(
-        `SELECT 
+      // 1. Other Admins & Staff from user_master (excluding current logged-in admin)
+      let userSql = `
+        SELECT 
+          u.id,
+          CONCAT(TRIM(COALESCE(u.first_name, '')), ' ', TRIM(COALESCE(u.last_name, ''))) AS name,
+          'admin' AS role,
+          u.picture,
+          u.email,
+          u.phone,
+          CASE 
+            WHEN u.admin_type = 1 THEN 'Super Admin'
+            ELSE COALESCE(r.role_name, 'Staff')
+          END AS designation
+        FROM user_master u
+        LEFT JOIN role_master r ON u.role = r.id
+        WHERE u.school_id = ? AND u.status = 1 AND u.id != ?
+      `;
+      const userParams = [parsedSchoolId, parsedUserId];
+      if (parsedBranchId) {
+        userSql += ` AND (u.branch_id = ? OR u.branch_id IS NULL)`;
+        userParams.push(parsedBranchId);
+      }
+      userSql += ` ORDER BY u.admin_type ASC, u.first_name ASC`;
+      const [admins] = await pool.query(userSql, userParams);
+
+      // 2. Teachers from teacher_master
+      let teacherSql = `
+        SELECT 
           t.id,
           CONCAT(TRIM(COALESCE(t.first_name, '')), ' ', TRIM(COALESCE(t.last_name, ''))) AS name,
           'teacher' AS role,
@@ -278,34 +320,16 @@ class MessageModel {
         LEFT JOIN class_master cm ON t.class = cm.id
         LEFT JOIN section_master sec ON t.section = sec.id
         WHERE t.school_id = ? AND t.status = 1
-        ORDER BY t.first_name ASC`,
-        [parsedSchoolId]
-      );
+      `;
+      const teacherParams = [parsedSchoolId];
+      if (parsedBranchId) {
+        teacherSql += ` AND (t.branch_id = ? OR t.branch_id IS NULL)`;
+        teacherParams.push(parsedBranchId);
+      }
+      teacherSql += ` ORDER BY t.first_name ASC`;
+      const [teachers] = await pool.query(teacherSql, teacherParams);
 
-      contacts = teachers;
-    } else if (normalizedRole === 'teacher') {
-      // Teachers can chat with:
-      // 1. Admins
-      const [admins] = await pool.query(
-        `SELECT 
-          u.id,
-          CONCAT(TRIM(COALESCE(u.first_name, '')), ' ', TRIM(COALESCE(u.last_name, ''))) AS name,
-          'admin' AS role,
-          u.picture,
-          u.email,
-          u.phone,
-          CASE 
-            WHEN u.admin_type = 1 THEN 'Super Admin'
-            ELSE COALESCE(r.role_name, 'School Admin')
-          END AS designation
-        FROM user_master u
-        LEFT JOIN role_master r ON u.role = r.id
-        WHERE u.school_id = ? AND u.status = 1
-        ORDER BY u.admin_type ASC, u.first_name ASC`,
-        [parsedSchoolId]
-      );
-
-      // 2. Parents
+      // 3. Parents from parent_master
       const [parents] = await pool.query(
         `SELECT 
           p.id,
@@ -327,9 +351,9 @@ class MessageModel {
         [parsedSchoolId]
       );
 
-      // 3. Students
-      const [students] = await pool.query(
-        `SELECT 
+      // 4. Students from student_master
+      let studentSql = `
+        SELECT 
           s.id,
           CONCAT(TRIM(COALESCE(s.first_name, '')), ' ', TRIM(COALESCE(s.last_name, ''))) AS name,
           'student' AS role,
@@ -343,15 +367,119 @@ class MessageModel {
         LEFT JOIN class_master cm ON s.class = cm.id
         LEFT JOIN section_master sec ON s.section = sec.id
         WHERE s.school_id = ? AND (s.status = 1 OR s.status = '1')
-        ORDER BY cm.class_name ASC, s.first_name ASC`,
+      `;
+      const studentParams = [parsedSchoolId];
+      if (parsedBranchId) {
+        studentSql += ` AND (s.branch_id = ? OR s.branch_id IS NULL)`;
+        studentParams.push(parsedBranchId);
+      }
+      studentSql += ` ORDER BY cm.class_name ASC, s.first_name ASC`;
+      const [students] = await pool.query(studentSql, studentParams);
+
+      contacts = [...admins, ...teachers, ...parents, ...students];
+    } else if (normalizedRole === 'teacher') {
+      // 1. Admins & Staff
+      let userSql = `
+        SELECT 
+          u.id,
+          CONCAT(TRIM(COALESCE(u.first_name, '')), ' ', TRIM(COALESCE(u.last_name, ''))) AS name,
+          'admin' AS role,
+          u.picture,
+          u.email,
+          u.phone,
+          CASE 
+            WHEN u.admin_type = 1 THEN 'Super Admin'
+            ELSE COALESCE(r.role_name, 'School Admin')
+          END AS designation
+        FROM user_master u
+        LEFT JOIN role_master r ON u.role = r.id
+        WHERE u.school_id = ? AND u.status = 1
+      `;
+      const userParams = [parsedSchoolId];
+      if (parsedBranchId) {
+        userSql += ` AND (u.branch_id = ? OR u.branch_id IS NULL)`;
+        userParams.push(parsedBranchId);
+      }
+      userSql += ` ORDER BY u.admin_type ASC, u.first_name ASC`;
+      const [admins] = await pool.query(userSql, userParams);
+
+      // 2. Colleague Teachers (excluding current teacher)
+      let teacherSql = `
+        SELECT 
+          t.id,
+          CONCAT(TRIM(COALESCE(t.first_name, '')), ' ', TRIM(COALESCE(t.last_name, ''))) AS name,
+          'teacher' AS role,
+          t.picture,
+          t.email_address AS email,
+          t.primary_contact_number AS phone,
+          t.teacher_id AS code,
+          COALESCE(cm.class_name, '') AS class_name,
+          COALESCE(sec.section_name, '') AS section_name
+        FROM teacher_master t
+        LEFT JOIN class_master cm ON t.class = cm.id
+        LEFT JOIN section_master sec ON t.section = sec.id
+        WHERE t.school_id = ? AND t.status = 1 AND t.id != ?
+      `;
+      const teacherParams = [parsedSchoolId, parsedUserId];
+      if (parsedBranchId) {
+        teacherSql += ` AND (t.branch_id = ? OR t.branch_id IS NULL)`;
+        teacherParams.push(parsedBranchId);
+      }
+      teacherSql += ` ORDER BY t.first_name ASC`;
+      const [colleagues] = await pool.query(teacherSql, teacherParams);
+
+      // 3. Parents
+      const [parents] = await pool.query(
+        `SELECT 
+          p.id,
+          CONCAT(TRIM(COALESCE(p.first_name, '')), ' ', TRIM(COALESCE(p.last_name, ''))) AS name,
+          'parent' AS role,
+          p.picture,
+          p.email,
+          p.phone,
+          (
+            SELECT GROUP_CONCAT(DISTINCT CONCAT(s.first_name, ' ', s.last_name) SEPARATOR ', ')
+            FROM student_to_parent stp
+            JOIN student_master s ON stp.student_id = s.id
+            WHERE (stp.father_id = p.id OR stp.mother_id = p.id OR stp.guardian_id = p.id)
+              AND (s.status = 1 OR s.status = '1')
+          ) AS child_name
+        FROM parent_master p
+        WHERE p.school_id = ? AND p.status = 1
+        ORDER BY p.first_name ASC`,
         [parsedSchoolId]
       );
 
-      contacts = [...admins, ...parents, ...students];
+      // 4. Students
+      let studentSql = `
+        SELECT 
+          s.id,
+          CONCAT(TRIM(COALESCE(s.first_name, '')), ' ', TRIM(COALESCE(s.last_name, ''))) AS name,
+          'student' AS role,
+          s.picture,
+          s.email_address AS email,
+          s.primary_contact_number AS phone,
+          s.admission_number AS code,
+          COALESCE(cm.class_name, '') AS class_name,
+          COALESCE(sec.section_name, '') AS section_name
+        FROM student_master s
+        LEFT JOIN class_master cm ON s.class = cm.id
+        LEFT JOIN section_master sec ON s.section = sec.id
+        WHERE s.school_id = ? AND (s.status = 1 OR s.status = '1')
+      `;
+      const studentParams = [parsedSchoolId];
+      if (parsedBranchId) {
+        studentSql += ` AND (s.branch_id = ? OR s.branch_id IS NULL)`;
+        studentParams.push(parsedBranchId);
+      }
+      studentSql += ` ORDER BY cm.class_name ASC, s.first_name ASC`;
+      const [students] = await pool.query(studentSql, studentParams);
+
+      contacts = [...admins, ...colleagues, ...parents, ...students];
     } else if (normalizedRole === 'parent') {
-      // Parents can chat with Teachers
-      const [teachers] = await pool.query(
-        `SELECT 
+      // 1. Teachers
+      let teacherSql = `
+        SELECT 
           t.id,
           CONCAT(TRIM(COALESCE(t.first_name, '')), ' ', TRIM(COALESCE(t.last_name, ''))) AS name,
           'teacher' AS role,
@@ -365,15 +493,45 @@ class MessageModel {
         LEFT JOIN class_master cm ON t.class = cm.id
         LEFT JOIN section_master sec ON t.section = sec.id
         WHERE t.school_id = ? AND t.status = 1
-        ORDER BY t.first_name ASC`,
-        [parsedSchoolId]
-      );
+      `;
+      const teacherParams = [parsedSchoolId];
+      if (parsedBranchId) {
+        teacherSql += ` AND (t.branch_id = ? OR t.branch_id IS NULL)`;
+        teacherParams.push(parsedBranchId);
+      }
+      teacherSql += ` ORDER BY t.first_name ASC`;
+      const [teachers] = await pool.query(teacherSql, teacherParams);
 
-      contacts = teachers;
+      // 2. Admins & Staff
+      let userSql = `
+        SELECT 
+          u.id,
+          CONCAT(TRIM(COALESCE(u.first_name, '')), ' ', TRIM(COALESCE(u.last_name, ''))) AS name,
+          'admin' AS role,
+          u.picture,
+          u.email,
+          u.phone,
+          CASE 
+            WHEN u.admin_type = 1 THEN 'Super Admin'
+            ELSE COALESCE(r.role_name, 'School Admin')
+          END AS designation
+        FROM user_master u
+        LEFT JOIN role_master r ON u.role = r.id
+        WHERE u.school_id = ? AND u.status = 1
+      `;
+      const userParams = [parsedSchoolId];
+      if (parsedBranchId) {
+        userSql += ` AND (u.branch_id = ? OR u.branch_id IS NULL)`;
+        userParams.push(parsedBranchId);
+      }
+      userSql += ` ORDER BY u.admin_type ASC, u.first_name ASC`;
+      const [admins] = await pool.query(userSql, userParams);
+
+      contacts = [...teachers, ...admins];
     } else if (normalizedRole === 'student') {
-      // Students can chat with Teachers
-      const [teachers] = await pool.query(
-        `SELECT 
+      // 1. Teachers
+      let teacherSql = `
+        SELECT 
           t.id,
           CONCAT(TRIM(COALESCE(t.first_name, '')), ' ', TRIM(COALESCE(t.last_name, ''))) AS name,
           'teacher' AS role,
@@ -387,11 +545,41 @@ class MessageModel {
         LEFT JOIN class_master cm ON t.class = cm.id
         LEFT JOIN section_master sec ON t.section = sec.id
         WHERE t.school_id = ? AND t.status = 1
-        ORDER BY t.first_name ASC`,
-        [parsedSchoolId]
-      );
+      `;
+      const teacherParams = [parsedSchoolId];
+      if (parsedBranchId) {
+        teacherSql += ` AND (t.branch_id = ? OR t.branch_id IS NULL)`;
+        teacherParams.push(parsedBranchId);
+      }
+      teacherSql += ` ORDER BY t.first_name ASC`;
+      const [teachers] = await pool.query(teacherSql, teacherParams);
 
-      contacts = teachers;
+      // 2. Admins & Staff
+      let userSql = `
+        SELECT 
+          u.id,
+          CONCAT(TRIM(COALESCE(u.first_name, '')), ' ', TRIM(COALESCE(u.last_name, ''))) AS name,
+          'admin' AS role,
+          u.picture,
+          u.email,
+          u.phone,
+          CASE 
+            WHEN u.admin_type = 1 THEN 'Super Admin'
+            ELSE COALESCE(r.role_name, 'School Admin')
+          END AS designation
+        FROM user_master u
+        LEFT JOIN role_master r ON u.role = r.id
+        WHERE u.school_id = ? AND u.status = 1
+      `;
+      const userParams = [parsedSchoolId];
+      if (parsedBranchId) {
+        userSql += ` AND (u.branch_id = ? OR u.branch_id IS NULL)`;
+        userParams.push(parsedBranchId);
+      }
+      userSql += ` ORDER BY u.admin_type ASC, u.first_name ASC`;
+      const [admins] = await pool.query(userSql, userParams);
+
+      contacts = [...teachers, ...admins];
     }
 
     // Now enrich each contact with last_message, last_message_time, and unread_count
@@ -515,7 +703,8 @@ class MessageModel {
   /**
    * Get total unread count for current user
    */
-  static async getTotalUnreadCount({ school_id = 1, userId, role }) {
+  static async getTotalUnreadCount({ school_id, userId, role }) {
+    if (!school_id) throw new Error('school_id is required');
     const sql = `
       SELECT COUNT(*) AS total
       FROM message
@@ -527,7 +716,7 @@ class MessageModel {
     `;
 
     const [rows] = await pool.query(sql, [
-      Number(school_id) || 1,
+      Number(school_id),
       Number(userId),
       String(role).toLowerCase(),
     ]);
@@ -538,7 +727,8 @@ class MessageModel {
   /**
    * Delete a message (soft delete)
    */
-  static async deleteMessage({ school_id = 1, messageId, userId, role }) {
+  static async deleteMessage({ school_id, messageId, userId, role }) {
+    if (!school_id) throw new Error('school_id is required');
     const parsedId = Number(messageId);
     if (!parsedId) throw new Error('Invalid message ID');
 
@@ -547,7 +737,7 @@ class MessageModel {
       `SELECT id, school_id, sender, sender_role, reciver, receiver_role, message, file, status
        FROM message
        WHERE id = ? AND school_id = ?`,
-      [parsedId, Number(school_id) || 1]
+      [parsedId, Number(school_id)]
     );
 
     if (!rows || rows.length === 0) {
@@ -574,7 +764,7 @@ class MessageModel {
     // 2. Perform soft-delete (status = 0)
     await pool.query(
       `UPDATE message SET status = 0 WHERE id = ? AND school_id = ?`,
-      [parsedId, Number(school_id) || 1]
+      [parsedId, Number(school_id)]
     );
 
     return {

@@ -4,7 +4,7 @@ class LeaveModel {
   /**
    * Fetch all applied leaves with applicant details and status
    */
-  static async getAllLeaves(schoolId, { name, role, date, status } = {}) {
+  static async getAllLeaves(schoolId, { name, role, date, status, branchId = null } = {}) {
     let sql = `
       SELECT 
         l.id,
@@ -53,6 +53,11 @@ class LeaveModel {
     `;
 
     const params = [schoolId];
+
+    if (branchId) {
+      sql += ` AND (l.branch_id = ? OR t.branch_id = ? OR u.branch_id = ?)`;
+      params.push(Number(branchId), Number(branchId), Number(branchId));
+    }
 
     if (role) {
       sql += ` AND l.role = ?`;
@@ -214,12 +219,26 @@ class LeaveModel {
   /**
    * Apply / Create Leave
    */
-  static async createLeave(schoolId, { role, staff_id, leave_id, duration, document, leave_reason, dates = [] }) {
+  static async createLeave(schoolId, { role, staff_id, leave_id, duration, document, leave_reason, dates = [], branch_id = null }) {
+    let resolvedBranchId = branch_id ? Number(branch_id) : null;
+    if (!resolvedBranchId) {
+      try {
+        if (Number(role) === 1) {
+          const [t] = await pool.query('SELECT branch_id FROM teacher_master WHERE id = ? LIMIT 1', [staff_id]);
+          if (t && t[0]?.branch_id) resolvedBranchId = t[0].branch_id;
+        } else {
+          const [u] = await pool.query('SELECT branch_id FROM user_master WHERE id = ? LIMIT 1', [staff_id]);
+          if (u && u[0]?.branch_id) resolvedBranchId = u[0].branch_id;
+        }
+      } catch (_) {}
+    }
+
     const [result] = await pool.query(
-      `INSERT INTO leaves (school_id, role, staff_id, leave_id, duration, document, leave_reason, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+      `INSERT INTO leaves (school_id, branch_id, role, staff_id, leave_id, duration, document, leave_reason, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
       [
         schoolId,
+        resolvedBranchId,
         Number(role),
         Number(staff_id),
         Number(leave_id),
@@ -371,13 +390,13 @@ class LeaveModel {
 
       if (allDates && allDates.length > 0) {
         if (allDates.every((d) => Number(d.status) === 2)) {
-          await pool.query(`UPDATE leaves SET status = 2 WHERE id = ?`, [leaveId]);
+          await pool.query(`UPDATE leaves SET status = 2 WHERE id = ? AND (school_id = ? OR ? IS NULL)`, [leaveId, schoolId, schoolId]);
         } else if (allDates.every((d) => Number(d.status) === 3)) {
-          await pool.query(`UPDATE leaves SET status = 3 WHERE id = ?`, [leaveId]);
+          await pool.query(`UPDATE leaves SET status = 3 WHERE id = ? AND (school_id = ? OR ? IS NULL)`, [leaveId, schoolId, schoolId]);
         } else if (allDates.some((d) => Number(d.status) === 2)) {
-          await pool.query(`UPDATE leaves SET status = 2 WHERE id = ?`, [leaveId]);
+          await pool.query(`UPDATE leaves SET status = 2 WHERE id = ? AND (school_id = ? OR ? IS NULL)`, [leaveId, schoolId, schoolId]);
         } else if (allDates.some((d) => Number(d.status) === 1)) {
-          await pool.query(`UPDATE leaves SET status = 1 WHERE id = ?`, [leaveId]);
+          await pool.query(`UPDATE leaves SET status = 1 WHERE id = ? AND (school_id = ? OR ? IS NULL)`, [leaveId, schoolId, schoolId]);
         }
       }
     }

@@ -2,11 +2,22 @@ const PayrollModel = require('../models/payroll.model');
 const ApiResponse = require('../utils/api.response');
 
 class AdminPayrollController {
+  static getSchoolId(req) {
+    const schoolId = req.user?.schoolId || req.user?.school_id;
+    if (!schoolId) {
+      const err = new Error('School context required. Please log in again.');
+      err.statusCode = 401;
+      throw err;
+    }
+    return Number(schoolId);
+  }
+
   static async getBeneficiaries(req, res, next) {
     try {
-      const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+      const schoolId = AdminPayrollController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { search } = req.query;
-      const beneficiaries = await PayrollModel.getAllBeneficiaries(schoolId, { search });
+      const beneficiaries = await PayrollModel.getAllBeneficiaries(schoolId, { search, branchId });
       return ApiResponse.success(res, 'Beneficiaries retrieved successfully.', { beneficiaries });
     } catch (err) {
       next(err);
@@ -15,7 +26,7 @@ class AdminPayrollController {
 
   static async getBeneficiaryById(req, res, next) {
     try {
-      const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+      const schoolId = AdminPayrollController.getSchoolId(req);
       const { id } = req.params;
       const beneficiary = await PayrollModel.getBeneficiaryById(schoolId, id);
       if (!beneficiary) {
@@ -33,7 +44,7 @@ class AdminPayrollController {
       if (isTeacher) {
         return ApiResponse.forbidden(res, 'Teachers do not have permission to manage beneficiaries.');
       }
-      const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+      const schoolId = AdminPayrollController.getSchoolId(req);
       const { user_type, employee_id, basic_salary, bank_name, account_name, account_no, ifsc_code, branch_name } = req.body;
 
       if (!user_type || !String(user_type).trim()) {
@@ -60,7 +71,8 @@ class AdminPayrollController {
         return ApiResponse.badRequest(res, 'A beneficiary record already exists for this employee.');
       }
 
-      const insertId = await PayrollModel.createBeneficiary(schoolId, req.body);
+      const branchId = req.branchId || req.body?.branch_id || null;
+      const insertId = await PayrollModel.createBeneficiary(schoolId, { ...req.body, branch_id: branchId });
       return ApiResponse.created(res, 'Beneficiary created successfully.', { id: insertId });
     } catch (err) {
       next(err);
@@ -73,7 +85,7 @@ class AdminPayrollController {
       if (isTeacher) {
         return ApiResponse.forbidden(res, 'Teachers do not have permission to manage beneficiaries.');
       }
-      const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+      const schoolId = AdminPayrollController.getSchoolId(req);
       const { id } = req.params;
       const { user_type, employee_id, basic_salary, bank_name, account_name, account_no, ifsc_code, branch_name } = req.body;
 
@@ -114,7 +126,7 @@ class AdminPayrollController {
       if (isTeacher) {
         return ApiResponse.forbidden(res, 'Teachers do not have permission to manage beneficiaries.');
       }
-      const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+      const schoolId = AdminPayrollController.getSchoolId(req);
       const { id } = req.params;
       await PayrollModel.deleteBeneficiary(schoolId, id);
       return ApiResponse.success(res, 'Beneficiary deleted successfully.');
@@ -125,9 +137,10 @@ class AdminPayrollController {
 
   static async getEmployeesByType(req, res, next) {
     try {
-      const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+      const schoolId = AdminPayrollController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { user_type } = req.query;
-      const employees = await PayrollModel.getEmployeesByType(schoolId, user_type);
+      const employees = await PayrollModel.getEmployeesByType(schoolId, user_type, branchId);
       return ApiResponse.success(res, 'Employees retrieved successfully.', { employees });
     } catch (err) {
       next(err);
@@ -136,13 +149,14 @@ class AdminPayrollController {
 
   static async getSalaries(req, res, next) {
     try {
-      const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+      const schoolId = AdminPayrollController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { search } = req.query;
 
       const isTeacher = req.user?.roleName === 'Teacher' || req.user?.portalType === 'TeacherPortal' || req.user?.role === 'Teacher' || Boolean(req.user?.teacherId);
       const teacherId = req.user?.teacherId || req.user?.userId;
 
-      let filters = { search };
+      let filters = { search, branchId };
       if (isTeacher && teacherId) {
         filters.user_type = 2; // Teacher
         filters.employee_id = teacherId;
@@ -161,8 +175,9 @@ class AdminPayrollController {
       if (isTeacher) {
         return ApiResponse.forbidden(res, 'Teachers do not have permission to create salary records.');
       }
-      const schoolId = req.user?.schoolId || req.user?.school_id || 1;
-      const insertId = await PayrollModel.createSalary(schoolId, req.body);
+      const schoolId = AdminPayrollController.getSchoolId(req);
+      const branchId = req.branchId || req.body?.branch_id || null;
+      const insertId = await PayrollModel.createSalary(schoolId, { ...req.body, branch_id: branchId });
       return ApiResponse.created(res, 'Salary record created successfully.', { id: insertId });
     } catch (err) {
       next(err);
@@ -175,7 +190,7 @@ class AdminPayrollController {
       if (isTeacher) {
         return ApiResponse.forbidden(res, 'Teachers do not have permission to modify salary status.');
       }
-      const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+      const schoolId = AdminPayrollController.getSchoolId(req);
       const { id } = req.params;
       const { payment_status } = req.body;
       await PayrollModel.updateSalaryStatus(schoolId, id, payment_status);

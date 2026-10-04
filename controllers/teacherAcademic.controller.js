@@ -7,7 +7,13 @@ class TeacherAcademicController {
   }
 
   static getSchoolId(req) {
-    return req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = req.user?.schoolId || req.user?.school_id;
+    if (!schoolId) {
+      const err = new Error('School context required. Please log in again.');
+      err.statusCode = 401;
+      throw err;
+    }
+    return Number(schoolId);
   }
 
   // ==================== CLASSES (Strict Teacher Assignment) ====================

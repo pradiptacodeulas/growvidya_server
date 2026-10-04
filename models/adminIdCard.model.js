@@ -53,6 +53,7 @@ class AdminIdCardModel {
     classId = null,
     sectionId = null,
     academicYearId = null,
+    branchId = null,
   }) {
     const school = await AdminIdCardModel.getSchoolInfo(schoolId);
 
@@ -124,6 +125,11 @@ class AdminIdCardModel {
       }
     }
 
+    if (branchId) {
+      query += ` AND (s.branch_id = ? OR s.branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+
     query += ` GROUP BY s.id ORDER BY s.roll_number ASC, s.first_name ASC`;
 
     const [rows] = await pool.query(query, params);
@@ -145,7 +151,7 @@ class AdminIdCardModel {
   /**
    * Fetch Teacher ID Card Data
    */
-  static async getTeacherIdCardData({ schoolId, teacherIds = [] }) {
+  static async getTeacherIdCardData({ schoolId, teacherIds = [], branchId = null }) {
     const school = await AdminIdCardModel.getSchoolInfo(schoolId);
 
     let query = `
@@ -179,6 +185,11 @@ class AdminIdCardModel {
       params.push(...teacherIds);
     }
 
+    if (branchId) {
+      query += ` AND (t.branch_id = ? OR t.branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+
     query += ` ORDER BY t.first_name ASC, t.id ASC`;
 
     const [rows] = await pool.query(query, params);
@@ -199,7 +210,7 @@ class AdminIdCardModel {
   /**
    * Fetch Staff ID Card Data
    */
-  static async getStaffIdCardData({ schoolId, staffIds = [], roleId = null }) {
+  static async getStaffIdCardData({ schoolId, staffIds = [], roleId = null, branchId = null }) {
     const school = await AdminIdCardModel.getSchoolInfo(schoolId);
 
     let query = `
@@ -230,6 +241,11 @@ class AdminIdCardModel {
     } else if (roleId) {
       query += ` AND u.role = ?`;
       params.push(roleId);
+    }
+
+    if (branchId) {
+      query += ` AND (u.branch_id = ? OR u.branch_id IS NULL)`;
+      params.push(Number(branchId));
     }
 
     query += ` ORDER BY u.first_name ASC, u.id ASC`;

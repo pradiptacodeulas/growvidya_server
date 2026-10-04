@@ -44,7 +44,7 @@ class CertificateModel {
     return rows[0] || null;
   }
 
-  static async createCategory({ school_id = 1, category_name, sort_order = 0, status = 1, created_by = null }) {
+  static async createCategory({ school_id, category_name, sort_order = 0, status = 1, created_by = null }) {
     const [result] = await pool.query(
       `INSERT INTO certificate_category (school_id, category_name, sort_order, status, created_by, created_at, modify_at)
        VALUES (?, ?, ?, ?, ?, NOW(), NOW())`,
@@ -118,7 +118,7 @@ class CertificateModel {
   }
 
   static async createTemplate({
-    school_id = 1,
+    school_id,
     certificate_category,
     template_name,
     certificate_heading,
@@ -203,7 +203,7 @@ class CertificateModel {
   }
 
   // ================= BORDERS =================
-  static async getAllBorders(schoolId = 1, { search = '', status = null, page = null, limit = null } = {}) {
+  static async getAllBorders(schoolId, { search = '', status = null, page = null, limit = null } = {}) {
     let sql = `
       SELECT * FROM certificate_border_master 
       WHERE school_id = ? AND status != 4
@@ -254,7 +254,7 @@ class CertificateModel {
     return rows;
   }
 
-  static async getBorderById(id, schoolId = 1) {
+  static async getBorderById(id, schoolId) {
     const [rows] = await pool.query(
       `SELECT * FROM certificate_border_master WHERE id = ? AND school_id = ? AND status != 4`,
       [id, schoolId]
@@ -262,7 +262,7 @@ class CertificateModel {
     return rows[0] || null;
   }
 
-  static async createBorder({ school_id = 1, image, status = 1 }) {
+  static async createBorder({ school_id, image, status = 1 }) {
     const [result] = await pool.query(
       `INSERT INTO certificate_border_master (school_id, image, status, created_on)
        VALUES (?, ?, ?, NOW())`,
@@ -271,7 +271,7 @@ class CertificateModel {
     return result.insertId;
   }
 
-  static async updateBorder(id, schoolId = 1, { image, status }) {
+  static async updateBorder(id, schoolId, { image, status }) {
     const [result] = await pool.query(
       `UPDATE certificate_border_master 
        SET image = COALESCE(?, image),
@@ -282,7 +282,7 @@ class CertificateModel {
     return result.affectedRows > 0;
   }
 
-  static async deleteBorder(id, schoolId = 1) {
+  static async deleteBorder(id, schoolId) {
     const [result] = await pool.query(
       `UPDATE certificate_border_master SET status = 4 WHERE id = ? AND school_id = ?`,
       [id, schoolId]
@@ -293,10 +293,15 @@ class CertificateModel {
   // ================= ISSUED CERTIFICATES (CERTIFICATE CREATE) =================
   static async getAllIssuedCertificates(
     schoolId,
-    { classId = null, sectionId = null, academicYear = null, studentId = null, categoryId = null, templateId = null, search = '', page = null, limit = null } = {}
+    { classId = null, sectionId = null, academicYear = null, studentId = null, categoryId = null, templateId = null, search = '', page = null, limit = null, branchId = null } = {}
   ) {
     let baseWhere = ` WHERE sc.school_id = ? AND sc.status != 4`;
     const params = [schoolId];
+
+    if (branchId) {
+      baseWhere += ` AND (sc.branch_id = ? OR s.branch_id = ? OR s.branch_id IS NULL)`;
+      params.push(Number(branchId), Number(branchId));
+    }
 
     if (classId) {
       baseWhere += ` AND (scl.class_id = ? OR s.class = ?)`;
@@ -437,7 +442,8 @@ class CertificateModel {
   }
 
   static async createIssuedCertificate({
-    school_id = 1,
+    school_id,
+    branch_id = null,
     certificate_category_id,
     certificate_template_id,
     student_id,
@@ -446,12 +452,31 @@ class CertificateModel {
     status = 1,
     created_by = null,
   }) {
+    let resolvedBranchId = branch_id;
+    if (!resolvedBranchId && student_id) {
+      const [stu] = await pool.query(
+        'SELECT branch_id FROM student_master WHERE id = ? AND school_id = ?',
+        [student_id, school_id]
+      );
+      if (stu.length && stu[0].branch_id) {
+        resolvedBranchId = stu[0].branch_id;
+      }
+    }
+    if (!resolvedBranchId) {
+      const [mainBranch] = await pool.query(
+        'SELECT id FROM branch_master WHERE school_id = ? AND is_main = 1 LIMIT 1',
+        [school_id]
+      );
+      if (mainBranch.length) resolvedBranchId = mainBranch[0].id;
+    }
+
     const [result] = await pool.query(
       `INSERT INTO student_certificate 
-       (school_id, certificate_category_id, certificate_template_id, student_id, certificate_date, certificate_description, status, created_by, created_at, modify_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+       (school_id, branch_id, certificate_category_id, certificate_template_id, student_id, certificate_date, certificate_description, status, created_by, created_at, modify_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
       [
         school_id,
+        resolvedBranchId,
         certificate_category_id,
         certificate_template_id,
         student_id,

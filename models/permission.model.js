@@ -94,15 +94,13 @@ class PermissionModel {
     return result.affectedRows > 0;
   }
 
-  static async deleteRole(roleId, schoolId = null) {
-    // Soft delete role by updating status = 4
-    let query = `UPDATE role_master SET status = 4 WHERE id = ?`;
-    const params = [roleId];
-    if (schoolId) {
-      query += ` AND (school_id = ? OR school_id IS NULL)`;
-      params.push(schoolId);
+  static async deleteRole(roleId, schoolId) {
+    if (!schoolId) {
+      throw new Error('schoolId is required to delete a role');
     }
-    const [result] = await pool.query(query, params);
+    // Soft delete role by updating status = 4
+    const query = `UPDATE role_master SET status = 4 WHERE id = ? AND school_id = ?`;
+    const [result] = await pool.query(query, [roleId, schoolId]);
     this.clearPermissionCache(roleId);
     return result.affectedRows > 0;
   }

@@ -1,20 +1,31 @@
 const AnnouncementModel = require('../models/announcement.model');
 
+const getSchoolId = (req) => {
+  const sId = req.user?.schoolId || req.user?.school_id;
+  if (!sId) {
+    const err = new Error('Unauthorized: School ID missing');
+    err.statusCode = 401;
+    throw err;
+  }
+  return Number(sId);
+};
+
 // ================= NOTICE CONTROLLERS =================
 exports.getAllNotices = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
-    const notices = await AnnouncementModel.getAllNotices(schoolId);
+    const schoolId = getSchoolId(req);
+    const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+    const notices = await AnnouncementModel.getAllNotices(schoolId, branchId);
     return res.status(200).json({ success: true, data: notices, notices });
   } catch (err) {
     console.error('Error in getAllNotices:', err);
-    return res.status(500).json({ success: false, message: 'Internal server error' });
+    return res.status(err.statusCode || 500).json({ success: false, message: err.message || 'Internal server error' });
   }
 };
 
 exports.getNoticeById = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getSchoolId(req);
     const { id } = req.params;
     const notice = await AnnouncementModel.getNoticeById(id, schoolId);
     if (!notice) {
@@ -23,13 +34,13 @@ exports.getNoticeById = async (req, res) => {
     return res.status(200).json({ success: true, data: notice });
   } catch (err) {
     console.error('Error in getNoticeById:', err);
-    return res.status(500).json({ success: false, message: 'Internal server error' });
+    return res.status(err.statusCode || 500).json({ success: false, message: err.message || 'Internal server error' });
   }
 };
 
 exports.createNotice = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getSchoolId(req);
     let branchId = req.body.branch_id !== undefined ? req.body.branch_id : (req.user?.branchId || req.user?.branch_id || null);
     if (!branchId) {
       try {
@@ -253,7 +264,7 @@ exports.createNotice = async (req, res) => {
 
 exports.updateNotice = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getSchoolId(req);
     const { id } = req.params;
     let branchId = req.body.branch_id !== undefined ? req.body.branch_id : (req.user?.branchId || req.user?.branch_id || null);
     const {
@@ -301,7 +312,7 @@ exports.updateNotice = async (req, res) => {
 
 exports.deleteNotice = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getSchoolId(req);
     const { id } = req.params;
     await AnnouncementModel.deleteNotice(id, schoolId);
     return res.status(200).json({
@@ -317,7 +328,7 @@ exports.deleteNotice = async (req, res) => {
 // ================= EVENT CONTROLLERS =================
 exports.getAllEvents = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getSchoolId(req);
     const events = await AnnouncementModel.getAllEvents(schoolId);
     return res.status(200).json({ success: true, data: events, events });
   } catch (err) {
@@ -328,7 +339,7 @@ exports.getAllEvents = async (req, res) => {
 
 exports.getEventById = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getSchoolId(req);
     const { id } = req.params;
     const event = await AnnouncementModel.getEventById(id, schoolId);
     if (!event) {
@@ -343,7 +354,7 @@ exports.getEventById = async (req, res) => {
 
 exports.createEvent = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getSchoolId(req);
     let { title, from_date, to_date, daterange, details, status } = req.body;
 
     if (!title || !title.trim()) {
@@ -383,7 +394,7 @@ exports.createEvent = async (req, res) => {
 
 exports.updateEvent = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getSchoolId(req);
     const { id } = req.params;
     let { title, from_date, to_date, daterange, details, status } = req.body;
 
@@ -422,7 +433,7 @@ exports.updateEvent = async (req, res) => {
 
 exports.deleteEvent = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getSchoolId(req);
     const { id } = req.params;
     await AnnouncementModel.deleteEvent(id, schoolId);
     return res.status(200).json({
@@ -438,7 +449,7 @@ exports.deleteEvent = async (req, res) => {
 // ================= HOLIDAY CONTROLLERS =================
 exports.getAllHolidays = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getSchoolId(req);
     const holidays = await AnnouncementModel.getAllHolidays(schoolId);
     return res.status(200).json({ success: true, data: holidays, holidays });
   } catch (err) {
@@ -449,7 +460,7 @@ exports.getAllHolidays = async (req, res) => {
 
 exports.getHolidayById = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getSchoolId(req);
     const { id } = req.params;
     const holiday = await AnnouncementModel.getHolidayById(id, schoolId);
     if (!holiday) {
@@ -464,7 +475,7 @@ exports.getHolidayById = async (req, res) => {
 
 exports.createHoliday = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getSchoolId(req);
     let { title, from_date, to_date, daterange, details, status } = req.body;
 
     if (!title || !title.trim()) {
@@ -504,7 +515,7 @@ exports.createHoliday = async (req, res) => {
 
 exports.updateHoliday = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getSchoolId(req);
     const { id } = req.params;
     let { title, from_date, to_date, daterange, details, status } = req.body;
 
@@ -543,7 +554,7 @@ exports.updateHoliday = async (req, res) => {
 
 exports.deleteHoliday = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getSchoolId(req);
     const { id } = req.params;
     await AnnouncementModel.deleteHoliday(id, schoolId);
     return res.status(200).json({
@@ -559,7 +570,7 @@ exports.deleteHoliday = async (req, res) => {
 // ================= SEARCH USERS (FOR TARGETED NOTICES) =================
 exports.searchUsers = async (req, res) => {
   try {
-    const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+    const schoolId = getSchoolId(req);
     const query = String(req.query.q || '').trim();
     const filterRole = String(req.query.role || '').toLowerCase();
     const { pool } = require('../config/db.config');

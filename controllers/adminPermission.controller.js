@@ -146,7 +146,12 @@ class AdminPermissionController {
     try {
       const adminType = Number(req.user?.adminType ?? req.user?.admin_type);
       const isSuperAdmin = Boolean(req.user?.isSuperAdmin) || adminType === 1 || req.user?.roleName === 'Super Admin';
-      const schoolId = req.user?.schoolId;
+      const schoolId = req.user?.schoolId || req.user?.school_id;
+
+      if (!isSuperAdmin && !schoolId) {
+        return ApiResponse.error(res, 'School context required. Please log in again.', null, 401);
+      }
+
       const { roleId, role_name, permissions } = req.body;
 
       if (!role_name || !role_name.trim()) {
@@ -189,7 +194,7 @@ class AdminPermissionController {
       } else {
         // Create new role
         activeRoleId = await PermissionModel.insertRole({
-          schoolId: schoolId || 1,
+          schoolId: schoolId || null,
           roleName: trimmedName,
         });
       }

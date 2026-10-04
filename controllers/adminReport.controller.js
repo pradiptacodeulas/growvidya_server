@@ -9,7 +9,8 @@ class AdminReportController {
   static async getClassReportOptions(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
-      const options = await ReportModel.getFilterOptions(schoolId);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const options = await ReportModel.getFilterOptions(schoolId, branchId);
       return ApiResponse.success(res, 'Report filter options fetched successfully.', options);
     } catch (error) {
       next(error);
@@ -30,6 +31,7 @@ class AdminReportController {
       const classId = paramsSrc.classId || paramsSrc.class || '';
       const sectionId = paramsSrc.sectionId || paramsSrc.section || '';
       const search = paramsSrc.search || '';
+      const branchId = req.branchId || paramsSrc.branch_id || paramsSrc.branchId || null;
       const page = Number(paramsSrc.page) || 1;
       const limit = Number(paramsSrc.limit) || 10;
       const offset = (page - 1) * limit;
@@ -40,6 +42,7 @@ class AdminReportController {
         classId,
         sectionId,
         search,
+        branchId,
         limit,
         offset,
       });
@@ -73,6 +76,7 @@ class AdminReportController {
       const classId = paramsSrc.classId || paramsSrc.class || '';
       const sectionId = paramsSrc.sectionId || paramsSrc.section || '';
       const search = paramsSrc.search || '';
+      const branchId = req.branchId || paramsSrc.branch_id || paramsSrc.branchId || null;
       const page = Number(paramsSrc.page) || 1;
       const limit = Number(paramsSrc.limit) || 10;
       const offset = (page - 1) * limit;
@@ -83,6 +87,7 @@ class AdminReportController {
         classId,
         sectionId,
         search,
+        branchId,
         limit,
         offset,
       });
@@ -119,6 +124,7 @@ class AdminReportController {
       const month = paramsSrc.month || new Date().getMonth() + 1;
       const year = paramsSrc.year || new Date().getFullYear();
       const search = paramsSrc.search || '';
+      const branchId = req.branchId || paramsSrc.branch_id || paramsSrc.branchId || null;
       const page = Number(paramsSrc.page) || 1;
       const limit = Number(paramsSrc.limit) || 10;
       const offset = (page - 1) * limit;
@@ -132,6 +138,7 @@ class AdminReportController {
         month,
         year,
         search,
+        branchId,
         limit,
         offset,
       });

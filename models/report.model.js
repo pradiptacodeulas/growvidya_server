@@ -4,7 +4,7 @@ class ReportModel {
   /**
    * Fetches dropdown options (academic years, shifts, classes, sections) for reports
    */
-  static async getFilterOptions(schoolId) {
+  static async getFilterOptions(schoolId, branchId = null) {
     // 1. Academic Years
     const [years] = await pool.query(
       `SELECT id, academic_year, start_date, end_date, is_current 
@@ -24,22 +24,24 @@ class ReportModel {
     );
 
     // 3. Classes with Shift ID
-    const [classes] = await pool.query(
-      `SELECT id, shift_id, class_name, sort_order 
-       FROM class_master 
-       WHERE school_id = ? AND status = 1 
-       ORDER BY sort_order ASC, id ASC`,
-      [schoolId]
-    );
+    let classQuery = `SELECT id, shift_id, class_name, sort_order FROM class_master WHERE school_id = ? AND status = 1`;
+    const classParams = [schoolId];
+    if (branchId) {
+      classQuery += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      classParams.push(Number(branchId));
+    }
+    classQuery += ` ORDER BY sort_order ASC, id ASC`;
+    const [classes] = await pool.query(classQuery, classParams);
 
     // 4. Sections with Class ID
-    const [sections] = await pool.query(
-      `SELECT id, class_id, section_name, capacity 
-       FROM section_master 
-       WHERE school_id = ? AND status = 1 
-       ORDER BY sort_order ASC, id ASC`,
-      [schoolId]
-    );
+    let secQuery = `SELECT id, class_id, section_name, capacity FROM section_master WHERE school_id = ? AND status = 1`;
+    const secParams = [schoolId];
+    if (branchId) {
+      secQuery += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      secParams.push(Number(branchId));
+    }
+    secQuery += ` ORDER BY sort_order ASC, id ASC`;
+    const [sections] = await pool.query(secQuery, secParams);
 
     return {
       academicYears: years.map((y) => {
@@ -95,10 +97,15 @@ class ReportModel {
    */
   static async getClassReport(
     schoolId,
-    { academicYearId = '', shiftId = '', classId = '', sectionId = '', search = '', limit = 10, offset = 0 }
+    { academicYearId = '', shiftId = '', classId = '', sectionId = '', search = '', branchId = null, limit = 10, offset = 0 }
   ) {
     let whereConditions = [`s.school_id = ?`, `s.status = 1`];
     let queryParams = [schoolId];
+
+    if (branchId) {
+      whereConditions.push(`(s.branch_id = ? OR s.branch_id IS NULL)`);
+      queryParams.push(Number(branchId));
+    }
 
     if (academicYearId) {
       whereConditions.push(`(COALESCE(scl.academic_year, s.academic_year) = ? OR ay.academic_year = ?)`);
@@ -250,10 +257,15 @@ class ReportModel {
    */
   static async getStudentReport(
     schoolId,
-    { academicYearId = '', shiftId = '', classId = '', sectionId = '', search = '', limit = 10, offset = 0 }
+    { academicYearId = '', shiftId = '', classId = '', sectionId = '', search = '', branchId = null, limit = 10, offset = 0 }
   ) {
     let whereConditions = [`s.school_id = ?`, `s.status = 1`];
     let queryParams = [schoolId];
+
+    if (branchId) {
+      whereConditions.push(`(s.branch_id = ? OR s.branch_id IS NULL)`);
+      queryParams.push(Number(branchId));
+    }
 
     if (academicYearId) {
       whereConditions.push(`(COALESCE(scl.academic_year, s.academic_year) = ? OR ay.academic_year = ?)`);
@@ -419,6 +431,7 @@ class ReportModel {
       month = new Date().getMonth() + 1,
       year = new Date().getFullYear(),
       search = '',
+      branchId = null,
       limit = 10,
       offset = 0,
     }
@@ -452,6 +465,11 @@ class ReportModel {
       // 1. Teachers
       let whereConditions = [`t.school_id = ?`, `t.status = 1`];
       let queryParams = [schoolId];
+
+      if (branchId) {
+        whereConditions.push(`(t.branch_id = ? OR t.branch_id IS NULL)`);
+        queryParams.push(Number(branchId));
+      }
 
       if (search) {
         const searchParam = `%${String(search).trim()}%`;
@@ -553,6 +571,11 @@ class ReportModel {
       let whereConditions = [`u.school_id = ?`, `u.status = 1`];
       let queryParams = [schoolId];
 
+      if (branchId) {
+        whereConditions.push(`(u.branch_id = ? OR u.branch_id IS NULL)`);
+        queryParams.push(Number(branchId));
+      }
+
       if (search) {
         const searchParam = `%${String(search).trim()}%`;
         whereConditions.push(`(u.first_name LIKE ? OR u.last_name LIKE ? OR CONCAT(u.first_name, ' ', u.last_name) LIKE ? OR u.phone LIKE ?)`);
@@ -649,6 +672,11 @@ class ReportModel {
       // 3. Students (default)
       let whereConditions = [`s.school_id = ?`, `s.status = 1`];
       let queryParams = [schoolId];
+
+      if (branchId) {
+        whereConditions.push(`(s.branch_id = ? OR s.branch_id IS NULL)`);
+        queryParams.push(Number(branchId));
+      }
 
       if (academicYearId) {
         whereConditions.push(`(COALESCE(scl.academic_year, s.academic_year) = ? OR ay.academic_year = ?)`);

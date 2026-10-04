@@ -19,9 +19,15 @@ class MessageController {
     const userId = Number(
       user.userId || user.teacherId || user.parentId || user.studentId || user.id
     );
-    const schoolId = Number(user.schoolId || user.school_id) || 1;
+    const schoolId = Number(user.schoolId || user.school_id);
+    if (!schoolId) {
+      const err = new Error('School tenant context required');
+      err.statusCode = 401;
+      throw err;
+    }
+    const branchId = Number(req.branchId || user.branch_id || user.branchId || req.headers['x-branch-id']) || null;
 
-    return { userId, role, schoolId };
+    return { userId, role, schoolId, branchId };
   }
 
   /**
@@ -29,10 +35,11 @@ class MessageController {
    */
   static async getContacts(req, res, next) {
     try {
-      const { userId, role, schoolId } = MessageController.extractUserInfo(req);
+      const { userId, role, schoolId, branchId } = MessageController.extractUserInfo(req);
 
       const contacts = await MessageModel.getContactsForUser({
         school_id: schoolId,
+        branch_id: branchId,
         userId,
         role,
       });
@@ -125,7 +132,7 @@ class MessageController {
    */
   static async sendMessage(req, res, next) {
     try {
-      const { userId, role, schoolId } = MessageController.extractUserInfo(req);
+      const { userId, role, schoolId, branchId } = MessageController.extractUserInfo(req);
       const { receiverId, receiverRole, message, file, fileType } = req.body;
 
       if (!receiverId || !receiverRole) {
@@ -157,6 +164,7 @@ class MessageController {
 
       const savedMessage = await MessageModel.saveMessage({
         school_id: schoolId,
+        branch_id: branchId,
         sender: userId,
         sender_role: role,
         reciver: Number(receiverId),

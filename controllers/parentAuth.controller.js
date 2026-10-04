@@ -14,11 +14,15 @@ class ParentAuthController {
     const children = await ParentModel.getChildrenByParentId(parent.id, parent.school_id);
     const activeStudent = children.length > 0 ? children[0] : null;
 
+    if (!parent.school_id) {
+      return ApiResponse.error(res, 'Account configuration error: No school associated with this parent account.', null, 400);
+    }
+
     const tokenPayload = {
       userId: parent.id,
       parentId: parent.id,
       studentId: activeStudent ? activeStudent.id : null,
-      schoolId: parent.school_id || 1,
+      schoolId: Number(parent.school_id),
       schoolName: parent.school_name || 'Growvidya School',
       schoolLogo: parent.school_logo || null,
       email: parent.email,
@@ -253,11 +257,15 @@ class ParentAuthController {
 
       const parent = await ParentModel.findAuthProfileById(parentId);
 
+      if (!parent.school_id) {
+        return ApiResponse.error(res, 'Account configuration error: No school associated with this parent account.', null, 400);
+      }
+
       const tokenPayload = {
         userId: parent.id,
         parentId: parent.id,
         studentId: matchedChild.id,
-        schoolId: parent.school_id || 1,
+        schoolId: Number(parent.school_id),
         schoolName: parent.school_name || 'Growvidya School',
         schoolLogo: parent.school_logo || null,
         email: parent.email,

@@ -429,7 +429,10 @@ class AdminFeesController {
 
   static async getInvoiceById(req, res, next) {
     try {
-      const schoolId = req.user?.schoolId || req.user?.school_id || 1;
+      const schoolId = req.user?.schoolId || req.user?.school_id;
+      if (!schoolId) {
+        return ApiResponse.error(res, 'School context required. Please log in again.', null, 401);
+      }
       let { id } = req.params;
 
       if (typeof id === 'string' && !/^\d+$/.test(id)) {

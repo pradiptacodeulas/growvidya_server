@@ -402,7 +402,10 @@ class ParentChildController {
     try {
       const AnnouncementModel = require('../models/announcement.model');
       const { pool } = require('../config/db.config');
-      const schoolId = req.user?.schoolId || 1;
+      const schoolId = req.user?.schoolId || req.user?.school_id;
+      if (!schoolId) {
+        return ApiResponse.error(res, 'Authentication required: school ID missing.', null, 401);
+      }
       const studentId = await ParentChildController.getActiveStudentId(req);
       const parentId = Number(req.user?.parentId || req.user?.userId || req.user?.id);
 

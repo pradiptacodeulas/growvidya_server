@@ -43,13 +43,16 @@ initHostelTables();
 
 const HostelModel = {
   // --- Hostel Name Master ---
-  async getAllHostels(schoolId) {
-    const [rows] = await pool.query(
-      `SELECT * FROM hostel_name_master 
-       WHERE school_id = ? AND status != 4 
-       ORDER BY sort_order ASC, id DESC`,
-      [schoolId]
-    );
+  async getAllHostels(schoolId, branchId = null) {
+    let sql = `SELECT * FROM hostel_name_master 
+       WHERE school_id = ? AND status != 4`;
+    const params = [schoolId];
+    if (branchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    sql += ` ORDER BY sort_order ASC, id DESC`;
+    const [rows] = await pool.query(sql, params);
     return rows;
   },
 
@@ -62,12 +65,22 @@ const HostelModel = {
     return rows[0] || null;
   },
 
-  async createHostel({ school_id, hostel_name, hostel_fee, sort_order, status }) {
+  async createHostel({ school_id, branch_id = null, hostel_name, hostel_fee, sort_order, status }) {
+    let resolvedBranchId = branch_id;
+    if (!resolvedBranchId) {
+      const [mb] = await pool.query(
+        'SELECT id FROM branch_master WHERE school_id = ? AND (is_main_branch = 1 OR id > 0) ORDER BY is_main_branch DESC LIMIT 1',
+        [school_id]
+      );
+      if (mb.length) resolvedBranchId = mb[0].id;
+    }
+
     const [result] = await pool.query(
-      `INSERT INTO hostel_name_master (school_id, hostel_name, hostel_fee, sort_order, status)
-       VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO hostel_name_master (school_id, branch_id, hostel_name, hostel_fee, sort_order, status)
+       VALUES (?, ?, ?, ?, ?, ?)`,
       [
         school_id,
+        resolvedBranchId,
         hostel_name,
         parseFloat(hostel_fee) || 0.00,
         parseInt(sort_order, 10) || 0,
@@ -103,15 +116,18 @@ const HostelModel = {
   },
 
   // --- Hostel Room Master ---
-  async getAllHostelRooms(schoolId) {
-    const [rows] = await pool.query(
-      `SELECT rm.*, rm.room_number AS room_no, hn.hostel_name, hn.hostel_fee 
+  async getAllHostelRooms(schoolId, branchId = null) {
+    let sql = `SELECT rm.*, rm.room_number AS room_no, hn.hostel_name, hn.hostel_fee 
        FROM hostel_room_master rm
        LEFT JOIN hostel_name_master hn ON hn.id = rm.hostel_id
-       WHERE rm.school_id = ? AND rm.status != 4
-       ORDER BY rm.sort_order ASC, rm.id DESC`,
-      [schoolId]
-    );
+       WHERE rm.school_id = ? AND rm.status != 4`;
+    const params = [schoolId];
+    if (branchId) {
+      sql += ` AND (rm.branch_id = ? OR hn.branch_id = ? OR rm.branch_id IS NULL)`;
+      params.push(Number(branchId), Number(branchId));
+    }
+    sql += ` ORDER BY rm.sort_order ASC, rm.id DESC`;
+    const [rows] = await pool.query(sql, params);
     return rows;
   },
 
@@ -126,12 +142,29 @@ const HostelModel = {
     return rows[0] || null;
   },
 
-  async createHostelRoom({ school_id, hostel_id, room_number, sort_order, status }) {
+  async createHostelRoom({ school_id, branch_id = null, hostel_id, room_number, sort_order, status }) {
+    let resolvedBranchId = branch_id;
+    if (!resolvedBranchId && hostel_id) {
+      const [hm] = await pool.query(
+        'SELECT branch_id FROM hostel_name_master WHERE id = ? AND school_id = ?',
+        [hostel_id, school_id]
+      );
+      if (hm.length && hm[0].branch_id) resolvedBranchId = hm[0].branch_id;
+    }
+    if (!resolvedBranchId) {
+      const [mb] = await pool.query(
+        'SELECT id FROM branch_master WHERE school_id = ? AND (is_main_branch = 1 OR id > 0) ORDER BY is_main_branch DESC LIMIT 1',
+        [school_id]
+      );
+      if (mb.length) resolvedBranchId = mb[0].id;
+    }
+
     const [result] = await pool.query(
-      `INSERT INTO hostel_room_master (school_id, hostel_id, room_number, sort_order, status)
-       VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO hostel_room_master (school_id, branch_id, hostel_id, room_number, sort_order, status)
+       VALUES (?, ?, ?, ?, ?, ?)`,
       [
         school_id,
+        resolvedBranchId,
         parseInt(hostel_id, 10),
         room_number,
         parseInt(sort_order, 10) || 0,
