@@ -1,11 +1,15 @@
 # Dependencies
 node_modules/
 
-# Environment variables (Secrets)
+# Environment variables & Secrets
 .env
+*firebase-service-account*.json
+*service-account*.json
+config/firebase-service-account.json
 
 # Logs & Temp outputs
 *.log
 *.pdf
 public/upload/temp/
+
 

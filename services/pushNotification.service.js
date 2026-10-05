@@ -1,5 +1,5 @@
 const webpush = require('web-push');
-const { Expo } = require('expo-server-sdk');
+const { firebaseMessaging } = require('../config/firebase.config');
 const DeviceTokenModel = require('../models/deviceToken.model');
 const NotificationRecordModel = require('../models/notificationRecord.model');
 
@@ -12,15 +12,23 @@ if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
   );
 }
 
-// Initialize Expo Push SDK
-const expo = new Expo({
-  accessToken: process.env.EXPO_ACCESS_TOKEN || undefined,
-  useFcmV1: true,
-});
+/**
+ * Helper to ensure all values in FCM data dictionary are strings.
+ * Firebase Cloud Messaging strictly rejects non-string values in the data payload.
+ */
+function sanitizeFcmData(data = {}) {
+  const sanitized = {};
+  for (const [key, val] of Object.entries(data)) {
+    if (val !== undefined && val !== null) {
+      sanitized[key] = typeof val === 'object' ? JSON.stringify(val) : String(val);
+    }
+  }
+  return sanitized;
+}
 
 class PushNotificationService {
   /**
-   * Send a push notification to a single registered device (Web or Mobile)
+   * Send a push notification to a single registered device (Web or Mobile via FCM)
    */
   static async sendToDevice(deviceRecord, { title, body, data = {}, category = 'general', school_id = 1 }) {
     const { device_type, token, endpoint_hash, user_id, role } = deviceRecord;
@@ -100,52 +108,53 @@ class PushNotificationService {
       }
     }
 
-    // 2. Mobile Push Notification (via Expo Push Server SDK -> APNs / FCM)
-    if (device_type === 'android' || device_type === 'ios' || Expo.isExpoPushToken(token)) {
-      if (!Expo.isExpoPushToken(token)) {
-        console.warn(`[Expo Warning]: Push token ${token} is not a valid Expo push token`);
-        return { success: false, channel: 'expo', error: 'Invalid Expo push token' };
+    // 2. Mobile Push Notification (via Firebase Cloud Messaging)
+    if (device_type === 'android' || device_type === 'ios') {
+      // Deactivate legacy Expo push tokens that might still linger in DB
+      if (typeof token === 'string' && token.startsWith('ExponentPushToken')) {
+        console.warn(`[FCM Warning]: Deactivating legacy Expo token for user ${user_id} (${role})`);
+        await DeviceTokenModel.deactivateToken(endpoint_hash).catch(() => {});
+        return { success: false, channel: 'fcm', error: 'Legacy Expo token deactivated. App update required.' };
       }
 
       try {
-        const message = {
-          to: token,
-          sound: 'default',
-          title: title || 'Growvidya Alert',
-          body: body || '',
-          data: { ...data, category },
-          priority: 'high',
-          channelId: 'default',
-          badge: data.badge !== undefined ? Number(data.badge) : 1,
+        const sanitizedData = sanitizeFcmData(data);
+        sanitizedData.category = String(category);
+
+        const fcmMessage = {
+          token,
+          notification: {
+            title: title || 'Growvidya Alert',
+            body: body || '',
+          },
+          data: sanitizedData,
+          android: {
+            priority: 'high',
+            notification: {
+              sound: 'default',
+              channelId: 'default',
+              priority: 'high',
+              defaultSound: true,
+              defaultVibrateTimings: true,
+            },
+          },
+          apns: {
+            payload: {
+              aps: {
+                sound: 'default',
+                badge: data.badge !== undefined ? Number(data.badge) : 1,
+                contentAvailable: true,
+              },
+            },
+          },
         };
 
-        const tickets = await expo.sendPushNotificationsAsync([message]);
-        const ticket = tickets[0] || {};
-
-        if (ticket.status === 'error') {
-          console.warn(`[Expo Ticket Error for user ${user_id}]:`, ticket.message, ticket.details?.error);
-
-          if (ticket.details?.error === 'DeviceNotRegistered') {
-            await DeviceTokenModel.deactivateToken(endpoint_hash).catch(() => {});
-          }
-
-          await NotificationRecordModel.logPush({
-            school_id: school_id || deviceRecord.school_id || 1,
-            recipient_device_token: token,
-            recipient_device_type: device_type,
-            title,
-            message: body,
-            payload: data,
-            recipient_role: role,
-            recipient_id: user_id,
-            category,
-            status: 'failed',
-            provider: 'expo',
-            error_message: ticket.message,
-          }).catch(() => {});
-
-          return { success: false, channel: 'expo', error: ticket.message };
+        if (!firebaseMessaging) {
+          console.warn('[FCM Warning]: firebaseMessaging is not initialized on the server.');
+          return { success: false, channel: 'fcm', error: 'Firebase messaging not configured' };
         }
+
+        const messageId = await firebaseMessaging.send(fcmMessage);
 
         await NotificationRecordModel.logPush({
           school_id: school_id || deviceRecord.school_id || 1,
@@ -158,14 +167,40 @@ class PushNotificationService {
           recipient_id: user_id,
           category,
           status: 'sent',
-          provider: 'expo',
-          provider_message_id: ticket.id || null,
+          provider: 'fcm',
+          provider_message_id: messageId || null,
         }).catch(() => {});
 
-        return { success: true, channel: 'expo', ticketId: ticket.id };
+        return { success: true, channel: 'fcm', messageId };
       } catch (err) {
-        console.error(`[Expo Send Error for user ${user_id}]:`, err.message);
-        return { success: false, channel: 'expo', error: err.message };
+        console.warn(`[FCM Send Error for user ${user_id}]:`, err.code, err.message);
+
+        // Deactivate unregistered or invalid registration tokens automatically
+        const isInvalid =
+          err.code === 'messaging/registration-token-not-registered' ||
+          err.code === 'messaging/invalid-registration-token' ||
+          err.code === 'messaging/invalid-argument';
+
+        if (isInvalid) {
+          await DeviceTokenModel.deactivateToken(endpoint_hash).catch(() => {});
+        }
+
+        await NotificationRecordModel.logPush({
+          school_id: school_id || deviceRecord.school_id || 1,
+          recipient_device_token: token,
+          recipient_device_type: device_type,
+          title,
+          message: body,
+          payload: data,
+          recipient_role: role,
+          recipient_id: user_id,
+          category,
+          status: 'failed',
+          provider: 'fcm',
+          error_message: err.message,
+        }).catch(() => {});
+
+        return { success: false, channel: 'fcm', error: err.message };
       }
     }
 
@@ -254,39 +289,92 @@ class PushNotificationService {
     }
 
     const seenMobileTokens = new Set();
-    const mobileDevices = [];
+    const mobileTokens = [];
+    const mobileTokenToRecord = new Map();
+
     for (const d of activeDevices) {
-      if ((d.device_type === 'android' || d.device_type === 'ios') && Expo.isExpoPushToken(d.token)) {
-        if (!seenMobileTokens.has(d.token)) {
+      if (d.device_type === 'android' || d.device_type === 'ios') {
+        if (typeof d.token === 'string' && d.token.startsWith('ExponentPushToken')) {
+          // Deactivate legacy token
+          DeviceTokenModel.deactivateToken(d.endpoint_hash).catch(() => {});
+          continue;
+        }
+
+        if (d.token && !seenMobileTokens.has(d.token)) {
           seenMobileTokens.add(d.token);
-          mobileDevices.push(d);
+          mobileTokens.push(d.token);
+          mobileTokenToRecord.set(d.token, d);
         }
       }
     }
 
-    // 1. Dispatch Web notifications concurrently (in manageable batches)
+    // 1. Dispatch Web notifications concurrently
     const webPromises = webDevices.map((device) =>
       this.sendToDevice(device, { title, body, data, category, school_id })
     );
 
-    // 2. Chunk mobile notifications via Expo chunking
-    const mobileMessages = mobileDevices.map((device) => ({
-      to: device.token,
-      sound: 'default',
-      title: title || 'Growvidya Announcement',
-      body: body || '',
-      data: { ...data, category },
-      priority: 'high',
-      channelId: 'default',
-    }));
+    // 2. Multicast mobile notifications via Firebase in chunks of 500 (FCM native limit)
+    const sanitizedData = sanitizeFcmData(data);
+    sanitizedData.category = String(category);
 
-    const chunks = expo.chunkPushNotifications(mobileMessages);
-    const mobilePromises = chunks.map(async (chunk) => {
+    const mobileChunks = [];
+    for (let i = 0; i < mobileTokens.length; i += 500) {
+      mobileChunks.push(mobileTokens.slice(i, i + 500));
+    }
+
+    const mobilePromises = mobileChunks.map(async (tokensChunk) => {
       try {
-        const tickets = await expo.sendPushNotificationsAsync(chunk);
-        return { success: true, ticketsCount: tickets.length };
+        if (!firebaseMessaging) {
+          return { success: false, error: 'Firebase messaging not configured' };
+        }
+        const response = await firebaseMessaging.sendEachForMulticast({
+          tokens: tokensChunk,
+          notification: {
+            title: title || 'Growvidya Announcement',
+            body: body || '',
+          },
+          data: sanitizedData,
+          android: {
+            priority: 'high',
+            notification: {
+              sound: 'default',
+              channelId: 'default',
+              priority: 'high',
+            },
+          },
+          apns: {
+            payload: {
+              aps: { sound: 'default', badge: 1 },
+            },
+          },
+        });
+
+        // Cleanup dead tokens reported by FCM
+        if (response.failureCount > 0) {
+          response.responses.forEach((resp, idx) => {
+            if (!resp.success) {
+              const failedToken = tokensChunk[idx];
+              const errorCode = resp.error?.code;
+              if (
+                errorCode === 'messaging/registration-token-not-registered' ||
+                errorCode === 'messaging/invalid-registration-token'
+              ) {
+                const rec = mobileTokenToRecord.get(failedToken);
+                if (rec) {
+                  DeviceTokenModel.deactivateToken(rec.endpoint_hash).catch(() => {});
+                }
+              }
+            }
+          });
+        }
+
+        return {
+          success: true,
+          successCount: response.successCount,
+          failureCount: response.failureCount,
+        };
       } catch (err) {
-        console.error('[Expo Chunk Error]:', err.message);
+        console.error('[FCM Multicast Chunk Error]:', err.message);
         return { success: false, error: err.message };
       }
     });
@@ -300,7 +388,7 @@ class PushNotificationService {
       success: true,
       totalDevices: activeDevices.length,
       webCount: webDevices.length,
-      mobileCount: mobileDevices.length,
+      mobileCount: mobileTokens.length,
       webResults,
       mobileResults,
     };
@@ -341,12 +429,20 @@ class PushNotificationService {
     }
 
     const seenMobileTokens = new Set();
-    const mobileDevices = [];
+    const mobileTokens = [];
+    const mobileTokenToRecord = new Map();
+
     for (const d of activeDevices) {
-      if ((d.device_type === 'android' || d.device_type === 'ios') && Expo.isExpoPushToken(d.token)) {
-        if (!seenMobileTokens.has(d.token)) {
+      if (d.device_type === 'android' || d.device_type === 'ios') {
+        if (typeof d.token === 'string' && d.token.startsWith('ExponentPushToken')) {
+          DeviceTokenModel.deactivateToken(d.endpoint_hash).catch(() => {});
+          continue;
+        }
+
+        if (d.token && !seenMobileTokens.has(d.token)) {
           seenMobileTokens.add(d.token);
-          mobileDevices.push(d);
+          mobileTokens.push(d.token);
+          mobileTokenToRecord.set(d.token, d);
         }
       }
     }
@@ -356,24 +452,67 @@ class PushNotificationService {
       this.sendToDevice(device, { title, body, data, category, school_id })
     );
 
-    // 2. Chunk mobile notifications via Expo chunking
-    const mobileMessages = mobileDevices.map((device) => ({
-      to: device.token,
-      sound: 'default',
-      title: title || 'Growvidya Announcement',
-      body: body || '',
-      data: { ...data, category },
-      priority: 'high',
-      channelId: 'default',
-    }));
+    // 2. Multicast mobile notifications via Firebase in chunks of 500
+    const sanitizedData = sanitizeFcmData(data);
+    sanitizedData.category = String(category);
 
-    const chunks = expo.chunkPushNotifications(mobileMessages);
-    const mobilePromises = chunks.map(async (chunk) => {
+    const mobileChunks = [];
+    for (let i = 0; i < mobileTokens.length; i += 500) {
+      mobileChunks.push(mobileTokens.slice(i, i + 500));
+    }
+
+    const mobilePromises = mobileChunks.map(async (tokensChunk) => {
       try {
-        const tickets = await expo.sendPushNotificationsAsync(chunk);
-        return { success: true, ticketsCount: tickets.length };
+        if (!firebaseMessaging) {
+          return { success: false, error: 'Firebase messaging not configured' };
+        }
+        const response = await firebaseMessaging.sendEachForMulticast({
+          tokens: tokensChunk,
+          notification: {
+            title: title || 'Growvidya Announcement',
+            body: body || '',
+          },
+          data: sanitizedData,
+          android: {
+            priority: 'high',
+            notification: {
+              sound: 'default',
+              channelId: 'default',
+              priority: 'high',
+            },
+          },
+          apns: {
+            payload: {
+              aps: { sound: 'default', badge: 1 },
+            },
+          },
+        });
+
+        if (response.failureCount > 0) {
+          response.responses.forEach((resp, idx) => {
+            if (!resp.success) {
+              const failedToken = tokensChunk[idx];
+              const errorCode = resp.error?.code;
+              if (
+                errorCode === 'messaging/registration-token-not-registered' ||
+                errorCode === 'messaging/invalid-registration-token'
+              ) {
+                const rec = mobileTokenToRecord.get(failedToken);
+                if (rec) {
+                  DeviceTokenModel.deactivateToken(rec.endpoint_hash).catch(() => {});
+                }
+              }
+            }
+          });
+        }
+
+        return {
+          success: true,
+          successCount: response.successCount,
+          failureCount: response.failureCount,
+        };
       } catch (err) {
-        console.error('[Expo Targeted Chunk Error]:', err.message);
+        console.error('[FCM Targeted Chunk Error]:', err.message);
         return { success: false, error: err.message };
       }
     });
@@ -385,9 +524,9 @@ class PushNotificationService {
 
     return {
       success: true,
-      totalDevices: webDevices.length + mobileDevices.length,
+      totalDevices: webDevices.length + mobileTokens.length,
       webCount: webDevices.length,
-      mobileCount: mobileDevices.length,
+      mobileCount: mobileTokens.length,
       webResults,
       mobileResults,
     };

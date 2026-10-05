@@ -66,6 +66,7 @@ class SubscriptionModel {
         s.status,
         s.verification_notes,
         s.created_at,
+        DATEDIFF(s.end_date, CURDATE()) AS days_left,
         p.plan_name,
         p.plan_code,
         p.description AS plan_description,
@@ -84,6 +85,7 @@ class SubscriptionModel {
 
     if (rows.length === 0) {
       if (pendingSubscription) {
+        const pendingDaysLeft = pendingSubscription.days_left !== null ? Number(pendingSubscription.days_left) : 0;
         return {
           subscription_id: pendingSubscription.subscription_id,
           school_id: targetSchoolId,
@@ -99,7 +101,8 @@ class SubscriptionModel {
           isPending: true,
           isTrial: false,
           isExpired: false,
-          days_left: 0,
+          days_left: Math.max(0, pendingDaysLeft),
+          actual_days_left: pendingDaysLeft,
           pending_subscription: pendingSubscription,
           pendingSubscription,
         };
@@ -182,7 +185,7 @@ class SubscriptionModel {
 
     return {
       ...sub,
-      days_left: sub.status === 'pending' ? 0 : Math.max(0, daysLeft),
+      days_left: Math.max(0, daysLeft),
       actual_days_left: daysLeft,
       isTrial,
       isExpired,

@@ -46,6 +46,23 @@ class AdminAuthController {
       const permissions = isSuperAdmin ? {} : await PermissionModel.getUserPermissionMap(user.role_id);
       const sub = await SubscriptionModel.getSchoolSubscription(user.school_id);
 
+      // Block login if school has purchased a paid plan that is awaiting Super Admin approval.
+      // Free trials (sub.isTrial) are NOT guarded and can log in immediately.
+      if (sub && sub.status === 'pending' && !sub.isTrial) {
+        return ApiResponse.error(
+          res,
+          `Your subscription plan "${sub.plan_name}" is currently awaiting review and approval by the Super Admin. You will be able to log in once your subscription is approved and activated.`,
+          {
+            subscription_id: sub.subscription_id,
+            plan_name: sub.plan_name,
+            status: 'pending',
+            is_pending: true,
+            is_trial: false,
+          },
+          403
+        );
+      }
+
       const tokenPayload = {
         userId: user.id,
         schoolId: user.school_id,
@@ -128,6 +145,21 @@ class AdminAuthController {
       const roleName = isSuperAdmin ? 'Super Admin' : (user.role_name || 'Staff');
       const permissions = isSuperAdmin ? {} : await PermissionModel.getUserPermissionMap(user.role_id);
       const sub = await SubscriptionModel.getSchoolSubscription(user.school_id);
+
+      if (sub && sub.status === 'pending' && !sub.isTrial) {
+        return ApiResponse.error(
+          res,
+          `Your subscription plan "${sub.plan_name}" is currently awaiting review and approval by the Super Admin.`,
+          {
+            subscription_id: sub.subscription_id,
+            plan_name: sub.plan_name,
+            status: 'pending',
+            is_pending: true,
+            is_trial: false,
+          },
+          403
+        );
+      }
 
       return ApiResponse.success(res, 'Admin profile fetched successfully.', {
         authSource: req.authSource || 'authenticated',

@@ -92,6 +92,23 @@ async function subscriptionGuard(req, res, next) {
 
     req.subscription = sub;
 
+    // If a paid subscription is pending approval (and NOT a trial), block operations with 403 Forbidden
+    // Free trials (sub.isTrial) are NOT guarded and have full access
+    if (sub.status === 'pending' && !sub.isTrial) {
+      return res.status(403).json({
+        status: false,
+        code: 'SUBSCRIPTION_PENDING_APPROVAL',
+        message: `Your school subscription for "${sub.plan_name}" is currently awaiting Super Admin review and approval. Access to modules is locked until approved.`,
+        data: {
+          subscription_id: sub.subscription_id,
+          school_id: sub.school_id,
+          plan_name: sub.plan_name,
+          is_pending: true,
+          status: 'pending',
+        },
+      });
+    }
+
     // If subscription / trial has expired, block access with 402 Payment Required
     if (sub.isExpired || sub.liveStatus === 'expired') {
       return res.status(402).json({
