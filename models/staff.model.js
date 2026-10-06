@@ -292,7 +292,7 @@ class StaffModel {
       trimmedEmail,
       trimmedPhone,
       hashedPassword,
-      data.gender || '1',
+      data.gender || null,
       data.blood_group || null,
       picturePath,
       data.country_id || null,
@@ -663,6 +663,10 @@ class StaffModel {
       `SELECT id, blood_group, blood_group AS name FROM blood_group_master ORDER BY id ASC`
     );
 
+    const [genders] = await pool.query(
+      `SELECT id, gender, gender AS name FROM gender_master ORDER BY id ASC`
+    );
+
     return {
       roles: roles || [],
       countries: countries || [],
@@ -671,6 +675,7 @@ class StaffModel {
       hostels: hostels || [],
       documentTypes: documentTypes || [],
       bloodGroups: bloodGroups || [],
+      genders: genders || [],
     };
   }
 
