@@ -31,11 +31,7 @@ class AdminPermissionController {
       const allModules = await PermissionModel.getAllDefinedModules();
       const existingPermissions = await PermissionModel.getPermissionsByRoleId(roleId);
 
-      const isSuperAdminRole = Boolean(
-        role.is_system_role ||
-        String(role.role_name || '').toLowerCase().trim() === 'super admin' ||
-        Number(role.id) === 1
-      );
+      const isSuperAdminRole = Boolean(role.is_system_role);
 
       // Create a fast lookup map for exact permissions stored in the database
       const permissionMap = {};
@@ -175,12 +171,7 @@ class AdminPermissionController {
       if (activeRoleId) {
         // Guard 2: Prevent modifying existing Super Admin role
         const targetRole = await PermissionModel.getRoleById(activeRoleId);
-        if (
-          targetRole &&
-          (targetRole.is_system_role ||
-            String(targetRole.role_name || '').toLowerCase().trim() === 'super admin' ||
-            Number(targetRole.id) === 1)
-        ) {
+        if (targetRole && targetRole.is_system_role) {
           return ApiResponse.error(
             res,
             'The Super Admin role is protected and its permissions cannot be modified.',
@@ -229,12 +220,8 @@ class AdminPermissionController {
         return ApiResponse.error(res, 'Role not found.', null, 404);
       }
 
-      // Guard: Super Admin role cannot be deleted
-      if (
-        role.is_system_role ||
-        String(role.role_name || '').toLowerCase().trim() === 'super admin' ||
-        Number(role.id) === 1
-      ) {
+      // Guard: System roles cannot be deleted
+      if (role.is_system_role) {
         return ApiResponse.error(
           res,
           'The Super Admin role is system-protected and cannot be deleted.',

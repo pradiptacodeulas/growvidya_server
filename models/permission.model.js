@@ -20,6 +20,7 @@ class PermissionModel {
         r.id,
         r.school_id,
         r.role_name,
+        r.is_system_role,
         r.created_on,
         r.status,
         COUNT(u.id) AS user_count
@@ -27,22 +28,22 @@ class PermissionModel {
       LEFT JOIN user_master u ON u.role = r.id AND u.status = 1
       WHERE (r.school_id = ? OR r.school_id IS NULL)
         AND (r.status = 1 OR r.status IS NULL)
-      GROUP BY r.id, r.school_id, r.role_name, r.created_on, r.status
+      GROUP BY r.id, r.school_id, r.role_name, r.is_system_role, r.created_on, r.status
       ORDER BY r.id ASC
     `;
     const [rows] = await pool.query(query, [schoolId]);
     return rows.map((r) => ({
       ...r,
       is_system_role: Boolean(
-        String(r.role_name || '').toLowerCase().trim() === 'super admin' ||
-        Number(r.id) === 1
+        Number(r.is_system_role) === 1 ||
+        String(r.role_name || '').toLowerCase().trim() === 'super admin'
       ),
     }));
   }
 
   static async getRoleById(roleId, schoolId = null) {
     let query = `
-      SELECT id, school_id, role_name, created_on, status
+      SELECT id, school_id, role_name, is_system_role, created_on, status
       FROM role_master
       WHERE id = ? AND (status = 1 OR status IS NULL)
     `;
@@ -54,19 +55,20 @@ class PermissionModel {
     const [rows] = await pool.query(query, params);
     if (!rows || rows.length === 0) return null;
     const role = rows[0];
-    const isSuperAdmin =
-      String(role.role_name || '').toLowerCase().trim() === 'super admin' ||
-      Number(role.id) === 1;
+    const isSuperAdmin = Boolean(
+      Number(role.is_system_role) === 1 ||
+      String(role.role_name || '').toLowerCase().trim() === 'super admin'
+    );
     return {
       ...role,
-      is_system_role: Boolean(isSuperAdmin),
+      is_system_role: isSuperAdmin,
     };
   }
 
   static async insertRole({ schoolId, roleName }) {
     const query = `
-      INSERT INTO role_master (school_id, role_name, status, created_on)
-      VALUES (?, ?, 1, NOW())
+      INSERT INTO role_master (school_id, role_name, is_system_role, status, created_on)
+      VALUES (?, ?, 0, 1, NOW())
     `;
     const [result] = await pool.query(query, [schoolId, roleName]);
     return result.insertId;
