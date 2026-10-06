@@ -169,7 +169,7 @@ class SubscriptionModel {
     if (sub.plan_id) {
       try {
         const [items] = await pool.query(
-          'SELECT id, item_name, item_code, item_type, price, quota_limit, unit, billing_type, description FROM subscription_items WHERE sub_id = ? AND status = 1 ORDER BY display_order ASC, id ASC',
+          'SELECT id, item_name, item_code, description FROM subscription_items WHERE sub_id = ? AND status = 1 ORDER BY id ASC',
           [sub.plan_id]
         );
         planItems = items || [];
@@ -228,7 +228,7 @@ class SubscriptionModel {
     const plans = [];
     for (const row of rows) {
       const [items] = await pool.query(
-        'SELECT id, item_name, item_code, item_type, price, quota_limit, unit, billing_type, description FROM subscription_items WHERE sub_id = ? AND status = 1 ORDER BY display_order ASC, id ASC',
+        'SELECT id, item_name, item_code, description FROM subscription_items WHERE sub_id = ? AND status = 1 ORDER BY id ASC',
         [row.id]
       );
       const featuresMap = {};
@@ -281,7 +281,7 @@ class SubscriptionModel {
 
     const row = rows[0];
     const [items] = await pool.query(
-      'SELECT id, item_name, item_code, item_type, price, quota_limit, unit, billing_type, description FROM subscription_items WHERE sub_id = ? AND status = 1 ORDER BY display_order ASC, id ASC',
+      'SELECT id, item_name, item_code, description FROM subscription_items WHERE sub_id = ? AND status = 1 ORDER BY id ASC',
       [row.id]
     );
     const featuresMap = {};

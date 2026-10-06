@@ -18,7 +18,7 @@ class SaasModel {
     const plans = [];
     for (const row of rows) {
       const [items] = await pool.query(
-        'SELECT id, item_name, item_code, item_type, price, quota_limit, unit, billing_type, description FROM subscription_items WHERE sub_id = ? AND status = 1 ORDER BY display_order ASC, id ASC',
+        'SELECT id, item_name, item_code, description FROM subscription_items WHERE sub_id = ? AND status = 1 ORDER BY id ASC',
         [row.id]
       );
       // Map item codes to a features map for frontend backwards compatibility
@@ -267,6 +267,12 @@ class SaasModel {
     adminData = {},
     isTrial = false,
     couponCode = null,
+    storagePlanId = null,
+    storageQty = 1,
+    selectedMachines = [],
+    selectedCards = [],
+    selectedNotifications = [],
+    shippingAddress = null,
   }) {
     const connection = await pool.getConnection();
     try {
@@ -462,20 +468,23 @@ class SaasModel {
         }
       }
 
-      let couponId = null;
-      let discountAmount = 0;
-      let originalAmount = parseFloat(plan.price) || 0;
+      const AdminSubscriptionController = require('../controllers/adminSubscription.controller');
+      const calculateVerifiedTotal = AdminSubscriptionController.calculateVerifiedTotal;
 
-      if (!isTrialMode && couponCode && String(couponCode).trim()) {
-        const SaasAdminModel = require('./saasAdmin.model');
-        const couponRes = await SaasAdminModel.validateCoupon(couponCode, originalAmount);
-        if (couponRes.valid) {
-          couponId = couponRes.coupon.id;
-          discountAmount = couponRes.coupon.discountAmount;
-        }
-      }
+      const { totalAmount, originalAmount, discountAmount, couponInfo, breakdown } = await calculateVerifiedTotal({
+        plan,
+        is_trial: isTrialMode,
+        storage_plan_id: storagePlanId,
+        storage_qty: storageQty,
+        selected_machines: selectedMachines,
+        selected_cards: selectedCards,
+        selected_notifications: selectedNotifications,
+        coupon_code: couponCode,
+        school_id: null,
+      });
 
-      const finalAmount = isTrialMode ? 0 : (amountPaid !== undefined ? parseFloat(amountPaid) : Math.max(0, originalAmount - discountAmount));
+      const couponId = couponInfo?.id || null;
+      const finalAmount = amountPaid !== undefined ? parseFloat(amountPaid) : totalAmount;
       const trialDays = plan.free_trial_days !== undefined && plan.free_trial_days !== null ? parseInt(plan.free_trial_days, 10) : 0;
       const finalTxnId = isTrialMode
         ? (paymentTransactionId || `TRIAL_${trialDays > 0 ? trialDays : 14}D_${Date.now()}_${Math.floor(Math.random() * 10000)}`)
@@ -499,8 +508,6 @@ class SaasModel {
           endDate.setFullYear(endDate.getFullYear() + 1);
         }
         // BONUS: If the plan has free_trial_days, add those bonus days to the paid subscription period!
-        // E.g. Annual (12 months) + 30 days trial = 13 months access!
-        // Monthly (1 month) + 30 days trial = 2 months access!
         if (trialDays > 0) {
           endDate.setDate(endDate.getDate() + trialDays);
         }
@@ -548,6 +555,42 @@ class SaasModel {
           'UPDATE coupons SET used_count = used_count + 1 WHERE id = ?',
           [couponId]
         );
+      }
+
+      // 5b. Record RFID card purchase order in school_rfid_orders if cards were ordered
+      if (breakdown.cards && breakdown.cards.length > 0) {
+        for (const card of breakdown.cards) {
+          try {
+            const orderNo = `RFID_${schoolId}_${Date.now()}_${Math.floor(100 + Math.random() * 900)}`;
+            await connection.query(
+              `INSERT INTO school_rfid_orders 
+               (order_no, school_id, rfid_card_id, quantity, unit_price, total_amount, order_status, shipping_address, remarks, created_at, updated_at) 
+               VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, 'Ordered during school onboarding registration', NOW(), NOW())`,
+              [orderNo, schoolId, card.id, card.quantity, card.unit_price, card.total_price, shippingAddress || schoolData.address || 'Main School Campus']
+            );
+          } catch (rfidErr) {
+            console.error('Failed to log school_rfid_orders during onboarding:', rfidErr.message);
+          }
+        }
+      }
+
+      // 5c. Record attendance machines in school_attendance_machines if machines were ordered
+      if (breakdown.machines && breakdown.machines.length > 0) {
+        for (const machine of breakdown.machines) {
+          try {
+            for (let i = 0; i < machine.quantity; i++) {
+              const serialNo = `DEV_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
+              await connection.query(
+                `INSERT INTO school_attendance_machines 
+                 (school_id, branch_id, machine_master_id, device_serial_number, device_location, status, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, 'Main School Gate - Scheduled Onboarding Setup', 0, NOW(), NOW())`,
+                [schoolId, mainBranchId, machine.id, serialNo]
+              );
+            }
+          } catch (mErr) {
+            console.error('Failed to register school_attendance_machines during onboarding:', mErr.message);
+          }
+        }
       }
 
       // 6. Insert initial academic year

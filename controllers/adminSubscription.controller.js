@@ -10,6 +10,7 @@ const { pool } = require('../config/db.config');
  */
 const calculateVerifiedTotal = async ({
   plan,
+  is_trial = false,
   addon_ids = [],
   storage_plan_id = null,
   storage_qty = 1,
@@ -19,11 +20,13 @@ const calculateVerifiedTotal = async ({
   coupon_code = null,
   school_id = null,
 }) => {
-  let totalAmount = parseFloat(plan.price);
+  const isTrial = Boolean(is_trial) || plan.billing_cycle === 'trial';
+  const planBaseRate = isTrial ? 0 : parseFloat(plan.price || 0);
+  let totalAmount = planBaseRate;
   const breakdown = {
     plan_name: plan.plan_name,
-    plan_price: parseFloat(plan.price),
-    billing_cycle: plan.billing_cycle,
+    plan_price: planBaseRate,
+    billing_cycle: isTrial ? 'trial' : plan.billing_cycle,
     addons: [],
     storage: null,
     machines: [],
@@ -31,14 +34,12 @@ const calculateVerifiedTotal = async ({
     notifications: [],
   };
 
-  // 1. Subscription child items / Add-ons
+  // 1. Subscription child items (plan features are included; add-ons are managed via dedicated masters)
   const selectedAddonIds = (addon_ids || []).map(Number);
   if (selectedAddonIds.length > 0 && Array.isArray(plan.items)) {
     for (const item of plan.items) {
-      if (selectedAddonIds.includes(Number(item.id)) && item.item_type === 'addon') {
-        const itemPrice = parseFloat(item.price || 0);
-        totalAmount += itemPrice;
-        breakdown.addons.push({ id: item.id, item_name: item.item_name, price: itemPrice });
+      if (selectedAddonIds.includes(Number(item.id))) {
+        breakdown.addons.push({ id: item.id, item_name: item.item_name, price: 0 });
       }
     }
   }
@@ -717,6 +718,8 @@ class AdminSubscriptionController {
     }
   }
 }
+
+AdminSubscriptionController.calculateVerifiedTotal = calculateVerifiedTotal;
 
 module.exports = AdminSubscriptionController;
 

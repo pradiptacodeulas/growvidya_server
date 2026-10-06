@@ -820,7 +820,7 @@ class SaasAdminModel {
 
     for (const pkg of rows) {
       const [items] = await pool.query(
-        'SELECT * FROM subscription_items WHERE sub_id = ? ORDER BY display_order ASC, id ASC',
+        'SELECT * FROM subscription_items WHERE sub_id = ? ORDER BY id ASC',
         [pkg.id]
       );
       pkg.items = items || [];
@@ -839,7 +839,7 @@ class SaasAdminModel {
     if (!rows[0]) return null;
     const pkg = rows[0];
     const [items] = await pool.query(
-      'SELECT * FROM subscription_items WHERE sub_id = ? ORDER BY display_order ASC, id ASC',
+      'SELECT * FROM subscription_items WHERE sub_id = ? ORDER BY id ASC',
       [id]
     );
     pkg.items = items || [];

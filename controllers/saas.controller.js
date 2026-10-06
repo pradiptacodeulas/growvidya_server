@@ -170,8 +170,10 @@ class SaasController {
         }
       }
 
-      // Enforce strict Razorpay signature verification for all paid subscriptions
-      if (!isTrialMode && parseFloat(targetPlan.price) > 0) {
+      const finalPayableCheck = parseFloat(amount_paid !== undefined ? amount_paid : amountPaid || 0);
+
+      // Enforce strict Razorpay signature verification for all paid subscriptions / add-on purchases
+      if (finalPayableCheck > 0) {
         const orderId = req.body.razorpay_order_id || req.body.razorpayOrderId;
         const paymentId = payment_transaction_id || paymentTransactionId || req.body.razorpay_payment_id || req.body.razorpayPaymentId;
         const signature = req.body.razorpay_signature || req.body.razorpaySignature;
@@ -201,13 +203,19 @@ class SaasController {
       const result = await SaasModel.registerSchoolWithPlan({
         planId: selectedPlanId,
         amountPaid: amount_paid !== undefined ? amount_paid : amountPaid,
-        paymentGateway: payment_gateway || paymentGateway || 'registration',
+        paymentGateway: payment_gateway || paymentGateway || (finalPayableCheck > 0 ? 'razorpay' : 'free_trial'),
         paymentTransactionId: payment_transaction_id || paymentTransactionId,
         schoolData: school,
         academicYearData: academic_year || academicYear || {},
         adminData: admin,
         isTrial: is_trial !== undefined ? is_trial : Boolean(isTrial),
         couponCode: coupon_code || couponCode,
+        storagePlanId: req.body.storage_plan_id || req.body.storagePlanId,
+        storageQty: req.body.storage_qty || req.body.storageQty || 1,
+        selectedMachines: req.body.selected_machines || req.body.selectedMachines || [],
+        selectedCards: req.body.selected_cards || req.body.selectedCards || [],
+        selectedNotifications: req.body.selected_notifications || req.body.selectedNotifications || [],
+        shippingAddress: req.body.shipping_address || req.body.shippingAddress || school.address,
       });
 
 
@@ -303,10 +311,6 @@ class SaasController {
         return ApiResponse.error(res, 'The selected subscription plan was not found.', null, 404);
       }
 
-      if (parseFloat(plan.price) <= 0) {
-        return ApiResponse.error(res, 'Cannot create payment order for a free or trial plan.', null, 400);
-      }
-
       // Check availability if admin or school details are provided before opening payment order
       const adminEmail = req.body.admin_email || req.body.adminEmail || (req.body.admin && req.body.admin.email);
       const adminPhone = req.body.admin_phone || req.body.adminPhone || (req.body.admin && req.body.admin.phone);
@@ -325,6 +329,28 @@ class SaasController {
         }
       }
 
+      const AdminSubscriptionController = require('./adminSubscription.controller');
+      const calculateVerifiedTotal = AdminSubscriptionController.calculateVerifiedTotal;
+
+      const isTrialReq = Boolean(req.body.is_trial !== undefined ? req.body.is_trial : req.body.isTrial);
+
+      const { totalAmount, originalAmount, discountAmount, couponInfo, breakdown } = await calculateVerifiedTotal({
+        plan,
+        is_trial: isTrialReq,
+        addon_ids: req.body.addon_ids || req.body.addonIds || [],
+        storage_plan_id: req.body.storage_plan_id || req.body.storagePlanId || null,
+        storage_qty: req.body.storage_qty || req.body.storageQty || 1,
+        selected_machines: req.body.selected_machines || req.body.selectedMachines || [],
+        selected_cards: req.body.selected_cards || req.body.selectedCards || [],
+        selected_notifications: req.body.selected_notifications || req.body.selectedNotifications || [],
+        coupon_code: req.body.coupon_code || req.body.couponCode || null,
+        school_id: null,
+      });
+
+      if (totalAmount <= 0) {
+        return ApiResponse.error(res, 'Cannot create payment order for an amount of ₹0. Please proceed with free trial activation.', null, 400);
+      }
+
       const { razorpayInstance, keyId, keySecret } = require('../config/razorpay.config');
       if (!keyId || !keySecret || keyId === 'rzp_test_placeholder_key') {
         return ApiResponse.error(
@@ -335,22 +361,7 @@ class SaasController {
         );
       }
 
-      let finalPrice = parseFloat(plan.price);
-      let couponInfo = null;
-
-      const couponCode = req.body.coupon_code || req.body.couponCode;
-      if (couponCode && String(couponCode).trim()) {
-        const SaasAdminModel = require('../models/saasAdmin.model');
-        const validation = await SaasAdminModel.validateCoupon(couponCode, finalPrice);
-        if (validation.valid) {
-          finalPrice = validation.coupon.finalAmount;
-          couponInfo = validation.coupon;
-        } else {
-          return ApiResponse.error(res, validation.message, null, 400);
-        }
-      }
-
-      const amountInPaise = Math.round(finalPrice * 100);
+      const amountInPaise = Math.round(totalAmount * 100);
       const receiptId = `REG_${Date.now()}`.slice(0, 40);
 
       const order = await razorpayInstance.orders.create({
@@ -361,7 +372,9 @@ class SaasController {
           plan_id: String(plan.id),
           plan_name: plan.plan_name,
           coupon_code: couponInfo ? couponInfo.code : null,
-          original_price: String(plan.price),
+          original_price: String(originalAmount),
+          machines_count: String(breakdown.machines?.length || 0),
+          cards_count: String(breakdown.cards?.length || 0),
         },
       });
 
@@ -373,9 +386,12 @@ class SaasController {
         plan_id: plan.id,
         plan_name: plan.plan_name,
         price: plan.price,
-        discount_amount: couponInfo ? couponInfo.discountAmount : 0,
-        final_price: finalPrice,
+        original_amount: originalAmount,
+        discount_amount: discountAmount,
+        total_amount: totalAmount,
+        final_price: totalAmount,
         coupon: couponInfo,
+        breakdown,
       });
     } catch (error) {
       next(error);

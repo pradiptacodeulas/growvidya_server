@@ -572,7 +572,7 @@ class SaasAdminController {
   static async addPackageItem(req, res, next) {
     try {
       const { id } = req.params;
-      const { item_name, item_code, item_type, price, quota_limit, unit, billing_type, description, status, display_order } = req.body;
+      const { item_name, item_code, description, status } = req.body;
 
       if (!item_name || !item_name.trim()) {
         return ApiResponse.error(res, 'Item name is required.', null, 400);
@@ -582,14 +582,8 @@ class SaasAdminController {
         sub_id: id,
         item_name,
         item_code,
-        item_type,
-        price,
-        quota_limit,
-        unit,
-        billing_type,
         description,
         status,
-        display_order,
       });
 
       const newItem = await SubscriptionItemModel.getById(newItemId);
