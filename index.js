@@ -26,25 +26,19 @@ const app = express();
 // ==========================================
 // app.use(helmet({ crossOriginResourcePolicy: false }));
 
-var corsOptions = {
-  origin: [
-    'http://localhost:3000',
-    'http://127.0.0.1:3000',
-    'http://localhost:5173',
-    'http://localhost:5174',
-    'http://127.0.0.1:5173',
-    'http://192.168.29.144',
-    'http://192.168.29.144:5173',
-    'http://192.168.29.231',
-    'http://192.168.29.231:5173',
-    'http://192.168.29.243',
-    'http://192.168.29.243:5174'
-  ],
-  credentials: true,
-  optionsSuccessStatus: 200,
-};
+const allowedOrigins = (process.env.CORS_ORIGINS ?? '')
+  .split(',')
+  .map(o => o.trim())
+  .filter(Boolean);
 
-app.use(cors(corsOptions));
+if (allowedOrigins.length === 0) {
+  console.warn('CORS_ORIGINS is empty: all cross-origin browser requests will be blocked');
+}
+
+app.use(cors({
+  origin: allowedOrigins,
+  credentials: true,
+}));
 
 
 app.use(

@@ -9,6 +9,8 @@ router.get('/plans', SaasController.getPlans);
 router.get('/config-catalog', SaasController.getConfigCatalog);
 router.get('/trial-eligibility', SaasController.checkTrialEligibility);
 router.post('/check-trial-eligibility', SaasController.checkTrialEligibility);
+router.get('/check-availability', SaasController.checkAvailability);
+router.post('/check-availability', SaasController.checkAvailability);
 router.post('/create-order', SaasController.createRegistrationOrder);
 
 // Storage Plans requires authentication

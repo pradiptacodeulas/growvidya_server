@@ -57,6 +57,35 @@ class SaasController {
   }
 
   /**
+   * Check availability of admin email, phone or school email, phone
+   */
+  static async checkAvailability(req, res, next) {
+    try {
+      const {
+        admin_email,
+        adminEmail,
+        admin_phone,
+        adminPhone,
+        school_email,
+        schoolEmail,
+        school_phone,
+        schoolPhone,
+      } = { ...req.query, ...req.body };
+
+      const result = await SaasModel.checkAvailability({
+        adminEmail: admin_email || adminEmail,
+        adminPhone: admin_phone || adminPhone,
+        schoolEmail: school_email || schoolEmail,
+        schoolPhone: school_phone || schoolPhone,
+      });
+
+      return ApiResponse.success(res, result.available ? 'Information is available.' : result.message, result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Register a new school along with plan & superadmin
    */
   static async registerSchool(req, res, next) {
@@ -93,8 +122,24 @@ class SaasController {
         return ApiResponse.error(res, 'Super Admin Email is required.', null, 400);
       }
 
+      if (!admin.phone || !admin.phone.trim()) {
+        return ApiResponse.error(res, 'Super Admin Phone number is required.', null, 400);
+      }
+
       if (!admin.password || admin.password.length < 6) {
         return ApiResponse.error(res, 'Password must be at least 6 characters.', null, 400);
+      }
+
+      // Check duplicate admin and school contact information before proceeding
+      const availability = await SaasModel.checkAvailability({
+        adminEmail: admin.email,
+        adminPhone: admin.phone,
+        schoolEmail: school.email,
+        schoolPhone: school.phone_number,
+      });
+
+      if (!availability.available) {
+        return ApiResponse.error(res, availability.message, { field: availability.field }, 400);
       }
 
       const { pool } = require('../config/db.config');
@@ -260,6 +305,24 @@ class SaasController {
 
       if (parseFloat(plan.price) <= 0) {
         return ApiResponse.error(res, 'Cannot create payment order for a free or trial plan.', null, 400);
+      }
+
+      // Check availability if admin or school details are provided before opening payment order
+      const adminEmail = req.body.admin_email || req.body.adminEmail || (req.body.admin && req.body.admin.email);
+      const adminPhone = req.body.admin_phone || req.body.adminPhone || (req.body.admin && req.body.admin.phone);
+      const schoolEmail = req.body.school_email || req.body.schoolEmail || (req.body.school && req.body.school.email);
+      const schoolPhone = req.body.school_phone || req.body.schoolPhone || (req.body.school && req.body.school.phone_number);
+
+      if (adminEmail || adminPhone || schoolEmail || schoolPhone) {
+        const availability = await SaasModel.checkAvailability({
+          adminEmail,
+          adminPhone,
+          schoolEmail,
+          schoolPhone,
+        });
+        if (!availability.available) {
+          return ApiResponse.error(res, availability.message, { field: availability.field }, 400);
+        }
       }
 
       const { razorpayInstance, keyId, keySecret } = require('../config/razorpay.config');

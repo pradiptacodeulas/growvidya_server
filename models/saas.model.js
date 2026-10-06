@@ -175,6 +175,85 @@ class SaasModel {
   }
 
   /**
+   * Check if email or phone is already registered for admin or school
+   */
+  static async checkAvailability({ adminEmail = null, adminPhone = null, schoolEmail = null, schoolPhone = null }) {
+    if (adminEmail && adminEmail.trim()) {
+      const cleanEmail = adminEmail.trim().toLowerCase();
+      const [userRows] = await pool.query(
+        `SELECT id FROM user_master WHERE LOWER(email) = ? AND status != 4 LIMIT 1`,
+        [cleanEmail]
+      );
+      if (userRows.length > 0) {
+        return {
+          available: false,
+          field: 'admin_email',
+          message: `An account with the email "${cleanEmail}" already exists. Please use a different admin email.`,
+        };
+      }
+    }
+
+    if (adminPhone && adminPhone.trim()) {
+      const cleanPhone = adminPhone.trim();
+      const adminDigits = cleanPhone.replace(/[^0-9]/g, '');
+      const adminLast10 = adminDigits.length >= 10 ? adminDigits.slice(-10) : adminDigits;
+      const [phoneRows] = await pool.query(
+        `SELECT id FROM user_master 
+         WHERE phone IS NOT NULL AND phone != '' 
+           AND (phone = ? OR (LENGTH(?) >= 10 AND RIGHT(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', ''), 10) = ?))
+           AND status != 4 
+         LIMIT 1`,
+        [cleanPhone, cleanPhone, adminLast10]
+      );
+      if (phoneRows.length > 0) {
+        return {
+          available: false,
+          field: 'admin_phone',
+          message: `An account with the phone number "${cleanPhone}" already exists. Please use a different admin phone number.`,
+        };
+      }
+    }
+
+    if (schoolEmail && schoolEmail.trim()) {
+      const cleanSchoolEmail = schoolEmail.trim().toLowerCase();
+      const [schoolEmailRows] = await pool.query(
+        `SELECT id FROM school_master WHERE LOWER(email) = ? AND status != 4 LIMIT 1`,
+        [cleanSchoolEmail]
+      );
+      if (schoolEmailRows.length > 0) {
+        return {
+          available: false,
+          field: 'school_email',
+          message: `A school with the email "${cleanSchoolEmail}" is already registered. Please use a different school email.`,
+        };
+      }
+    }
+
+    if (schoolPhone && schoolPhone.trim()) {
+      const cleanSchoolPhone = schoolPhone.trim();
+      const schoolDigits = cleanSchoolPhone.replace(/[^0-9]/g, '');
+      const schoolLast10 = schoolDigits.length >= 10 ? schoolDigits.slice(-10) : schoolDigits;
+      const [schoolPhoneRows] = await pool.query(
+        `SELECT id FROM school_master 
+         WHERE phone_number IS NOT NULL AND phone_number != '' 
+           AND (phone_number = ? OR (LENGTH(?) >= 10 AND RIGHT(REPLACE(REPLACE(REPLACE(phone_number, ' ', ''), '-', ''), '+', ''), 10) = ?))
+           AND status != 4 
+         LIMIT 1`,
+        [cleanSchoolPhone, cleanSchoolPhone, schoolLast10]
+      );
+      if (schoolPhoneRows.length > 0) {
+        return {
+          available: false,
+          field: 'school_phone',
+          message: `A school with the helpline phone number "${cleanSchoolPhone}" is already registered. Please use a different school phone number.`,
+        };
+      }
+    }
+
+    return { available: true };
+  }
+
+  /**
    * Register a new school with chosen plan and create the first Super Admin user.
    * All operations are executed atomically in a single transaction.
    */
@@ -196,7 +275,9 @@ class SaasModel {
       // 1. Check if admin email already exists in user_master
       const adminEmail = (adminData.email || '').trim().toLowerCase();
       if (!adminEmail) {
-        throw new Error('Admin Email is required.');
+        const err = new Error('Admin Email is required.');
+        err.statusCode = 400;
+        throw err;
       }
 
       const [existingUser] = await connection.query(
@@ -204,7 +285,63 @@ class SaasModel {
         [adminEmail]
       );
       if (existingUser.length > 0) {
-        throw new Error(`An account with the email "${adminEmail}" already exists. Please use a different admin email.`);
+        const err = new Error(`An account with the email "${adminEmail}" already exists. Please use a different admin email.`);
+        err.statusCode = 400;
+        throw err;
+      }
+
+      // Check if admin phone already exists in user_master
+      const adminPhone = (adminData.phone || '').trim();
+      if (adminPhone) {
+        const adminDigits = adminPhone.replace(/[^0-9]/g, '');
+        const adminLast10 = adminDigits.length >= 10 ? adminDigits.slice(-10) : adminDigits;
+        const [existingPhone] = await connection.query(
+          `SELECT id FROM user_master 
+           WHERE phone IS NOT NULL AND phone != '' 
+             AND (phone = ? OR (LENGTH(?) >= 10 AND RIGHT(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', ''), 10) = ?))
+             AND status != 4 
+           LIMIT 1`,
+          [adminPhone, adminPhone, adminLast10]
+        );
+        if (existingPhone.length > 0) {
+          const err = new Error(`An account with the phone number "${adminPhone}" already exists. Please use a different admin phone number.`);
+          err.statusCode = 400;
+          throw err;
+        }
+      }
+
+      // Check if school email already exists in school_master
+      const effectiveSchoolEmail = (schoolData.email || adminEmail).trim().toLowerCase();
+      if (effectiveSchoolEmail) {
+        const [existingSchoolEmail] = await connection.query(
+          `SELECT id FROM school_master WHERE LOWER(email) = ? AND status != 4 LIMIT 1`,
+          [effectiveSchoolEmail]
+        );
+        if (existingSchoolEmail.length > 0) {
+          const err = new Error(`A school with the email "${effectiveSchoolEmail}" is already registered. Please use a different school email.`);
+          err.statusCode = 400;
+          throw err;
+        }
+      }
+
+      // Check if school helpline phone already exists in school_master
+      const schoolPhone = (schoolData.phone_number || '').trim();
+      if (schoolPhone) {
+        const schoolDigits = schoolPhone.replace(/[^0-9]/g, '');
+        const schoolLast10 = schoolDigits.length >= 10 ? schoolDigits.slice(-10) : schoolDigits;
+        const [existingSchoolPhone] = await connection.query(
+          `SELECT id FROM school_master 
+           WHERE phone_number IS NOT NULL AND phone_number != '' 
+             AND (phone_number = ? OR (LENGTH(?) >= 10 AND RIGHT(REPLACE(REPLACE(REPLACE(phone_number, ' ', ''), '-', ''), '+', ''), 10) = ?))
+             AND status != 4 
+           LIMIT 1`,
+          [schoolPhone, schoolPhone, schoolLast10]
+        );
+        if (existingSchoolPhone.length > 0) {
+          const err = new Error(`A school with the helpline phone number "${schoolPhone}" is already registered. Please use a different school phone number.`);
+          err.statusCode = 400;
+          throw err;
+        }
       }
 
       // 2. Process School Logo if uploaded as base64
@@ -339,30 +476,44 @@ class SaasModel {
       }
 
       const finalAmount = isTrialMode ? 0 : (amountPaid !== undefined ? parseFloat(amountPaid) : Math.max(0, originalAmount - discountAmount));
+      const trialDays = plan.free_trial_days !== undefined && plan.free_trial_days !== null ? parseInt(plan.free_trial_days, 10) : 0;
       const finalTxnId = isTrialMode
-        ? (paymentTransactionId || `TRIAL_${parseInt(plan.free_trial_days, 10) || 0}D_${Date.now()}_${Math.floor(Math.random() * 10000)}`)
+        ? (paymentTransactionId || `TRIAL_${trialDays > 0 ? trialDays : 14}D_${Date.now()}_${Math.floor(Math.random() * 10000)}`)
         : (paymentTransactionId || `REG_REQ_${Date.now()}_${Math.floor(Math.random() * 10000)}`);
       const finalGateway = isTrialMode ? 'free_trial' : (paymentGateway || 'registration');
-      const subStatus = isTrialMode ? 'trial' : 'pending';
+      const subStatus = isTrialMode ? 'trial' : (paymentTransactionId ? 'active' : 'pending');
       const paymentStatus = isTrialMode ? 'completed' : (paymentTransactionId ? 'completed' : 'pending');
 
       // Calculate subscription end date (dynamic trial days from backend, 1 year for annual, 30 days for monthly)
       const startDate = new Date();
       const endDate = new Date();
       if (isTrialMode) {
-        const trialDays = plan.free_trial_days !== undefined && plan.free_trial_days !== null ? parseInt(plan.free_trial_days, 10) : 0;
         if (trialDays <= 0 && plan.billing_cycle !== 'trial') {
           throw new Error(`The selected plan "${plan.plan_name}" does not offer a free trial.`);
         }
-        endDate.setDate(endDate.getDate() + trialDays);
-      } else if (plan.billing_cycle === 'monthly') {
-        endDate.setMonth(endDate.getMonth() + 1);
+        endDate.setDate(endDate.getDate() + (trialDays > 0 ? trialDays : 14));
       } else {
-        endDate.setFullYear(endDate.getFullYear() + 1);
+        if (plan.billing_cycle === 'monthly') {
+          endDate.setMonth(endDate.getMonth() + 1);
+        } else {
+          endDate.setFullYear(endDate.getFullYear() + 1);
+        }
+        // BONUS: If the plan has free_trial_days, add those bonus days to the paid subscription period!
+        // E.g. Annual (12 months) + 30 days trial = 13 months access!
+        // Monthly (1 month) + 30 days trial = 2 months access!
+        if (trialDays > 0) {
+          endDate.setDate(endDate.getDate() + trialDays);
+        }
       }
 
-      const startDateStr = startDate.toISOString().split('T')[0];
-      const endDateStr = endDate.toISOString().split('T')[0];
+      const formatDate = (d) => {
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      };
+      const startDateStr = formatDate(startDate);
+      const endDateStr = formatDate(endDate);
 
       // Insert into school_subscriptions (active immediately for free trials, pending for manual review of paid plans)
       const insertSubQuery = `
