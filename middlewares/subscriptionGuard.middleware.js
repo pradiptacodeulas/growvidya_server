@@ -109,6 +109,22 @@ async function subscriptionGuard(req, res, next) {
       });
     }
 
+    // If subscription is suspended / inactive, block operations with 403 Forbidden
+    if (sub.status === 'suspended' || sub.liveStatus === 'suspended') {
+      return res.status(403).json({
+        status: false,
+        code: 'SUBSCRIPTION_SUSPENDED',
+        message: `Your school subscription for "${sub.plan_name}" has been marked inactive / suspended by the Super Admin. Operations are locked until reactivated.`,
+        data: {
+          subscription_id: sub.subscription_id,
+          school_id: sub.school_id,
+          plan_name: sub.plan_name,
+          is_suspended: true,
+          status: 'suspended',
+        },
+      });
+    }
+
     // If subscription / trial has expired, block access with 402 Payment Required
     if (sub.isExpired || sub.liveStatus === 'expired') {
       return res.status(402).json({

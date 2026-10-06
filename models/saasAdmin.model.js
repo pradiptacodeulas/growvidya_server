@@ -729,11 +729,43 @@ class SaasAdminModel {
     return result.affectedRows > 0;
   }
 
-  static async updateSubscriptionStatus(id, status) {
-    const [result] = await pool.query(
-      'UPDATE school_subscriptions SET status = ? WHERE id = ?',
-      [status, id]
-    );
+  static async updateSubscriptionStatus(id, status, notes = '', verifiedBy = null) {
+    let sub = null;
+    if (status === 'active' || status === 'suspended') {
+      const [rows] = await pool.query('SELECT school_id, end_date FROM school_subscriptions WHERE id = ?', [id]);
+      sub = rows[0] || null;
+    }
+
+    let query = 'UPDATE school_subscriptions SET status = ?';
+    const params = [status];
+
+    if (notes) {
+      query += ', verification_notes = CONCAT(IFNULL(verification_notes, ""), "\n[Status Update] ", ?)';
+      params.push(notes);
+    }
+    if (verifiedBy) {
+      query += ', verified_by = ?, verified_at = NOW()';
+      params.push(verifiedBy);
+    }
+
+    query += ' WHERE id = ?';
+    params.push(id);
+
+    const [result] = await pool.query(query, params);
+
+    if (result.affectedRows > 0 && sub) {
+      if (status === 'active') {
+        // Expire any other active or trial subscriptions for this school to prevent duplicates
+        await pool.query(
+          "UPDATE school_subscriptions SET status = 'expired' WHERE school_id = ? AND id != ? AND status IN ('active', 'trial')",
+          [sub.school_id, id]
+        );
+        // Ensure school and admin user are active
+        await pool.query('UPDATE school_master SET status = 1, updated_at = NOW() WHERE id = ?', [sub.school_id]);
+        await pool.query('UPDATE user_master SET status = 1 WHERE school_id = ? AND admin_type = 1', [sub.school_id]);
+      }
+    }
+
     return result.affectedRows > 0;
   }
 

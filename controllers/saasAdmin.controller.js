@@ -391,18 +391,25 @@ class SaasAdminController {
   static async updateSubscriptionStatus(req, res, next) {
     try {
       const { id } = req.params;
-      const { status } = req.body;
+      let { status, notes } = req.body;
 
-      if (!status || !['trial', 'active', 'expired', 'suspended'].includes(status)) {
-        return ApiResponse.error(res, 'Invalid status. Allowed: trial, active, expired, suspended.', null, 400);
+      // Map 'inactive' alias to 'suspended'
+      if (status === 'inactive') {
+        status = 'suspended';
       }
 
-      const success = await SaasAdminModel.updateSubscriptionStatus(id, status);
+      if (!status || !['trial', 'active', 'expired', 'suspended'].includes(status)) {
+        return ApiResponse.error(res, 'Invalid status. Allowed: trial, active, expired, suspended (or inactive).', null, 400);
+      }
+
+      const verifiedBy = req.saasAdmin?.id || null;
+      const success = await SaasAdminModel.updateSubscriptionStatus(id, status, notes, verifiedBy);
       if (!success) {
         return ApiResponse.notFound(res, 'Subscription not found.');
       }
 
-      return ApiResponse.success(res, `Subscription status updated to '${status}'.`);
+      const friendlyName = status === 'suspended' ? 'Inactive' : status;
+      return ApiResponse.success(res, `Subscription status updated to '${friendlyName}'.`);
     } catch (error) {
       next(error);
     }
