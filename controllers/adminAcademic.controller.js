@@ -13,14 +13,15 @@ class AdminAcademicController {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
       const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
-      const [years, classes, sections, subjects, shifts, houses, periods] = await Promise.all([
+      const [years, classes, sections, subjects, shifts, houses, periods, days] = await Promise.all([
         AcademicModel.getAcademicYears(schoolId),
         AcademicModel.getClasses(schoolId, false, null, branchId),
         AcademicModel.getSections(schoolId, null, false, null, branchId),
         AcademicModel.getSubjects(schoolId, null, false, null, branchId),
-        AcademicModel.getShifts(schoolId),
-        AcademicModel.getHouses(schoolId),
-        AcademicModel.getPeriods(schoolId),
+        AcademicModel.getShifts(schoolId, false, branchId),
+        AcademicModel.getHouses(schoolId, branchId),
+        AcademicModel.getPeriods(schoolId, branchId),
+        AcademicModel.getDays(schoolId, branchId),
       ]);
 
       return ApiResponse.success(res, 'Academic masters fetched successfully.', {
@@ -31,6 +32,7 @@ class AdminAcademicController {
         shifts,
         houses,
         periods,
+        days,
       });
     } catch (error) {
       next(error);
@@ -625,7 +627,8 @@ class AdminAcademicController {
   static async getDays(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const data = await AcademicModel.getDays(schoolId);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const data = await AcademicModel.getDays(schoolId, branchId);
       return ApiResponse.success(res, 'Days fetched successfully', data);
     } catch (error) {
       next(error);
@@ -647,7 +650,11 @@ class AdminAcademicController {
   static async createDay(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const insertId = await AcademicModel.createDay(schoolId, req.body);
+      const branchId = req.body.branch_id !== undefined ? req.body.branch_id : (req.branchId || null);
+      const insertId = await AcademicModel.createDay(schoolId, {
+        ...req.body,
+        branch_id: branchId,
+      });
       return ApiResponse.success(res, 'Day created successfully', { id: insertId }, 201);
     } catch (error) {
       next(error);
@@ -658,7 +665,11 @@ class AdminAcademicController {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
       const { id } = req.params;
-      await AcademicModel.updateDay(id, schoolId, req.body);
+      const branchId = req.body.branch_id !== undefined ? req.body.branch_id : undefined;
+      await AcademicModel.updateDay(id, schoolId, {
+        ...req.body,
+        branch_id: branchId,
+      });
       return ApiResponse.success(res, 'Day updated successfully');
     } catch (error) {
       next(error);

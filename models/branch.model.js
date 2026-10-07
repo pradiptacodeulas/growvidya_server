@@ -109,6 +109,7 @@ class BranchModel {
         'shift_master',
         'period_master',
         'house_master',
+        'days_master',
         'event',
         'holiday',
         'operator_master',

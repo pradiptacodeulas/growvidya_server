@@ -621,7 +621,8 @@ class TeacherModel {
     // Fetch Routine Schedule (Time Table)
     try {
       const [allDays] = await pool.query(
-        `SELECT * FROM days_master WHERE status = 1 ORDER BY id ASC`
+        `SELECT * FROM days_master WHERE (school_id = ? OR school_id IS NULL) AND (branch_id = ? OR branch_id IS NULL) AND status = 1 ORDER BY id ASC`,
+        [teacher.school_id, teacher.branch_id || null]
       );
 
       const [routineRows] = await pool.query(

@@ -842,12 +842,21 @@ class AcademicModel {
   }
 
   // ==================== DAYS ====================
-  static async getDays(schoolId) {
+  static async getDays(schoolId, branchId = null) {
     try {
-      const [rows] = await pool.query(
-        `SELECT * FROM days_master WHERE school_id = ? AND status != 4 ORDER BY id ASC`,
-        [schoolId]
-      );
+      let sql = `
+        SELECT d.*, bm.branch_name, bm.branch_code 
+        FROM days_master d
+        LEFT JOIN branch_master bm ON d.branch_id = bm.id
+        WHERE d.school_id = ? AND (d.status != 4 OR d.status IS NULL)
+      `;
+      const params = [schoolId];
+      if (branchId) {
+        sql += ` AND (d.branch_id = ? OR d.branch_id IS NULL)`;
+        params.push(Number(branchId));
+      }
+      sql += ` ORDER BY d.id ASC`;
+      const [rows] = await pool.query(sql, params);
       return rows || [];
     } catch (e) {
       console.error('Error fetching days:', e.message);
@@ -858,7 +867,10 @@ class AcademicModel {
   static async getDayById(id, schoolId) {
     try {
       const [rows] = await pool.query(
-        `SELECT * FROM days_master WHERE id = ? AND school_id = ? AND status != 4`,
+        `SELECT d.*, bm.branch_name, bm.branch_code 
+         FROM days_master d 
+         LEFT JOIN branch_master bm ON d.branch_id = bm.id 
+         WHERE d.id = ? AND d.school_id = ? AND (d.status != 4 OR d.status IS NULL)`,
         [id, schoolId]
       );
       return rows[0] || null;
@@ -868,18 +880,38 @@ class AcademicModel {
     }
   }
 
-  static async createDay(schoolId, { day_name, status = 1 }) {
+  static async createDay(schoolId, { day_name, branch_id = null, status = 1 }) {
+    const resolvedBranchId = branch_id !== undefined && branch_id !== null && branch_id !== '' ? Number(branch_id) : null;
     const [result] = await pool.query(
-      `INSERT INTO days_master (school_id, day_name, status) VALUES (?, ?, ?)`,
-      [schoolId, day_name, Number(status)]
+      `INSERT INTO days_master (school_id, branch_id, day_name, status) VALUES (?, ?, ?, ?)`,
+      [schoolId, resolvedBranchId, day_name, Number(status)]
     );
     return result.insertId;
   }
 
-  static async updateDay(id, schoolId, { day_name, status }) {
+  static async updateDay(id, schoolId, { day_name, branch_id, status }) {
+    const updates = [];
+    const params = [];
+
+    if (day_name !== undefined) {
+      updates.push('day_name = ?');
+      params.push(day_name);
+    }
+    if (branch_id !== undefined) {
+      updates.push('branch_id = ?');
+      params.push(branch_id !== null && branch_id !== '' ? Number(branch_id) : null);
+    }
+    if (status !== undefined) {
+      updates.push('status = ?');
+      params.push(Number(status));
+    }
+
+    if (updates.length === 0) return true;
+
+    params.push(id, schoolId);
     const [result] = await pool.query(
-      `UPDATE days_master SET day_name = ?, status = ? WHERE id = ? AND school_id = ?`,
-      [day_name, Number(status), id, schoolId]
+      `UPDATE days_master SET ${updates.join(', ')} WHERE id = ? AND school_id = ?`,
+      params
     );
     return result.affectedRows > 0;
   }
