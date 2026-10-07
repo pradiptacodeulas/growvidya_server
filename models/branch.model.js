@@ -12,6 +12,7 @@ class BranchModel {
           school_id INT(11) NOT NULL DEFAULT 1,
           branch_name VARCHAR(255) NOT NULL,
           branch_code VARCHAR(50) NOT NULL,
+          head_user_id INT(11) DEFAULT NULL,
           address TEXT DEFAULT NULL,
           country_id INT(11) DEFAULT NULL,
           state_id INT(11) DEFAULT NULL,
@@ -25,9 +26,21 @@ class BranchModel {
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
           INDEX idx_branch_school (school_id, status),
-          INDEX idx_branch_code (school_id, branch_code)
+          INDEX idx_branch_code (school_id, branch_code),
+          INDEX idx_branch_head (head_user_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
       `);
+
+      // Ensure branch_master has head_user_id column
+      try {
+        const [bCols] = await pool.query(`SHOW COLUMNS FROM \`branch_master\``);
+        const bColNames = bCols.map((c) => c.Field);
+        if (!bColNames.includes('head_user_id')) {
+          await pool.query(
+            `ALTER TABLE \`branch_master\` ADD COLUMN head_user_id INT(11) NULL DEFAULT NULL AFTER branch_code, ADD INDEX idx_branch_head (head_user_id)`
+          );
+        }
+      } catch (headErr) {}
 
       // Ensure core tables have branch_id column if missing
       const tablesToScope = [
@@ -168,6 +181,13 @@ class BranchModel {
         b.school_id,
         b.branch_name,
         b.branch_code,
+        b.head_user_id,
+        NULLIF(TRIM(CONCAT(IFNULL(u.first_name, ''), ' ', IFNULL(u.last_name, ''))), '') AS head_name,
+        u.email AS head_email,
+        u.phone AS head_phone,
+        u.picture AS head_picture,
+        r.role_name AS head_role,
+        COALESCE(NULLIF(TRIM(CONCAT(IFNULL(u.first_name, ''), ' ', IFNULL(u.last_name, ''))), ''), b.principal_name) AS principal_name,
         b.address,
         b.country_id,
         b.state_id,
@@ -178,12 +198,13 @@ class BranchModel {
         b.pincode,
         b.phone,
         b.email,
-        b.principal_name,
         b.is_main_branch,
         b.status,
         b.created_at,
         b.updated_at
       FROM branch_master b
+      LEFT JOIN user_master u ON b.head_user_id = u.id
+      LEFT JOIN role_master r ON u.role = r.id
       LEFT JOIN countries co ON b.country_id = co.id
       LEFT JOIN states s ON b.state_id = s.id_state
       LEFT JOIN cities ct ON b.city_id = ct.id
@@ -220,6 +241,13 @@ class BranchModel {
         b.school_id,
         b.branch_name,
         b.branch_code,
+        b.head_user_id,
+        NULLIF(TRIM(CONCAT(IFNULL(u.first_name, ''), ' ', IFNULL(u.last_name, ''))), '') AS head_name,
+        u.email AS head_email,
+        u.phone AS head_phone,
+        u.picture AS head_picture,
+        r.role_name AS head_role,
+        COALESCE(NULLIF(TRIM(CONCAT(IFNULL(u.first_name, ''), ' ', IFNULL(u.last_name, ''))), ''), b.principal_name) AS principal_name,
         b.address,
         b.country_id,
         b.state_id,
@@ -230,12 +258,13 @@ class BranchModel {
         b.pincode,
         b.phone,
         b.email,
-        b.principal_name,
         b.is_main_branch,
         b.status,
         b.created_at,
         b.updated_at
       FROM branch_master b
+      LEFT JOIN user_master u ON b.head_user_id = u.id
+      LEFT JOIN role_master r ON u.role = r.id
       LEFT JOIN countries co ON b.country_id = co.id
       LEFT JOIN states s ON b.state_id = s.id_state
       LEFT JOIN cities ct ON b.city_id = ct.id
@@ -253,6 +282,7 @@ class BranchModel {
     school_id,
     branch_name,
     branch_code,
+    head_user_id = null,
     address = null,
     country_id = null,
     state_id = null,
@@ -269,6 +299,18 @@ class BranchModel {
       throw new Error('Valid school_id is required.');
     }
 
+    const resolvedHeadUserId = head_user_id ? Number(head_user_id) : null;
+    let resolvedPrincipalName = principal_name;
+    if (!resolvedPrincipalName && resolvedHeadUserId) {
+      try {
+        const [uRows] = await pool.query(
+          'SELECT CONCAT(IFNULL(first_name, ""), " ", IFNULL(last_name, "")) AS name FROM user_master WHERE id = ?',
+          [resolvedHeadUserId]
+        );
+        if (uRows[0]?.name?.trim()) resolvedPrincipalName = uRows[0].name.trim();
+      } catch (_) {}
+    }
+
     // If setting as main branch, reset other branches
     if (Number(is_main_branch) === 1) {
       await pool.execute(
@@ -279,15 +321,16 @@ class BranchModel {
 
     const sql = `
       INSERT INTO branch_master (
-        school_id, branch_name, branch_code, address, country_id, state_id, city_id,
+        school_id, branch_name, branch_code, head_user_id, address, country_id, state_id, city_id,
         pincode, phone, email, principal_name, is_main_branch, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
     const [result] = await pool.execute(sql, [
       parsedSchoolId,
       String(branch_name).trim(),
       String(branch_code).trim().toUpperCase(),
+      resolvedHeadUserId,
       address || null,
       country_id !== undefined && country_id !== null && country_id !== '' ? Number(country_id) : null,
       state_id !== undefined && state_id !== null && state_id !== '' ? Number(state_id) : null,
@@ -295,16 +338,27 @@ class BranchModel {
       pincode || null,
       phone || null,
       email || null,
-      principal_name || null,
+      resolvedPrincipalName || null,
       Number(is_main_branch) === 1 ? 1 : 0,
       status !== undefined ? Number(status) : 1,
     ]);
+
+    // Assign head user's branch_id in user_master
+    if (resolvedHeadUserId) {
+      try {
+        await pool.query(
+          'UPDATE user_master SET branch_id = ? WHERE id = ? AND school_id = ?',
+          [result.insertId, resolvedHeadUserId, parsedSchoolId]
+        );
+      } catch (_) {}
+    }
 
     return {
       id: result.insertId,
       school_id: parsedSchoolId,
       branch_name,
       branch_code: String(branch_code).trim().toUpperCase(),
+      head_user_id: resolvedHeadUserId,
       country_id: country_id ? Number(country_id) : null,
       state_id: state_id ? Number(state_id) : null,
       city_id: city_id ? Number(city_id) : null,
@@ -325,6 +379,7 @@ class BranchModel {
     const {
       branch_name,
       branch_code,
+      head_user_id,
       address,
       country_id,
       state_id,
@@ -345,42 +400,123 @@ class BranchModel {
       );
     }
 
-    const sql = `
-      UPDATE branch_master
-      SET 
-        branch_name = COALESCE(?, branch_name),
-        branch_code = COALESCE(?, branch_code),
-        address = COALESCE(?, address),
-        country_id = COALESCE(?, country_id),
-        state_id = COALESCE(?, state_id),
-        city_id = COALESCE(?, city_id),
-        pincode = COALESCE(?, pincode),
-        phone = COALESCE(?, phone),
-        email = COALESCE(?, email),
-        principal_name = COALESCE(?, principal_name),
-        is_main_branch = COALESCE(?, is_main_branch),
-        status = COALESCE(?, status)
-      WHERE id = ? AND school_id = ?
-    `;
+    const updates = [];
+    const params = [];
 
-    const [result] = await pool.execute(sql, [
-      branch_name ? String(branch_name).trim() : null,
-      branch_code ? String(branch_code).trim().toUpperCase() : null,
-      address !== undefined ? address : null,
-      country_id !== undefined ? (country_id ? Number(country_id) : null) : null,
-      state_id !== undefined ? (state_id ? Number(state_id) : null) : null,
-      city_id !== undefined ? (city_id ? Number(city_id) : null) : null,
-      pincode !== undefined ? pincode : null,
-      phone !== undefined ? phone : null,
-      email !== undefined ? email : null,
-      principal_name !== undefined ? principal_name : null,
-      is_main_branch !== undefined ? (Number(is_main_branch) === 1 ? 1 : 0) : null,
-      status !== undefined ? Number(status) : null,
-      Number(id),
-      parsedSchoolId,
-    ]);
+    if (branch_name !== undefined) {
+      updates.push('branch_name = ?');
+      params.push(String(branch_name).trim());
+    }
+    if (branch_code !== undefined) {
+      updates.push('branch_code = ?');
+      params.push(String(branch_code).trim().toUpperCase());
+    }
+    if (head_user_id !== undefined) {
+      const resolvedHead = head_user_id ? Number(head_user_id) : null;
+      updates.push('head_user_id = ?');
+      params.push(resolvedHead);
 
+      // If user provided, also update their branch_id in user_master
+      if (resolvedHead) {
+        try {
+          await pool.query(
+            'UPDATE user_master SET branch_id = ? WHERE id = ? AND school_id = ?',
+            [Number(id), resolvedHead, parsedSchoolId]
+          );
+        } catch (_) {}
+      }
+    }
+    if (address !== undefined) {
+      updates.push('address = ?');
+      params.push(address || null);
+    }
+    if (country_id !== undefined) {
+      updates.push('country_id = ?');
+      params.push(country_id ? Number(country_id) : null);
+    }
+    if (state_id !== undefined) {
+      updates.push('state_id = ?');
+      params.push(state_id ? Number(state_id) : null);
+    }
+    if (city_id !== undefined) {
+      updates.push('city_id = ?');
+      params.push(city_id ? Number(city_id) : null);
+    }
+    if (pincode !== undefined) {
+      updates.push('pincode = ?');
+      params.push(pincode || null);
+    }
+    if (phone !== undefined) {
+      updates.push('phone = ?');
+      params.push(phone || null);
+    }
+    if (email !== undefined) {
+      updates.push('email = ?');
+      params.push(email || null);
+    }
+    if (principal_name !== undefined) {
+      updates.push('principal_name = ?');
+      params.push(principal_name || null);
+    } else if (head_user_id) {
+      try {
+        const [uRows] = await pool.query(
+          'SELECT CONCAT(IFNULL(first_name, ""), " ", IFNULL(last_name, "")) AS name FROM user_master WHERE id = ?',
+          [Number(head_user_id)]
+        );
+        if (uRows[0]?.name?.trim()) {
+          updates.push('principal_name = ?');
+          params.push(uRows[0].name.trim());
+        }
+      } catch (_) {}
+    }
+    if (is_main_branch !== undefined) {
+      updates.push('is_main_branch = ?');
+      params.push(Number(is_main_branch) === 1 ? 1 : 0);
+    }
+    if (status !== undefined) {
+      updates.push('status = ?');
+      params.push(Number(status));
+    }
+
+    if (updates.length === 0) return true;
+
+    const sql = `UPDATE branch_master SET ${updates.join(', ')} WHERE id = ? AND school_id = ?`;
+    params.push(Number(id), parsedSchoolId);
+
+    const [result] = await pool.execute(sql, params);
     return result.affectedRows > 0;
+  }
+
+  /**
+   * Get active staff users who can be assigned as branch heads
+   */
+  static async getBranchHeadCandidates(school_id) {
+    const parsedSchoolId = Number(school_id);
+    if (!parsedSchoolId) {
+      throw new Error('Valid school_id is required.');
+    }
+
+    const sql = `
+      SELECT 
+        u.id,
+        u.school_id,
+        u.branch_id,
+        bm.branch_name,
+        u.first_name,
+        u.last_name,
+        CONCAT(IFNULL(u.first_name, ''), ' ', IFNULL(u.last_name, '')) AS full_name,
+        u.email,
+        u.phone,
+        u.picture,
+        r.role_name
+      FROM user_master u
+      LEFT JOIN branch_master bm ON u.branch_id = bm.id
+      LEFT JOIN role_master r ON u.role = r.id
+      WHERE u.school_id = ? AND u.status = 1
+      ORDER BY u.first_name ASC, u.last_name ASC
+    `;
+    const [rows] = await pool.query(sql, [parsedSchoolId]);
+    return rows;
   }
 
   /**
@@ -473,6 +609,13 @@ class BranchModel {
         b.id,
         b.branch_name,
         b.branch_code,
+        b.head_user_id,
+        NULLIF(TRIM(CONCAT(IFNULL(u.first_name, ''), ' ', IFNULL(u.last_name, ''))), '') AS head_name,
+        u.email AS head_email,
+        u.phone AS head_phone,
+        u.picture AS head_picture,
+        r.role_name AS head_role,
+        COALESCE(NULLIF(TRIM(CONCAT(IFNULL(u.first_name, ''), ' ', IFNULL(u.last_name, ''))), ''), b.principal_name) AS principal_name,
         b.address,
         b.country_id,
         b.state_id,
@@ -483,7 +626,6 @@ class BranchModel {
         b.pincode,
         b.phone,
         b.email,
-        b.principal_name,
         b.is_main_branch,
         b.status,
         b.created_at,
@@ -491,6 +633,8 @@ class BranchModel {
         COALESCE(t.teacher_count, 0) AS teacher_count,
         COALESCE(c.class_count, 0) AS class_count
       FROM branch_master b
+      LEFT JOIN user_master u ON b.head_user_id = u.id
+      LEFT JOIN role_master r ON u.role = r.id
       LEFT JOIN countries co ON b.country_id = co.id
       LEFT JOIN states s ON b.state_id = s.id_state
       LEFT JOIN cities ct ON b.city_id = ct.id

@@ -17,6 +17,9 @@ router.get('/locations/countries', BranchController.getCountries);
 router.get('/locations/states', BranchController.getStates);
 router.get('/locations/cities', BranchController.getCities);
 
+// Eligible staff candidates for branch head
+router.get('/head-candidates', BranchController.getBranchHeadCandidates);
+
 // Get single branch details
 router.get('/:id', BranchController.getBranchById);
 

@@ -48,6 +48,19 @@ class BranchController {
   }
 
   /**
+   * Get list of staff candidates for branch head
+   */
+  static async getBranchHeadCandidates(req, res, next) {
+    try {
+      const schoolId = BranchController.getSchoolId(req);
+      const candidates = await BranchModel.getBranchHeadCandidates(schoolId);
+      return ApiResponse.success(res, 'Branch head candidates retrieved.', candidates);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Get single branch details by ID
    */
   static async getBranchById(req, res, next) {
@@ -75,6 +88,7 @@ class BranchController {
       const {
         branch_name,
         branch_code,
+        head_user_id,
         address,
         country_id,
         state_id,
@@ -104,6 +118,7 @@ class BranchController {
         school_id: schoolId,
         branch_name,
         branch_code,
+        head_user_id,
         address,
         country_id,
         state_id,
