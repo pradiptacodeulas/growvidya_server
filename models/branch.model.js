@@ -1,4 +1,5 @@
 const { pool } = require('../config/db.config');
+const PermissionModel = require('./permission.model');
 
 class BranchModel {
   /**
@@ -182,6 +183,7 @@ class BranchModel {
         b.branch_name,
         b.branch_code,
         b.head_user_id,
+        u.admin_type AS head_admin_type,
         NULLIF(TRIM(CONCAT(IFNULL(u.first_name, ''), ' ', IFNULL(u.last_name, ''))), '') AS head_name,
         u.email AS head_email,
         u.phone AS head_phone,
@@ -242,6 +244,7 @@ class BranchModel {
         b.branch_name,
         b.branch_code,
         b.head_user_id,
+        u.admin_type AS head_admin_type,
         NULLIF(TRIM(CONCAT(IFNULL(u.first_name, ''), ' ', IFNULL(u.last_name, ''))), '') AS head_name,
         u.email AS head_email,
         u.phone AS head_phone,
@@ -343,14 +346,17 @@ class BranchModel {
       status !== undefined ? Number(status) : 1,
     ]);
 
-    // Assign head user's branch_id in user_master
+    // Assign head user's branch_id and assign Branch Head role in user_master
     if (resolvedHeadUserId) {
       try {
+        const branchHeadRoleId = await PermissionModel.ensureBranchHeadRole(parsedSchoolId);
         await pool.query(
-          'UPDATE user_master SET branch_id = ? WHERE id = ? AND school_id = ?',
-          [result.insertId, resolvedHeadUserId, parsedSchoolId]
+          'UPDATE user_master SET branch_id = ?, role = ?, admin_type = 2 WHERE id = ? AND school_id = ?',
+          [result.insertId, branchHeadRoleId, resolvedHeadUserId, parsedSchoolId]
         );
-      } catch (_) {}
+      } catch (headErr) {
+        console.error('[BranchModel] Error assigning branch head role:', headErr.message);
+      }
     }
 
     return {
@@ -416,14 +422,38 @@ class BranchModel {
       updates.push('head_user_id = ?');
       params.push(resolvedHead);
 
-      // If user provided, also update their branch_id in user_master
-      if (resolvedHead) {
-        try {
-          await pool.query(
-            'UPDATE user_master SET branch_id = ? WHERE id = ? AND school_id = ?',
-            [Number(id), resolvedHead, parsedSchoolId]
+      // Handle Head User assignment and revert previous head
+      try {
+        const branchHeadRoleId = await PermissionModel.ensureBranchHeadRole(parsedSchoolId);
+
+        const [oldRows] = await pool.query(
+          'SELECT head_user_id FROM branch_master WHERE id = ? AND school_id = ?',
+          [Number(id), parsedSchoolId]
+        );
+        const oldHeadUserId = oldRows[0]?.head_user_id ? Number(oldRows[0].head_user_id) : null;
+
+        if (oldHeadUserId && oldHeadUserId !== resolvedHead) {
+          // Revert old head's role if they were assigned the Branch Head role
+          const [fallbackRoles] = await pool.query(
+            `SELECT id FROM role_master WHERE (school_id = ? OR school_id IS NULL) AND LOWER(TRIM(role_name)) != 'branch head' AND (status = 1 OR status IS NULL) ORDER BY id ASC LIMIT 1`,
+            [parsedSchoolId]
           );
-        } catch (_) {}
+          const fallbackRoleId = fallbackRoles[0]?.id || 2;
+          await pool.query(
+            'UPDATE user_master SET role = ?, admin_type = 2 WHERE id = ? AND school_id = ? AND role = ?',
+            [fallbackRoleId, oldHeadUserId, parsedSchoolId, branchHeadRoleId]
+          );
+        }
+
+        if (resolvedHead) {
+          // Assign Branch Head role and lock to this branch
+          await pool.query(
+            'UPDATE user_master SET branch_id = ?, role = ?, admin_type = 2 WHERE id = ? AND school_id = ?',
+            [Number(id), branchHeadRoleId, resolvedHead, parsedSchoolId]
+          );
+        }
+      } catch (headErr) {
+        console.error('[BranchModel] Error updating head user roles:', headErr.message);
       }
     }
     if (address !== undefined) {
@@ -508,11 +538,12 @@ class BranchModel {
         u.email,
         u.phone,
         u.picture,
+        u.admin_type,
         r.role_name
       FROM user_master u
       LEFT JOIN branch_master bm ON u.branch_id = bm.id
       LEFT JOIN role_master r ON u.role = r.id
-      WHERE u.school_id = ? AND u.status = 1
+      WHERE u.school_id = ? AND u.status = 1 AND (u.admin_type IS NULL OR u.admin_type != 1)
       ORDER BY u.first_name ASC, u.last_name ASC
     `;
     const [rows] = await pool.query(sql, [parsedSchoolId]);
@@ -592,6 +623,23 @@ class BranchModel {
       `UPDATE branch_master SET status = 4 WHERE id = ? AND school_id = ?`,
       [parsedId, parsedSchoolId]
     );
+
+    // Revert head user role back if assigned
+    if (branch.head_user_id) {
+      try {
+        const branchHeadRoleId = await PermissionModel.ensureBranchHeadRole(parsedSchoolId);
+        const [fallbackRoles] = await pool.query(
+          `SELECT id FROM role_master WHERE (school_id = ? OR school_id IS NULL) AND LOWER(TRIM(role_name)) != 'branch head' AND (status = 1 OR status IS NULL) ORDER BY id ASC LIMIT 1`,
+          [parsedSchoolId]
+        );
+        const fallbackRoleId = fallbackRoles[0]?.id || 2;
+        await pool.query(
+          'UPDATE user_master SET role = ?, admin_type = 2 WHERE id = ? AND school_id = ? AND role = ?',
+          [fallbackRoleId, branch.head_user_id, parsedSchoolId, branchHeadRoleId]
+        );
+      } catch (_) {}
+    }
+
     return result.affectedRows > 0;
   }
 
@@ -610,6 +658,7 @@ class BranchModel {
         b.branch_name,
         b.branch_code,
         b.head_user_id,
+        u.admin_type AS head_admin_type,
         NULLIF(TRIM(CONCAT(IFNULL(u.first_name, ''), ' ', IFNULL(u.last_name, ''))), '') AS head_name,
         u.email AS head_email,
         u.phone AS head_phone,

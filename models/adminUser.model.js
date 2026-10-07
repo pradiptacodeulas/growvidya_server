@@ -6,6 +6,9 @@ class AdminUserModel {
       SELECT 
         u.id, 
         u.school_id, 
+        u.branch_id,
+        bm.branch_name,
+        bm.branch_code,
         sm.school_name,
         sm.school_logo,
         sm.footer AS school_footer,
@@ -25,6 +28,7 @@ class AdminUserModel {
       FROM user_master u
       LEFT JOIN role_master r ON u.role = r.id
       LEFT JOIN school_master sm ON u.school_id = sm.id
+      LEFT JOIN branch_master bm ON u.branch_id = bm.id
       WHERE u.email = ? AND u.status = 1
       LIMIT 1
     `;
@@ -37,6 +41,9 @@ class AdminUserModel {
       SELECT 
         u.id, 
         u.school_id, 
+        u.branch_id,
+        bm.branch_name,
+        bm.branch_code,
         sm.school_name,
         sm.school_logo,
         sm.footer AS school_footer,
@@ -55,6 +62,7 @@ class AdminUserModel {
       FROM user_master u
       LEFT JOIN role_master r ON u.role = r.id
       LEFT JOIN school_master sm ON u.school_id = sm.id
+      LEFT JOIN branch_master bm ON u.branch_id = bm.id
       WHERE u.id = ? AND u.status = 1
       LIMIT 1
     `;

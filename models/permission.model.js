@@ -295,6 +295,111 @@ class PermissionModel {
     permissionCache.set(numRoleId, permMap);
     return permMap;
   }
+
+  /**
+   * Ensure a system role 'Branch Head' exists for the given schoolId with full operational permissions
+   * @param {number} schoolId
+   * @returns {Promise<number>} roleId of the Branch Head role
+   */
+  static async ensureBranchHeadRole(schoolId) {
+    const parsedSchoolId = Number(schoolId) || 1;
+
+    // Check if 'Branch Head' role already exists for this school
+    const [existing] = await pool.query(
+      `SELECT id FROM role_master WHERE (school_id = ? OR school_id IS NULL) AND LOWER(TRIM(role_name)) = 'branch head' AND (status = 1 OR status IS NULL) LIMIT 1`,
+      [parsedSchoolId]
+    );
+
+    let roleId;
+    if (existing && existing.length > 0) {
+      roleId = existing[0].id;
+    } else {
+      // Create 'Branch Head' role for this school
+      const [insertResult] = await pool.query(
+        `INSERT INTO role_master (school_id, role_name, is_system_role, status, created_on) VALUES (?, 'Branch Head', 1, 1, NOW())`,
+        [parsedSchoolId]
+      );
+      roleId = insertResult.insertId;
+    }
+
+    // Check if permissions are already seeded for this roleId
+    const [existingPerms] = await pool.query(
+      `SELECT COUNT(*) AS total FROM permission WHERE role_id = ?`,
+      [roleId]
+    );
+
+    if (existingPerms[0].total === 0) {
+      const operationalModules = [
+        'academic/classes',
+        'academic/sections',
+        'academic/subject',
+        'academic/syllabus',
+        'academic/material',
+        'academic/routine',
+        'academic/assignment',
+        'academic/assignmenttype',
+        'academic/days',
+        'academic/period',
+        'academic/shift',
+        'academic/house',
+        'academic/year',
+        'academic/documentType',
+        'ward/students',
+        'ward/parents',
+        'staff/teachers',
+        'staff/users',
+        'attendance/student',
+        'attendance/teacher',
+        'attendance/staff',
+        'leaves/leaveapply',
+        'leaves/leaveassign',
+        'transport/route',
+        'transport/bus',
+        'transport/driver',
+        'transport/helper',
+        'examination/exam',
+        'examination/examtype',
+        'examination/examschedule',
+        'examination/examsubject',
+        'examination/examAttendance',
+        'examination/examResult',
+        'examination/gradeSettings',
+        'feesmanagement/structures',
+        'feesmanagement/components',
+        'feesmanagement/allocations',
+        'feesmanagement/invoices',
+        'feesmanagement/payments',
+        'hostel/hostelList',
+        'hostel/hostelRooms',
+        'announcement/notice',
+        'announcement/event',
+        'announcement/holiday',
+        'certificate/category',
+        'certificate/template',
+        'certificate/certificatecreate',
+        'records/idcard',
+        'records/admitcard',
+        'records/marksheet',
+        'records/certificate',
+        'records/transfercertificate',
+        'report/classReport',
+        'report/studentReport',
+        'report/attendanceReport',
+        'report/calendarReport',
+        'settings/miscManagement',
+        'settings/salarydatesettings',
+      ];
+
+      const permRows = operationalModules.map((mod) => [roleId, mod, 1, 1, 1, 1]);
+      await pool.query(
+        `INSERT INTO permission (role_id, module, view_access, add_access, edit_access, delete_access) VALUES ?`,
+        [permRows]
+      );
+      PermissionModel.clearPermissionCache(roleId);
+    }
+
+    return roleId;
+  }
 }
 
 module.exports = PermissionModel;

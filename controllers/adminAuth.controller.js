@@ -31,7 +31,7 @@ class AdminAuthController {
       // admin_type: 1 = Super Admin, 2 = Staff
       const adminType = Number(user.admin_type);
       const isSuperAdmin = adminType === 1 || user.role_name === 'Super Admin';
-      const isAdmin = isSuperAdmin || adminType === 2 || Boolean(user.role_id) || (user.role_name && user.role_name.toLowerCase().includes('admin'));
+      const isAdmin = isSuperAdmin || adminType === 2 || Boolean(user.role_id) || (user.role_name && (user.role_name.toLowerCase().includes('admin') || user.role_name.toLowerCase().includes('head')));
 
       if (!isAdmin) {
         return ApiResponse.error(res, 'Access denied. Account does not have administrative privileges.', null, 403);
@@ -66,6 +66,9 @@ class AdminAuthController {
       const tokenPayload = {
         userId: user.id,
         schoolId: user.school_id,
+        branchId: user.branch_id || null,
+        branchName: user.branch_name || null,
+        branchCode: user.branch_code || null,
         schoolName: user.school_name,
         schoolLogo: user.school_logo,
         email: user.email,
@@ -96,9 +99,14 @@ class AdminAuthController {
         token, // Available for mobile app & external API consumption via Authorization header
         user: {
           id: user.id,
+          schoolId: user.school_id,
           schoolName: user.school_name || '',
           schoolLogo: user.school_logo || null,
           schoolFooter: user.school_footer || null,
+          branchId: user.branch_id || null,
+          branch_id: user.branch_id || null,
+          branchName: user.branch_name || null,
+          branchCode: user.branch_code || null,
           firstName: user.first_name,
           lastName: user.last_name,
           email: user.email,
@@ -165,9 +173,14 @@ class AdminAuthController {
         authSource: req.authSource || 'authenticated',
         user: {
           id: user.id,
+          schoolId: user.school_id,
           schoolName: user.school_name || '',
           schoolLogo: user.school_logo || null,
           schoolFooter: user.school_footer || null,
+          branchId: user.branch_id || null,
+          branch_id: user.branch_id || null,
+          branchName: user.branch_name || null,
+          branchCode: user.branch_code || null,
           firstName: user.first_name,
           lastName: user.last_name,
           email: user.email,

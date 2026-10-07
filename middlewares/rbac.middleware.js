@@ -64,7 +64,7 @@ function rbacMiddleware(...args) {
           const uLower = userRole.toLowerCase().trim();
           return (
             rLower === uLower ||
-            (rLower === 'admin' && (adminType === 2 || portalType === 'AdminPortal' || Boolean(roleId) || uLower.includes('admin') || uLower.includes('staff'))) ||
+            (rLower === 'admin' && (adminType === 2 || portalType === 'AdminPortal' || Boolean(roleId) || uLower.includes('admin') || uLower.includes('staff') || uLower.includes('head'))) ||
             (rLower === 'teacher' && (portalType === 'TeacherPortal' || uLower === 'teacher')) ||
             (rLower === 'parent' && (portalType === 'ParentPortal' || uLower === 'parent')) ||
             (rLower === 'student' && (portalType === 'StudentPortal' || uLower === 'student'))
