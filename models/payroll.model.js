@@ -47,8 +47,8 @@ class PayrollModel {
     if (branchId) {
       sql += ` AND (
         (bm.branch_id = ?) OR 
-        (bm.user_type = 2 AND (t.branch_id = ? OR t.branch_id IS NULL)) OR 
-        (bm.user_type != 2 AND (u.branch_id = ? OR u.branch_id IS NULL))
+        (bm.user_type = 2 AND t.branch_id = ?) OR 
+        (bm.user_type != 2 AND u.branch_id = ?)
       )`;
       params.push(Number(branchId), Number(branchId), Number(branchId));
     }
@@ -277,7 +277,7 @@ class PayrollModel {
       `;
       const params = [sId];
       if (branchId) {
-        sql += ` AND (t.branch_id = ? OR t.branch_id IS NULL)`;
+        sql += ` AND t.branch_id = ?`;
         params.push(Number(branchId));
       }
       sql += ` ORDER BY t.first_name ASC`;
@@ -302,7 +302,7 @@ class PayrollModel {
       `;
       const params = [sId];
       if (branchId) {
-        sql += ` AND (u.branch_id = ? OR u.branch_id IS NULL)`;
+        sql += ` AND u.branch_id = ?`;
         params.push(Number(branchId));
       }
       sql += ` ORDER BY u.first_name ASC`;
@@ -392,8 +392,8 @@ class PayrollModel {
     if (branchId) {
       sql += ` AND (
         (es.branch_id = ?) OR
-        (es.user_type = 2 AND (t.branch_id = ? OR t.branch_id IS NULL)) OR
-        (es.user_type != 2 AND (u.branch_id = ? OR u.branch_id IS NULL))
+        (es.user_type = 2 AND t.branch_id = ?) OR
+        (es.user_type != 2 AND u.branch_id = ?)
       )`;
       params.push(Number(branchId), Number(branchId), Number(branchId));
     }

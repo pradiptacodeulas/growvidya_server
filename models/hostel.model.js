@@ -48,7 +48,7 @@ const HostelModel = {
        WHERE school_id = ? AND status != 4`;
     const params = [schoolId];
     if (branchId) {
-      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      sql += ` AND branch_id = ?`;
       params.push(Number(branchId));
     }
     sql += ` ORDER BY sort_order ASC, id DESC`;
@@ -123,7 +123,7 @@ const HostelModel = {
        WHERE rm.school_id = ? AND rm.status != 4`;
     const params = [schoolId];
     if (branchId) {
-      sql += ` AND (rm.branch_id = ? OR hn.branch_id = ? OR rm.branch_id IS NULL)`;
+      sql += ` AND (rm.branch_id = ? OR hn.branch_id = ?)`;
       params.push(Number(branchId), Number(branchId));
     }
     sql += ` ORDER BY rm.sort_order ASC, rm.id DESC`;

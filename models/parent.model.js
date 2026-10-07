@@ -3,7 +3,7 @@ const { saveBase64File } = require('../utils/file.util');
 const { hashPassword } = require('../utils/password.util');
 
 class ParentModel {
-  static async getAll(schoolId, { search = '', name = '', email = '', classId = '', sectionId = '', limit = 12, offset = 0 } = {}) {
+  static async getAll(schoolId, { search = '', name = '', email = '', classId = '', sectionId = '', branchId = null, limit = 12, offset = 0 } = {}) {
     let sql = `
       SELECT 
         p.id,
@@ -55,6 +55,11 @@ class ParentModel {
       params.push(sectionId);
     }
 
+    if (branchId) {
+      sql += ` AND s.branch_id = ?`;
+      params.push(Number(branchId));
+    }
+
     sql += ` GROUP BY p.id ORDER BY p.id DESC LIMIT ? OFFSET ?`;
     params.push(Number(limit), Number(offset));
 
@@ -84,7 +89,7 @@ class ParentModel {
 
     if (email) {
       countSql += ` AND p.email LIKE ?`;
-      params.push(`%${email}%`);
+      countParams.push(`%${email}%`);
     }
 
     if (classId) {
@@ -95,6 +100,11 @@ class ParentModel {
     if (sectionId) {
       countSql += ` AND s.section = ?`;
       countParams.push(sectionId);
+    }
+
+    if (branchId) {
+      countSql += ` AND s.branch_id = ?`;
+      countParams.push(Number(branchId));
     }
 
     const [countRows] = await pool.query(countSql, countParams);

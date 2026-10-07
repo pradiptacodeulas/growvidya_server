@@ -2,24 +2,31 @@ const { pool } = require('../config/db.config');
 
 class CertificateModel {
   // ================= CATEGORIES =================
-  static async getAllCategories(schoolId, { search = '', status = null } = {}) {
+  static async getAllCategories(schoolId, { search = '', status = null, branchId = null } = {}) {
     let sql = `
-      SELECT * FROM certificate_category 
-      WHERE school_id = ? AND status != 4
+      SELECT c.*, bm.branch_name, bm.branch_code 
+      FROM certificate_category c 
+      LEFT JOIN branch_master bm ON c.branch_id = bm.id
+      WHERE c.school_id = ? AND c.status != 4
     `;
     const params = [schoolId];
 
+    if (branchId) {
+      sql += ` AND (c.branch_id = ? OR c.branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+
     if (search && search.trim()) {
-      sql += ` AND category_name LIKE ?`;
+      sql += ` AND c.category_name LIKE ?`;
       params.push(`%${search.trim()}%`);
     }
 
     if (status !== null && status !== undefined && status !== '') {
-      sql += ` AND status = ?`;
+      sql += ` AND c.status = ?`;
       params.push(Number(status));
     }
 
-    sql += ` ORDER BY sort_order ASC, id DESC`;
+    sql += ` ORDER BY c.sort_order ASC, c.id DESC`;
 
     const [rows] = await pool.query(sql, params);
     return rows;
@@ -27,7 +34,10 @@ class CertificateModel {
 
   static async getCategoryById(id, schoolId) {
     const [rows] = await pool.query(
-      `SELECT * FROM certificate_category WHERE id = ? AND school_id = ? AND status != 4`,
+      `SELECT c.*, bm.branch_name, bm.branch_code 
+       FROM certificate_category c 
+       LEFT JOIN branch_master bm ON c.branch_id = bm.id
+       WHERE c.id = ? AND c.school_id = ? AND c.status != 4`,
       [id, schoolId]
     );
     return rows[0] || null;
@@ -44,26 +54,31 @@ class CertificateModel {
     return rows[0] || null;
   }
 
-  static async createCategory({ school_id, category_name, sort_order = 0, status = 1, created_by = null }) {
+  static async createCategory({ school_id, branch_id = null, category_name, sort_order = 0, status = 1, created_by = null }) {
+    const resolvedBranchId = branch_id ? Number(branch_id) : null;
     const [result] = await pool.query(
-      `INSERT INTO certificate_category (school_id, category_name, sort_order, status, created_by, created_at, modify_at)
-       VALUES (?, ?, ?, ?, ?, NOW(), NOW())`,
-      [school_id, category_name, sort_order || 0, status || 1, created_by]
+      `INSERT INTO certificate_category (school_id, branch_id, category_name, sort_order, status, created_by, created_at, modify_at)
+       VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+      [school_id, resolvedBranchId, category_name, sort_order || 0, status || 1, created_by]
     );
     return result.insertId;
   }
 
-  static async updateCategory(id, school_id, { category_name, sort_order, status, modify_by = null }) {
-    const [result] = await pool.query(
-      `UPDATE certificate_category 
+  static async updateCategory(id, school_id, { branch_id, category_name, sort_order, status, modify_by = null }) {
+    let sql = `UPDATE certificate_category 
        SET category_name = COALESCE(?, category_name),
            sort_order = COALESCE(?, sort_order),
            status = COALESCE(?, status),
            modify_by = ?,
-           modify_at = NOW()
-       WHERE id = ? AND school_id = ?`,
-      [category_name, sort_order, status, modify_by, id, school_id]
-    );
+           modify_at = NOW()`;
+    const params = [category_name, sort_order, status, modify_by];
+    if (branch_id !== undefined) {
+      sql += `, branch_id = ?`;
+      params.push(branch_id ? Number(branch_id) : null);
+    }
+    sql += ` WHERE id = ? AND school_id = ?`;
+    params.push(id, school_id);
+    const [result] = await pool.query(sql, params);
     return result.affectedRows > 0;
   }
 
@@ -76,14 +91,20 @@ class CertificateModel {
   }
 
   // ================= TEMPLATES =================
-  static async getAllTemplates(schoolId, { categoryId = null, search = '', status = null } = {}) {
+  static async getAllTemplates(schoolId, { categoryId = null, search = '', status = null, branchId = null } = {}) {
     let sql = `
-      SELECT t.*, c.category_name 
+      SELECT t.*, c.category_name, bm.branch_name, bm.branch_code 
       FROM certificate_template t
       LEFT JOIN certificate_category c ON t.certificate_category = c.id
+      LEFT JOIN branch_master bm ON t.branch_id = bm.id
       WHERE t.school_id = ? AND t.status != 4
     `;
     const params = [schoolId];
+
+    if (branchId) {
+      sql += ` AND (t.branch_id = ? OR t.branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
 
     if (categoryId) {
       sql += ` AND t.certificate_category = ?`;
@@ -108,9 +129,10 @@ class CertificateModel {
 
   static async getTemplateById(id, schoolId) {
     const [rows] = await pool.query(
-      `SELECT t.*, c.category_name 
+      `SELECT t.*, c.category_name, bm.branch_name, bm.branch_code 
        FROM certificate_template t
        LEFT JOIN certificate_category c ON t.certificate_category = c.id
+       LEFT JOIN branch_master bm ON t.branch_id = bm.id
        WHERE t.id = ? AND t.school_id = ? AND t.status != 4`,
       [id, schoolId]
     );
@@ -119,6 +141,7 @@ class CertificateModel {
 
   static async createTemplate({
     school_id,
+    branch_id = null,
     certificate_category,
     template_name,
     certificate_heading,
@@ -129,12 +152,14 @@ class CertificateModel {
     status = 1,
     created_by = null,
   }) {
+    const resolvedBranchId = branch_id ? Number(branch_id) : null;
     const [result] = await pool.query(
       `INSERT INTO certificate_template 
-       (school_id, certificate_category, template_name, certificate_heading, short_description, description, border, certified_by, status, created_by, created_at, modify_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+       (school_id, branch_id, certificate_category, template_name, certificate_heading, short_description, description, border, certified_by, status, created_by, created_at, modify_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
       [
         school_id,
+        resolvedBranchId,
         certificate_category,
         template_name,
         certificate_heading,
@@ -153,6 +178,7 @@ class CertificateModel {
     id,
     school_id,
     {
+      branch_id,
       certificate_category,
       template_name,
       certificate_heading,
@@ -164,8 +190,7 @@ class CertificateModel {
       modify_by = null,
     }
   ) {
-    const [result] = await pool.query(
-      `UPDATE certificate_template 
+    let sql = `UPDATE certificate_template 
        SET certificate_category = COALESCE(?, certificate_category),
            template_name = COALESCE(?, template_name),
            certificate_heading = COALESCE(?, certificate_heading),
@@ -175,22 +200,28 @@ class CertificateModel {
            certified_by = COALESCE(?, certified_by),
            status = COALESCE(?, status),
            modify_by = ?,
-           modify_at = NOW()
-       WHERE id = ? AND school_id = ?`,
-      [
-        certificate_category,
-        template_name,
-        certificate_heading,
-        short_description,
-        description,
-        border,
-        certified_by,
-        status,
-        modify_by,
-        id,
-        school_id,
-      ]
-    );
+           modify_at = NOW()`;
+    const params = [
+      certificate_category,
+      template_name,
+      certificate_heading,
+      short_description,
+      description,
+      border,
+      certified_by,
+      status,
+      modify_by,
+    ];
+
+    if (branch_id !== undefined) {
+      sql += `, branch_id = ?`;
+      params.push(branch_id ? Number(branch_id) : null);
+    }
+
+    sql += ` WHERE id = ? AND school_id = ?`;
+    params.push(id, school_id);
+
+    const [result] = await pool.query(sql, params);
     return result.affectedRows > 0;
   }
 
@@ -299,7 +330,7 @@ class CertificateModel {
     const params = [schoolId];
 
     if (branchId) {
-      baseWhere += ` AND (sc.branch_id = ? OR s.branch_id = ? OR s.branch_id IS NULL)`;
+      baseWhere += ` AND (sc.branch_id = ? OR s.branch_id = ?)`;
       params.push(Number(branchId), Number(branchId));
     }
 

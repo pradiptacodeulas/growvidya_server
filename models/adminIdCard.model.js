@@ -126,7 +126,7 @@ class AdminIdCardModel {
     }
 
     if (branchId) {
-      query += ` AND (s.branch_id = ? OR s.branch_id IS NULL)`;
+      query += ` AND s.branch_id = ?`;
       params.push(Number(branchId));
     }
 
@@ -186,7 +186,7 @@ class AdminIdCardModel {
     }
 
     if (branchId) {
-      query += ` AND (t.branch_id = ? OR t.branch_id IS NULL)`;
+      query += ` AND t.branch_id = ?`;
       params.push(Number(branchId));
     }
 
@@ -244,7 +244,7 @@ class AdminIdCardModel {
     }
 
     if (branchId) {
-      query += ` AND (u.branch_id = ? OR u.branch_id IS NULL)`;
+      query += ` AND u.branch_id = ?`;
       params.push(Number(branchId));
     }
 

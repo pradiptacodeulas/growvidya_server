@@ -329,7 +329,8 @@ exports.deleteNotice = async (req, res) => {
 exports.getAllEvents = async (req, res) => {
   try {
     const schoolId = getSchoolId(req);
-    const events = await AnnouncementModel.getAllEvents(schoolId);
+    const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+    const events = await AnnouncementModel.getAllEvents(schoolId, branchId);
     return res.status(200).json({ success: true, data: events, events });
   } catch (err) {
     console.error('Error in getAllEvents:', err);
@@ -356,6 +357,7 @@ exports.createEvent = async (req, res) => {
   try {
     const schoolId = getSchoolId(req);
     let { title, from_date, to_date, daterange, details, status } = req.body;
+    const branchId = req.body.branch_id !== undefined ? req.body.branch_id : (req.branchId || null);
 
     if (!title || !title.trim()) {
       return res.status(400).json({ success: false, message: 'Event title is required' });
@@ -374,6 +376,7 @@ exports.createEvent = async (req, res) => {
 
     const insertId = await AnnouncementModel.createEvent({
       school_id: schoolId,
+      branch_id: branchId,
       title: title.trim(),
       from_date: from_date || null,
       to_date: to_date || from_date || null,
@@ -397,6 +400,7 @@ exports.updateEvent = async (req, res) => {
     const schoolId = getSchoolId(req);
     const { id } = req.params;
     let { title, from_date, to_date, daterange, details, status } = req.body;
+    const branchId = req.body.branch_id !== undefined ? req.body.branch_id : undefined;
 
     if (!title || !title.trim()) {
       return res.status(400).json({ success: false, message: 'Event title is required' });
@@ -414,6 +418,7 @@ exports.updateEvent = async (req, res) => {
     }
 
     await AnnouncementModel.updateEvent(id, schoolId, {
+      branch_id: branchId,
       title: title.trim(),
       from_date: from_date || null,
       to_date: to_date || from_date || null,
@@ -450,7 +455,8 @@ exports.deleteEvent = async (req, res) => {
 exports.getAllHolidays = async (req, res) => {
   try {
     const schoolId = getSchoolId(req);
-    const holidays = await AnnouncementModel.getAllHolidays(schoolId);
+    const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+    const holidays = await AnnouncementModel.getAllHolidays(schoolId, branchId);
     return res.status(200).json({ success: true, data: holidays, holidays });
   } catch (err) {
     console.error('Error in getAllHolidays:', err);
@@ -477,6 +483,7 @@ exports.createHoliday = async (req, res) => {
   try {
     const schoolId = getSchoolId(req);
     let { title, from_date, to_date, daterange, details, status } = req.body;
+    const branchId = req.body.branch_id !== undefined ? req.body.branch_id : (req.branchId || null);
 
     if (!title || !title.trim()) {
       return res.status(400).json({ success: false, message: 'Holiday title is required' });
@@ -495,6 +502,7 @@ exports.createHoliday = async (req, res) => {
 
     const insertId = await AnnouncementModel.createHoliday({
       school_id: schoolId,
+      branch_id: branchId,
       title: title.trim(),
       from_date: from_date || null,
       to_date: to_date || from_date || null,
@@ -518,6 +526,7 @@ exports.updateHoliday = async (req, res) => {
     const schoolId = getSchoolId(req);
     const { id } = req.params;
     let { title, from_date, to_date, daterange, details, status } = req.body;
+    const branchId = req.body.branch_id !== undefined ? req.body.branch_id : undefined;
 
     if (!title || !title.trim()) {
       return res.status(400).json({ success: false, message: 'Holiday title is required' });
@@ -535,6 +544,7 @@ exports.updateHoliday = async (req, res) => {
     }
 
     await AnnouncementModel.updateHoliday(id, schoolId, {
+      branch_id: branchId,
       title: title.trim(),
       from_date: from_date || null,
       to_date: to_date || from_date || null,

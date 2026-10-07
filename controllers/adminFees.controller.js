@@ -10,8 +10,9 @@ class AdminFeesController {
   static async getAllComponents(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.branchId || req.query.branch_id || null;
       const { status, search } = req.query;
-      const components = await AdminFeesModel.getAllComponents({ schoolId, status, search });
+      const components = await AdminFeesModel.getAllComponents({ schoolId, branchId, status, search });
       return ApiResponse.success(res, 'Fee components retrieved successfully.', { components });
     } catch (error) {
       next(error);
@@ -35,6 +36,7 @@ class AdminFeesController {
   static async createComponent(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.body.branch_id !== undefined ? req.body.branch_id : (req.branchId || req.query.branch_id || null);
       const { name, code, tax_rate, taxRate, account_code, accountCode, description, status } = req.body;
 
       if (!name) {
@@ -43,6 +45,7 @@ class AdminFeesController {
 
       const id = await AdminFeesModel.createComponent({
         schoolId,
+        branchId,
         name,
         code,
         taxRate: tax_rate || taxRate,
@@ -61,9 +64,10 @@ class AdminFeesController {
     try {
       const schoolId = req.user.schoolId;
       const { id } = req.params;
-      const { name, code, tax_rate, taxRate, account_code, accountCode, description, status } = req.body;
+      const { name, code, tax_rate, taxRate, account_code, accountCode, description, status, branch_id } = req.body;
 
       const success = await AdminFeesModel.updateComponent(id, schoolId, {
+        branchId: branch_id !== undefined ? branch_id : undefined,
         name,
         code,
         taxRate: tax_rate !== undefined ? tax_rate : taxRate,

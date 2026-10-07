@@ -27,7 +27,7 @@ class ReportModel {
     let classQuery = `SELECT id, shift_id, class_name, sort_order FROM class_master WHERE school_id = ? AND status = 1`;
     const classParams = [schoolId];
     if (branchId) {
-      classQuery += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      classQuery += ` AND branch_id = ?`;
       classParams.push(Number(branchId));
     }
     classQuery += ` ORDER BY sort_order ASC, id ASC`;
@@ -37,7 +37,7 @@ class ReportModel {
     let secQuery = `SELECT id, class_id, section_name, capacity FROM section_master WHERE school_id = ? AND status = 1`;
     const secParams = [schoolId];
     if (branchId) {
-      secQuery += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      secQuery += ` AND branch_id = ?`;
       secParams.push(Number(branchId));
     }
     secQuery += ` ORDER BY sort_order ASC, id ASC`;
@@ -103,7 +103,7 @@ class ReportModel {
     let queryParams = [schoolId];
 
     if (branchId) {
-      whereConditions.push(`(s.branch_id = ? OR s.branch_id IS NULL)`);
+      whereConditions.push(`s.branch_id = ?`);
       queryParams.push(Number(branchId));
     }
 
@@ -263,7 +263,7 @@ class ReportModel {
     let queryParams = [schoolId];
 
     if (branchId) {
-      whereConditions.push(`(s.branch_id = ? OR s.branch_id IS NULL)`);
+      whereConditions.push(`s.branch_id = ?`);
       queryParams.push(Number(branchId));
     }
 
@@ -467,7 +467,7 @@ class ReportModel {
       let queryParams = [schoolId];
 
       if (branchId) {
-        whereConditions.push(`(t.branch_id = ? OR t.branch_id IS NULL)`);
+        whereConditions.push(`t.branch_id = ?`);
         queryParams.push(Number(branchId));
       }
 
@@ -572,7 +572,7 @@ class ReportModel {
       let queryParams = [schoolId];
 
       if (branchId) {
-        whereConditions.push(`(u.branch_id = ? OR u.branch_id IS NULL)`);
+        whereConditions.push(`u.branch_id = ?`);
         queryParams.push(Number(branchId));
       }
 
@@ -674,7 +674,7 @@ class ReportModel {
       let queryParams = [schoolId];
 
       if (branchId) {
-        whereConditions.push(`(s.branch_id = ? OR s.branch_id IS NULL)`);
+        whereConditions.push(`s.branch_id = ?`);
         queryParams.push(Number(branchId));
       }
 

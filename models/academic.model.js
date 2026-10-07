@@ -168,7 +168,7 @@ class AcademicModel {
       sql += ` AND (c.status != 4 OR c.status IS NULL)`;
     }
     if (branchId) {
-      sql += ` AND (c.branch_id = ? OR c.branch_id IS NULL)`;
+      sql += ` AND c.branch_id = ?`;
       params.push(Number(branchId));
     }
     if (teacherId) {
@@ -244,7 +244,7 @@ class AcademicModel {
       sql += ` AND (sec.status != 4 OR sec.status IS NULL)`;
     }
     if (branchId) {
-      sql += ` AND (sec.branch_id = ? OR sec.branch_id IS NULL)`;
+      sql += ` AND sec.branch_id = ?`;
       params.push(Number(branchId));
     }
     if (classId) {
@@ -315,7 +315,7 @@ class AcademicModel {
 
   // ==================== SUBJECTS ====================
   // Filter subjects strictly by teacher_class_assign for teachers, status = 1
-  static async getSubjects(schoolId, classId = null, activeOnly = false, teacherId = null) {
+  static async getSubjects(schoolId, classId = null, activeOnly = false, teacherId = null, branchId = null) {
     let sql = `SELECT sm.*, cm.class_name 
                FROM subject_master sm
                LEFT JOIN class_master cm ON sm.class_id = cm.id
@@ -326,6 +326,11 @@ class AcademicModel {
       sql += ` AND sm.status = 1`;
     } else {
       sql += ` AND (sm.status != 4 OR sm.status IS NULL)`;
+    }
+
+    if (branchId) {
+      sql += ` AND cm.branch_id = ?`;
+      params.push(Number(branchId));
     }
 
     if (classId) {
@@ -391,39 +396,51 @@ class AcademicModel {
   }
 
   // ==================== SHIFTS ====================
-  static async getShifts(schoolId, activeOnly = false) {
-    let sql = `SELECT * FROM shift_master WHERE school_id = ?`;
+  static async getShifts(schoolId, activeOnly = false, branchId = null) {
+    let sql = `SELECT s.*, bm.branch_name, bm.branch_code 
+               FROM shift_master s 
+               LEFT JOIN branch_master bm ON s.branch_id = bm.id 
+               WHERE s.school_id = ?`;
     const params = [schoolId];
     if (activeOnly) {
-      sql += ` AND status = 1`;
+      sql += ` AND s.status = 1`;
     } else {
-      sql += ` AND (status != 4 OR status IS NULL)`;
+      sql += ` AND (s.status != 4 OR s.status IS NULL)`;
     }
-    sql += ` ORDER BY id ASC`;
+    if (branchId) {
+      sql += ` AND (s.branch_id = ? OR s.branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    sql += ` ORDER BY s.id ASC`;
     const [rows] = await pool.query(sql, params);
     return rows;
   }
 
   static async getShiftById(id, schoolId) {
     const [rows] = await pool.query(
-      `SELECT * FROM shift_master WHERE id = ? AND school_id = ? LIMIT 1`,
+      `SELECT s.*, bm.branch_name, bm.branch_code 
+       FROM shift_master s 
+       LEFT JOIN branch_master bm ON s.branch_id = bm.id 
+       WHERE s.id = ? AND s.school_id = ? LIMIT 1`,
       [id, schoolId]
     );
     return rows[0] || null;
   }
 
-  static async createShift(schoolId, { shift_name, start_time = null, end_time = null, status = 1 }) {
+  static async createShift(schoolId, { branch_id = null, shift_name, start_time = null, end_time = null, status = 1 }) {
+    const resolvedBranchId = branch_id ? Number(branch_id) : null;
     const [result] = await pool.query(
-      `INSERT INTO shift_master (school_id, shift_name, start_time, end_time, status) VALUES (?, ?, ?, ?, ?)`,
-      [schoolId, shift_name, start_time, end_time, status]
+      `INSERT INTO shift_master (school_id, branch_id, shift_name, start_time, end_time, status) VALUES (?, ?, ?, ?, ?, ?)`,
+      [schoolId, resolvedBranchId, shift_name, start_time, end_time, status]
     );
     return result.insertId;
   }
 
-  static async updateShift(id, schoolId, { shift_name, start_time, end_time, status = 1 }) {
+  static async updateShift(id, schoolId, { branch_id, shift_name, start_time, end_time, status = 1 }) {
+    const resolvedBranchId = branch_id !== undefined ? (branch_id ? Number(branch_id) : null) : null;
     const [result] = await pool.query(
-      `UPDATE shift_master SET shift_name = ?, start_time = ?, end_time = ?, status = ? WHERE id = ? AND school_id = ?`,
-      [shift_name, start_time, end_time, status, id, schoolId]
+      `UPDATE shift_master SET shift_name = ?, start_time = ?, end_time = ?, status = ?, branch_id = COALESCE(?, branch_id) WHERE id = ? AND school_id = ?`,
+      [shift_name, start_time, end_time, status, resolvedBranchId, id, schoolId]
     );
     return result.affectedRows > 0;
   }
@@ -437,18 +454,28 @@ class AcademicModel {
   }
 
   // ==================== HOUSES ====================
-  static async getHouses(schoolId) {
-    const [rows] = await pool.query(
-      `SELECT * FROM house_master WHERE school_id = ? AND (status != 4 OR status IS NULL) ORDER BY sort_order ASC, id ASC`,
-      [schoolId]
-    );
+  static async getHouses(schoolId, branchId = null) {
+    let sql = `SELECT h.*, bm.branch_name, bm.branch_code 
+               FROM house_master h 
+               LEFT JOIN branch_master bm ON h.branch_id = bm.id 
+               WHERE h.school_id = ? AND (h.status != 4 OR h.status IS NULL)`;
+    const params = [schoolId];
+    if (branchId) {
+      sql += ` AND (h.branch_id = ? OR h.branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    sql += ` ORDER BY h.sort_order ASC, h.id ASC`;
+    const [rows] = await pool.query(sql, params);
     return rows;
   }
 
   static async getHouseById(id, schoolId) {
     try {
       const [rows] = await pool.query(
-        `SELECT * FROM house_master WHERE id = ? AND school_id = ? AND status != 4 LIMIT 1`,
+        `SELECT h.*, bm.branch_name, bm.branch_code 
+         FROM house_master h 
+         LEFT JOIN branch_master bm ON h.branch_id = bm.id 
+         WHERE h.id = ? AND h.school_id = ? AND h.status != 4 LIMIT 1`,
         [id, schoolId]
       );
       return rows[0] || null;
@@ -458,18 +485,20 @@ class AcademicModel {
     }
   }
 
-  static async createHouse(schoolId, { house_name, sort_order = 1, status = 1 }) {
+  static async createHouse(schoolId, { branch_id = null, house_name, sort_order = 1, status = 1 }) {
+    const resolvedBranchId = branch_id ? Number(branch_id) : null;
     const [result] = await pool.query(
-      `INSERT INTO house_master (school_id, house_name, sort_order, status) VALUES (?, ?, ?, ?)`,
-      [schoolId, house_name, Number(sort_order) || 1, Number(status)]
+      `INSERT INTO house_master (school_id, branch_id, house_name, sort_order, status) VALUES (?, ?, ?, ?, ?)`,
+      [schoolId, resolvedBranchId, house_name, Number(sort_order) || 1, Number(status)]
     );
     return result.insertId;
   }
 
-  static async updateHouse(id, schoolId, { house_name, sort_order = 1, status = 1 }) {
+  static async updateHouse(id, schoolId, { branch_id, house_name, sort_order = 1, status = 1 }) {
+    const resolvedBranchId = branch_id !== undefined ? (branch_id ? Number(branch_id) : null) : null;
     const [result] = await pool.query(
-      `UPDATE house_master SET house_name = ?, sort_order = ?, status = ? WHERE id = ? AND school_id = ?`,
-      [house_name, Number(sort_order) || 1, Number(status), id, schoolId]
+      `UPDATE house_master SET house_name = ?, sort_order = ?, status = ?, branch_id = COALESCE(?, branch_id) WHERE id = ? AND school_id = ?`,
+      [house_name, Number(sort_order) || 1, Number(status), resolvedBranchId, id, schoolId]
     );
     return result.affectedRows > 0;
   }
@@ -483,23 +512,28 @@ class AcademicModel {
   }
 
   // ==================== PERIODS ====================
-  static async getPeriods(schoolId) {
-    const [rows] = await pool.query(
-      `SELECT p.*, s.shift_name 
+  static async getPeriods(schoolId, branchId = null) {
+    let sql = `SELECT p.*, bm.branch_name, bm.branch_code, s.shift_name 
        FROM period_master p 
+       LEFT JOIN branch_master bm ON p.branch_id = bm.id 
        LEFT JOIN shift_master s ON p.shift_id = s.id 
-       WHERE p.school_id = ? AND (p.status != 4 OR p.status IS NULL) 
-       ORDER BY p.id ASC`,
-      [schoolId]
-    );
+       WHERE p.school_id = ? AND (p.status != 4 OR p.status IS NULL)`;
+    const params = [schoolId];
+    if (branchId) {
+      sql += ` AND (p.branch_id = ? OR p.branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    sql += ` ORDER BY p.id ASC`;
+    const [rows] = await pool.query(sql, params);
     return rows;
   }
 
   static async getPeriodById(id, schoolId) {
     try {
       const [rows] = await pool.query(
-        `SELECT p.*, s.shift_name 
+        `SELECT p.*, bm.branch_name, bm.branch_code, s.shift_name 
          FROM period_master p 
+         LEFT JOIN branch_master bm ON p.branch_id = bm.id 
          LEFT JOIN shift_master s ON p.shift_id = s.id 
          WHERE p.id = ? AND p.school_id = ? AND p.status != 4 LIMIT 1`,
         [id, schoolId]
@@ -511,18 +545,20 @@ class AcademicModel {
     }
   }
 
-  static async createPeriod(schoolId, { shift_id = null, period_name, start_time = null, end_time = null, status = 1 }) {
+  static async createPeriod(schoolId, { branch_id = null, shift_id = null, period_name, start_time = null, end_time = null, status = 1 }) {
+    const resolvedBranchId = branch_id ? Number(branch_id) : null;
     const [result] = await pool.query(
-      `INSERT INTO period_master (school_id, shift_id, period_name, start_time, end_time, status) VALUES (?, ?, ?, ?, ?, ?)`,
-      [schoolId, shift_id ? Number(shift_id) : null, period_name, start_time, end_time, Number(status)]
+      `INSERT INTO period_master (school_id, branch_id, shift_id, period_name, start_time, end_time, status) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [schoolId, resolvedBranchId, shift_id ? Number(shift_id) : null, period_name, start_time, end_time, Number(status)]
     );
     return result.insertId;
   }
 
-  static async updatePeriod(id, schoolId, { shift_id = null, period_name, start_time, end_time, status }) {
+  static async updatePeriod(id, schoolId, { branch_id, shift_id = null, period_name, start_time, end_time, status }) {
+    const resolvedBranchId = branch_id !== undefined ? (branch_id ? Number(branch_id) : null) : null;
     const [result] = await pool.query(
-      `UPDATE period_master SET shift_id = ?, period_name = ?, start_time = ?, end_time = ?, status = ? WHERE id = ? AND school_id = ?`,
-      [shift_id ? Number(shift_id) : null, period_name, start_time, end_time, Number(status), id, schoolId]
+      `UPDATE period_master SET shift_id = ?, period_name = ?, start_time = ?, end_time = ?, status = ?, branch_id = COALESCE(?, branch_id) WHERE id = ? AND school_id = ?`,
+      [shift_id ? Number(shift_id) : null, period_name, start_time, end_time, Number(status), resolvedBranchId, id, schoolId]
     );
     return result.affectedRows > 0;
   }
@@ -904,8 +940,8 @@ class AcademicModel {
       `;
       const params = [schoolId];
       if (branchId) {
-        sql += ` AND (r.branch_id = ? OR cm.branch_id = ? OR tm.branch_id = ? OR r.branch_id IS NULL)`;
-        params.push(Number(branchId), Number(branchId), Number(branchId));
+        sql += ` AND (r.branch_id = ? OR cm.branch_id = ?)`;
+        params.push(Number(branchId), Number(branchId));
       }
       if (classId) {
         sql += ` AND r.class_id = ?`;
@@ -989,7 +1025,7 @@ class AcademicModel {
   }
 
   // ==================== CLASS ASSIGNED TEACHERS (teacher_class_assign & teacher_master) ====================
-  static async getClassAssignedTeachers(schoolId, { classId, subjectId } = {}) {
+  static async getClassAssignedTeachers(schoolId, { classId, subjectId, branchId = null } = {}) {
     try {
       let sql = `
         SELECT * FROM (
@@ -1010,6 +1046,7 @@ class AcademicModel {
             AND tca.status = 1 
             AND tm.status = 1
             AND (? IS NULL OR tca.class_id = ?)
+            ${branchId ? 'AND tm.branch_id = ?' : ''}
 
           UNION
 
@@ -1028,12 +1065,15 @@ class AcademicModel {
           WHERE tm.school_id = ?
             AND tm.status = 1
             AND (? IS NULL OR tm.class = ?)
+            ${branchId ? 'AND tm.branch_id = ?' : ''}
         ) AS combined
         WHERE 1=1
       `;
       const params = [
         schoolId, classId || null, classId || null,
-        schoolId, classId || null, classId || null
+        ...(branchId ? [Number(branchId)] : []),
+        schoolId, classId || null, classId || null,
+        ...(branchId ? [Number(branchId)] : []),
       ];
 
       if (subjectId) {
@@ -1067,7 +1107,7 @@ class AcademicModel {
       const params = [schoolId];
 
       if (branchId) {
-        baseSql += ` AND (s.branch_id = ? OR cm.branch_id = ? OR s.branch_id IS NULL)`;
+        baseSql += ` AND (s.branch_id = ? OR cm.branch_id = ?)`;
         params.push(Number(branchId), Number(branchId));
       }
 
@@ -1214,7 +1254,7 @@ class AcademicModel {
     return result.affectedRows > 0;
   }
 
-  static async getLessons(schoolId, { classId, subjectId } = {}) {
+  static async getLessons(schoolId, { classId, subjectId, branchId = null } = {}) {
     try {
       let sql = `
         SELECT lm.*, cm.class_name, sm.subject_name
@@ -1224,6 +1264,10 @@ class AcademicModel {
         WHERE lm.school_id = ? AND (lm.status != 4 OR lm.status IS NULL)
       `;
       const params = [schoolId];
+      if (branchId) {
+        sql += ` AND (cm.branch_id = ? OR cm.branch_id IS NULL)`;
+        params.push(Number(branchId));
+      }
       if (classId) {
         sql += ` AND lm.class_id = ?`;
         params.push(classId);
@@ -1366,7 +1410,7 @@ class AcademicModel {
       const params = [schoolId];
 
       if (branchId) {
-        baseSql += ` AND (a.branch_id = ? OR cm.branch_id = ? OR a.branch_id IS NULL)`;
+        baseSql += ` AND (a.branch_id = ? OR cm.branch_id = ?)`;
         params.push(Number(branchId), Number(branchId));
       }
 
@@ -1733,7 +1777,7 @@ class AcademicModel {
       const params = [schoolId];
 
       if (branchId) {
-        whereClauses.push('(sm.branch_id = ? OR cm.branch_id = ? OR sm.branch_id IS NULL)');
+        whereClauses.push('(sm.branch_id = ? OR cm.branch_id = ?)');
         params.push(Number(branchId), Number(branchId));
       }
 

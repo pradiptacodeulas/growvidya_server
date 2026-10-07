@@ -90,6 +90,37 @@ class BranchModel {
         }
       }
 
+      // Ensure shared master / config tables have branch_id column (allowing NULL for school-wide defaults)
+      const sharedMasterTables = [
+        'shift_master',
+        'period_master',
+        'house_master',
+        'event',
+        'holiday',
+        'operator_master',
+        'certificate_template',
+        'certificate_category',
+        'settings_salary_date',
+      ];
+
+      for (const tableName of sharedMasterTables) {
+        try {
+          const [cols] = await pool.query(`SHOW COLUMNS FROM \`${tableName}\``);
+          const colNames = cols.map((c) => c.Field);
+
+          if (!colNames.includes('branch_id')) {
+            await pool.query(
+              `ALTER TABLE \`${tableName}\` ADD COLUMN branch_id INT(11) NULL DEFAULT NULL AFTER school_id`
+            );
+            await pool.query(
+              `ALTER TABLE \`${tableName}\` ADD INDEX idx_${tableName}_branch (school_id, branch_id)`
+            );
+          }
+        } catch (masterErr) {
+          // Table might not exist in all installations
+        }
+      }
+
       // Synchronize attendance and invoice records to their respective student's/teacher's branch
       try {
         await pool.query(`

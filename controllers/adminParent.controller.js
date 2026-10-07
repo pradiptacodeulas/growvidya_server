@@ -26,12 +26,15 @@ class AdminParentController {
       const limit = paramsSrc.limit || 12;
       const offset = (Number(page) - 1) * Number(limit);
 
+      const branchId = req.branchId || paramsSrc.branch_id || paramsSrc.branchId || null;
+
       const { parents, total } = await ParentModel.getAll(schoolId, {
         search: String(search).trim(),
         name: String(name).trim(),
         email: String(email).trim(),
         classId,
         sectionId,
+        branchId,
         limit: Number(limit),
         offset,
       });

@@ -208,8 +208,9 @@ class AdminTransportController {
     try {
       const schoolId = getSchoolId(req);
       const { search, status } = req.query;
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
 
-      const drivers = await TransportModel.getAllDrivers(schoolId, { search, status });
+      const drivers = await TransportModel.getAllDrivers(schoolId, { search, status, branchId });
       return ApiResponse.success(res, 'Drivers fetched successfully.', { drivers });
     } catch (error) {
       next(error);
@@ -262,7 +263,8 @@ class AdminTransportController {
   static async createDriver(req, res, next) {
     try {
       const schoolId = getSchoolId(req);
-      const { first_name, last_name, email, phone, license_number, lisence_number, gender, picture, status } = req.body || {};
+      const { first_name, last_name, email, phone, license_number, lisence_number, gender, picture, status, branch_id } = req.body || {};
+      const branchId = branch_id !== undefined ? branch_id : (req.branchId || null);
 
       if (!first_name || !first_name.trim()) {
         return ApiResponse.error(res, 'Driver first name is required.', null, 400);
@@ -310,6 +312,7 @@ class AdminTransportController {
       }
 
       const id = await TransportModel.createDriver(schoolId, {
+        branch_id: branchId,
         first_name,
         last_name,
         email,
@@ -335,7 +338,8 @@ class AdminTransportController {
     try {
       const schoolId = getSchoolId(req);
       const { id } = req.params;
-      const { first_name, last_name, email, phone, license_number, lisence_number, gender, picture, status } = req.body || {};
+      const { first_name, last_name, email, phone, license_number, lisence_number, gender, picture, status, branch_id } = req.body || {};
+      const branchId = branch_id !== undefined ? branch_id : undefined;
 
       if (!first_name || !first_name.trim()) {
         return ApiResponse.error(res, 'Driver first name is required.', null, 400);
@@ -383,6 +387,7 @@ class AdminTransportController {
       }
 
       await TransportModel.updateDriver(schoolId, id, {
+        branch_id: branchId,
         first_name,
         last_name,
         email,
@@ -424,8 +429,9 @@ class AdminTransportController {
     try {
       const schoolId = getSchoolId(req);
       const { search, status } = req.query;
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
 
-      const helpers = await TransportModel.getAllHelpers(schoolId, { search, status });
+      const helpers = await TransportModel.getAllHelpers(schoolId, { search, status, branchId });
       return ApiResponse.success(res, 'Helpers fetched successfully.', { helpers });
     } catch (error) {
       next(error);
@@ -475,7 +481,8 @@ class AdminTransportController {
   static async createHelper(req, res, next) {
     try {
       const schoolId = getSchoolId(req);
-      const { first_name, last_name, email, phone, gender, picture, status } = req.body || {};
+      const { first_name, last_name, email, phone, gender, picture, status, branch_id } = req.body || {};
+      const branchId = branch_id !== undefined ? branch_id : (req.branchId || req.query.branch_id || null);
 
       if (!first_name || !first_name.trim()) {
         return ApiResponse.error(res, 'First name is required.', null, 400);
@@ -514,6 +521,7 @@ class AdminTransportController {
       }
 
       const id = await TransportModel.createHelper(schoolId, {
+        branch_id: branchId,
         first_name,
         last_name,
         email,
@@ -532,7 +540,8 @@ class AdminTransportController {
     try {
       const schoolId = getSchoolId(req);
       const { id } = req.params;
-      const { first_name, last_name, email, phone, gender, picture, status } = req.body || {};
+      const { first_name, last_name, email, phone, gender, picture, status, branch_id } = req.body || {};
+      const branchId = branch_id !== undefined ? branch_id : undefined;
 
       if (!first_name || !first_name.trim()) {
         return ApiResponse.error(res, 'First name is required.', null, 400);
@@ -571,6 +580,7 @@ class AdminTransportController {
       }
 
       await TransportModel.updateHelper(schoolId, id, {
+        branch_id: branchId,
         first_name,
         last_name,
         email,

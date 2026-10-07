@@ -857,7 +857,7 @@ class AdminExaminationModel {
       params.push(academicYearId, academicYearId, academicYearId);
     }
     if (branchId) {
-      query += ` AND (es.branch_id = ? OR c.branch_id = ? OR c.branch_id IS NULL)`;
+      query += ` AND (es.branch_id = ? OR c.branch_id = ?)`;
       params.push(Number(branchId), Number(branchId));
     }
 
@@ -1090,7 +1090,7 @@ class AdminExaminationModel {
       attParams.push(sectionId);
     }
     if (branchId) {
-      attQuery += ` AND (sm.branch_id = ? OR sm.branch_id IS NULL)`;
+      attQuery += ` AND sm.branch_id = ?`;
       attParams.push(Number(branchId));
     }
     if (search && String(search).trim()) {
@@ -1165,7 +1165,7 @@ class AdminExaminationModel {
         studentParams.push(sectionId);
       }
       if (branchId) {
-        studentQuery += ` AND (s.branch_id = ? OR s.branch_id IS NULL)`;
+        studentQuery += ` AND s.branch_id = ?`;
         studentParams.push(Number(branchId));
       }
       studentQuery += ` ORDER BY sec.sort_order ASC, sec.section_name ASC, CAST(s.roll_number AS UNSIGNED) ASC, s.first_name ASC`;
@@ -1508,7 +1508,7 @@ class AdminExaminationModel {
       params.push(academicYearId);
     }
     if (branchId) {
-      query += ` AND (s.branch_id = ? OR s.branch_id IS NULL)`;
+      query += ` AND s.branch_id = ?`;
       params.push(Number(branchId));
     }
 
@@ -1834,7 +1834,7 @@ class AdminExaminationModel {
       params.push(sectionId);
     }
     if (branchId) {
-      whereClause += ` AND (s.branch_id = ? OR s.branch_id IS NULL)`;
+      whereClause += ` AND s.branch_id = ?`;
       params.push(Number(branchId));
     }
     if (search && search.trim()) {
@@ -2073,7 +2073,7 @@ class AdminExaminationModel {
         p.push(sectionId);
       }
       if (branchId) {
-        q += ` AND (s.branch_id = ? OR s.branch_id IS NULL)`;
+        q += ` AND s.branch_id = ?`;
         p.push(Number(branchId));
       }
       q += ` GROUP BY s.id ORDER BY s.roll_number ASC, s.first_name ASC`;
@@ -2368,7 +2368,7 @@ class AdminExaminationModel {
         qParams.push(sectionId);
       }
       if (branchId) {
-        q += ` AND (s.branch_id = ? OR s.branch_id IS NULL)`;
+        q += ` AND s.branch_id = ?`;
         qParams.push(Number(branchId));
       }
       q += ` GROUP BY s.id ORDER BY s.roll_number ASC, s.first_name ASC`;
@@ -2394,7 +2394,7 @@ class AdminExaminationModel {
         sParams.push(targetExamId);
       }
       if (branchId) {
-        scheduleQuery += ` AND (es.branch_id = ? OR es.branch_id IS NULL)`;
+        scheduleQuery += ` AND es.branch_id = ?`;
         sParams.push(Number(branchId));
       }
       scheduleQuery += ` ORDER BY es.date ASC, es.start_time ASC`;

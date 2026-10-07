@@ -437,26 +437,32 @@ class LeaveModel {
   /**
    * Get Staff/Teachers options based on role
    */
-  static async getStaffByRole(schoolId, role) {
+  static async getStaffByRole(schoolId, role, branchId = null) {
     if (Number(role) === 1) {
       // Teachers
-      const [rows] = await pool.query(
-        `SELECT id, teacher_id AS code, CONCAT(IFNULL(first_name, ''), ' ', IFNULL(last_name, '')) AS name, picture, gender
+      let sql = `SELECT id, teacher_id AS code, CONCAT(IFNULL(first_name, ''), ' ', IFNULL(last_name, '')) AS name, picture, gender
          FROM teacher_master
-         WHERE school_id = ? AND status != 0 AND status != 4
-         ORDER BY first_name ASC`,
-        [schoolId]
-      );
+         WHERE school_id = ? AND status != 0 AND status != 4`;
+      const params = [schoolId];
+      if (branchId) {
+        sql += ` AND branch_id = ?`;
+        params.push(Number(branchId));
+      }
+      sql += ` ORDER BY first_name ASC`;
+      const [rows] = await pool.query(sql, params);
       return rows || [];
     } else {
       // Users / Staff
-      const [rows] = await pool.query(
-        `SELECT id, CONCAT(IFNULL(first_name, ''), ' ', IFNULL(last_name, '')) AS name, picture, gender
+      let sql = `SELECT id, CONCAT(IFNULL(first_name, ''), ' ', IFNULL(last_name, '')) AS name, picture, gender
          FROM user_master
-         WHERE school_id = ? AND status != 0 AND status != 4
-         ORDER BY first_name ASC`,
-        [schoolId]
-      );
+         WHERE school_id = ? AND status != 0 AND status != 4`;
+      const params = [schoolId];
+      if (branchId) {
+        sql += ` AND branch_id = ?`;
+        params.push(Number(branchId));
+      }
+      sql += ` ORDER BY first_name ASC`;
+      const [rows] = await pool.query(sql, params);
       return rows || [];
     }
   }

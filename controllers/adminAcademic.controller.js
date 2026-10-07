@@ -12,11 +12,12 @@ class AdminAcademicController {
   static async getAllMasters(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const [years, classes, sections, subjects, shifts, houses, periods] = await Promise.all([
         AcademicModel.getAcademicYears(schoolId),
-        AcademicModel.getClasses(schoolId),
-        AcademicModel.getSections(schoolId),
-        AcademicModel.getSubjects(schoolId),
+        AcademicModel.getClasses(schoolId, false, null, branchId),
+        AcademicModel.getSections(schoolId, null, false, null, branchId),
+        AcademicModel.getSubjects(schoolId, null, false, null, branchId),
         AcademicModel.getShifts(schoolId),
         AcademicModel.getHouses(schoolId),
         AcademicModel.getPeriods(schoolId),
@@ -230,13 +231,14 @@ class AdminAcademicController {
       const schoolId = AdminAcademicController.getSchoolId(req);
       const classId = req.query.classId || req.query.class_id || req.params.classId || null;
       const activeOnly = req.query.activeOnly === 'true' || req.query.status === '1' || req.user?.roleName === 'Teacher';
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const teacherId =
         req.query.teacher_id ||
         req.query.teacherId ||
         (String(req.user?.roleName || '').toLowerCase().includes('teacher')
           ? req.user.teacherId || req.user.userId
           : null);
-      const data = await AcademicModel.getSubjects(schoolId, classId, activeOnly, teacherId);
+      const data = await AcademicModel.getSubjects(schoolId, classId, activeOnly, teacherId, branchId);
       return ApiResponse.success(res, 'Subjects fetched successfully.', data);
     } catch (error) {
       next(error);
@@ -292,7 +294,8 @@ class AdminAcademicController {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
       const activeOnly = req.query.status === '1' || req.query.active === 'true';
-      const data = await AcademicModel.getShifts(schoolId, activeOnly);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const data = await AcademicModel.getShifts(schoolId, activeOnly, branchId);
       return ApiResponse.success(res, 'Shifts fetched', data);
     } catch (error) {
       next(error);
@@ -313,7 +316,11 @@ class AdminAcademicController {
   static async createShift(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const insertId = await AcademicModel.createShift(schoolId, req.body);
+      const branchId = req.body.branch_id !== undefined ? req.body.branch_id : (req.branchId || null);
+      const insertId = await AcademicModel.createShift(schoolId, {
+        ...req.body,
+        branch_id: branchId,
+      });
       return ApiResponse.success(res, 'Shift created successfully.', { id: insertId }, 201);
     } catch (error) {
       next(error);
@@ -323,7 +330,11 @@ class AdminAcademicController {
   static async updateShift(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const updated = await AcademicModel.updateShift(req.params.id, schoolId, req.body);
+      const branchId = req.body.branch_id !== undefined ? req.body.branch_id : undefined;
+      const updated = await AcademicModel.updateShift(req.params.id, schoolId, {
+        ...req.body,
+        branch_id: branchId,
+      });
       if (!updated) return ApiResponse.error(res, 'Shift not found', null, 404);
       return ApiResponse.success(res, 'Shift updated successfully.', null);
     } catch (error) {
@@ -346,7 +357,8 @@ class AdminAcademicController {
   static async getHouses(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const data = await AcademicModel.getHouses(schoolId);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const data = await AcademicModel.getHouses(schoolId, branchId);
       return ApiResponse.success(res, 'Houses fetched', data);
     } catch (error) {
       next(error);
@@ -368,7 +380,11 @@ class AdminAcademicController {
   static async createHouse(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const insertId = await AcademicModel.createHouse(schoolId, req.body);
+      const branchId = req.body.branch_id !== undefined ? req.body.branch_id : (req.branchId || null);
+      const insertId = await AcademicModel.createHouse(schoolId, {
+        ...req.body,
+        branch_id: branchId,
+      });
       return ApiResponse.success(res, 'House created successfully.', { id: insertId }, 201);
     } catch (error) {
       next(error);
@@ -378,7 +394,11 @@ class AdminAcademicController {
   static async updateHouse(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const updated = await AcademicModel.updateHouse(req.params.id, schoolId, req.body);
+      const branchId = req.body.branch_id !== undefined ? req.body.branch_id : undefined;
+      const updated = await AcademicModel.updateHouse(req.params.id, schoolId, {
+        ...req.body,
+        branch_id: branchId,
+      });
       if (!updated) return ApiResponse.error(res, 'House not found', null, 404);
       return ApiResponse.success(res, 'House updated successfully.', null);
     } catch (error) {
@@ -401,7 +421,8 @@ class AdminAcademicController {
   static async getPeriods(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const data = await AcademicModel.getPeriods(schoolId);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const data = await AcademicModel.getPeriods(schoolId, branchId);
       return ApiResponse.success(res, 'Periods fetched', data);
     } catch (error) {
       next(error);
@@ -423,7 +444,11 @@ class AdminAcademicController {
   static async createPeriod(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const insertId = await AcademicModel.createPeriod(schoolId, req.body);
+      const branchId = req.body.branch_id !== undefined ? req.body.branch_id : (req.branchId || null);
+      const insertId = await AcademicModel.createPeriod(schoolId, {
+        ...req.body,
+        branch_id: branchId,
+      });
       return ApiResponse.success(res, 'Period created successfully.', { id: insertId }, 201);
     } catch (error) {
       next(error);
@@ -433,7 +458,11 @@ class AdminAcademicController {
   static async updatePeriod(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const updated = await AcademicModel.updatePeriod(req.params.id, schoolId, req.body);
+      const branchId = req.body.branch_id !== undefined ? req.body.branch_id : undefined;
+      const updated = await AcademicModel.updatePeriod(req.params.id, schoolId, {
+        ...req.body,
+        branch_id: branchId,
+      });
       if (!updated) return ApiResponse.error(res, 'Period not found', null, 404);
       return ApiResponse.success(res, 'Period updated successfully.', null);
     } catch (error) {
@@ -772,9 +801,11 @@ class AdminAcademicController {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
       const { class_id, classId, subject_id, subjectId } = req.query;
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const data = await AcademicModel.getClassAssignedTeachers(schoolId, {
         classId: class_id || classId,
         subjectId: subject_id || subjectId,
+        branchId,
       });
       return ApiResponse.success(res, 'Class assigned teachers fetched successfully', data);
     } catch (error) {
@@ -872,9 +903,11 @@ class AdminAcademicController {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
       const { class_id, classId, subject_id, subjectId } = req.query;
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const data = await AcademicModel.getLessons(schoolId, {
         classId: class_id || classId,
         subjectId: subject_id || subjectId,
+        branchId,
       });
       return ApiResponse.success(res, 'Lessons fetched successfully', data);
     } catch (error) {
@@ -1234,7 +1267,8 @@ class AdminAcademicController {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
       const { classId, subjectId } = req.query;
-      const data = await AcademicModel.getLessons(schoolId, { classId, subjectId });
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const data = await AcademicModel.getLessons(schoolId, { classId, subjectId, branchId });
       return ApiResponse.success(res, 'Lessons fetched successfully', data);
     } catch (error) {
       next(error);

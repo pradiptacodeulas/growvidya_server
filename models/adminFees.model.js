@@ -5,11 +5,14 @@ class AdminFeesModel {
   // 1. FEE COMPONENTS
   // =========================================================
 
-  static async getAllComponents({ schoolId, status, search }) {
+  static async getAllComponents({ schoolId, branchId, status, search }) {
     let query = `
       SELECT 
         fc.id,
         fc.school_id,
+        fc.branch_id,
+        brm.branch_name,
+        brm.branch_code,
         fc.name,
         fc.code,
         fc.tax_rate,
@@ -18,9 +21,15 @@ class AdminFeesModel {
         fc.status,
         fc.created_at
       FROM fee_components fc
+      LEFT JOIN branch_master brm ON brm.id = fc.branch_id
       WHERE fc.school_id = ?
     `;
     const params = [schoolId];
+
+    if (branchId) {
+      query += ` AND (fc.branch_id = ? OR fc.branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
 
     if (status !== undefined && status !== '') {
       query += ` AND fc.status = ?`;
@@ -41,20 +50,24 @@ class AdminFeesModel {
 
   static async getComponentById(id, schoolId) {
     const query = `
-      SELECT * FROM fee_components
-      WHERE id = ? AND school_id = ? AND status != 4
+      SELECT fc.*, brm.branch_name, brm.branch_code 
+      FROM fee_components fc
+      LEFT JOIN branch_master brm ON brm.id = fc.branch_id
+      WHERE fc.id = ? AND fc.school_id = ? AND fc.status != 4
     `;
     const [rows] = await pool.query(query, [id, schoolId]);
     return rows[0] || null;
   }
 
-  static async createComponent({ schoolId, name, code, taxRate, accountCode, description, status }) {
+  static async createComponent({ schoolId, branchId, name, code, taxRate, accountCode, description, status }) {
+    const resolvedBranchId = branchId ? Number(branchId) : null;
     const query = `
-      INSERT INTO fee_components (school_id, name, code, tax_rate, account_code, description, status, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+      INSERT INTO fee_components (school_id, branch_id, name, code, tax_rate, account_code, description, status, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
     `;
     const [result] = await pool.query(query, [
       schoolId,
+      resolvedBranchId,
       name,
       code || null,
       parseFloat(taxRate) || 0.0,
@@ -65,11 +78,15 @@ class AdminFeesModel {
     return result.insertId;
   }
 
-  static async updateComponent(id, schoolId, { name, code, taxRate, accountCode, description, status }) {
+  static async updateComponent(id, schoolId, { branchId, name, code, taxRate, accountCode, description, status }) {
     let query = `UPDATE fee_components SET `;
     const updates = [];
     const params = [];
 
+    if (branchId !== undefined) {
+      updates.push('branch_id = ?');
+      params.push(branchId ? Number(branchId) : null);
+    }
     if (name !== undefined) {
       updates.push('name = ?');
       params.push(name);
@@ -146,7 +163,7 @@ class AdminFeesModel {
     const params = [schoolId];
 
     if (branchId) {
-      query += ` AND (fs.branch_id = ? OR fs.branch_id IS NULL)`;
+      query += ` AND fs.branch_id = ?`;
       params.push(Number(branchId));
     }
     if (academicYearId) {

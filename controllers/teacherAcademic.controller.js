@@ -69,7 +69,8 @@ class TeacherAcademicController {
     try {
       const schoolId = TeacherAcademicController.getSchoolId(req);
       const activeOnly = req.query.status === '1' || req.query.activeOnly === 'true';
-      const shifts = await AcademicModel.getShifts(schoolId, activeOnly);
+      const branchId = req.branchId || req.user?.branch_id || req.user?.branchId || null;
+      const shifts = await AcademicModel.getShifts(schoolId, activeOnly, branchId);
       return ApiResponse.success(res, 'Teacher shifts fetched successfully', shifts);
     } catch (error) {
       next(error);

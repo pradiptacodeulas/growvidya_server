@@ -142,9 +142,10 @@ class AdminLeaveController {
   static async getStaffByRole(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.branchId || req.query.branch_id || null;
       const { role } = req.params;
 
-      const staff = await LeaveModel.getStaffByRole(schoolId, role);
+      const staff = await LeaveModel.getStaffByRole(schoolId, role, branchId);
       return ApiResponse.success(res, 'Staff fetched successfully.', { staff });
     } catch (error) {
       next(error);

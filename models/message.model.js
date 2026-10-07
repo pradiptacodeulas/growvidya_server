@@ -298,7 +298,7 @@ class MessageModel {
       `;
       const userParams = [parsedSchoolId, parsedUserId];
       if (parsedBranchId) {
-        userSql += ` AND (u.branch_id = ? OR u.branch_id IS NULL)`;
+        userSql += ` AND u.branch_id = ?`;
         userParams.push(parsedBranchId);
       }
       userSql += ` ORDER BY u.admin_type ASC, u.first_name ASC`;
@@ -323,15 +323,14 @@ class MessageModel {
       `;
       const teacherParams = [parsedSchoolId];
       if (parsedBranchId) {
-        teacherSql += ` AND (t.branch_id = ? OR t.branch_id IS NULL)`;
+        teacherSql += ` AND t.branch_id = ?`;
         teacherParams.push(parsedBranchId);
       }
       teacherSql += ` ORDER BY t.first_name ASC`;
       const [teachers] = await pool.query(teacherSql, teacherParams);
 
       // 3. Parents from parent_master
-      const [parents] = await pool.query(
-        `SELECT 
+      let parentSql = `SELECT 
           p.id,
           CONCAT(TRIM(COALESCE(p.first_name, '')), ' ', TRIM(COALESCE(p.last_name, ''))) AS name,
           'parent' AS role,
@@ -346,10 +345,19 @@ class MessageModel {
               AND (s.status = 1 OR s.status = '1')
           ) AS child_name
         FROM parent_master p
-        WHERE p.school_id = ? AND p.status = 1
-        ORDER BY p.first_name ASC`,
-        [parsedSchoolId]
-      );
+        WHERE p.school_id = ? AND p.status = 1`;
+      const parentParams = [parsedSchoolId];
+      if (parsedBranchId) {
+        parentSql += ` AND EXISTS (
+          SELECT 1 FROM student_to_parent stp
+          JOIN student_master s ON stp.student_id = s.id
+          WHERE (stp.father_id = p.id OR stp.mother_id = p.id OR stp.guardian_id = p.id)
+            AND s.branch_id = ?
+        )`;
+        parentParams.push(parsedBranchId);
+      }
+      parentSql += ` ORDER BY p.first_name ASC`;
+      const [parents] = await pool.query(parentSql, parentParams);
 
       // 4. Students from student_master
       let studentSql = `
@@ -370,7 +378,7 @@ class MessageModel {
       `;
       const studentParams = [parsedSchoolId];
       if (parsedBranchId) {
-        studentSql += ` AND (s.branch_id = ? OR s.branch_id IS NULL)`;
+        studentSql += ` AND s.branch_id = ?`;
         studentParams.push(parsedBranchId);
       }
       studentSql += ` ORDER BY cm.class_name ASC, s.first_name ASC`;
@@ -397,7 +405,7 @@ class MessageModel {
       `;
       const userParams = [parsedSchoolId];
       if (parsedBranchId) {
-        userSql += ` AND (u.branch_id = ? OR u.branch_id IS NULL)`;
+        userSql += ` AND u.branch_id = ?`;
         userParams.push(parsedBranchId);
       }
       userSql += ` ORDER BY u.admin_type ASC, u.first_name ASC`;
@@ -422,15 +430,14 @@ class MessageModel {
       `;
       const teacherParams = [parsedSchoolId, parsedUserId];
       if (parsedBranchId) {
-        teacherSql += ` AND (t.branch_id = ? OR t.branch_id IS NULL)`;
+        teacherSql += ` AND t.branch_id = ?`;
         teacherParams.push(parsedBranchId);
       }
       teacherSql += ` ORDER BY t.first_name ASC`;
       const [colleagues] = await pool.query(teacherSql, teacherParams);
 
       // 3. Parents
-      const [parents] = await pool.query(
-        `SELECT 
+      let parentSql = `SELECT 
           p.id,
           CONCAT(TRIM(COALESCE(p.first_name, '')), ' ', TRIM(COALESCE(p.last_name, ''))) AS name,
           'parent' AS role,
@@ -445,10 +452,19 @@ class MessageModel {
               AND (s.status = 1 OR s.status = '1')
           ) AS child_name
         FROM parent_master p
-        WHERE p.school_id = ? AND p.status = 1
-        ORDER BY p.first_name ASC`,
-        [parsedSchoolId]
-      );
+        WHERE p.school_id = ? AND p.status = 1`;
+      const parentParams = [parsedSchoolId];
+      if (parsedBranchId) {
+        parentSql += ` AND EXISTS (
+          SELECT 1 FROM student_to_parent stp
+          JOIN student_master s ON stp.student_id = s.id
+          WHERE (stp.father_id = p.id OR stp.mother_id = p.id OR stp.guardian_id = p.id)
+            AND s.branch_id = ?
+        )`;
+        parentParams.push(parsedBranchId);
+      }
+      parentSql += ` ORDER BY p.first_name ASC`;
+      const [parents] = await pool.query(parentSql, parentParams);
 
       // 4. Students
       let studentSql = `
@@ -469,7 +485,7 @@ class MessageModel {
       `;
       const studentParams = [parsedSchoolId];
       if (parsedBranchId) {
-        studentSql += ` AND (s.branch_id = ? OR s.branch_id IS NULL)`;
+        studentSql += ` AND s.branch_id = ?`;
         studentParams.push(parsedBranchId);
       }
       studentSql += ` ORDER BY cm.class_name ASC, s.first_name ASC`;
@@ -496,7 +512,7 @@ class MessageModel {
       `;
       const teacherParams = [parsedSchoolId];
       if (parsedBranchId) {
-        teacherSql += ` AND (t.branch_id = ? OR t.branch_id IS NULL)`;
+        teacherSql += ` AND t.branch_id = ?`;
         teacherParams.push(parsedBranchId);
       }
       teacherSql += ` ORDER BY t.first_name ASC`;
@@ -521,7 +537,7 @@ class MessageModel {
       `;
       const userParams = [parsedSchoolId];
       if (parsedBranchId) {
-        userSql += ` AND (u.branch_id = ? OR u.branch_id IS NULL)`;
+        userSql += ` AND u.branch_id = ?`;
         userParams.push(parsedBranchId);
       }
       userSql += ` ORDER BY u.admin_type ASC, u.first_name ASC`;
@@ -548,7 +564,7 @@ class MessageModel {
       `;
       const teacherParams = [parsedSchoolId];
       if (parsedBranchId) {
-        teacherSql += ` AND (t.branch_id = ? OR t.branch_id IS NULL)`;
+        teacherSql += ` AND t.branch_id = ?`;
         teacherParams.push(parsedBranchId);
       }
       teacherSql += ` ORDER BY t.first_name ASC`;
@@ -573,7 +589,7 @@ class MessageModel {
       `;
       const userParams = [parsedSchoolId];
       if (parsedBranchId) {
-        userSql += ` AND (u.branch_id = ? OR u.branch_id IS NULL)`;
+        userSql += ` AND u.branch_id = ?`;
         userParams.push(parsedBranchId);
       }
       userSql += ` ORDER BY u.admin_type ASC, u.first_name ASC`;

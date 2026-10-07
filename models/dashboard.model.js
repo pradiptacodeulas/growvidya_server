@@ -173,7 +173,7 @@ class DashboardModel {
          FROM notice
          WHERE school_id = ? AND status != 4`;
       if (branchId) {
-        noticeSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+        noticeSql += ` AND branch_id = ?`;
         noticeParams.push(Number(branchId));
       }
       noticeSql += ` ORDER BY id DESC LIMIT 6`;

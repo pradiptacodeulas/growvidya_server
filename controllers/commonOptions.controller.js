@@ -38,7 +38,8 @@ class CommonOptionsController {
     try {
       const schoolId = CommonOptionsController.getSchoolId(req);
       const activeOnly = req.query.activeOnly === 'true' || req.query.active_only === 'true';
-      const classes = await AcademicModel.getClasses(schoolId, activeOnly);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const classes = await AcademicModel.getClasses(schoolId, activeOnly, null, branchId);
       const formatted = (classes || []).map((c) => ({
         id: c.id,
         class_name: c.class_name,
@@ -60,7 +61,8 @@ class CommonOptionsController {
       const schoolId = CommonOptionsController.getSchoolId(req);
       const classId = req.query?.classId || req.query?.class_id || req.params?.classId || null;
       const activeOnly = req.query?.activeOnly === 'true' || req.query?.active_only === 'true';
-      const sections = await AcademicModel.getSections(schoolId, classId, activeOnly);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const sections = await AcademicModel.getSections(schoolId, classId, activeOnly, null, branchId);
       const formatted = (sections || []).map((s) => ({
         id: s.id,
         class_id: s.class_id,
@@ -82,7 +84,8 @@ class CommonOptionsController {
       const schoolId = CommonOptionsController.getSchoolId(req);
       const classId = req.query.classId || req.query.class_id || null;
       const activeOnly = req.query.activeOnly === 'true' || req.query.active_only === 'true';
-      const subjects = await AcademicModel.getSubjects(schoolId, classId, activeOnly);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const subjects = await AcademicModel.getSubjects(schoolId, classId, activeOnly, null, branchId);
       const formatted = (subjects || []).map((s) => ({
         id: s.id,
         class_id: s.class_id,
@@ -103,11 +106,14 @@ class CommonOptionsController {
   static async getShifts(req, res, next) {
     try {
       const schoolId = CommonOptionsController.getSchoolId(req);
-      const shifts = await AcademicModel.getShifts(schoolId);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const shifts = await AcademicModel.getShifts(schoolId, false, branchId);
       const formatted = (shifts || []).map((s) => ({
         id: s.id,
         shift_name: s.shift_name,
         name: s.shift_name,
+        branch_id: s.branch_id,
+        branch_name: s.branch_name,
         start_time: s.start_time,
         end_time: s.end_time,
         status: s.status,
@@ -122,11 +128,14 @@ class CommonOptionsController {
   static async getHouses(req, res, next) {
     try {
       const schoolId = CommonOptionsController.getSchoolId(req);
-      const houses = await AcademicModel.getHouses(schoolId);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const houses = await AcademicModel.getHouses(schoolId, branchId);
       const formatted = (houses || []).map((h) => ({
         id: h.id,
         house_name: h.house_name,
         name: h.house_name,
+        branch_id: h.branch_id,
+        branch_name: h.branch_name,
         status: h.status,
       }));
       return ApiResponse.success(res, 'Houses fetched successfully.', formatted);
@@ -156,11 +165,12 @@ class CommonOptionsController {
   static async getAcademicBundle(req, res, next) {
     try {
       const schoolId = CommonOptionsController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const [years, classes, shifts, houses] = await Promise.all([
         AcademicModel.getAcademicYears(schoolId),
-        AcademicModel.getClasses(schoolId, true),
-        AcademicModel.getShifts(schoolId, true),
-        AcademicModel.getHouses(schoolId),
+        AcademicModel.getClasses(schoolId, true, null, branchId),
+        AcademicModel.getShifts(schoolId, true, branchId),
+        AcademicModel.getHouses(schoolId, branchId),
       ]);
       return ApiResponse.success(res, 'Academic options bundle fetched successfully.', {
         academicYears: (years || []).map((y) => ({

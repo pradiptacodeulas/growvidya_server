@@ -46,8 +46,9 @@ const getUserId = (req) => {
 exports.getAllCategories = async (req, res) => {
   try {
     const schoolId = getSchoolId(req);
+    const branchId = req.branchId || req.query.branch_id || null;
     const { search, status } = req.query;
-    const categories = await CertificateModel.getAllCategories(schoolId, { search, status });
+    const categories = await CertificateModel.getAllCategories(schoolId, { search, status, branchId });
     return ApiResponse.success(res, 'Certificate categories retrieved successfully', categories);
   } catch (err) {
     console.error('Error in getAllCategories:', err);
@@ -74,6 +75,7 @@ exports.createCategory = async (req, res) => {
   try {
     const schoolId = getSchoolId(req);
     const userId = getUserId(req);
+    const branchId = req.body.branch_id !== undefined ? req.body.branch_id : (req.branchId || req.query.branch_id || null);
     const { category_name, sort_order, status } = req.body;
 
     const errors = {};
@@ -119,6 +121,7 @@ exports.createCategory = async (req, res) => {
 
     const insertId = await CertificateModel.createCategory({
       school_id: schoolId,
+      branch_id: branchId,
       category_name: category_name.trim(),
       sort_order: parsedSortOrder,
       status: parsedStatus,
@@ -187,6 +190,7 @@ exports.updateCategory = async (req, res) => {
       category_name: cleanName,
       sort_order: parsedSortOrder,
       status: parsedStatus,
+      branch_id: req.body.branch_id !== undefined ? req.body.branch_id : undefined,
       modify_by: userId,
     });
 
@@ -220,8 +224,9 @@ exports.deleteCategory = async (req, res) => {
 exports.getAllTemplates = async (req, res) => {
   try {
     const schoolId = getSchoolId(req);
+    const branchId = req.branchId || req.query.branch_id || null;
     const { categoryId, search, status } = req.query;
-    const templates = await CertificateModel.getAllTemplates(schoolId, { categoryId, search, status });
+    const templates = await CertificateModel.getAllTemplates(schoolId, { categoryId, search, status, branchId });
     return ApiResponse.success(res, 'Certificate templates retrieved successfully', templates);
   } catch (err) {
     console.error('Error in getAllTemplates:', err);
@@ -248,6 +253,7 @@ exports.createTemplate = async (req, res) => {
   try {
     const schoolId = getSchoolId(req);
     const userId = getUserId(req);
+    const branchId = req.body.branch_id !== undefined ? req.body.branch_id : (req.branchId || req.query.branch_id || null);
     const {
       certificate_category,
       template_name,
@@ -271,6 +277,7 @@ exports.createTemplate = async (req, res) => {
 
     const insertId = await CertificateModel.createTemplate({
       school_id: schoolId,
+      branch_id: branchId,
       certificate_category: Number(certificate_category),
       template_name: template_name.trim(),
       certificate_heading: certificate_heading ? certificate_heading.trim() : '',
@@ -314,6 +321,7 @@ exports.updateTemplate = async (req, res) => {
       border: border !== undefined ? String(border) : undefined,
       certified_by: certified_by !== undefined ? certified_by.trim() : undefined,
       status: status !== undefined ? Number(status) : undefined,
+      branch_id: req.body.branch_id !== undefined ? req.body.branch_id : undefined,
       modify_by: userId,
     });
 

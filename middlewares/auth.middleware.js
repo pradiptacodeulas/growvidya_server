@@ -91,8 +91,10 @@ function authMiddleware(req, res, next) {
 
       // Branch Context Scoping: check header, query, or token
       const branchFromHeader = req.headers['x-branch-id'] || req.headers['x-branch'];
-      const branchFromQuery = req.query?.branch_id;
-      const rawBranch = branchFromHeader !== undefined ? branchFromHeader : branchFromQuery;
+      const branchFromQuery = req.query?.branch_id !== undefined ? req.query.branch_id : req.query?.branchId;
+      const rawBranch = (branchFromQuery !== undefined && branchFromQuery !== null && branchFromQuery !== '')
+        ? branchFromQuery
+        : branchFromHeader;
 
       let activeBranchId = null;
       if (rawBranch !== undefined && rawBranch !== null) {

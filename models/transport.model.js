@@ -40,7 +40,7 @@ class TransportModel {
     const params = [schoolId];
 
     if (branchId) {
-      sql += ` AND (r.branch_id = ? OR r.branch_id IS NULL)`;
+      sql += ` AND r.branch_id = ?`;
       params.push(Number(branchId));
     }
 
@@ -260,7 +260,7 @@ class TransportModel {
     const params = [schoolId, schoolId];
 
     if (branchId) {
-      sql += ` AND (b.branch_id = ? OR b.branch_id IS NULL)`;
+      sql += ` AND b.branch_id = ?`;
       params.push(Number(branchId));
     }
 
@@ -386,11 +386,13 @@ class TransportModel {
   // 3. DRIVERS (operator_master with type = 1)
   // ==========================================
 
-  static async getAllDrivers(schoolId, { search, status } = {}) {
+  static async getAllDrivers(schoolId, { search, status, branchId = null } = {}) {
     let sql = `
       SELECT 
         op.id,
         op.school_id,
+        op.branch_id,
+        bm.branch_name,
         op.first_name,
         op.last_name,
         CONCAT(IFNULL(op.first_name, ''), ' ', IFNULL(op.last_name, '')) AS driver_name,
@@ -402,11 +404,17 @@ class TransportModel {
         MAX(b.name) AS assigned_bus,
         MAX(b.number_plate) AS assigned_number_plate
       FROM operator_master op
+      LEFT JOIN branch_master bm ON op.branch_id = bm.id
       LEFT JOIN bus_to_operator bo ON (op.id = bo.operator_id AND bo.status != 0)
       LEFT JOIN bus_master b ON (bo.bus_id = b.id AND b.status != 0)
       WHERE op.school_id = ? AND op.type = 1
     `;
     const params = [schoolId];
+
+    if (branchId) {
+      sql += ` AND (op.branch_id = ? OR op.branch_id IS NULL OR b.branch_id = ?)`;
+      params.push(Number(branchId), Number(branchId));
+    }
 
     const parsedStatus = parseStatus(status);
     if (parsedStatus !== null) {
@@ -425,7 +433,7 @@ class TransportModel {
       params.push(`%${search.trim()}%`, `%${search.trim()}%`, `%${search.trim()}%`, `%${search.trim()}%`);
     }
 
-    sql += ` GROUP BY op.id, op.school_id, op.first_name, op.last_name, op.email, op.phone, op.lisence_number, op.picture, op.status ORDER BY op.id DESC`;
+    sql += ` GROUP BY op.id, op.school_id, op.branch_id, bm.branch_name, op.first_name, op.last_name, op.email, op.phone, op.lisence_number, op.picture, op.status ORDER BY op.id DESC`;
     const [rows] = await pool.query(sql, params);
     return rows || [];
   }
@@ -435,6 +443,8 @@ class TransportModel {
       `SELECT 
         op.id,
         op.school_id,
+        op.branch_id,
+        bm.branch_name,
         op.first_name,
         op.last_name,
         CONCAT(IFNULL(op.first_name, ''), ' ', IFNULL(op.last_name, '')) AS driver_name,
@@ -444,6 +454,7 @@ class TransportModel {
         op.picture,
         op.status
        FROM operator_master op
+       LEFT JOIN branch_master bm ON op.branch_id = bm.id
        WHERE op.id = ? AND op.school_id = ? AND op.type = 1 AND op.status != 0`,
       [id, schoolId]
     );
@@ -495,15 +506,17 @@ class TransportModel {
     return { isEmailDuplicate, isPhoneDuplicate, isLicenseDuplicate };
   }
 
-  static async createDriver(schoolId, { first_name, last_name, email, phone, license_number, lisence_number, picture, status }) {
+  static async createDriver(schoolId, { branch_id = null, first_name, last_name, email, phone, license_number, lisence_number, picture, status }) {
     const cleanEmail = email && String(email).trim() ? String(email).trim() : null;
     const cleanPhone = phone ? String(phone).trim() : '';
     const cleanLicense = (license_number || lisence_number || '').trim() || null;
+    const resolvedBranchId = branch_id ? Number(branch_id) : null;
     const [res] = await pool.query(
-      `INSERT INTO operator_master (school_id, first_name, last_name, email, phone, lisence_number, picture, type, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+      `INSERT INTO operator_master (school_id, branch_id, first_name, last_name, email, phone, lisence_number, picture, type, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
       [
         schoolId,
+        resolvedBranchId,
         first_name.trim(),
         last_name ? last_name.trim() : '',
         cleanEmail,
@@ -516,13 +529,14 @@ class TransportModel {
     return res.insertId;
   }
 
-  static async updateDriver(schoolId, id, { first_name, last_name, email, phone, license_number, lisence_number, picture, status }) {
+  static async updateDriver(schoolId, id, { branch_id, first_name, last_name, email, phone, license_number, lisence_number, picture, status }) {
     const cleanEmail = email && String(email).trim() ? String(email).trim() : null;
     const cleanPhone = phone ? String(phone).trim() : '';
     const cleanLicense = (license_number || lisence_number || '').trim() || null;
+    const resolvedBranchId = branch_id !== undefined ? (branch_id ? Number(branch_id) : null) : null;
     await pool.query(
       `UPDATE operator_master 
-       SET first_name = ?, last_name = ?, email = ?, phone = ?, lisence_number = ?, picture = IFNULL(NULLIF(?, ''), picture), status = ?
+       SET first_name = ?, last_name = ?, email = ?, phone = ?, lisence_number = ?, picture = IFNULL(NULLIF(?, ''), picture), status = ?, branch_id = COALESCE(?, branch_id)
        WHERE id = ? AND school_id = ? AND type = 1`,
       [
         first_name.trim(),
@@ -532,6 +546,7 @@ class TransportModel {
         cleanLicense,
         picture || '',
         status !== undefined ? Number(status) : 1,
+        resolvedBranchId,
         id,
         schoolId,
       ]
@@ -551,11 +566,13 @@ class TransportModel {
   // 4. HELPERS (operator_master with type = 2)
   // ==========================================
 
-  static async getAllHelpers(schoolId, { search, status } = {}) {
+  static async getAllHelpers(schoolId, { search, status, branchId = null } = {}) {
     let sql = `
       SELECT 
         op.id,
         op.school_id,
+        op.branch_id,
+        bm.branch_name,
         op.first_name,
         op.last_name,
         CONCAT(IFNULL(op.first_name, ''), ' ', IFNULL(op.last_name, '')) AS helper_name,
@@ -567,11 +584,17 @@ class TransportModel {
         MAX(b.name) AS assigned_bus,
         MAX(b.number_plate) AS assigned_number_plate
       FROM operator_master op
+      LEFT JOIN branch_master bm ON op.branch_id = bm.id
       LEFT JOIN bus_to_operator bo ON (op.id = bo.operator_id AND bo.status != 0)
       LEFT JOIN bus_master b ON (bo.bus_id = b.id AND b.status != 0)
       WHERE op.school_id = ? AND op.type = 2
     `;
     const params = [schoolId];
+
+    if (branchId) {
+      sql += ` AND (op.branch_id = ? OR op.branch_id IS NULL OR b.branch_id = ?)`;
+      params.push(Number(branchId), Number(branchId));
+    }
 
     const parsedStatus = parseStatus(status);
     if (parsedStatus !== null) {
@@ -590,7 +613,7 @@ class TransportModel {
       params.push(`%${search.trim()}%`, `%${search.trim()}%`, `%${search.trim()}%`);
     }
 
-    sql += ` GROUP BY op.id, op.school_id, op.first_name, op.last_name, op.email, op.phone, op.lisence_number, op.picture, op.status ORDER BY op.id DESC`;
+    sql += ` GROUP BY op.id, op.school_id, op.branch_id, bm.branch_name, op.first_name, op.last_name, op.email, op.phone, op.lisence_number, op.picture, op.status ORDER BY op.id DESC`;
     const [rows] = await pool.query(sql, params);
     return rows || [];
   }
@@ -600,6 +623,8 @@ class TransportModel {
       `SELECT 
         op.id,
         op.school_id,
+        op.branch_id,
+        bm.branch_name,
         op.first_name,
         op.last_name,
         CONCAT(IFNULL(op.first_name, ''), ' ', IFNULL(op.last_name, '')) AS helper_name,
@@ -609,6 +634,7 @@ class TransportModel {
         op.picture,
         op.status
        FROM operator_master op
+       LEFT JOIN branch_master bm ON op.branch_id = bm.id
        WHERE op.id = ? AND op.school_id = ? AND op.type = 2 AND op.status != 0`,
       [id, schoolId]
     );
@@ -646,15 +672,17 @@ class TransportModel {
     return { isEmailDuplicate, isPhoneDuplicate };
   }
 
-  static async createHelper(schoolId, { first_name, last_name, email, phone, license_number, lisence_number, picture, status }) {
+  static async createHelper(schoolId, { branch_id = null, first_name, last_name, email, phone, license_number, lisence_number, picture, status }) {
     const cleanEmail = email && String(email).trim() ? String(email).trim() : null;
     const cleanPhone = phone ? String(phone).trim() : '';
     const cleanLicense = (license_number || lisence_number || '').trim() || null;
+    const resolvedBranchId = branch_id ? Number(branch_id) : null;
     const [res] = await pool.query(
-      `INSERT INTO operator_master (school_id, first_name, last_name, email, phone, lisence_number, picture, type, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 2, ?)`,
+      `INSERT INTO operator_master (school_id, branch_id, first_name, last_name, email, phone, lisence_number, picture, type, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 2, ?)`,
       [
         schoolId,
+        resolvedBranchId,
         first_name.trim(),
         last_name ? last_name.trim() : '',
         cleanEmail,
@@ -667,26 +695,29 @@ class TransportModel {
     return res.insertId;
   }
 
-  static async updateHelper(schoolId, id, { first_name, last_name, email, phone, license_number, lisence_number, picture, status }) {
+  static async updateHelper(schoolId, id, { branch_id, first_name, last_name, email, phone, license_number, lisence_number, picture, status }) {
     const cleanEmail = email && String(email).trim() ? String(email).trim() : null;
     const cleanPhone = phone ? String(phone).trim() : '';
     const cleanLicense = (license_number || lisence_number || '').trim() || null;
-    await pool.query(
-      `UPDATE operator_master 
-       SET first_name = ?, last_name = ?, email = ?, phone = ?, lisence_number = ?, picture = IFNULL(NULLIF(?, ''), picture), status = ?
-       WHERE id = ? AND school_id = ? AND type = 2`,
-      [
-        first_name.trim(),
-        last_name ? last_name.trim() : '',
-        cleanEmail,
-        cleanPhone,
-        cleanLicense,
-        picture || '',
-        status !== undefined ? Number(status) : 1,
-        id,
-        schoolId,
-      ]
-    );
+    let sql = `UPDATE operator_master 
+       SET first_name = ?, last_name = ?, email = ?, phone = ?, lisence_number = ?, picture = IFNULL(NULLIF(?, ''), picture), status = ?`;
+    const params = [
+      first_name.trim(),
+      last_name ? last_name.trim() : '',
+      cleanEmail,
+      cleanPhone,
+      cleanLicense,
+      picture || '',
+      status !== undefined ? Number(status) : 1,
+    ];
+    if (branch_id !== undefined) {
+      sql += `, branch_id = ?`;
+      params.push(branch_id ? Number(branch_id) : null);
+    }
+    sql += ` WHERE id = ? AND school_id = ? AND type = 2`;
+    params.push(id, schoolId);
+
+    await pool.query(sql, params);
     return true;
   }
 
@@ -736,7 +767,7 @@ class TransportModel {
     const params = [schoolId];
 
     if (branchId) {
-      sql += ` AND (s.branch_id = ? OR r.branch_id = ? OR s.branch_id IS NULL)`;
+      sql += ` AND (s.branch_id = ? OR r.branch_id = ?)`;
       params.push(Number(branchId), Number(branchId));
     }
 

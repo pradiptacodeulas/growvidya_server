@@ -4,24 +4,30 @@ class SalaryDateModel {
   /**
    * Fetches paginated salary date settings
    */
-  static async getAllSalaryDates(schoolId, { search = '', limit = 10, offset = 0 } = {}) {
-    let whereClause = 'WHERE school_id = ? AND status != 4';
+  static async getAllSalaryDates(schoolId, { search = '', limit = 10, offset = 0, branchId = null } = {}) {
+    let whereClause = 'WHERE sd.school_id = ? AND sd.status != 4';
     const params = [schoolId];
 
+    if (branchId) {
+      whereClause += ' AND (sd.branch_id = ? OR sd.branch_id IS NULL)';
+      params.push(Number(branchId));
+    }
+
     if (search && search.trim() !== '') {
-      whereClause += ' AND salary_date LIKE ?';
+      whereClause += ' AND sd.salary_date LIKE ?';
       params.push(`%${search.trim()}%`);
     }
 
-    const countSql = `SELECT COUNT(*) AS total FROM settings_salary_date ${whereClause}`;
+    const countSql = `SELECT COUNT(*) AS total FROM settings_salary_date sd ${whereClause}`;
     const [countRows] = await pool.query(countSql, params);
     const total = countRows[0]?.total || 0;
 
     const dataSql = `
-      SELECT id, school_id, salary_date, status, created_on 
-      FROM settings_salary_date 
+      SELECT sd.id, sd.school_id, sd.branch_id, sd.salary_date, sd.status, sd.created_on, bm.branch_name, bm.branch_code 
+      FROM settings_salary_date sd
+      LEFT JOIN branch_master bm ON sd.branch_id = bm.id
       ${whereClause} 
-      ORDER BY id DESC 
+      ORDER BY sd.id DESC 
       LIMIT ? OFFSET ?
     `;
     const [rows] = await pool.query(dataSql, [...params, Number(limit), Number(offset)]);
@@ -31,25 +37,35 @@ class SalaryDateModel {
 
   static async getSalaryDateById(id, schoolId) {
     const [rows] = await pool.query(
-      `SELECT * FROM settings_salary_date WHERE id = ? AND school_id = ? AND status != 4`,
+      `SELECT sd.*, bm.branch_name, bm.branch_code 
+       FROM settings_salary_date sd 
+       LEFT JOIN branch_master bm ON sd.branch_id = bm.id
+       WHERE sd.id = ? AND sd.school_id = ? AND sd.status != 4`,
       [id, schoolId]
     );
     return rows[0] || null;
   }
 
-  static async createSalaryDate(schoolId, { salary_date, status = 1 }) {
+  static async createSalaryDate(schoolId, { branch_id = null, salary_date, status = 1 }) {
+    const resolvedBranchId = branch_id ? Number(branch_id) : null;
     const [result] = await pool.query(
-      `INSERT INTO settings_salary_date (school_id, salary_date, status, created_on) VALUES (?, ?, ?, NOW())`,
-      [schoolId, salary_date, status]
+      `INSERT INTO settings_salary_date (school_id, branch_id, salary_date, status, created_on) VALUES (?, ?, ?, ?, NOW())`,
+      [schoolId, resolvedBranchId, salary_date, status]
     );
     return result.insertId;
   }
 
-  static async updateSalaryDate(id, schoolId, { salary_date, status = 1 }) {
-    const [result] = await pool.query(
-      `UPDATE settings_salary_date SET salary_date = ?, status = ? WHERE id = ? AND school_id = ?`,
-      [salary_date, status, id, schoolId]
-    );
+  static async updateSalaryDate(id, schoolId, { branch_id, salary_date, status = 1 }) {
+    let sql = `UPDATE settings_salary_date SET salary_date = COALESCE(?, salary_date), status = COALESCE(?, status)`;
+    const params = [salary_date, status];
+    if (branch_id !== undefined) {
+      sql += `, branch_id = ?`;
+      params.push(branch_id ? Number(branch_id) : null);
+    }
+    sql += ` WHERE id = ? AND school_id = ?`;
+    params.push(id, schoolId);
+
+    const [result] = await pool.query(sql, params);
     return result.affectedRows > 0;
   }
 

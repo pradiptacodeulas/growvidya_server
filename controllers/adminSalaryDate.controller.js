@@ -5,6 +5,7 @@ class AdminSalaryDateController {
   static async getSalaryDates(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.branchId || req.query.branch_id || null;
       const { page = 1, limit = 10, search = '' } = req.query;
       const offset = (Number(page) - 1) * Number(limit);
 
@@ -12,6 +13,7 @@ class AdminSalaryDateController {
         search,
         limit,
         offset,
+        branchId,
       });
 
       return ApiResponse.success(res, 'Salary dates fetched successfully.', {
@@ -31,12 +33,13 @@ class AdminSalaryDateController {
   static async createSalaryDate(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.body.branch_id !== undefined ? req.body.branch_id : (req.branchId || req.query.branch_id || null);
       const { salary_date, status = 1 } = req.body;
       if (!salary_date) {
         return ApiResponse.error(res, 'Salary date is required.', 400);
       }
 
-      const newId = await SalaryDateModel.createSalaryDate(schoolId, { salary_date, status });
+      const newId = await SalaryDateModel.createSalaryDate(schoolId, { branch_id: branchId, salary_date, status });
       return ApiResponse.success(res, 'Salary date added successfully.', { id: newId }, 201);
     } catch (error) {
       next(error);
@@ -47,7 +50,7 @@ class AdminSalaryDateController {
     try {
       const schoolId = req.user.schoolId;
       const { id } = req.params;
-      const { salary_date, status = 1 } = req.body;
+      const { salary_date, status = 1, branch_id } = req.body;
       if (!salary_date) {
         return ApiResponse.error(res, 'Salary date is required.', 400);
       }
@@ -57,7 +60,7 @@ class AdminSalaryDateController {
         return ApiResponse.error(res, 'Salary date record not found.', 404);
       }
 
-      await SalaryDateModel.updateSalaryDate(id, schoolId, { salary_date, status });
+      await SalaryDateModel.updateSalaryDate(id, schoolId, { branch_id, salary_date, status });
       return ApiResponse.success(res, 'Salary date updated successfully.');
     } catch (error) {
       next(error);
