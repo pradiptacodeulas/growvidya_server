@@ -244,7 +244,7 @@ class AdminPermissionController {
   static async getMyPermissions(req, res, next) {
     try {
       const roleId = req.user.roleId;
-      const roleName = req.user.roleName || req.user.userType || 'Staff';
+      const roleName = req.user.roleName || req.user.userType || '';
       const adminType = Number(req.user.adminType ?? req.user.admin_type);
 
       const isSuperAdmin =

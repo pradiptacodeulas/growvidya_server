@@ -602,9 +602,9 @@ const replaceCertificatePlaceholders = (templateText, student, extra = {}) => {
   const className = student.class_name || extra.className || '';
   const sectionName = student.section_name || extra.sectionName || '';
   const rollNo = student.roll_number || extra.rollNumber || '';
-  const admissionNo = student.admission_number || (student.id ? `AD${student.id}` : '');
+  const admissionNo = student.admission_number || '';
   const admissionDate = formatCertificateDate(student.admission_date);
-  const academicYear = student.academic_year_name || extra.academicYear || '2025-2026';
+  const academicYear = student.academic_year_name || extra.academicYear || '';
   const currentDate = formatCertificateDate(extra.date || new Date().toISOString().split('T')[0]);
 
   // Normalize single line breaks within prose to spaces while preserving intentional paragraph breaks

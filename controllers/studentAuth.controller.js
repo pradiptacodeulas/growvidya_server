@@ -105,11 +105,9 @@ async function verifyStudentCredential(candidatePassword, student) {
     }
   }
 
-  // 4. Default credential fallbacks
-  let storedIsDefaultFallback = !student.password || (await comparePassword('123456', student.password));
-  if (storedIsDefaultFallback) {
+  // 4. Contact or admission number match if no password is set
+  if (!student.password) {
     if (
-      cleanInput === '123456' ||
       (student.admission_number && cleanInput === String(student.admission_number).trim()) ||
       (student.primary_contact_number && cleanInput === String(student.primary_contact_number).trim())
     ) {
@@ -133,7 +131,7 @@ class StudentAuthController {
       userId: student.id,
       studentId: student.id,
       schoolId: Number(student.school_id),
-      schoolName: student.school_name || 'Growvidya School',
+      schoolName: student.school_name || null,
       schoolLogo: student.school_logo || null,
       email: student.email_address,
       admissionNumber: student.admission_number,

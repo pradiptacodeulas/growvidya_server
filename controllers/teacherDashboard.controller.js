@@ -127,8 +127,8 @@ class TeacherDashboardController {
         [schoolId]
       );
       const currentYearObj = academicYears && academicYears.length > 0 ? academicYears[0] : null;
-      const academicYearRange = currentYearObj ? AttendanceModel.formatAcademicYearRange(currentYearObj) : '2025 - 2026';
-      const academicYearId = currentYearObj ? currentYearObj.id : 1;
+      const academicYearRange = currentYearObj ? AttendanceModel.formatAcademicYearRange(currentYearObj) : null;
+      const academicYearId = currentYearObj ? currentYearObj.id : null;
 
       // 3. Get Student Counts
       let totalStudentsInClass = 0;
@@ -237,13 +237,6 @@ class TeacherDashboardController {
           teacherAttendancePeriods = parsed.stats;
           teacherAttendanceMap = parsed.attendanceMap;
           teacherRecentDays = parsed.recentDays;
-        } else if (studentAttendanceSummary.marked) {
-          teacherAttendanceData = {
-            present: studentAttendanceSummary.present,
-            late: studentAttendanceSummary.late,
-            half: studentAttendanceSummary.halfday,
-            absent: studentAttendanceSummary.absent,
-          };
         }
       } catch (err) {
         console.error('Error calculating teacher attendance:', err.message);

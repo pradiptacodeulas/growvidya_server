@@ -678,7 +678,7 @@ class SaasAdminModel {
    * Reject a pending subscription request
    */
   static async rejectSubscription(id, { verifiedBy = null, rejectionReason = '' } = {}) {
-    const reason = rejectionReason || 'Rejected by Super Admin';
+    const reason = rejectionReason || '';
     await pool.query(
       `UPDATE school_subscriptions SET
         status = 'suspended',

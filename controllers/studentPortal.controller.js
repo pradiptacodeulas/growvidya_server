@@ -55,7 +55,7 @@ class StudentPortalController {
       const sectionId = student.section;
 
       // 1. Attendance Summary
-      let attendancePercentage = 100;
+      let attendancePercentage = 0;
       let presentDays = 0;
       let totalDays = 0;
       try {

@@ -1,7 +1,10 @@
 const { pool } = require('../config/db.config');
 
 class DashboardModel {
-  static async getDashboardStats(schoolId = 1, branchId = null) {
+  static async getDashboardStats(schoolId, branchId = null) {
+    if (!schoolId) {
+      throw new Error('schoolId is required for DashboardModel.getDashboardStats');
+    }
     try {
       // 1. Students Count
       const stuParams = [schoolId];

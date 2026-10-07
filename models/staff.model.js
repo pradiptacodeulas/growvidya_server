@@ -263,7 +263,7 @@ class StaffModel {
       picturePath = data.picture;
     }
 
-    const hashedPassword = data.password ? await hashPassword(data.password) : await hashPassword('123456');
+    const hashedPassword = data.password ? await hashPassword(data.password) : null;
 
     // Resolve branch_id if provided or default to main branch for the school
     let branchId = data.branch_id ? Number(data.branch_id) : null;

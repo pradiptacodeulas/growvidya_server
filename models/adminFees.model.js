@@ -423,7 +423,7 @@ class AdminFeesModel {
               `SELECT id FROM academic_year_master WHERE school_id = ? AND is_current = 1 AND status = 1 LIMIT 1`,
               [schoolId]
             );
-            effectiveAcademicYearId = currentYearRows[0]?.id || 1;
+            effectiveAcademicYearId = currentYearRows[0]?.id || null;
           }
 
           let studentQuery = `
@@ -552,7 +552,7 @@ class AdminFeesModel {
               `SELECT id FROM academic_year_master WHERE school_id = ? AND is_current = 1 AND status = 1 LIMIT 1`,
               [schoolId]
             );
-            effectiveAcademicYearId = currentYearRows[0]?.id || 1;
+            effectiveAcademicYearId = currentYearRows[0]?.id || null;
           }
 
           let studentQuery = `
@@ -738,7 +738,7 @@ class AdminFeesModel {
 
       // Check if structure is published
       const [structRows] = await connection.query(
-        `SELECT id, name, is_published, status FROM fee_structures WHERE id = ? AND school_id = ? AND status != 4`,
+        `SELECT id, name, is_published, status, academic_year_id FROM fee_structures WHERE id = ? AND school_id = ? AND status != 4`,
         [feeStructureId, schoolId]
       );
       if (structRows.length === 0) {
@@ -748,13 +748,22 @@ class AdminFeesModel {
         throw new Error(`Cannot assign fee structure: "${structRows[0].name}" is in Draft mode. Fee structures must be published before students can be allocated.`);
       }
 
+      let resolvedYearId = academicYearId || structRows[0].academic_year_id || null;
+      if (!resolvedYearId) {
+        const [currentYearRows] = await connection.query(
+          `SELECT id FROM academic_year_master WHERE school_id = ? AND is_current = 1 AND status = 1 LIMIT 1`,
+          [schoolId]
+        );
+        resolvedYearId = currentYearRows[0]?.id || null;
+      }
+
       let count = 0;
       for (const studentId of studentIds) {
         // Check if already allocated
         const [existing] = await connection.query(
           `SELECT id FROM student_fee_allocations 
            WHERE school_id = ? AND student_id = ? AND fee_structure_id = ? AND academic_year_id = ? AND status != 4`,
-          [schoolId, studentId, feeStructureId, academicYearId || 1]
+          [schoolId, studentId, feeStructureId, resolvedYearId]
         );
 
         if (existing.length === 0) {
@@ -763,7 +772,7 @@ class AdminFeesModel {
                school_id, student_id, fee_structure_id, academic_year_id,
                assigned_date, status, allow_partial_payment, created_at
              ) VALUES (?, ?, ?, ?, CURDATE(), 1, ?, NOW())`,
-            [schoolId, studentId, feeStructureId, academicYearId || 1, allowPartialPayment ? 1 : 0]
+            [schoolId, studentId, feeStructureId, resolvedYearId, allowPartialPayment ? 1 : 0]
           );
           count++;
         }
@@ -1152,7 +1161,7 @@ class AdminFeesModel {
             st.id,
             st.class,
             st.section || null,
-            academicYearId || structure.academic_year_id || 1,
+            academicYearId || structure.academic_year_id || null,
             feeStructureId,
             title || `${structure.name} - ${structure.frequency}`,
             subtotal,

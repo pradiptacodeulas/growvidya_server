@@ -464,11 +464,16 @@ class AdminSubscriptionController {
         for (const card of breakdown.cards) {
           try {
             const orderNo = `RFID_${schoolId}_${Date.now()}_${Math.floor(100 + Math.random() * 900)}`;
+            let resolvedShipping = shipping_address;
+            if (!resolvedShipping) {
+              const [sch] = await pool.query('SELECT address FROM school_master WHERE id = ?', [schoolId]);
+              resolvedShipping = sch[0]?.address || null;
+            }
             await pool.query(
               `INSERT INTO school_rfid_orders 
                (order_no, school_id, rfid_card_id, quantity, unit_price, total_amount, order_status, shipping_address, remarks, created_at, updated_at) 
                VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, 'Ordered with subscription configuration (Pending Super Admin Approval)', NOW(), NOW())`,
-              [orderNo, schoolId, card.id, card.quantity, card.unit_price, card.total_price, shipping_address || 'School Campus Delivery']
+              [orderNo, schoolId, card.id, card.quantity, card.unit_price, card.total_price, resolvedShipping]
             );
           } catch (rfidErr) {
             console.error('Failed to log school_rfid_orders:', rfidErr.message);

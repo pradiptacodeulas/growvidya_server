@@ -216,11 +216,11 @@ class ParentModel {
 
     const savedPic = picture ? saveBase64File(picture, 'parent/profile', 'Parent-Profile') : null;
 
-    // Use parent's phone number as the default password (fallback to 123456 if phone is missing)
+    // Use parent's phone number as the default password if no explicit password provided
     const plainPassword = data.password && String(data.password).trim()
       ? String(data.password).trim()
-      : (phone && String(phone).trim() ? String(phone).trim() : '123456');
-    const hashedPassword = await hashPassword(plainPassword);
+      : (phone && String(phone).trim() ? String(phone).trim() : null);
+    const hashedPassword = plainPassword ? await hashPassword(plainPassword) : null;
 
     const sql = `
       INSERT INTO parent_master (
@@ -800,13 +800,13 @@ class ParentModel {
 
         for (const m of marks || []) {
           const sId = m.subject_id;
-          const typeName = m.exam_type_name || 'Theory';
-          examTypeNamesSet.add(typeName);
+          const typeName = m.exam_type_name || '';
+          if (typeName) examTypeNamesSet.add(typeName);
 
           if (!subjectsMap[sId]) {
             subjectsMap[sId] = {
               subject_id: sId,
-              subject_name: m.subject_name || `Subject #${sId}`,
+              subject_name: m.subject_name || '',
               grade_name: m.grade_name || '',
               obtained: 0,
               full_marks: 0,
@@ -840,14 +840,12 @@ class ParentModel {
           obtainedMarks += markVal;
         }
 
-        // If subject full_marks is 0 (not configured in exam_subject_marks), fallback to 100
         for (const sId in subjectsMap) {
-          if (subjectsMap[sId].full_marks <= 0) {
-            subjectsMap[sId].full_marks = 100;
-          }
-          const subPct = Math.round((subjectsMap[sId].obtained / subjectsMap[sId].full_marks) * 100);
+          const subPct = subjectsMap[sId].full_marks > 0
+            ? Math.round((subjectsMap[sId].obtained / subjectsMap[sId].full_marks) * 100)
+            : 0;
           if (!subjectsMap[sId].grade_name || subjectsMap[sId].grade_name === '-') {
-            subjectsMap[sId].grade_name = computeGrade(subPct);
+            subjectsMap[sId].grade_name = subPct > 0 ? computeGrade(subPct) : '-';
           }
           if (subjectsMap[sId].theory === null && subjectsMap[sId].practical === null && subjectsMap[sId].assessment === null) {
             subjectsMap[sId].theory = subjectsMap[sId].obtained;

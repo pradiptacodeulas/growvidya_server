@@ -668,14 +668,16 @@ class StudentModel {
       }
     }
 
-    // Default student password is MD5 of student's Date of Birth (or explicit password if provided)
-    let defaultPlainPassword = '123456';
+    // Student password from explicit password or date_of_birth or contact number
+    let defaultPlainPassword = null;
     if (data.password && String(data.password).trim()) {
       defaultPlainPassword = String(data.password).trim();
     } else if (data.date_of_birth && String(data.date_of_birth).trim()) {
       defaultPlainPassword = String(data.date_of_birth).trim();
+    } else if (data.primary_contact_number && String(data.primary_contact_number).trim()) {
+      defaultPlainPassword = String(data.primary_contact_number).trim();
     }
-    const studentHashedPassword = await hashPassword(defaultPlainPassword);
+    const studentHashedPassword = defaultPlainPassword ? await hashPassword(defaultPlainPassword) : null;
 
     // Resolve branch_id if provided or default to main branch for the school
     let branchId = data.branch_id ? Number(data.branch_id) : null;
@@ -710,7 +712,7 @@ class StudentModel {
       data.last_name || '',
       data.class_id,
       data.section_id || null,
-      data.gender || 'Male',
+      data.gender || null,
       data.date_of_birth || null,
       studentHashedPassword,
       data.primary_contact_number || null,
@@ -756,7 +758,7 @@ class StudentModel {
             studentId,
             data.hostel_info.hostel_name || null,
             data.hostel_info.hostel_room || null,
-            data.academic_year || 1,
+            data.academic_year || null,
           ]
         );
       } catch (hostelErr) {
@@ -834,7 +836,7 @@ class StudentModel {
               studentId,
               doc.document_type || 1,
               savedDocPath,
-              doc.file_name || 'document.pdf',
+              doc.file_name || null,
             ]
           );
         }
@@ -900,7 +902,7 @@ class StudentModel {
       data.last_name || '',
       data.class_id,
       data.section_id || null,
-      data.gender || 'Male',
+      data.gender || null,
       data.date_of_birth || null,
       data.primary_contact_number || null,
       data.email_address || null,
@@ -964,7 +966,7 @@ class StudentModel {
         } else {
           await pool.execute(
             `INSERT INTO student_hostel (school_id, student_id, hostel_name, room_number, academic_year, status) VALUES (?, ?, ?, ?, ?, 1)`,
-            [schoolId, id, data.hostel_info.hostel_name, data.hostel_info.hostel_room || null, data.academic_year || 1]
+            [schoolId, id, data.hostel_info.hostel_name, data.hostel_info.hostel_room || null, data.academic_year || null]
           );
         }
       } catch (hostelErr) {
@@ -1085,7 +1087,7 @@ class StudentModel {
               id,
               doc.document_type || 1,
               savedDocPath,
-              doc.file_name || 'document.pdf',
+              doc.file_name || null,
             ]
           );
         }
@@ -1185,8 +1187,8 @@ class StudentModel {
             params.push(fatherId, schoolId);
             await pool.execute(updateSql, params);
           } else {
-            const fPlainPass = (fPhone && String(fPhone).trim()) ? String(fPhone).trim() : '123456';
-            const hashedFatherPass = await hashPassword(fPlainPass);
+            const fPlainPass = (fPhone && String(fPhone).trim()) ? String(fPhone).trim() : null;
+            const hashedFatherPass = fPlainPass ? await hashPassword(fPlainPass) : null;
             const [fRes] = await pool.execute(
               `INSERT INTO parent_master (school_id, first_name, last_name, phone, email, occupation, relation, parent_type, picture, password, status, created_at)
                VALUES (?, ?, ?, ?, ?, ?, 'Father', 1, ?, ?, 1, NOW())`,
@@ -1279,8 +1281,8 @@ class StudentModel {
             params.push(motherId, schoolId);
             await pool.execute(updateSql, params);
           } else {
-            const mPlainPass = (mPhone && String(mPhone).trim()) ? String(mPhone).trim() : '123456';
-            const hashedMotherPass = await hashPassword(mPlainPass);
+            const mPlainPass = (mPhone && String(mPhone).trim()) ? String(mPhone).trim() : null;
+            const hashedMotherPass = mPlainPass ? await hashPassword(mPlainPass) : null;
             const [mRes] = await pool.execute(
               `INSERT INTO parent_master (school_id, first_name, last_name, phone, email, occupation, relation, parent_type, picture, password, status, created_at)
                VALUES (?, ?, ?, ?, ?, ?, 'Mother', 2, ?, ?, 1, NOW())`,
@@ -1333,8 +1335,8 @@ class StudentModel {
           if (existingGuardianId) {
             guardianId = existingGuardianId;
           } else {
-            const gPlainPass = (ogInfo.phone && String(ogInfo.phone).trim()) ? String(ogInfo.phone).trim() : '123456';
-            const hashedGuardianPass = await hashPassword(gPlainPass);
+            const gPlainPass = (ogInfo.phone && String(ogInfo.phone).trim()) ? String(ogInfo.phone).trim() : null;
+            const hashedGuardianPass = gPlainPass ? await hashPassword(gPlainPass) : null;
             const [gRes] = await pool.execute(
               `INSERT INTO parent_master (school_id, first_name, last_name, phone, email, occupation, relation, parent_type, password, status, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, 3, ?, 1, NOW())`,

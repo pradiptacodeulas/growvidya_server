@@ -17,7 +17,7 @@ class NotificationRecordModel {
    * Log an SMS notification record
    */
   static async logSms({
-    school_id = 1,
+    school_id = null,
     branch_id = null,
     recipient_phone,
     message,
@@ -83,7 +83,7 @@ class NotificationRecordModel {
    * Log a Push notification record
    */
   static async logPush({
-    school_id = 1,
+    school_id = null,
     branch_id = null,
     recipient_device_token = null,
     recipient_device_type = 'all',

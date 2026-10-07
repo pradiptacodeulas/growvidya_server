@@ -653,7 +653,7 @@ class TeacherModel {
           .filter((r) => Number(r.day) === Number(day.id))
           .map((r) => ({
             id: r.id,
-            period_name: r.period_name || '1st Period',
+            period_name: r.period_name || '',
             class_name: r.class_name || '',
             section_name: r.section_name || '',
             subject_name: r.subject_name || '',
@@ -870,7 +870,7 @@ class TeacherModel {
         date_of_birth || null,
         marital_status || null,
         language_known || null,
-        qualification || 'B.Ed',
+        qualification || null,
         work_experience || null,
         previous_school_name || null,
         previous_school_address || null,
@@ -1078,7 +1078,7 @@ class TeacherModel {
                 newId,
                 doc.document_type || 1,
                 academic_year || null,
-                doc.file_name || 'Document.pdf',
+                doc.file_name || null,
                 doc.attachments || '',
               ]
             );
@@ -1188,7 +1188,7 @@ class TeacherModel {
       date_of_birth || null,
       marital_status || null,
       language_known || null,
-      qualification || 'B.Ed',
+      qualification || null,
       work_experience || null,
       previous_school_name || null,
       previous_school_address || null,
@@ -1478,7 +1478,7 @@ class TeacherModel {
                 id,
                 doc.document_type || 1,
                 academic_year || null,
-                doc.file_name || 'Document.pdf',
+                doc.file_name || null,
                 doc.attachments || '',
               ]
             );

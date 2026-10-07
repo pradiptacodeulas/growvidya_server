@@ -260,7 +260,7 @@ class SaasModel {
   static async registerSchoolWithPlan({
     planId,
     amountPaid,
-    paymentGateway = 'dummy',
+    paymentGateway = null,
     paymentTransactionId = null,
     schoolData = {},
     academicYearData = {},
@@ -359,8 +359,8 @@ class SaasModel {
       // 3. Generate clean School Code if not provided
       let schoolCode = (schoolData.school_code || '').trim().toUpperCase();
       if (!schoolCode) {
-        const cleanName = (schoolData.school_name || 'SCH').replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase();
-        schoolCode = `${cleanName}-${Math.floor(1000 + Math.random() * 9000)}`;
+        const cleanName = (schoolData.school_name || '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase();
+        schoolCode = cleanName ? `${cleanName}-${Math.floor(1000 + Math.random() * 9000)}` : `${Math.floor(100000 + Math.random() * 900000)}`;
       }
 
       // Check if school_code already exists, if so generate a unique suffix
@@ -489,7 +489,7 @@ class SaasModel {
       const finalTxnId = isTrialMode
         ? (paymentTransactionId || `TRIAL_${trialDays > 0 ? trialDays : 14}D_${Date.now()}_${Math.floor(Math.random() * 10000)}`)
         : (paymentTransactionId || `REG_REQ_${Date.now()}_${Math.floor(Math.random() * 10000)}`);
-      const finalGateway = isTrialMode ? 'free_trial' : (paymentGateway || 'registration');
+      const finalGateway = isTrialMode ? 'free_trial' : (paymentGateway || null);
       const subStatus = isTrialMode ? 'trial' : (paymentTransactionId ? 'active' : 'pending');
       const paymentStatus = isTrialMode ? 'completed' : (paymentTransactionId ? 'completed' : 'pending');
 
@@ -566,7 +566,7 @@ class SaasModel {
               `INSERT INTO school_rfid_orders 
                (order_no, school_id, rfid_card_id, quantity, unit_price, total_amount, order_status, shipping_address, remarks, created_at, updated_at) 
                VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, 'Ordered during school onboarding registration', NOW(), NOW())`,
-              [orderNo, schoolId, card.id, card.quantity, card.unit_price, card.total_price, shippingAddress || schoolData.address || 'Main School Campus']
+              [orderNo, schoolId, card.id, card.quantity, card.unit_price, card.total_price, shippingAddress || schoolData.address || null]
             );
           } catch (rfidErr) {
             console.error('Failed to log school_rfid_orders during onboarding:', rfidErr.message);
@@ -642,7 +642,7 @@ class SaasModel {
       await connection.query(insertAdminQuery, [
         schoolId,
         mainBranchId,
-        (adminData.first_name || 'Admin').trim(),
+        (adminData.first_name || '').trim(),
         (adminData.last_name || '').trim(),
         adminEmail,
         adminData.phone || null,

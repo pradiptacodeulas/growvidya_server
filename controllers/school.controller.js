@@ -43,12 +43,16 @@ class SchoolController {
         }
       }
 
-      // 3. If unauthenticated, fallback to the first active school in school_master
+      // 3. If unauthenticated, retrieve the first active school in school_master
       if (!schoolId) {
         const [firstSchool] = await pool.query(
           'SELECT id FROM school_master WHERE status = 1 ORDER BY id ASC LIMIT 1'
         );
-        schoolId = firstSchool[0]?.id || 1;
+        schoolId = firstSchool[0]?.id || null;
+      }
+
+      if (!schoolId) {
+        return ApiResponse.error(res, 'No active school configuration found.', null, 404);
       }
 
       const configData = await GeneralSettingModel.getSchoolConfig(schoolId);

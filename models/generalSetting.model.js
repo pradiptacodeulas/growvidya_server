@@ -4,7 +4,8 @@ class GeneralSettingModel {
   /**
    * Fetches lightweight public school configuration & branding
    */
-  static async getSchoolConfig(schoolId = 1) {
+  static async getSchoolConfig(schoolId) {
+    if (!schoolId) return {};
     const targetId = schoolId;
     const [schools] = await pool.query(
       `SELECT 
@@ -61,7 +62,8 @@ class GeneralSettingModel {
   /**
    * Fetches the general settings / school configuration for the logged in school
    */
-  static async getSchoolSettings(schoolId = 1) {
+  static async getSchoolSettings(schoolId) {
+    if (!schoolId) return {};
     const targetId = schoolId;
     const [schools] = await pool.query(
       `SELECT 

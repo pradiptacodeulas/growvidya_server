@@ -4,7 +4,10 @@ const ApiResponse = require('../utils/api.response');
 class AdminGeneralSettingController {
   static async getGeneralSettings(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
+      const schoolId = req.user?.schoolId || req.user?.school_id;
+      if (!schoolId) {
+        return ApiResponse.error(res, 'School context required. Please log in again.', null, 401);
+      }
       const settings = await GeneralSettingModel.getSchoolSettings(schoolId);
       return ApiResponse.success(res, 'General settings fetched successfully.', settings);
     } catch (error) {
@@ -34,7 +37,10 @@ class AdminGeneralSettingController {
 
   static async updateGeneralSettings(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
+      const schoolId = req.user?.schoolId || req.user?.school_id;
+      if (!schoolId) {
+        return ApiResponse.error(res, 'School context required. Please log in again.', null, 401);
+      }
       const data = req.body;
 
       const updatedSchool = await GeneralSettingModel.updateSchoolSettings(schoolId, data);

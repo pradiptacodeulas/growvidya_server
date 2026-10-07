@@ -137,7 +137,10 @@ class NotificationController {
    */
   static async testSendNotification(req, res) {
     try {
-      const { title = 'Growvidya Test Notification', body = 'Push notifications are working perfectly!' } = req.body;
+      const { title, body } = req.body;
+      if (!title || !body) {
+        return res.status(400).json({ success: false, message: 'Title and body are required.' });
+      }
 
       const schoolId = req.user?.schoolId || req.user?.school_id;
       if (!schoolId) {

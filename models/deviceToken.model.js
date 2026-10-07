@@ -24,7 +24,7 @@ class DeviceTokenModel {
    * Register or update a device token (upserts based on unique endpoint_hash)
    */
   static async registerToken({
-    school_id = 1,
+    school_id,
     user_id,
     role,
     device_type,
@@ -32,8 +32,8 @@ class DeviceTokenModel {
     device_name = null,
     user_agent = null,
   }) {
-    if (!user_id || !role || !device_type || !token) {
-      throw new Error('user_id, role, device_type, and token are required.');
+    if (!school_id || !user_id || !role || !device_type || !token) {
+      throw new Error('school_id, user_id, role, device_type, and token are required.');
     }
 
     const tokenStr = typeof token === 'object' ? JSON.stringify(token) : String(token).trim();
