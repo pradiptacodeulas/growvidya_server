@@ -42,7 +42,7 @@ class AdminAuthController {
         return ApiResponse.error(res, 'Invalid credentials. Incorrect password.', null, 401);
       }
 
-      const roleName = isSuperAdmin ? 'Super Admin' : (user.role_name || 'Staff');
+      const roleName = isSuperAdmin ? 'Super Admin' : (user.role_name || null);
       const permissions = isSuperAdmin ? {} : await PermissionModel.getUserPermissionMap(user.role_id);
       const sub = await SubscriptionModel.getSchoolSubscription(user.school_id);
 
@@ -142,7 +142,7 @@ class AdminAuthController {
 
       const adminType = Number(user.admin_type);
       const isSuperAdmin = adminType === 1 || user.role_name === 'Super Admin';
-      const roleName = isSuperAdmin ? 'Super Admin' : (user.role_name || 'Staff');
+      const roleName = isSuperAdmin ? 'Super Admin' : (user.role_name || null);
       const permissions = isSuperAdmin ? {} : await PermissionModel.getUserPermissionMap(user.role_id);
       const sub = await SubscriptionModel.getSchoolSubscription(user.school_id);
 

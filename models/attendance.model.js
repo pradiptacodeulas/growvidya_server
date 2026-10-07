@@ -658,7 +658,7 @@ class AttendanceModel {
         u.picture,
         CASE 
           WHEN u.admin_type = 1 THEN 'Super Admin'
-          ELSE COALESCE(r.role_name, 'Staff')
+          ELSE r.role_name
         END AS role_name,
         uma.id AS attendance_id,
         uma.attendance,
@@ -755,7 +755,7 @@ class AttendanceModel {
         u.picture,
         CASE 
           WHEN u.admin_type = 1 THEN 'Super Admin'
-          ELSE COALESCE(r.role_name, 'Staff')
+          ELSE r.role_name
         END AS role_name,
         uma.attendance,
         uma.notes

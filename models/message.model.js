@@ -290,7 +290,7 @@ class MessageModel {
           u.phone,
           CASE 
             WHEN u.admin_type = 1 THEN 'Super Admin'
-            ELSE COALESCE(r.role_name, 'Staff')
+            ELSE r.role_name
           END AS designation
         FROM user_master u
         LEFT JOIN role_master r ON u.role = r.id
@@ -389,7 +389,7 @@ class MessageModel {
           u.phone,
           CASE 
             WHEN u.admin_type = 1 THEN 'Super Admin'
-            ELSE COALESCE(r.role_name, 'School Admin')
+            ELSE r.role_name
           END AS designation
         FROM user_master u
         LEFT JOIN role_master r ON u.role = r.id
@@ -513,7 +513,7 @@ class MessageModel {
           u.phone,
           CASE 
             WHEN u.admin_type = 1 THEN 'Super Admin'
-            ELSE COALESCE(r.role_name, 'School Admin')
+            ELSE r.role_name
           END AS designation
         FROM user_master u
         LEFT JOIN role_master r ON u.role = r.id
@@ -565,7 +565,7 @@ class MessageModel {
           u.phone,
           CASE 
             WHEN u.admin_type = 1 THEN 'Super Admin'
-            ELSE COALESCE(r.role_name, 'School Admin')
+            ELSE r.role_name
           END AS designation
         FROM user_master u
         LEFT JOIN role_master r ON u.role = r.id

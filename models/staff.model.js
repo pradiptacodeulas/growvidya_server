@@ -21,17 +21,14 @@ class StaffModel {
           WHEN u.gender = 1 OR u.gender = '1' OR LOWER(CAST(u.gender AS CHAR)) = 'male' THEN 'Male'
           WHEN u.gender = 2 OR u.gender = '2' OR LOWER(CAST(u.gender AS CHAR)) = 'female' THEN 'Female'
           WHEN u.gender = 3 OR u.gender = '3' OR LOWER(CAST(u.gender AS CHAR)) IN ('other', 'others') THEN 'Others'
-          ELSE COALESCE(g.gender, 'N/A')
+          ELSE g.gender
         END AS gender_name,
         u.blood_group,
         bg.blood_group AS blood_group_name,
         u.picture,
         u.role AS role_id,
         u.admin_type,
-        CASE 
-          WHEN u.admin_type = 1 THEN 'Super Admin'
-          ELSE COALESCE(r.role_name, 'Staff')
-        END AS role_name,
+        r.role_name,
         u.status,
         u.date AS created_on
       FROM user_master u
@@ -105,17 +102,14 @@ class StaffModel {
           WHEN u.gender = 1 OR u.gender = '1' OR LOWER(CAST(u.gender AS CHAR)) = 'male' THEN 'Male'
           WHEN u.gender = 2 OR u.gender = '2' OR LOWER(CAST(u.gender AS CHAR)) = 'female' THEN 'Female'
           WHEN u.gender = 3 OR u.gender = '3' OR LOWER(CAST(u.gender AS CHAR)) IN ('other', 'others') THEN 'Others'
-          ELSE COALESCE(g.gender, 'N/A')
+          ELSE g.gender
         END AS gender_name,
         u.blood_group,
         bg.blood_group AS blood_group_name,
         u.picture,
         u.role AS role_id,
         u.admin_type,
-        CASE 
-          WHEN u.admin_type = 1 THEN 'Super Admin'
-          ELSE COALESCE(r.role_name, 'Staff')
-        END AS role_name,
+        r.role_name,
         u.country_id,
         c.name AS country_name,
         u.state_id,
