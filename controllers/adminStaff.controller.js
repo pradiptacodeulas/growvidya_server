@@ -131,6 +131,9 @@ class AdminStaffController {
       if (!data.email) {
         return ApiResponse.error(res, 'Email address is required.', null, 400);
       }
+      if (!data.role) {
+        return ApiResponse.error(res, 'Role is required.', null, 400);
+      }
 
       const branchId = req.body.branch_id || req.body.branchId || req.branchId || null;
       const createdStaff = await StaffModel.create(schoolId, {

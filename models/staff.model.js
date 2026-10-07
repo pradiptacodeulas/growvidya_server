@@ -298,7 +298,7 @@ class StaffModel {
       data.country_id || null,
       data.state_id || null,
       data.city || null,
-      data.role || 6,
+      data.role ? Number(data.role) : null,
       data.admin_type || 0,
       data.status !== undefined ? data.status : 1,
     ];
