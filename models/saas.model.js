@@ -600,10 +600,10 @@ class SaasModel {
 
       const insertYearQuery = `
         INSERT INTO academic_year_master (
-          school_id, academic_year, start_date, end_date, is_current, status
-        ) VALUES (?, ?, ?, ?, 1, 1)
+          school_id, branch_id, academic_year, start_date, end_date, is_current, status
+        ) VALUES (?, ?, ?, ?, ?, 1, 1)
       `;
-      await connection.query(insertYearQuery, [schoolId, yearName, yearStart, yearEnd]);
+      await connection.query(insertYearQuery, [schoolId, mainBranchId, yearName, yearStart, yearEnd]);
 
       // 7. Insert Super Admin into user_master
       const hashedPassword = await hashPassword(adminData.password);

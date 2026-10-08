@@ -14,7 +14,7 @@ class AdminAcademicController {
       const schoolId = AdminAcademicController.getSchoolId(req);
       const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const [years, classes, sections, subjects, shifts, houses, periods, days] = await Promise.all([
-        AcademicModel.getAcademicYears(schoolId),
+        AcademicModel.getAcademicYears(schoolId, branchId),
         AcademicModel.getClasses(schoolId, false, null, branchId),
         AcademicModel.getSections(schoolId, null, false, null, branchId),
         AcademicModel.getSubjects(schoolId, null, false, null, branchId),
@@ -43,7 +43,8 @@ class AdminAcademicController {
   static async getAcademicYears(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const data = await AcademicModel.getAcademicYears(schoolId);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const data = await AcademicModel.getAcademicYears(schoolId, branchId);
       return ApiResponse.success(res, 'Academic years fetched', data);
     } catch (error) {
       next(error);
@@ -53,8 +54,9 @@ class AdminAcademicController {
   static async getAcademicYearById(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { id } = req.params;
-      const data = await AcademicModel.getAcademicYearById(id, schoolId);
+      const data = await AcademicModel.getAcademicYearById(id, schoolId, branchId);
       if (!data) return ApiResponse.error(res, 'Academic year not found', null, 404);
       return ApiResponse.success(res, 'Academic year fetched successfully.', data);
     } catch (error) {
@@ -65,7 +67,11 @@ class AdminAcademicController {
   static async createAcademicYear(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const insertId = await AcademicModel.createAcademicYear(schoolId, req.body);
+      const branchId = req.body.branch_id || req.body.branchId || req.branchId || null;
+      const insertId = await AcademicModel.createAcademicYear(schoolId, {
+        ...req.body,
+        branch_id: branchId,
+      });
       return ApiResponse.success(res, 'Academic year created successfully.', { id: insertId }, 201);
     } catch (error) {
       next(error);
@@ -75,7 +81,11 @@ class AdminAcademicController {
   static async updateAcademicYear(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const updated = await AcademicModel.updateAcademicYear(req.params.id, schoolId, req.body);
+      const branchId = req.body.branch_id !== undefined ? (req.body.branch_id || null) : (req.body.branchId !== undefined ? (req.body.branchId || null) : undefined);
+      const updated = await AcademicModel.updateAcademicYear(req.params.id, schoolId, {
+        ...req.body,
+        ...(branchId !== undefined ? { branch_id: branchId } : {}),
+      });
       if (!updated) return ApiResponse.error(res, 'Academic year not found', null, 404);
       return ApiResponse.success(res, 'Academic year updated successfully.', null);
     } catch (error) {
@@ -86,7 +96,8 @@ class AdminAcademicController {
   static async deleteAcademicYear(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const deleted = await AcademicModel.deleteAcademicYear(req.params.id, schoolId);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const deleted = await AcademicModel.deleteAcademicYear(req.params.id, schoolId, branchId);
       if (!deleted) return ApiResponse.error(res, 'Academic year not found', null, 404);
       return ApiResponse.success(res, 'Academic year deleted successfully.', null);
     } catch (error) {

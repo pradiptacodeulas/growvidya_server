@@ -61,15 +61,18 @@ class AcademicModel {
   }
 
   // ==================== ACADEMIC YEARS ====================
-  static async getAcademicYears(schoolId) {
+  static async getAcademicYears(schoolId, branchId = null) {
     try {
-      const [rows] = await pool.query(
-        `SELECT id, school_id, academic_year, start_date, end_date, is_current, status 
+      let sql = `SELECT id, school_id, branch_id, academic_year, start_date, end_date, is_current, status 
          FROM academic_year_master 
-         WHERE school_id = ? AND (status != 4 OR status IS NULL) 
-         ORDER BY id ASC`,
-        [schoolId]
-      );
+         WHERE school_id = ? AND (status != 4 OR status IS NULL)`;
+      const params = [schoolId];
+      if (branchId) {
+        sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+        params.push(Number(branchId));
+      }
+      sql += ` ORDER BY id ASC`;
+      const [rows] = await pool.query(sql, params);
       if (rows && rows.length > 0) {
         return rows.map((r) => {
           const isCurrent = Number(r.is_current) === 1;
@@ -93,14 +96,18 @@ class AcademicModel {
     }
   }
 
-  static async getAcademicYearById(id, schoolId) {
+  static async getAcademicYearById(id, schoolId, branchId = null) {
     try {
-      const [rows] = await pool.query(
-        `SELECT id, school_id, academic_year, start_date, end_date, is_current, status 
+      let sql = `SELECT id, school_id, branch_id, academic_year, start_date, end_date, is_current, status 
          FROM academic_year_master 
-         WHERE id = ? AND school_id = ? AND (status != 4 OR status IS NULL) LIMIT 1`,
-        [id, schoolId]
-      );
+         WHERE id = ? AND school_id = ? AND (status != 4 OR status IS NULL)`;
+      const params = [id, schoolId];
+      if (branchId) {
+        sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+        params.push(Number(branchId));
+      }
+      sql += ` LIMIT 1`;
+      const [rows] = await pool.query(sql, params);
       if (rows && rows.length > 0) {
         return {
           ...rows[0],
@@ -114,43 +121,59 @@ class AcademicModel {
     }
   }
 
-  static async createAcademicYear(schoolId, { name, academic_year, start_date, end_date, is_current = 0, status = 1 }) {
+  static async createAcademicYear(schoolId, { name, academic_year, start_date, end_date, is_current = 0, status = 1, branch_id = null }) {
     const yearVal = academic_year || name;
     const isCurr = Number(is_current) === 1 ? 1 : 0;
+    const branchVal = branch_id !== undefined && branch_id !== null && branch_id !== '' && branch_id !== 'all' ? Number(branch_id) : null;
     if (isCurr === 1) {
-      await pool.query(
-        `UPDATE academic_year_master SET is_current = 0 WHERE school_id = ?`,
-        [schoolId]
-      );
+      let resetSql = `UPDATE academic_year_master SET is_current = 0 WHERE school_id = ?`;
+      const resetParams = [schoolId];
+      if (branchVal) {
+        resetSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+        resetParams.push(branchVal);
+      }
+      await pool.query(resetSql, resetParams);
     }
     const [result] = await pool.query(
-      `INSERT INTO academic_year_master (school_id, academic_year, start_date, end_date, is_current, status) VALUES (?, ?, ?, ?, ?, ?)`,
-      [schoolId, yearVal, start_date, end_date, isCurr, Number(status)]
+      `INSERT INTO academic_year_master (school_id, branch_id, academic_year, start_date, end_date, is_current, status) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [schoolId, branchVal, yearVal, start_date, end_date, isCurr, Number(status)]
     );
     return result.insertId;
   }
 
-  static async updateAcademicYear(id, schoolId, { name, academic_year, start_date, end_date, is_current = 0, status = 1 }) {
+  static async updateAcademicYear(id, schoolId, { name, academic_year, start_date, end_date, is_current = 0, status = 1, branch_id }) {
     const yearVal = academic_year || name;
     const isCurr = Number(is_current) === 1 ? 1 : 0;
+    const branchVal = branch_id !== undefined ? (branch_id && branch_id !== 'all' ? Number(branch_id) : null) : undefined;
     if (isCurr === 1) {
-      await pool.query(
-        `UPDATE academic_year_master SET is_current = 0 WHERE school_id = ? AND id != ?`,
-        [schoolId, id]
-      );
+      let resetSql = `UPDATE academic_year_master SET is_current = 0 WHERE school_id = ? AND id != ?`;
+      const resetParams = [schoolId, id];
+      if (branchVal) {
+        resetSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+        resetParams.push(branchVal);
+      }
+      await pool.query(resetSql, resetParams);
     }
-    const [result] = await pool.query(
-      `UPDATE academic_year_master SET academic_year = ?, start_date = ?, end_date = ?, is_current = ?, status = ? WHERE id = ? AND school_id = ?`,
-      [yearVal, start_date, end_date, isCurr, Number(status), id, schoolId]
-    );
+    let updateSql = `UPDATE academic_year_master SET academic_year = ?, start_date = ?, end_date = ?, is_current = ?, status = ?`;
+    const updateParams = [yearVal, start_date, end_date, isCurr, Number(status)];
+    if (branchVal !== undefined) {
+      updateSql += `, branch_id = ?`;
+      updateParams.push(branchVal);
+    }
+    updateSql += ` WHERE id = ? AND school_id = ?`;
+    updateParams.push(id, schoolId);
+    const [result] = await pool.query(updateSql, updateParams);
     return result.affectedRows > 0;
   }
 
-  static async deleteAcademicYear(id, schoolId) {
-    const [result] = await pool.query(
-      `UPDATE academic_year_master SET status = 4 WHERE id = ? AND school_id = ?`,
-      [id, schoolId]
-    );
+  static async deleteAcademicYear(id, schoolId, branchId = null) {
+    let sql = `UPDATE academic_year_master SET status = 4 WHERE id = ? AND school_id = ?`;
+    const params = [id, schoolId];
+    if (branchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    const [result] = await pool.query(sql, params);
     return result.affectedRows > 0;
   }
 

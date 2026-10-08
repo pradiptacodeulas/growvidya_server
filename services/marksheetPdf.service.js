@@ -119,6 +119,7 @@ const buildSubjectsTableHtml = (terms = [], subjects = [], grades = []) => {
 
     subjects.forEach((sub) => {
       const tData = sub.terms ? sub.terms[term.name] : null;
+      if (!tData) return;
       const termTotal = tData && tData.termTotal !== null && tData.termTotal !== undefined ? tData.termTotal : 0;
       const termFullMarks = tData && tData.termFullMarks ? tData.termFullMarks : 100;
       const termGrade = tData && tData.termGrade ? tData.termGrade : '-';
