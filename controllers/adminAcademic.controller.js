@@ -650,7 +650,10 @@ class AdminAcademicController {
   static async createDay(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const branchId = req.body.branch_id !== undefined ? req.body.branch_id : (req.branchId || null);
+      const branchId =
+        req.body.branch_id !== undefined && req.body.branch_id !== null && req.body.branch_id !== ''
+          ? req.body.branch_id
+          : (req.branchId || null);
       const insertId = await AcademicModel.createDay(schoolId, {
         ...req.body,
         branch_id: branchId,
@@ -665,10 +668,15 @@ class AdminAcademicController {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
       const { id } = req.params;
-      const branchId = req.body.branch_id !== undefined ? req.body.branch_id : undefined;
+      const branchId =
+        req.body.branch_id !== undefined && req.body.branch_id !== null && req.body.branch_id !== ''
+          ? req.body.branch_id
+          : req.body.branch_id === null || req.body.branch_id === ''
+          ? null
+          : undefined;
       await AcademicModel.updateDay(id, schoolId, {
         ...req.body,
-        branch_id: branchId,
+        ...(branchId !== undefined ? { branch_id: branchId } : {}),
       });
       return ApiResponse.success(res, 'Day updated successfully');
     } catch (error) {

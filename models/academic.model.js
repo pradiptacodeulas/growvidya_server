@@ -881,7 +881,16 @@ class AcademicModel {
   }
 
   static async createDay(schoolId, { day_name, branch_id = null, status = 1 }) {
-    const resolvedBranchId = branch_id !== undefined && branch_id !== null && branch_id !== '' ? Number(branch_id) : null;
+    let resolvedBranchId = branch_id !== undefined && branch_id !== null && branch_id !== '' ? Number(branch_id) : null;
+    if (!resolvedBranchId) {
+      try {
+        const [mainB] = await pool.query(
+          `SELECT id FROM branch_master WHERE school_id = ? AND (is_main_branch = 1 OR id > 0) ORDER BY is_main_branch DESC LIMIT 1`,
+          [schoolId]
+        );
+        if (mainB && mainB.length > 0) resolvedBranchId = mainB[0].id;
+      } catch (e) {}
+    }
     const [result] = await pool.query(
       `INSERT INTO days_master (school_id, branch_id, day_name, status) VALUES (?, ?, ?, ?)`,
       [schoolId, resolvedBranchId, day_name, Number(status)]
