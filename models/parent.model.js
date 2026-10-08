@@ -127,6 +127,73 @@ class ParentModel {
 
     const parent = rows[0];
 
+    // Fetch address for this parent
+    const [addrRows] = await pool.query(
+      `SELECT * FROM parent_master_address WHERE parent_id = ? LIMIT 1`,
+      [id]
+    );
+    if (addrRows.length > 0) {
+      parent.address = addrRows[0];
+      parent.country = addrRows[0].country;
+      parent.state = addrRows[0].state;
+      parent.city = addrRows[0].city;
+      parent.postal_code = addrRows[0].postal_code;
+      parent.address1 = addrRows[0].address1;
+      parent.address2 = addrRows[0].address2;
+    }
+
+    // Resolve both father and mother through student_to_parent link if available
+    const [stpRows] = await pool.query(
+      `SELECT father_id, mother_id FROM student_to_parent WHERE (father_id = ? OR mother_id = ?) AND status != 4 LIMIT 1`,
+      [id, id]
+    );
+
+    let father = null;
+    let mother = null;
+
+    if (stpRows.length > 0) {
+      const { father_id, mother_id } = stpRows[0];
+      if (father_id) {
+        const [fRows] = await pool.query(
+          `SELECT p.*, a.country, a.state, a.city, a.postal_code, a.address1, a.address2 
+           FROM parent_master p 
+           LEFT JOIN parent_master_address a ON p.id = a.parent_id 
+           WHERE p.id = ? AND (p.school_id = ? OR ? IS NULL) AND p.status != 4`,
+          [father_id, schoolId, schoolId]
+        );
+        if (fRows.length > 0) father = fRows[0];
+      }
+      if (mother_id) {
+        const [mRows] = await pool.query(
+          `SELECT p.*, a.country, a.state, a.city, a.postal_code, a.address1, a.address2 
+           FROM parent_master p 
+           LEFT JOIN parent_master_address a ON p.id = a.parent_id 
+           WHERE p.id = ? AND (p.school_id = ? OR ? IS NULL) AND p.status != 4`,
+          [mother_id, schoolId, schoolId]
+        );
+        if (mRows.length > 0) mother = mRows[0];
+      }
+    }
+
+    if (!father && !mother) {
+      const parentWithAddr = { ...parent, ...(addrRows[0] || {}) };
+      if (parent.relation === 'Mother' || parent.parent_type === 2) {
+        mother = parentWithAddr;
+      } else {
+        father = parentWithAddr;
+      }
+    } else {
+      if (!mother && (parent.relation === 'Mother' || parent.parent_type === 2)) {
+        mother = { ...parent, ...(addrRows[0] || {}) };
+      }
+      if (!father && (parent.relation === 'Father' || parent.parent_type === 1)) {
+        father = { ...parent, ...(addrRows[0] || {}) };
+      }
+    }
+
+    parent.father = father;
+    parent.mother = mother;
+
     // Fetch linked children (students)
     let childrenSql = `
       SELECT 

@@ -1181,9 +1181,9 @@ class StudentModel {
             );
           }
         } else {
-          // Check if parent already exists in parent_master by phone or email
-          let existingParentId = null;
-          if (fPhone || fEmail) {
+          // Check if parent ID was passed or parent already exists in parent_master by phone or email
+          let existingParentId = fInfo.father_id || data.father_id || null;
+          if (!existingParentId && (fPhone || fEmail)) {
             const [match] = await pool.execute(
               `SELECT id FROM parent_master WHERE school_id = ? AND ((phone = ? AND ? != '') OR (email = ? AND ? != '')) AND status != 4 LIMIT 1`,
               [schoolId, fPhone || '', fPhone || '', fEmail || '', fEmail || '']
@@ -1275,9 +1275,9 @@ class StudentModel {
             );
           }
         } else {
-          // Check if parent already exists in parent_master by phone or email
-          let existingMotherId = null;
-          if (mPhone || mEmail) {
+          // Check if mother ID was passed or parent already exists in parent_master by phone or email
+          let existingMotherId = mInfo.mother_id || data.mother_id || null;
+          if (!existingMotherId && (mPhone || mEmail)) {
             const [match] = await pool.execute(
               `SELECT id FROM parent_master WHERE school_id = ? AND ((phone = ? AND ? != '') OR (email = ? AND ? != '')) AND status != 4 LIMIT 1`,
               [schoolId, mPhone || '', mPhone || '', mEmail || '', mEmail || '']
