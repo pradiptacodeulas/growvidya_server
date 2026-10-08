@@ -386,9 +386,10 @@ class SaasModel {
         INSERT INTO school_master (
           school_name, school_code, school_logo, address, city, state, country,
           postal_code, phone_number, email, website, established_year,
-          school_type, affiliation_board, medium_of_instruction, footer, status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW(), NOW())
+          school_type, affiliation_board, medium_of_instruction, registration_type, footer, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW(), NOW())
       `;
+      const regType = (schoolData.registration_type === 'multiple' || schoolData.registrationType === 'multiple') ? 'multiple' : 'single';
       const [schoolResult] = await connection.query(insertSchoolQuery, [
         schoolName,
         schoolCode,
@@ -405,6 +406,7 @@ class SaasModel {
         (schoolData.school_type || '').trim() || null,
         (schoolData.affiliation_board || '').trim() || null,
         (schoolData.medium_of_instruction || '').trim() || null,
+        regType,
         footerText,
       ]);
       const schoolId = schoolResult.insertId;
@@ -525,14 +527,15 @@ class SaasModel {
       // Insert into school_subscriptions (active immediately for free trials, pending for manual review of paid plans)
       const insertSubQuery = `
         INSERT INTO school_subscriptions (
-          school_id, plan_id, coupon_id, original_amount, discount_amount,
+          school_id, plan_id, storage_plan_id, coupon_id, original_amount, discount_amount,
           amount_paid, payment_gateway, payment_transaction_id, payment_status,
           start_date, end_date, status, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
       `;
       const [subResult] = await connection.query(insertSubQuery, [
         schoolId,
         plan.id,
+        storagePlanId ? parseInt(storagePlanId, 10) : null,
         couponId,
         originalAmount,
         discountAmount,

@@ -20,6 +20,7 @@ const couponRoutes = require('./routes/coupon.routes');
 const ApiResponse = require('./utils/api.response');
 
 const app = express();
+// Super Admin Multi-Branch Module Enabled
 
 // ==========================================
 // 1. Security & Body Parsing Middlewares

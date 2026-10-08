@@ -27,6 +27,7 @@ const adminReportRoutes = require('./adminReport.routes');
 const adminMiscSettingRoutes = require('./adminMiscSetting.routes');
 const adminIdCardRoutes = require('./adminIdCard.routes');
 const adminDashboardRoutes = require('./adminDashboard.routes');
+const superAdminRoutes = require('./superAdmin.routes');
 
 const teacherAuthRoutes = require('./teacherAuth.routes');
 const teacherDashboardRoutes = require('./teacherDashboard.routes');
@@ -139,6 +140,7 @@ router.use('/v1/admin/records/idcards', adminIdCardRoutes);
 router.use('/v1/admin/branches', branchRoutes);
 router.use('/v1/branches', branchRoutes);
 router.use('/v1/admin/dashboard', adminDashboardRoutes);
+router.use('/v1/admin/super-admin', superAdminRoutes);
 
 // ==========================================
 // 4. Teacher Portal Routes
