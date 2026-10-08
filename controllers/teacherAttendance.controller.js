@@ -20,7 +20,8 @@ class TeacherAttendanceController {
     try {
       const schoolId = TeacherAttendanceController.getSchoolId(req);
       const teacherId = TeacherAttendanceController.getTeacherId(req);
-      const options = await AttendanceModel.getMetaOptions(schoolId, teacherId);
+      const branchId = req.branchId || req.user?.branch_id || null;
+      const options = await AttendanceModel.getMetaOptions(schoolId, teacherId, branchId);
       return ApiResponse.success(res, 'Teacher attendance options fetched successfully.', options);
     } catch (error) {
       next(error);
@@ -31,6 +32,7 @@ class TeacherAttendanceController {
     try {
       const schoolId = TeacherAttendanceController.getSchoolId(req);
       const { class_id, section_id, academic_year, date, page = 1, limit = 10, search = '' } = req.query;
+      const branchId = req.branchId || req.user?.branch_id || null;
 
       const targetDate = date || new Date().toISOString().split('T')[0];
       const { students, total, page: curPage, limit: curLimit, totalPages } =
@@ -39,6 +41,7 @@ class TeacherAttendanceController {
           section_id,
           academic_year,
           date: targetDate,
+          branch_id: branchId,
           page: Number(page) || 1,
           limit: Number(limit) || 10,
           search: String(search || '').trim(),

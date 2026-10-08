@@ -55,7 +55,13 @@ class LeaveModel {
     const params = [schoolId];
 
     if (branchId) {
-      sql += ` AND (l.branch_id = ? OR t.branch_id = ? OR u.branch_id = ?)`;
+      sql += ` AND (
+        (l.branch_id = ?) OR
+        (l.branch_id IS NULL AND (
+          (l.role = 1 AND (t.branch_id = ? OR t.branch_id IS NULL)) OR
+          (l.role = 2 AND (u.branch_id = ? OR u.branch_id IS NULL))
+        ))
+      )`;
       params.push(Number(branchId), Number(branchId), Number(branchId));
     }
 
@@ -91,11 +97,12 @@ class LeaveModel {
   /**
    * Get single leave details by ID
    */
-  static async getLeaveById(schoolId, leaveId) {
-    const sql = `
+  static async getLeaveById(schoolId, leaveId, branchId = null) {
+    let sql = `
       SELECT 
         l.id,
         l.school_id,
+        l.branch_id,
         l.role,
         l.staff_id,
         l.leave_id,
@@ -124,7 +131,19 @@ class LeaveModel {
       WHERE l.id = ? AND l.school_id = ?
     `;
 
-    const [rows] = await pool.query(sql, [leaveId, schoolId]);
+    const params = [leaveId, schoolId];
+    if (branchId) {
+      sql += ` AND (
+        (l.branch_id = ?) OR
+        (l.branch_id IS NULL AND (
+          (l.role = 1 AND (t.branch_id = ? OR t.branch_id IS NULL)) OR
+          (l.role = 2 AND (u.branch_id = ? OR u.branch_id IS NULL))
+        ))
+      )`;
+      params.push(Number(branchId), Number(branchId), Number(branchId));
+    }
+
+    const [rows] = await pool.query(sql, params);
     if (!rows || rows.length === 0) return null;
 
     const leave = rows[0];
@@ -269,26 +288,28 @@ class LeaveModel {
   /**
    * Update Overall Leave Status (1=Pending, 2=Approved, 3=Rejected)
    */
-  static async updateLeaveStatus(schoolId, leaveId, status) {
+  static async updateLeaveStatus(schoolId, leaveId, status, branchId = null) {
     const targetStatus = Number(status);
 
-    if (targetStatus === 2) {
-      // Find parent leave
-      const [leaveRows] = await pool.query(
-        `SELECT l.id, l.school_id, l.role, l.staff_id, l.leave_id, l.duration, l.status
+    let checkSql = `SELECT l.id, l.school_id, l.role, l.staff_id, l.leave_id, l.duration, l.status, l.branch_id
          FROM leaves l
-         WHERE l.id = ? AND (l.school_id = ? OR ? IS NULL)`,
-        [leaveId, schoolId, schoolId]
-      );
+         WHERE l.id = ? AND (l.school_id = ? OR ? IS NULL)`;
+    const checkParams = [leaveId, schoolId, schoolId];
+    if (branchId) {
+      checkSql += ` AND (l.branch_id = ? OR l.branch_id IS NULL)`;
+      checkParams.push(Number(branchId));
+    }
+    const [leaveRows] = await pool.query(checkSql, checkParams);
 
-      if (!leaveRows || leaveRows.length === 0) {
-        const err = new Error('Leave record not found.');
-        err.statusCode = 404;
-        throw err;
-      }
+    if (!leaveRows || leaveRows.length === 0) {
+      const err = new Error('Leave record not found.');
+      err.statusCode = 404;
+      throw err;
+    }
 
-      const leaveRecord = leaveRows[0];
+    const leaveRecord = leaveRows[0];
 
+    if (targetStatus === 2) {
       // Find dates that are not yet approved
       const [nonApprovedDates] = await pool.query(
         `SELECT id, status FROM leaves_date WHERE staff_leave_id = ? AND status != 2`,
@@ -318,10 +339,13 @@ class LeaveModel {
       }
     }
 
-    await pool.query(
-      `UPDATE leaves SET status = ? WHERE id = ? AND (school_id = ? OR ? IS NULL)`,
-      [targetStatus, leaveId, schoolId, schoolId]
-    );
+    let updateSql = `UPDATE leaves SET status = ? WHERE id = ? AND (school_id = ? OR ? IS NULL)`;
+    const updateParams = [targetStatus, leaveId, schoolId, schoolId];
+    if (branchId) {
+      updateSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      updateParams.push(Number(branchId));
+    }
+    await pool.query(updateSql, updateParams);
 
     // Also update all dates for this leave request
     await pool.query(
@@ -335,28 +359,31 @@ class LeaveModel {
   /**
    * Update Single Leave Date Status
    */
-  static async updateLeaveDateStatus(schoolId, leaveDateId, status) {
+  static async updateLeaveDateStatus(schoolId, leaveDateId, status, branchId = null) {
     const targetStatus = Number(status);
+
+    let dateSql = `SELECT ld.id, ld.staff_leave_id, ld.status AS date_status,
+                l.school_id, l.role, l.staff_id, l.leave_id, l.duration, l.branch_id
+         FROM leaves_date ld
+         JOIN leaves l ON ld.staff_leave_id = l.id
+         WHERE ld.id = ? AND (ld.school_id = ? OR ? IS NULL)`;
+    const dateParams = [leaveDateId, schoolId, schoolId];
+    if (branchId) {
+      dateSql += ` AND (l.branch_id = ? OR l.branch_id IS NULL)`;
+      dateParams.push(Number(branchId));
+    }
+    const [dateRows] = await pool.query(dateSql, dateParams);
+
+    if (!dateRows || dateRows.length === 0) {
+      const err = new Error('Leave date record not found.');
+      err.statusCode = 404;
+      throw err;
+    }
+
+    const dateRecord = dateRows[0];
 
     // If approving, enforce quota restriction
     if (targetStatus === 2) {
-      const [dateRows] = await pool.query(
-        `SELECT ld.id, ld.staff_leave_id, ld.status AS date_status,
-                l.school_id, l.role, l.staff_id, l.leave_id, l.duration
-         FROM leaves_date ld
-         JOIN leaves l ON ld.staff_leave_id = l.id
-         WHERE ld.id = ? AND (ld.school_id = ? OR ? IS NULL)`,
-        [leaveDateId, schoolId, schoolId]
-      );
-
-      if (!dateRows || dateRows.length === 0) {
-        const err = new Error('Leave date record not found.');
-        err.statusCode = 404;
-        throw err;
-      }
-
-      const dateRecord = dateRows[0];
-
       // If not already approved, check if adding this date exceeds quota
       if (Number(dateRecord.date_status) !== 2) {
         const dateWeight = Number(dateRecord.duration) === 2 ? 0.5 : 1;
@@ -445,7 +472,7 @@ class LeaveModel {
          WHERE school_id = ? AND status != 0 AND status != 4`;
       const params = [schoolId];
       if (branchId) {
-        sql += ` AND branch_id = ?`;
+        sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
         params.push(Number(branchId));
       }
       sql += ` ORDER BY first_name ASC`;
@@ -458,7 +485,7 @@ class LeaveModel {
          WHERE school_id = ? AND status != 0 AND status != 4`;
       const params = [schoolId];
       if (branchId) {
-        sql += ` AND branch_id = ?`;
+        sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
         params.push(Number(branchId));
       }
       sql += ` ORDER BY first_name ASC`;
@@ -560,11 +587,14 @@ class LeaveModel {
   /**
    * Delete / Soft Delete Applied Leave (status = 4)
    */
-  static async deleteLeave(schoolId, id) {
-    await pool.query(
-      `UPDATE leaves SET status = 4 WHERE id = ? AND school_id = ?`,
-      [id, schoolId]
-    );
+  static async deleteLeave(schoolId, id, branchId = null) {
+    let sql = `UPDATE leaves SET status = 4 WHERE id = ? AND school_id = ?`;
+    const params = [id, schoolId];
+    if (branchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    await pool.query(sql, params);
     await pool.query(
       `UPDATE leaves_date SET status = 4 WHERE staff_leave_id = ? AND school_id = ?`,
       [id, schoolId]

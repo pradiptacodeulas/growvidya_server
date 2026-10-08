@@ -59,8 +59,9 @@ exports.getAllCategories = async (req, res) => {
 exports.getCategoryById = async (req, res) => {
   try {
     const schoolId = getSchoolId(req);
+    const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
     const { id } = req.params;
-    const category = await CertificateModel.getCategoryById(id, schoolId);
+    const category = await CertificateModel.getCategoryById(id, schoolId, branchId);
     if (!category) {
       return ApiResponse.error(res, 'Category not found', null, 404);
     }
@@ -142,7 +143,9 @@ exports.updateCategory = async (req, res) => {
     const { id } = req.params;
     const { category_name, sort_order, status } = req.body;
 
-    const existingCategory = await CertificateModel.getCategoryById(id, schoolId);
+    const branchId = req.body.branch_id !== undefined ? req.body.branch_id : (req.branchId || req.query.branch_id || req.query.branchId || null);
+
+    const existingCategory = await CertificateModel.getCategoryById(id, schoolId, branchId);
     if (!existingCategory) {
       return ApiResponse.error(res, 'Certificate category not found.', null, 404);
     }
@@ -190,9 +193,9 @@ exports.updateCategory = async (req, res) => {
       category_name: cleanName,
       sort_order: parsedSortOrder,
       status: parsedStatus,
-      branch_id: req.body.branch_id !== undefined ? req.body.branch_id : undefined,
+      branch_id: branchId,
       modify_by: userId,
-    });
+    }, branchId);
 
     if (!success) {
       return ApiResponse.error(res, 'Category not found or no changes made.', null, 400);
@@ -208,8 +211,9 @@ exports.updateCategory = async (req, res) => {
 exports.deleteCategory = async (req, res) => {
   try {
     const schoolId = getSchoolId(req);
+    const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
     const { id } = req.params;
-    const success = await CertificateModel.deleteCategory(id, schoolId);
+    const success = await CertificateModel.deleteCategory(id, schoolId, branchId);
     if (!success) {
       return ApiResponse.error(res, 'Category not found', null, 404);
     }
@@ -224,7 +228,7 @@ exports.deleteCategory = async (req, res) => {
 exports.getAllTemplates = async (req, res) => {
   try {
     const schoolId = getSchoolId(req);
-    const branchId = req.branchId || req.query.branch_id || null;
+    const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
     const { categoryId, search, status } = req.query;
     const templates = await CertificateModel.getAllTemplates(schoolId, { categoryId, search, status, branchId });
     return ApiResponse.success(res, 'Certificate templates retrieved successfully', templates);
@@ -237,8 +241,9 @@ exports.getAllTemplates = async (req, res) => {
 exports.getTemplateById = async (req, res) => {
   try {
     const schoolId = getSchoolId(req);
+    const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
     const { id } = req.params;
-    const template = await CertificateModel.getTemplateById(id, schoolId);
+    const template = await CertificateModel.getTemplateById(id, schoolId, branchId);
     if (!template) {
       return ApiResponse.error(res, 'Template not found', null, 404);
     }
@@ -312,6 +317,8 @@ exports.updateTemplate = async (req, res) => {
       status,
     } = req.body;
 
+    const branchId = req.body.branch_id !== undefined ? req.body.branch_id : (req.branchId || req.query.branch_id || req.query.branchId || null);
+
     const success = await CertificateModel.updateTemplate(id, schoolId, {
       certificate_category: certificate_category !== undefined ? Number(certificate_category) : undefined,
       template_name: template_name ? template_name.trim() : undefined,
@@ -321,9 +328,9 @@ exports.updateTemplate = async (req, res) => {
       border: border !== undefined ? String(border) : undefined,
       certified_by: certified_by !== undefined ? certified_by.trim() : undefined,
       status: status !== undefined ? Number(status) : undefined,
-      branch_id: req.body.branch_id !== undefined ? req.body.branch_id : undefined,
+      branch_id: branchId,
       modify_by: userId,
-    });
+    }, branchId);
 
     if (!success) {
       return ApiResponse.error(res, 'Template not found or not modified', null, 404);
@@ -339,8 +346,9 @@ exports.updateTemplate = async (req, res) => {
 exports.deleteTemplate = async (req, res) => {
   try {
     const schoolId = getSchoolId(req);
+    const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
     const { id } = req.params;
-    const success = await CertificateModel.deleteTemplate(id, schoolId);
+    const success = await CertificateModel.deleteTemplate(id, schoolId, branchId);
     if (!success) {
       return ApiResponse.error(res, 'Template not found', null, 404);
     }
@@ -578,8 +586,9 @@ exports.getAllIssuedCertificates = async (req, res) => {
 exports.getIssuedCertificateById = async (req, res) => {
   try {
     const schoolId = getSchoolId(req);
+    const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
     const { id } = req.params;
-    const cert = await CertificateModel.getIssuedCertificateById(id, schoolId);
+    const cert = await CertificateModel.getIssuedCertificateById(id, schoolId, branchId);
     if (!cert) {
       return ApiResponse.error(res, 'Certificate not found', null, 404);
     }
@@ -770,8 +779,9 @@ exports.createIssuedCertificate = async (req, res) => {
 exports.deleteIssuedCertificate = async (req, res) => {
   try {
     const schoolId = getSchoolId(req);
+    const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
     const { id } = req.params;
-    const success = await CertificateModel.deleteIssuedCertificate(id, schoolId);
+    const success = await CertificateModel.deleteIssuedCertificate(id, schoolId, branchId);
     if (!success) {
       return ApiResponse.error(res, 'Issued certificate not found', null, 404);
     }
@@ -785,9 +795,10 @@ exports.deleteIssuedCertificate = async (req, res) => {
 exports.downloadIssuedCertificate = async (req, res) => {
   try {
     const schoolId = getSchoolId(req);
+    const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
     const { id } = req.params;
 
-    const cert = await CertificateModel.getIssuedCertificateById(id, schoolId);
+    const cert = await CertificateModel.getIssuedCertificateById(id, schoolId, branchId);
     if (!cert) {
       return ApiResponse.error(res, 'Certificate not found', null, 404);
     }
@@ -830,11 +841,12 @@ exports.downloadIssuedCertificate = async (req, res) => {
 exports.downloadBulkIssuedCertificates = async (req, res) => {
   try {
     const schoolId = getSchoolId(req);
+    const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
     const { ids, categoryId, classId, sectionId } = req.body || {};
 
     let certList = [];
     if (Array.isArray(ids) && ids.length > 0) {
-      const certPromises = ids.map((id) => CertificateModel.getIssuedCertificateById(id, schoolId));
+      const certPromises = ids.map((id) => CertificateModel.getIssuedCertificateById(id, schoolId, branchId));
       const results = await Promise.all(certPromises);
       certList = results.filter(Boolean);
     } else {
@@ -842,6 +854,7 @@ exports.downloadBulkIssuedCertificates = async (req, res) => {
         categoryId,
         classId,
         sectionId,
+        branchId,
       });
       certList = Array.isArray(rawList?.data) ? rawList.data : Array.isArray(rawList) ? rawList : [];
     }

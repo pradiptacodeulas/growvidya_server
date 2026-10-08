@@ -8,7 +8,7 @@ class AdminDashboardController {
       if (!schoolId) {
         return ApiResponse.error(res, 'School context required. Please log in again.', null, 401);
       }
-      const branchId = req.branchId || req.query.branch_id || null;
+      const branchId = req.branchId || req.user?.branch_id || req.query.branch_id || null;
       const stats = await DashboardModel.getDashboardStats(schoolId, branchId);
       return ApiResponse.success(res, 'Dashboard stats fetched successfully.', stats);
     } catch (error) {

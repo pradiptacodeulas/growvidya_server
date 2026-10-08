@@ -49,18 +49,19 @@ class AdminSalaryDateController {
   static async updateSalaryDate(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { id } = req.params;
       const { salary_date, status = 1, branch_id } = req.body;
       if (!salary_date) {
         return ApiResponse.error(res, 'Salary date is required.', 400);
       }
 
-      const existing = await SalaryDateModel.getSalaryDateById(id, schoolId);
+      const existing = await SalaryDateModel.getSalaryDateById(id, schoolId, branchId);
       if (!existing) {
         return ApiResponse.error(res, 'Salary date record not found.', 404);
       }
 
-      await SalaryDateModel.updateSalaryDate(id, schoolId, { branch_id, salary_date, status });
+      await SalaryDateModel.updateSalaryDate(id, schoolId, { branch_id: branch_id !== undefined ? branch_id : branchId, salary_date, status }, branchId);
       return ApiResponse.success(res, 'Salary date updated successfully.');
     } catch (error) {
       next(error);
@@ -70,14 +71,15 @@ class AdminSalaryDateController {
   static async deleteSalaryDate(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { id } = req.params;
 
-      const existing = await SalaryDateModel.getSalaryDateById(id, schoolId);
+      const existing = await SalaryDateModel.getSalaryDateById(id, schoolId, branchId);
       if (!existing) {
         return ApiResponse.error(res, 'Salary date record not found.', 404);
       }
 
-      await SalaryDateModel.deleteSalaryDate(id, schoolId);
+      await SalaryDateModel.deleteSalaryDate(id, schoolId, branchId);
       return ApiResponse.success(res, 'Salary date deleted successfully.');
     } catch (error) {
       next(error);

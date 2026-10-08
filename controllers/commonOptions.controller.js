@@ -13,6 +13,10 @@ class CommonOptionsController {
     return Number(schoolId);
   }
 
+  static getBranchId(req) {
+    return req.branchId || req.user?.branch_id || req.user?.branchId || req.query?.branch_id || req.query?.branchId || null;
+  }
+
   // Academic Years lookup
   static async getAcademicYears(req, res, next) {
     try {
@@ -38,7 +42,7 @@ class CommonOptionsController {
     try {
       const schoolId = CommonOptionsController.getSchoolId(req);
       const activeOnly = req.query.activeOnly === 'true' || req.query.active_only === 'true';
-      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const branchId = CommonOptionsController.getBranchId(req);
       const classes = await AcademicModel.getClasses(schoolId, activeOnly, null, branchId);
       const formatted = (classes || []).map((c) => ({
         id: c.id,
@@ -61,7 +65,7 @@ class CommonOptionsController {
       const schoolId = CommonOptionsController.getSchoolId(req);
       const classId = req.query?.classId || req.query?.class_id || req.params?.classId || null;
       const activeOnly = req.query?.activeOnly === 'true' || req.query?.active_only === 'true';
-      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const branchId = CommonOptionsController.getBranchId(req);
       const sections = await AcademicModel.getSections(schoolId, classId, activeOnly, null, branchId);
       const formatted = (sections || []).map((s) => ({
         id: s.id,
@@ -84,7 +88,7 @@ class CommonOptionsController {
       const schoolId = CommonOptionsController.getSchoolId(req);
       const classId = req.query.classId || req.query.class_id || null;
       const activeOnly = req.query.activeOnly === 'true' || req.query.active_only === 'true';
-      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const branchId = CommonOptionsController.getBranchId(req);
       const subjects = await AcademicModel.getSubjects(schoolId, classId, activeOnly, null, branchId);
       const formatted = (subjects || []).map((s) => ({
         id: s.id,
@@ -106,7 +110,7 @@ class CommonOptionsController {
   static async getShifts(req, res, next) {
     try {
       const schoolId = CommonOptionsController.getSchoolId(req);
-      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const branchId = CommonOptionsController.getBranchId(req);
       const shifts = await AcademicModel.getShifts(schoolId, false, branchId);
       const formatted = (shifts || []).map((s) => ({
         id: s.id,
@@ -128,7 +132,7 @@ class CommonOptionsController {
   static async getHouses(req, res, next) {
     try {
       const schoolId = CommonOptionsController.getSchoolId(req);
-      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const branchId = CommonOptionsController.getBranchId(req);
       const houses = await AcademicModel.getHouses(schoolId, branchId);
       const formatted = (houses || []).map((h) => ({
         id: h.id,
@@ -148,7 +152,8 @@ class CommonOptionsController {
   static async getRoles(req, res, next) {
     try {
       const schoolId = CommonOptionsController.getSchoolId(req);
-      const roles = await PermissionModel.getAllRoles(schoolId);
+      const branchId = CommonOptionsController.getBranchId(req);
+      const roles = await PermissionModel.getAllRoles(schoolId, branchId);
       const formatted = (roles || []).map((r) => ({
         id: r.id,
         role_name: r.role_name,
@@ -165,7 +170,7 @@ class CommonOptionsController {
   static async getAcademicBundle(req, res, next) {
     try {
       const schoolId = CommonOptionsController.getSchoolId(req);
-      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const branchId = CommonOptionsController.getBranchId(req);
       const [years, classes, shifts, houses] = await Promise.all([
         AcademicModel.getAcademicYears(schoolId),
         AcademicModel.getClasses(schoolId, true, null, branchId),

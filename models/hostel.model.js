@@ -56,12 +56,15 @@ const HostelModel = {
     return rows;
   },
 
-  async getHostelById(id, schoolId) {
-    const [rows] = await pool.query(
-      `SELECT * FROM hostel_name_master 
-       WHERE id = ? AND school_id = ? AND status != 4`,
-      [id, schoolId]
-    );
+  async getHostelById(id, schoolId, branchId = null) {
+    let sql = `SELECT * FROM hostel_name_master 
+       WHERE id = ? AND school_id = ? AND status != 4`;
+    const params = [id, schoolId];
+    if (branchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    const [rows] = await pool.query(sql, params);
     return rows[0] || null;
   },
 
@@ -90,28 +93,40 @@ const HostelModel = {
     return result.insertId;
   },
 
-  async updateHostel(id, schoolId, { hostel_name, hostel_fee, sort_order, status }) {
-    await pool.query(
-      `UPDATE hostel_name_master 
-       SET hostel_name = ?, hostel_fee = ?, sort_order = ?, status = ?
-       WHERE id = ? AND school_id = ?`,
-      [
-        hostel_name,
-        parseFloat(hostel_fee) || 0.00,
-        parseInt(sort_order, 10) || 0,
-        status !== undefined ? parseInt(status, 10) : 1,
-        id,
-        schoolId,
-      ]
-    );
+  async updateHostel(id, schoolId, { hostel_name, hostel_fee, sort_order, status, branch_id = null }, branchId = null) {
+    let sql = `UPDATE hostel_name_master 
+       SET hostel_name = ?, hostel_fee = ?, sort_order = ?, status = ?`;
+    const params = [
+      hostel_name,
+      parseFloat(hostel_fee) || 0.00,
+      parseInt(sort_order, 10) || 0,
+      status !== undefined ? parseInt(status, 10) : 1,
+    ];
+    if (branch_id !== undefined && branch_id !== null) {
+      sql += `, branch_id = ?`;
+      params.push(Number(branch_id));
+    }
+    sql += ` WHERE id = ? AND school_id = ?`;
+    params.push(id, schoolId);
+
+    const effectiveBranchId = branchId || branch_id;
+    if (effectiveBranchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(effectiveBranchId));
+    }
+
+    await pool.query(sql, params);
     return true;
   },
 
-  async deleteHostel(id, schoolId) {
-    await pool.query(
-      `UPDATE hostel_name_master SET status = 4 WHERE id = ? AND school_id = ?`,
-      [id, schoolId]
-    );
+  async deleteHostel(id, schoolId, branchId = null) {
+    let sql = `UPDATE hostel_name_master SET status = 4 WHERE id = ? AND school_id = ?`;
+    const params = [id, schoolId];
+    if (branchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    await pool.query(sql, params);
     return true;
   },
 
@@ -131,14 +146,17 @@ const HostelModel = {
     return rows;
   },
 
-  async getHostelRoomById(id, schoolId) {
-    const [rows] = await pool.query(
-      `SELECT rm.*, rm.room_number AS room_no, hn.hostel_name 
+  async getHostelRoomById(id, schoolId, branchId = null) {
+    let sql = `SELECT rm.*, rm.room_number AS room_no, hn.hostel_name 
        FROM hostel_room_master rm
        LEFT JOIN hostel_name_master hn ON hn.id = rm.hostel_id
-       WHERE rm.id = ? AND rm.school_id = ? AND rm.status != 4`,
-      [id, schoolId]
-    );
+       WHERE rm.id = ? AND rm.school_id = ? AND rm.status != 4`;
+    const params = [id, schoolId];
+    if (branchId) {
+      sql += ` AND (rm.branch_id = ? OR hn.branch_id = ? OR rm.branch_id IS NULL)`;
+      params.push(Number(branchId), Number(branchId));
+    }
+    const [rows] = await pool.query(sql, params);
     return rows[0] || null;
   },
 
@@ -174,28 +192,40 @@ const HostelModel = {
     return result.insertId;
   },
 
-  async updateHostelRoom(id, schoolId, { hostel_id, room_number, sort_order, status }) {
-    await pool.query(
-      `UPDATE hostel_room_master 
-       SET hostel_id = ?, room_number = ?, sort_order = ?, status = ?
-       WHERE id = ? AND school_id = ?`,
-      [
-        parseInt(hostel_id, 10),
-        room_number,
-        parseInt(sort_order, 10) || 0,
-        status !== undefined ? parseInt(status, 10) : 1,
-        id,
-        schoolId,
-      ]
-    );
+  async updateHostelRoom(id, schoolId, { hostel_id, room_number, sort_order, status, branch_id = null }, branchId = null) {
+    let sql = `UPDATE hostel_room_master 
+       SET hostel_id = ?, room_number = ?, sort_order = ?, status = ?`;
+    const params = [
+      parseInt(hostel_id, 10),
+      room_number,
+      parseInt(sort_order, 10) || 0,
+      status !== undefined ? parseInt(status, 10) : 1,
+    ];
+    if (branch_id !== undefined && branch_id !== null) {
+      sql += `, branch_id = ?`;
+      params.push(Number(branch_id));
+    }
+    sql += ` WHERE id = ? AND school_id = ?`;
+    params.push(id, schoolId);
+
+    const effectiveBranchId = branchId || branch_id;
+    if (effectiveBranchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(effectiveBranchId));
+    }
+
+    await pool.query(sql, params);
     return true;
   },
 
-  async deleteHostelRoom(id, schoolId) {
-    await pool.query(
-      `UPDATE hostel_room_master SET status = 4 WHERE id = ? AND school_id = ?`,
-      [id, schoolId]
-    );
+  async deleteHostelRoom(id, schoolId, branchId = null) {
+    let sql = `UPDATE hostel_room_master SET status = 4 WHERE id = ? AND school_id = ?`;
+    const params = [id, schoolId];
+    if (branchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    await pool.query(sql, params);
     return true;
   },
 };

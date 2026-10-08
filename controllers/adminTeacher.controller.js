@@ -48,7 +48,8 @@ class AdminTeacherController {
   static async getTeacherOptions(req, res, next) {
     try {
       const schoolId = AdminTeacherController.getSchoolId(req);
-      const options = await TeacherModel.getTeacherOptions(schoolId);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const options = await TeacherModel.getTeacherOptions(schoolId, branchId);
       return ApiResponse.success(res, 'Teacher options retrieved successfully.', options);
     } catch (error) {
       next(error);
@@ -176,7 +177,8 @@ class AdminTeacherController {
   static async deleteTeacher(req, res, next) {
     try {
       const schoolId = AdminTeacherController.getSchoolId(req);
-      const deleted = await TeacherModel.deleteTeacher(req.params.id, schoolId);
+      const branchId = req.branchId || req.query.branch_id || null;
+      const deleted = await TeacherModel.deleteTeacher(req.params.id, schoolId, branchId);
       if (!deleted) return ApiResponse.error(res, 'Teacher record not found.', null, 404);
       return ApiResponse.success(res, 'Teacher deleted successfully.', null);
     } catch (error) {

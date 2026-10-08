@@ -584,12 +584,15 @@ class StaffModel {
     return this.getById(id, schoolId);
   }
 
-  static async delete(id, schoolId) {
+  static async delete(id, schoolId, branchId = null) {
     // Prevent deletion of primary Super Admin accounts
-    const [userRows] = await pool.query(
-      `SELECT admin_type FROM user_master WHERE id = ? AND school_id = ? LIMIT 1`,
-      [id, schoolId]
-    );
+    let userSql = `SELECT admin_type FROM user_master WHERE id = ? AND school_id = ?`;
+    const userParams = [id, schoolId];
+    if (branchId) {
+      userSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      userParams.push(Number(branchId));
+    }
+    const [userRows] = await pool.query(userSql + ' LIMIT 1', userParams);
     if (!userRows || userRows.length === 0) {
       return false;
     }
@@ -597,10 +600,13 @@ class StaffModel {
       throw new Error('Primary Super Admin accounts cannot be deleted.');
     }
 
-    const [result] = await pool.query(
-      `UPDATE user_master SET status = 4 WHERE id = ? AND school_id = ?`,
-      [id, schoolId]
-    );
+    let delSql = `UPDATE user_master SET status = 4 WHERE id = ? AND school_id = ?`;
+    const delParams = [id, schoolId];
+    if (branchId) {
+      delSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      delParams.push(Number(branchId));
+    }
+    const [result] = await pool.query(delSql, delParams);
 
     // Also soft-delete user documents
     try {
@@ -623,7 +629,7 @@ class StaffModel {
     return rows || [];
   }
 
-  static async getOptions(schoolId) {
+  static async getOptions(schoolId, branchId = null) {
     const [roles] = await pool.query(
       `SELECT id, role_name, status FROM role_master WHERE school_id = ? AND status != 4 AND LOWER(TRIM(role_name)) != 'super admin' ORDER BY id ASC`,
       [schoolId]
@@ -633,20 +639,28 @@ class StaffModel {
       `SELECT id, name, name AS country, name AS country_name, shortname, phonecode FROM countries WHERE status = 1 OR status IS NULL ORDER BY name ASC`
     );
 
-    const [routes] = await pool.query(
-      `SELECT id, transport_route, fare FROM trans_route_master WHERE school_id = ? AND status = 1 ORDER BY transport_route ASC`,
-      [schoolId]
-    );
+    let routeSql = `SELECT id, transport_route, fare FROM trans_route_master WHERE school_id = ? AND status = 1`;
+    const routeParams = [schoolId];
+    if (branchId) {
+      routeSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      routeParams.push(Number(branchId));
+    }
+    routeSql += ` ORDER BY transport_route ASC`;
+    const [routes] = await pool.query(routeSql, routeParams);
 
     const [vehicles] = await pool.query(
       `SELECT id, vehicle_number FROM trans_vehicle_master WHERE school_id = ? AND status = 1 ORDER BY vehicle_number ASC`,
       [schoolId]
     );
 
-    const [hostels] = await pool.query(
-      `SELECT id, hostel_name, hostel_fee FROM hostel_name_master WHERE school_id = ? AND status = 1 ORDER BY hostel_name ASC`,
-      [schoolId]
-    );
+    let hostelSql = `SELECT id, hostel_name, hostel_fee FROM hostel_name_master WHERE school_id = ? AND status = 1`;
+    const hostelParams = [schoolId];
+    if (branchId) {
+      hostelSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      hostelParams.push(Number(branchId));
+    }
+    hostelSql += ` ORDER BY hostel_name ASC`;
+    const [hostels] = await pool.query(hostelSql, hostelParams);
 
     const [documentTypes] = await pool.query(
       `SELECT id, document_type_name FROM document_type_master WHERE school_id = ? AND status = 1 ORDER BY document_type_name ASC`,

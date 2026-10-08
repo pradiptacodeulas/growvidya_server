@@ -212,8 +212,9 @@ class AdminStudentController {
     try {
       const schoolId = req.user.schoolId;
       const studentId = req.params.id;
+      const branchId = req.branchId || req.query.branch_id || null;
 
-      const deleted = await StudentModel.delete(studentId, schoolId);
+      const deleted = await StudentModel.delete(studentId, schoolId, branchId);
 
       if (!deleted) {
         return ApiResponse.error(res, 'Student record delete failed or not found.', null, 400);
@@ -230,12 +231,13 @@ class AdminStudentController {
       const schoolId = req.user.schoolId;
       const studentId = req.params.id;
       const { activities } = req.body;
+      const branchId = req.branchId || req.body?.branch_id || req.body?.branchId || null;
 
       if (!activities || !Array.isArray(activities) || activities.length === 0) {
         return ApiResponse.error(res, 'At least one activity with date and description is required.', null, 400);
       }
 
-      await StudentModel.addActivity(studentId, schoolId, activities);
+      await StudentModel.addActivity(studentId, schoolId, activities, branchId);
       return ApiResponse.success(res, 'Activity added successfully.');
     } catch (error) {
       next(error);
@@ -246,8 +248,9 @@ class AdminStudentController {
     try {
       const schoolId = req.user.schoolId;
       const activityId = req.params.activityId;
+      const branchId = req.branchId || req.query.branch_id || null;
 
-      const deleted = await StudentModel.deleteActivity(activityId, schoolId);
+      const deleted = await StudentModel.deleteActivity(activityId, schoolId, branchId);
       if (!deleted) {
         return ApiResponse.error(res, 'Activity record delete failed or not found.', null, 400);
       }

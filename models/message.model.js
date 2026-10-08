@@ -298,7 +298,7 @@ class MessageModel {
       `;
       const userParams = [parsedSchoolId, parsedUserId];
       if (parsedBranchId) {
-        userSql += ` AND u.branch_id = ?`;
+        userSql += ` AND (u.branch_id = ? OR u.branch_id IS NULL)`;
         userParams.push(parsedBranchId);
       }
       userSql += ` ORDER BY u.admin_type ASC, u.first_name ASC`;
@@ -323,7 +323,7 @@ class MessageModel {
       `;
       const teacherParams = [parsedSchoolId];
       if (parsedBranchId) {
-        teacherSql += ` AND t.branch_id = ?`;
+        teacherSql += ` AND (t.branch_id = ? OR t.branch_id IS NULL)`;
         teacherParams.push(parsedBranchId);
       }
       teacherSql += ` ORDER BY t.first_name ASC`;
@@ -352,7 +352,7 @@ class MessageModel {
           SELECT 1 FROM student_to_parent stp
           JOIN student_master s ON stp.student_id = s.id
           WHERE (stp.father_id = p.id OR stp.mother_id = p.id OR stp.guardian_id = p.id)
-            AND s.branch_id = ?
+            AND (s.branch_id = ? OR s.branch_id IS NULL)
         )`;
         parentParams.push(parsedBranchId);
       }
@@ -378,7 +378,7 @@ class MessageModel {
       `;
       const studentParams = [parsedSchoolId];
       if (parsedBranchId) {
-        studentSql += ` AND s.branch_id = ?`;
+        studentSql += ` AND (s.branch_id = ? OR s.branch_id IS NULL)`;
         studentParams.push(parsedBranchId);
       }
       studentSql += ` ORDER BY cm.class_name ASC, s.first_name ASC`;
@@ -405,7 +405,7 @@ class MessageModel {
       `;
       const userParams = [parsedSchoolId];
       if (parsedBranchId) {
-        userSql += ` AND u.branch_id = ?`;
+        userSql += ` AND (u.branch_id = ? OR u.branch_id IS NULL)`;
         userParams.push(parsedBranchId);
       }
       userSql += ` ORDER BY u.admin_type ASC, u.first_name ASC`;
@@ -430,7 +430,7 @@ class MessageModel {
       `;
       const teacherParams = [parsedSchoolId, parsedUserId];
       if (parsedBranchId) {
-        teacherSql += ` AND t.branch_id = ?`;
+        teacherSql += ` AND (t.branch_id = ? OR t.branch_id IS NULL)`;
         teacherParams.push(parsedBranchId);
       }
       teacherSql += ` ORDER BY t.first_name ASC`;
@@ -459,7 +459,7 @@ class MessageModel {
           SELECT 1 FROM student_to_parent stp
           JOIN student_master s ON stp.student_id = s.id
           WHERE (stp.father_id = p.id OR stp.mother_id = p.id OR stp.guardian_id = p.id)
-            AND s.branch_id = ?
+            AND (s.branch_id = ? OR s.branch_id IS NULL)
         )`;
         parentParams.push(parsedBranchId);
       }
@@ -485,7 +485,7 @@ class MessageModel {
       `;
       const studentParams = [parsedSchoolId];
       if (parsedBranchId) {
-        studentSql += ` AND s.branch_id = ?`;
+        studentSql += ` AND (s.branch_id = ? OR s.branch_id IS NULL)`;
         studentParams.push(parsedBranchId);
       }
       studentSql += ` ORDER BY cm.class_name ASC, s.first_name ASC`;
@@ -512,7 +512,7 @@ class MessageModel {
       `;
       const teacherParams = [parsedSchoolId];
       if (parsedBranchId) {
-        teacherSql += ` AND t.branch_id = ?`;
+        teacherSql += ` AND (t.branch_id = ? OR t.branch_id IS NULL)`;
         teacherParams.push(parsedBranchId);
       }
       teacherSql += ` ORDER BY t.first_name ASC`;
@@ -537,7 +537,7 @@ class MessageModel {
       `;
       const userParams = [parsedSchoolId];
       if (parsedBranchId) {
-        userSql += ` AND u.branch_id = ?`;
+        userSql += ` AND (u.branch_id = ? OR u.branch_id IS NULL)`;
         userParams.push(parsedBranchId);
       }
       userSql += ` ORDER BY u.admin_type ASC, u.first_name ASC`;
@@ -564,7 +564,7 @@ class MessageModel {
       `;
       const teacherParams = [parsedSchoolId];
       if (parsedBranchId) {
-        teacherSql += ` AND t.branch_id = ?`;
+        teacherSql += ` AND (t.branch_id = ? OR t.branch_id IS NULL)`;
         teacherParams.push(parsedBranchId);
       }
       teacherSql += ` ORDER BY t.first_name ASC`;
@@ -589,7 +589,7 @@ class MessageModel {
       `;
       const userParams = [parsedSchoolId];
       if (parsedBranchId) {
-        userSql += ` AND u.branch_id = ?`;
+        userSql += ` AND (u.branch_id = ? OR u.branch_id IS NULL)`;
         userParams.push(parsedBranchId);
       }
       userSql += ` ORDER BY u.admin_type ASC, u.first_name ASC`;

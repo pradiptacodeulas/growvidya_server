@@ -32,9 +32,13 @@ class AttendanceModel {
   /**
    * Fetch meta options for Attendance (Classes, Sections, Academic Years)
    */
-  static async getMetaOptions(schoolId, teacherId = null) {
+  static async getMetaOptions(schoolId, teacherId = null, branchId = null) {
     let classSql = `SELECT id, class_name FROM class_master c WHERE c.school_id = ? AND c.status = 1`;
     const classParams = [schoolId];
+    if (branchId) {
+      classSql += ` AND (c.branch_id = ? OR c.branch_id IS NULL)`;
+      classParams.push(Number(branchId));
+    }
     if (teacherId) {
       classSql += ` AND EXISTS (SELECT 1 FROM teacher_class_assign tca WHERE tca.teacher_id = ? AND tca.class_id = c.id AND tca.status = 1)`;
       classParams.push(teacherId);
@@ -43,10 +47,14 @@ class AttendanceModel {
 
     const [classes] = await pool.query(classSql, classParams);
 
-    const [sections] = await pool.query(
-      `SELECT id, class_id, section_name FROM section_master WHERE school_id = ? AND status = 1 ORDER BY sort_order ASC, id ASC`,
-      [schoolId]
-    );
+    let secSql = `SELECT id, class_id, section_name FROM section_master WHERE school_id = ? AND status = 1`;
+    const secParams = [schoolId];
+    if (branchId) {
+      secSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      secParams.push(Number(branchId));
+    }
+    secSql += ` ORDER BY sort_order ASC, id ASC`;
+    const [sections] = await pool.query(secSql, secParams);
 
     const [academicYears] = await pool.query(
       `SELECT id, academic_year, start_date, end_date, is_current FROM academic_year_master WHERE school_id = ? AND status = 1 ORDER BY id ASC`,

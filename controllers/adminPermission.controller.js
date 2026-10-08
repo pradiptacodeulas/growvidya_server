@@ -9,7 +9,8 @@ class AdminPermissionController {
   static async getAllRoles(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
-      const roles = await PermissionModel.getAllRoles(schoolId);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const roles = await PermissionModel.getAllRoles(schoolId, branchId);
       return ApiResponse.success(res, 'Roles fetched successfully.', { roles });
     } catch (error) {
       next(error);

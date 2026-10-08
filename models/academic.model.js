@@ -220,11 +220,14 @@ class AcademicModel {
     return result.affectedRows > 0;
   }
 
-  static async deleteClass(id, schoolId) {
-    const [result] = await pool.query(
-      `UPDATE class_master SET status = 4 WHERE id = ? AND school_id = ?`,
-      [id, schoolId]
-    );
+  static async deleteClass(id, schoolId, branchId = null) {
+    let sql = `UPDATE class_master SET status = 4 WHERE id = ? AND school_id = ?`;
+    const params = [id, schoolId];
+    if (branchId) {
+      sql += ` AND branch_id = ?`;
+      params.push(Number(branchId));
+    }
+    const [result] = await pool.query(sql, params);
     return result.affectedRows > 0;
   }
 
@@ -305,11 +308,14 @@ class AcademicModel {
     return result.affectedRows > 0;
   }
 
-  static async deleteSection(id, schoolId) {
-    const [result] = await pool.query(
-      `UPDATE section_master SET status = 4 WHERE id = ? AND school_id = ?`,
-      [id, schoolId]
-    );
+  static async deleteSection(id, schoolId, branchId = null) {
+    let sql = `UPDATE section_master SET status = 4 WHERE id = ? AND school_id = ?`;
+    const params = [id, schoolId];
+    if (branchId) {
+      sql += ` AND branch_id = ?`;
+      params.push(Number(branchId));
+    }
+    const [result] = await pool.query(sql, params);
     return result.affectedRows > 0;
   }
 
@@ -1057,11 +1063,14 @@ class AcademicModel {
     return result.affectedRows > 0;
   }
 
-  static async deleteRoutine(id, schoolId) {
-    const [result] = await pool.query(
-      `UPDATE routine SET status = 4 WHERE id = ? AND school_id = ?`,
-      [id, schoolId]
-    );
+  static async deleteRoutine(id, schoolId, branchId = null) {
+    let sql = `UPDATE routine SET status = 4 WHERE id = ? AND school_id = ?`;
+    const params = [id, schoolId];
+    if (branchId) {
+      sql += ` AND branch_id = ?`;
+      params.push(Number(branchId));
+    }
+    const [result] = await pool.query(sql, params);
     return result.affectedRows > 0;
   }
 
@@ -1287,11 +1296,14 @@ class AcademicModel {
     return result.affectedRows > 0;
   }
 
-  static async deleteSyllabus(id, schoolId) {
-    const [result] = await pool.query(
-      `UPDATE syllabus SET status = 4 WHERE id = ? AND school_id = ?`,
-      [id, schoolId]
-    );
+  static async deleteSyllabus(id, schoolId, branchId = null) {
+    let sql = `UPDATE syllabus SET status = 4 WHERE id = ? AND school_id = ?`;
+    const params = [id, schoolId];
+    if (branchId) {
+      sql += ` AND branch_id = ?`;
+      params.push(Number(branchId));
+    }
+    const [result] = await pool.query(sql, params);
     return result.affectedRows > 0;
   }
 
@@ -1714,11 +1726,14 @@ class AcademicModel {
     }
   }
 
-  static async deleteAssignment(id, schoolId) {
-    const [result] = await pool.query(
-      `UPDATE assignments SET status = 4 WHERE id = ? AND school_id = ?`,
-      [id, schoolId]
-    );
+  static async deleteAssignment(id, schoolId, branchId = null) {
+    let sql = `UPDATE assignments SET status = 4 WHERE id = ? AND school_id = ?`;
+    const params = [id, schoolId];
+    if (branchId) {
+      sql += ` AND branch_id = ?`;
+      params.push(Number(branchId));
+    }
+    const [result] = await pool.query(sql, params);
     return result.affectedRows > 0;
   }
 
@@ -2115,25 +2130,35 @@ class AcademicModel {
     return result.affectedRows > 0;
   }
 
-  static async toggleStudyMaterialStatus(id, schoolId) {
-    const [rows] = await pool.query(
-      `SELECT status FROM study_materials WHERE id = ? AND school_id = ? LIMIT 1`,
-      [id, schoolId]
-    );
+  static async toggleStudyMaterialStatus(id, schoolId, branchId = null) {
+    let selectSql = `SELECT status FROM study_materials WHERE id = ? AND school_id = ?`;
+    const selectParams = [id, schoolId];
+    if (branchId) {
+      selectSql += ` AND branch_id = ?`;
+      selectParams.push(Number(branchId));
+    }
+    selectSql += ` LIMIT 1`;
+    const [rows] = await pool.query(selectSql, selectParams);
     if (rows.length === 0) return null;
     const newStatus = Number(rows[0].status) === 1 ? 2 : 1;
-    await pool.query(
-      `UPDATE study_materials SET status = ? WHERE id = ? AND school_id = ?`,
-      [newStatus, id, schoolId]
-    );
+    let updateSql = `UPDATE study_materials SET status = ? WHERE id = ? AND school_id = ?`;
+    const updateParams = [newStatus, id, schoolId];
+    if (branchId) {
+      updateSql += ` AND branch_id = ?`;
+      updateParams.push(Number(branchId));
+    }
+    await pool.query(updateSql, updateParams);
     return newStatus;
   }
 
-  static async deleteStudyMaterial(id, schoolId) {
-    const [result] = await pool.query(
-      `UPDATE study_materials SET status = 4 WHERE id = ? AND school_id = ?`,
-      [id, schoolId]
-    );
+  static async deleteStudyMaterial(id, schoolId, branchId = null) {
+    let sql = `UPDATE study_materials SET status = 4 WHERE id = ? AND school_id = ?`;
+    const params = [id, schoolId];
+    if (branchId) {
+      sql += ` AND branch_id = ?`;
+      params.push(Number(branchId));
+    }
+    const [result] = await pool.query(sql, params);
     return result.affectedRows > 0;
   }
 }

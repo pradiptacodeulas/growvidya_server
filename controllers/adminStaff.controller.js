@@ -176,8 +176,9 @@ class AdminStaffController {
     try {
       const schoolId = req.user.schoolId;
       const staffId = req.params.id;
+      const branchId = req.branchId || req.query.branch_id || null;
 
-      const success = await StaffModel.delete(staffId, schoolId);
+      const success = await StaffModel.delete(staffId, schoolId, branchId);
 
       if (!success) {
         return ApiResponse.error(res, 'Staff member not found or already deleted.', null, 404);
@@ -202,7 +203,8 @@ class AdminStaffController {
   static async getOptions(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
-      const options = await StaffModel.getOptions(schoolId);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const options = await StaffModel.getOptions(schoolId, branchId);
       return ApiResponse.success(res, 'Staff options fetched successfully.', options);
     } catch (error) {
       next(error);

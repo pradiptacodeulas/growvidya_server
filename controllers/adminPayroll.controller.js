@@ -27,8 +27,9 @@ class AdminPayrollController {
   static async getBeneficiaryById(req, res, next) {
     try {
       const schoolId = AdminPayrollController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { id } = req.params;
-      const beneficiary = await PayrollModel.getBeneficiaryById(schoolId, id);
+      const beneficiary = await PayrollModel.getBeneficiaryById(schoolId, id, branchId);
       if (!beneficiary) {
         return ApiResponse.notFound(res, 'Beneficiary record not found.');
       }
@@ -113,7 +114,8 @@ class AdminPayrollController {
         return ApiResponse.badRequest(res, 'A beneficiary record already exists for this employee.');
       }
 
-      await PayrollModel.updateBeneficiary(schoolId, id, req.body);
+      const branchId = req.branchId || req.body?.branch_id || req.query.branch_id || req.query.branchId || null;
+      await PayrollModel.updateBeneficiary(schoolId, id, { ...req.body, branch_id: branchId }, branchId);
       return ApiResponse.success(res, 'Beneficiary updated successfully.');
     } catch (err) {
       next(err);
@@ -127,8 +129,9 @@ class AdminPayrollController {
         return ApiResponse.forbidden(res, 'Teachers do not have permission to manage beneficiaries.');
       }
       const schoolId = AdminPayrollController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { id } = req.params;
-      await PayrollModel.deleteBeneficiary(schoolId, id);
+      await PayrollModel.deleteBeneficiary(schoolId, id, branchId);
       return ApiResponse.success(res, 'Beneficiary deleted successfully.');
     } catch (err) {
       next(err);
@@ -191,9 +194,10 @@ class AdminPayrollController {
         return ApiResponse.forbidden(res, 'Teachers do not have permission to modify salary status.');
       }
       const schoolId = AdminPayrollController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { id } = req.params;
       const { payment_status } = req.body;
-      await PayrollModel.updateSalaryStatus(schoolId, id, payment_status);
+      await PayrollModel.updateSalaryStatus(schoolId, id, payment_status, branchId);
       return ApiResponse.success(res, 'Salary payment status updated successfully.');
     } catch (err) {
       next(err);

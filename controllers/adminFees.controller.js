@@ -22,8 +22,9 @@ class AdminFeesController {
   static async getComponentById(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.branchId || req.query.branch_id || null;
       const { id } = req.params;
-      const component = await AdminFeesModel.getComponentById(id, schoolId);
+      const component = await AdminFeesModel.getComponentById(id, schoolId, branchId);
       if (!component) {
         return ApiResponse.error(res, 'Fee component not found.', null, 404);
       }
@@ -63,6 +64,7 @@ class AdminFeesController {
   static async updateComponent(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const currentBranchId = req.branchId || null;
       const { id } = req.params;
       const { name, code, tax_rate, taxRate, account_code, accountCode, description, status, branch_id } = req.body;
 
@@ -74,7 +76,7 @@ class AdminFeesController {
         accountCode: account_code !== undefined ? account_code : accountCode,
         description,
         status,
-      });
+      }, currentBranchId);
 
       if (!success) {
         return ApiResponse.error(res, 'Fee component not found or no changes made.', null, 404);
@@ -89,8 +91,9 @@ class AdminFeesController {
   static async deleteComponent(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.branchId || req.query.branch_id || null;
       const { id } = req.params;
-      const success = await AdminFeesModel.deleteComponent(id, schoolId);
+      const success = await AdminFeesModel.deleteComponent(id, schoolId, branchId);
       if (!success) {
         return ApiResponse.error(res, 'Fee component not found.', null, 404);
       }
@@ -125,8 +128,9 @@ class AdminFeesController {
   static async getStructureById(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.branchId || req.query.branch_id || null;
       const { id } = req.params;
-      const structure = await AdminFeesModel.getStructureById(id, schoolId);
+      const structure = await AdminFeesModel.getStructureById(id, schoolId, branchId);
       if (!structure) {
         return ApiResponse.error(res, 'Fee structure not found.', null, 404);
       }
@@ -177,7 +181,7 @@ class AdminFeesController {
 
       const targetStructureId = id || req.params?.id;
       if (targetStructureId) {
-        const existingStructure = await AdminFeesModel.getStructureById(targetStructureId, schoolId);
+        const existingStructure = await AdminFeesModel.getStructureById(targetStructureId, schoolId, branchId);
         if (existingStructure && Number(existingStructure.is_published) === 1) {
           const reqPublished = is_published !== undefined ? is_published : isPublished;
           if (
@@ -239,8 +243,9 @@ class AdminFeesController {
   static async deleteStructure(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.branchId || req.query.branch_id || null;
       const { id } = req.params;
-      const success = await AdminFeesModel.deleteStructure(id, schoolId);
+      const success = await AdminFeesModel.deleteStructure(id, schoolId, branchId);
       if (!success) {
         return ApiResponse.error(res, 'Fee structure not found.', null, 404);
       }
@@ -253,6 +258,7 @@ class AdminFeesController {
   static async togglePublishStructure(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.branchId || req.query.branch_id || null;
       const { id } = req.params;
       const { is_published } = req.body;
 
@@ -260,7 +266,7 @@ class AdminFeesController {
         return ApiResponse.error(res, 'Structure ID is required.', null, 400);
       }
 
-      const existingStructure = await AdminFeesModel.getStructureById(id, schoolId);
+      const existingStructure = await AdminFeesModel.getStructureById(id, schoolId, branchId);
       if (!existingStructure) {
         return ApiResponse.error(res, 'Fee structure not found.', null, 404);
       }
@@ -282,7 +288,7 @@ class AdminFeesController {
         }
       }
 
-      const updated = await AdminFeesModel.togglePublishStructure(id, schoolId, is_published);
+      const updated = await AdminFeesModel.togglePublishStructure(id, schoolId, is_published, branchId);
       if (!updated) {
         return ApiResponse.error(res, 'Fee structure not found.', null, 404);
       }
@@ -434,6 +440,7 @@ class AdminFeesController {
   static async getInvoiceById(req, res, next) {
     try {
       const schoolId = req.user?.schoolId || req.user?.school_id;
+      const branchId = req.branchId || req.query.branch_id || null;
       if (!schoolId) {
         return ApiResponse.error(res, 'School context required. Please log in again.', null, 401);
       }
@@ -448,7 +455,7 @@ class AdminFeesController {
         } catch (e) {}
       }
 
-      const invoice = await AdminFeesModel.getInvoiceById(id, schoolId);
+      const invoice = await AdminFeesModel.getInvoiceById(id, schoolId, branchId);
       if (!invoice) {
         return ApiResponse.error(res, 'Fee invoice not found.', null, 404);
       }
@@ -461,6 +468,7 @@ class AdminFeesController {
   static async checkDuplicateInvoice(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.branchId || req.query.branch_id || null;
       const { fee_structure_id, feeStructureId, issue_date, issueDate } = req.query;
       const targetStructureId = fee_structure_id || feeStructureId;
       const targetIssueDate = issue_date || issueDate;
@@ -471,6 +479,7 @@ class AdminFeesController {
 
       const result = await AdminFeesModel.checkDuplicateInvoice({
         schoolId,
+        branchId,
         feeStructureId: targetStructureId,
         issueDate: targetIssueDate,
       });
@@ -544,8 +553,9 @@ class AdminFeesController {
   static async deleteInvoice(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.branchId || req.query.branch_id || null;
       const { id } = req.params;
-      const success = await AdminFeesModel.deleteInvoice(id, schoolId);
+      const success = await AdminFeesModel.deleteInvoice(id, schoolId, branchId);
       if (!success) {
         return ApiResponse.error(res, 'Invoice not found.', null, 404);
       }
@@ -597,8 +607,9 @@ class AdminFeesController {
   static async getPaymentById(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.branchId || req.query.branch_id || null;
       const { id } = req.params;
-      const payment = await AdminFeesModel.getPaymentById(id, schoolId);
+      const payment = await AdminFeesModel.getPaymentById(id, schoolId, branchId);
       if (!payment) {
         return ApiResponse.error(res, 'Payment record not found.', null, 404);
       }
@@ -614,8 +625,9 @@ class AdminFeesController {
   static async getPaymentReceiptHtml(req, res, next) {
     try {
       const schoolId = req.user?.schoolId || req.user?.school_id;
+      const branchId = req.branchId || req.query.branch_id || null;
       const { id } = req.params;
-      const payment = await AdminFeesModel.getPaymentById(id, schoolId);
+      const payment = await AdminFeesModel.getPaymentById(id, schoolId, branchId);
       if (!payment) {
         return ApiResponse.error(res, 'Payment record not found.', null, 404);
       }
@@ -642,6 +654,7 @@ class AdminFeesController {
   static async downloadReceiptPdf(req, res, next) {
     try {
       const schoolId = req.user?.schoolId || req.user?.school_id;
+      const branchId = req.branchId || req.query.branch_id || null;
       const params = { ...req.query, ...req.body, ...req.params };
 
       // Parse candidate / payment IDs
@@ -662,6 +675,7 @@ class AdminFeesController {
 
       const receiptData = await AdminFeesModel.getReceiptData({
         schoolId,
+        branchId,
         paymentIds: parsedIds,
         classId,
         sectionId,
@@ -772,6 +786,7 @@ class AdminFeesController {
   static async verifyPayment(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.branchId || req.query.branch_id || null;
       const paymentId = Number(req.params.id);
       const { action, reason, rejectionReason } = req.body;
 
@@ -791,6 +806,7 @@ class AdminFeesController {
       const result = await AdminFeesModel.verifyPayment({
         paymentId,
         schoolId,
+        branchId,
         action: normalizedAction,
         rejectionReason: reason || rejectionReason || null,
         verifiedBy: req.user.id || null,

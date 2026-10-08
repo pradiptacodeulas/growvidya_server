@@ -140,13 +140,19 @@ class DashboardModel {
            COALESCE(tm.last_name, um.last_name, '') AS last_name,
            COALESCE(tm.picture, um.picture, NULL) AS picture,
            COALESCE(tm.gender, um.gender, 1) AS gender,
-           IF(l.role = 2, 'Teacher', 'User') AS role_title,
-           (SELECT GROUP_CONCAT(DATE_FORMAT(ld.date, '%d %b') SEPARATOR ' - ') FROM leaves_date ld WHERE ld.staff_leave_id = l.id) AS leave_dates
+           IF(l.role = 1, 'Teacher', 'Staff') AS role_title,
+           (SELECT 
+              IF(MIN(ld.date) = MAX(ld.date), 
+                 DATE_FORMAT(MIN(ld.date), '%d %b'), 
+                 CONCAT(DATE_FORMAT(MIN(ld.date), '%d %b'), ' - ', DATE_FORMAT(MAX(ld.date), '%d %b'))
+              ) 
+            FROM leaves_date ld 
+            WHERE ld.staff_leave_id = l.id) AS leave_dates
          FROM leaves l
-         LEFT JOIN leave_master lm ON l.leave_id = lm.id
-         LEFT JOIN teacher_master tm ON l.role = 2 AND l.staff_id = tm.id
-         LEFT JOIN user_master um ON l.role != 2 AND l.staff_id = um.id
-         WHERE l.school_id = ? AND l.status != 4`;
+         LEFT JOIN leave_master lm ON (l.leave_id = lm.id AND (lm.school_id = l.school_id OR lm.school_id IS NULL))
+         LEFT JOIN teacher_master tm ON (l.role = 1 AND l.staff_id = tm.id AND tm.school_id = l.school_id)
+         LEFT JOIN user_master um ON (l.role = 2 AND l.staff_id = um.id AND um.school_id = l.school_id)
+         WHERE l.school_id = ? AND l.status != 4 AND l.status != 0`;
       if (branchId) {
         leaveSql += ` AND (l.branch_id = ? OR tm.branch_id = ? OR um.branch_id = ?)`;
         leaveParams.push(Number(branchId), Number(branchId), Number(branchId));
@@ -156,10 +162,10 @@ class DashboardModel {
 
       const leaveRequests = (leaveRows || []).map((lr) => ({
         id: lr.id,
-        name: `${lr.first_name} ${lr.last_name}`.trim(),
+        name: `${lr.first_name || ''} ${lr.last_name || ''}`.trim() || 'Staff',
         role: lr.role_title || 'Staff',
         leaveType: lr.leave_name || 'Leave',
-        status: lr.status === 1 ? 'Approved' : lr.status === 3 ? 'Rejected' : 'Pending',
+        status: lr.status === 2 ? 'Approved' : lr.status === 3 ? 'Rejected' : 'Pending',
         dates: lr.leave_dates || (lr.created_at ? new Date(lr.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : 'N/A'),
         appliedOn: lr.created_at ? new Date(lr.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' }) : 'N/A',
         picture: lr.picture,
@@ -173,7 +179,7 @@ class DashboardModel {
          FROM notice
          WHERE school_id = ? AND status != 4`;
       if (branchId) {
-        noticeSql += ` AND branch_id = ?`;
+        noticeSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
         noticeParams.push(Number(branchId));
       }
       noticeSql += ` ORDER BY id DESC LIMIT 6`;

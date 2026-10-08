@@ -613,24 +613,34 @@ class StudentModel {
     return student;
   }
 
-  static async addActivity(studentId, schoolId, activities) {
+  static async addActivity(studentId, schoolId, activities, branchId = null) {
     if (!Array.isArray(activities) || activities.length === 0) return true;
+    let resolvedBranchId = branchId ? Number(branchId) : null;
+    if (!resolvedBranchId) {
+      try {
+        const [st] = await pool.query('SELECT branch_id FROM student_master WHERE id = ? LIMIT 1', [studentId]);
+        if (st && st[0]?.branch_id) resolvedBranchId = st[0].branch_id;
+      } catch (e) {}
+    }
     for (const act of activities) {
       if (act.date && act.activity_description) {
         await pool.execute(
-          `INSERT INTO student_activity (school_id, student_id, date, activity_description, status) VALUES (?, ?, ?, ?, 1)`,
-          [schoolId, studentId, act.date, act.activity_description]
+          `INSERT INTO student_activity (school_id, branch_id, student_id, date, activity_description, status) VALUES (?, ?, ?, ?, ?, 1)`,
+          [schoolId, resolvedBranchId, studentId, act.date, act.activity_description]
         );
       }
     }
     return true;
   }
 
-  static async deleteActivity(activityId, schoolId) {
-    const [result] = await pool.execute(
-      `UPDATE student_activity SET status = 4 WHERE id = ? AND school_id = ?`,
-      [activityId, schoolId]
-    );
+  static async deleteActivity(activityId, schoolId, branchId = null) {
+    let sql = `UPDATE student_activity SET status = 4 WHERE id = ? AND school_id = ?`;
+    const params = [activityId, schoolId];
+    if (branchId) {
+      sql += ` AND branch_id = ?`;
+      params.push(Number(branchId));
+    }
+    const [result] = await pool.execute(sql, params);
     return result.affectedRows > 0;
   }
 
@@ -732,10 +742,11 @@ class StudentModel {
     if (data.transport_required === '1' && data.transport_info && data.transport_info.route) {
       try {
         await pool.execute(
-          `INSERT INTO student_transport (school_id, student_id, route, vehicle_number, pickup_point, drop_point, status)
-           VALUES (?, ?, ?, ?, ?, ?, 1)`,
+          `INSERT INTO student_transport (school_id, branch_id, student_id, route, vehicle_number, pickup_point, drop_point, status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
           [
             data.school_id,
+            data.branch_id || null,
             studentId,
             data.transport_info.route || null,
             data.transport_info.vehicle_number || 0,
@@ -932,9 +943,16 @@ class StudentModel {
             [data.transport_info.route, data.transport_info.pickup_point || '', data.transport_info.drop_point || '', existingTransport[0].id]
           );
         } else {
+          let studentBranchId = data.branch_id || null;
+          if (!studentBranchId) {
+            try {
+              const [stRow] = await pool.query('SELECT branch_id FROM student_master WHERE id = ? LIMIT 1', [id]);
+              if (stRow.length && stRow[0].branch_id) studentBranchId = stRow[0].branch_id;
+            } catch (e) {}
+          }
           await pool.execute(
-            `INSERT INTO student_transport (school_id, student_id, route, vehicle_number, pickup_point, drop_point, status) VALUES (?, ?, ?, ?, ?, ?, 1)`,
-            [schoolId, id, data.transport_info.route, 0, data.transport_info.pickup_point || '', data.transport_info.drop_point || '']
+            `INSERT INTO student_transport (school_id, branch_id, student_id, route, vehicle_number, pickup_point, drop_point, status) VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+            [schoolId, studentBranchId, id, data.transport_info.route, 0, data.transport_info.pickup_point || '', data.transport_info.drop_point || '']
           );
         }
       } catch (transportErr) {
@@ -1417,9 +1435,14 @@ class StudentModel {
     }
   }
 
-  static async delete(id, schoolId) {
-    const sql = `UPDATE student_master SET status = 4 WHERE id = ? AND school_id = ?`;
-    const [result] = await pool.execute(sql, [id, schoolId]);
+  static async delete(id, schoolId, branchId = null) {
+    let sql = `UPDATE student_master SET status = 4 WHERE id = ? AND school_id = ?`;
+    const params = [id, schoolId];
+    if (branchId) {
+      sql += ` AND branch_id = ?`;
+      params.push(Number(branchId));
+    }
+    const [result] = await pool.execute(sql, params);
 
     // Cascade soft delete to student associations
     try {

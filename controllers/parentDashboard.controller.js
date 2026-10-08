@@ -43,6 +43,7 @@ class ParentDashboardController {
 
       // 3. Child's Full Profile
       const fullChild = await ParentModel.getChildFullProfile(activeChild.id, schoolId);
+      const childBranchId = fullChild?.branch_id || activeChild?.branch_id || req.branchId || req.user?.branch_id || null;
 
       // 4. Attendance Summary
       const attendanceData = await ParentModel.getChildAttendance(activeChild.id, schoolId);
@@ -58,8 +59,7 @@ class ParentDashboardController {
         const todayDayName = days[now.getDay()];
         const dayNum = now.getDay() === 0 ? 7 : now.getDay();
 
-        const [periods] = await pool.query(
-          `SELECT 
+        let routineSql = `SELECT 
             r.id,
             r.period_id,
             pm.period_name,
@@ -75,19 +75,24 @@ class ParentDashboardController {
           WHERE r.class_id = ? AND (r.section_id = ? OR ? IS NULL)
             AND (r.school_id = ? OR ? IS NULL)
             AND (LOWER(d.day_name) = LOWER(?) OR d.id = ? OR r.day = ?)
-            AND (r.status != 4 OR r.status IS NULL)
-          ORDER BY pm.start_time ASC, r.id ASC`,
-          [
-            activeChild.class_id || fullChild.class,
-            activeChild.section_id || fullChild.section,
-            activeChild.section_id || fullChild.section,
-            schoolId,
-            schoolId,
-            todayDayName,
-            dayNum,
-            dayNum,
-          ]
-        );
+            AND (r.status != 4 OR r.status IS NULL)`;
+        const routineParams = [
+          activeChild.class_id || fullChild.class,
+          activeChild.section_id || fullChild.section,
+          activeChild.section_id || fullChild.section,
+          schoolId,
+          schoolId,
+          todayDayName,
+          dayNum,
+          dayNum,
+        ];
+        if (childBranchId) {
+          routineSql += ` AND (r.branch_id = ? OR r.branch_id IS NULL)`;
+          routineParams.push(Number(childBranchId));
+        }
+        routineSql += ` ORDER BY pm.start_time ASC, r.id ASC`;
+
+        const [periods] = await pool.query(routineSql, routineParams);
         todayClasses = periods || [];
       } catch (err) {
         console.error('Error fetching child todayClasses:', err.message);
@@ -98,9 +103,9 @@ class ParentDashboardController {
       let events = [];
       let holidays = [];
       try {
-        notices = await AnnouncementModel.getAllNotices(schoolId);
-        events = await AnnouncementModel.getAllEvents(schoolId);
-        holidays = await AnnouncementModel.getAllHolidays(schoolId);
+        notices = await AnnouncementModel.getAllNotices(schoolId, childBranchId);
+        events = await AnnouncementModel.getAllEvents(schoolId, childBranchId);
+        holidays = await AnnouncementModel.getAllHolidays(schoolId, childBranchId);
       } catch (err) {
         console.error('Error fetching announcements:', err.message);
       }

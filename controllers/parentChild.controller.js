@@ -388,7 +388,8 @@ class ParentChildController {
     try {
       const AnnouncementModel = require('../models/announcement.model');
       const schoolId = req.user.schoolId;
-      const data = await AnnouncementModel.getAllEvents(schoolId);
+      const branchId = req.branchId || req.user?.branch_id || null;
+      const data = await AnnouncementModel.getAllEvents(schoolId, branchId);
       return ApiResponse.success(res, 'School events fetched successfully.', data || []);
     } catch (error) {
       next(error);
@@ -409,21 +410,23 @@ class ParentChildController {
       const studentId = await ParentChildController.getActiveStudentId(req);
       const parentId = Number(req.user?.parentId || req.user?.userId || req.user?.id);
 
-      // Fetch student's enrolled class and section
+      // Fetch student's enrolled class, section and branch_id
       let studentClass = null;
       let studentSection = null;
+      let branchId = req.branchId || req.user?.branch_id || null;
       if (studentId) {
         const [studentRows] = await pool.query(
-          `SELECT class, section FROM student_master WHERE id = ? AND school_id = ?`,
+          `SELECT class, section, branch_id FROM student_master WHERE id = ? AND school_id = ?`,
           [studentId, schoolId]
         ).catch(() => [[]]);
         if (studentRows && studentRows[0]) {
           studentClass = Number(studentRows[0].class);
           studentSection = Number(studentRows[0].section);
+          if (studentRows[0].branch_id) branchId = studentRows[0].branch_id;
         }
       }
 
-      const allNotices = await AnnouncementModel.getAllNotices(schoolId);
+      const allNotices = await AnnouncementModel.getAllNotices(schoolId, branchId);
 
       const filtered = allNotices.filter((n) => {
         const type = n.target_type || 'all';

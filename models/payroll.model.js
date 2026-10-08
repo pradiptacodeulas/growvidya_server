@@ -47,8 +47,10 @@ class PayrollModel {
     if (branchId) {
       sql += ` AND (
         (bm.branch_id = ?) OR 
-        (bm.user_type = 2 AND t.branch_id = ?) OR 
-        (bm.user_type != 2 AND u.branch_id = ?)
+        (bm.branch_id IS NULL AND (
+          (bm.user_type = 2 AND (t.branch_id = ? OR t.branch_id IS NULL)) OR 
+          (bm.user_type != 2 AND (u.branch_id = ? OR u.branch_id IS NULL))
+        ))
       )`;
       params.push(Number(branchId), Number(branchId), Number(branchId));
     }
@@ -68,8 +70,8 @@ class PayrollModel {
     return rows || [];
   }
 
-  static async getBeneficiaryById(schoolId, id) {
-    const sql = `
+  static async getBeneficiaryById(schoolId, id, branchId = null) {
+    let sql = `
       SELECT 
         bm.id,
         bm.school_id,
@@ -109,7 +111,18 @@ class PayrollModel {
       LEFT JOIN user_bank ub ON bm.user_type != 2 AND bm.employee_id = ub.user_id AND ub.status != 0
       WHERE bm.id = ? AND bm.status != 0 AND bm.school_id = ?
     `;
-    const [rows] = await pool.query(sql, [id, schoolId]);
+    const params = [id, schoolId];
+    if (branchId) {
+      sql += ` AND (
+        (bm.branch_id = ?) OR 
+        (bm.branch_id IS NULL AND (
+          (bm.user_type = 2 AND (t.branch_id = ? OR t.branch_id IS NULL)) OR 
+          (bm.user_type != 2 AND (u.branch_id = ? OR u.branch_id IS NULL))
+        ))
+      )`;
+      params.push(Number(branchId), Number(branchId), Number(branchId));
+    }
+    const [rows] = await pool.query(sql, params);
     return rows && rows.length > 0 ? rows[0] : null;
   }
 
@@ -197,17 +210,28 @@ class PayrollModel {
     return beneficiaryId;
   }
 
-  static async updateBeneficiary(schoolId, id, { user_type, employee_id, basic_salary, bank_name, account_name, account_no, ifsc_code, branch_name, status = 1 }) {
+  static async updateBeneficiary(schoolId, id, { user_type, employee_id, basic_salary, bank_name, account_name, account_no, ifsc_code, branch_name, status = 1, branch_id = null }, branchId = null) {
     const sId = schoolId;
     const uType = Number(user_type) || 1;
     const empId = Number(employee_id);
 
-    await pool.query(
-      `UPDATE beneficiary_master 
-       SET user_type = ?, employee_id = ?, basic_salary = ?, status = ?
-       WHERE id = ? AND school_id = ?`,
-      [uType, empId, Number(basic_salary) || 0, status, id, sId]
-    );
+    let sql = `UPDATE beneficiary_master 
+       SET user_type = ?, employee_id = ?, basic_salary = ?, status = ?`;
+    const params = [uType, empId, Number(basic_salary) || 0, status];
+    if (branch_id !== undefined && branch_id !== null) {
+      sql += `, branch_id = ?`;
+      params.push(Number(branch_id));
+    }
+    sql += ` WHERE id = ? AND school_id = ?`;
+    params.push(id, sId);
+
+    const effectiveBranchId = branchId || branch_id;
+    if (effectiveBranchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(effectiveBranchId));
+    }
+
+    await pool.query(sql, params);
 
     // Sync bank details if provided
     if (bank_name || account_name || account_no || ifsc_code || branch_name) {
@@ -277,7 +301,7 @@ class PayrollModel {
       `;
       const params = [sId];
       if (branchId) {
-        sql += ` AND t.branch_id = ?`;
+        sql += ` AND (t.branch_id = ? OR t.branch_id IS NULL)`;
         params.push(Number(branchId));
       }
       sql += ` ORDER BY t.first_name ASC`;
@@ -302,7 +326,7 @@ class PayrollModel {
       `;
       const params = [sId];
       if (branchId) {
-        sql += ` AND u.branch_id = ?`;
+        sql += ` AND (u.branch_id = ? OR u.branch_id IS NULL)`;
         params.push(Number(branchId));
       }
       sql += ` ORDER BY u.first_name ASC`;
@@ -352,13 +376,16 @@ class PayrollModel {
     return res.insertId;
   }
 
-  static async deleteBeneficiary(schoolId, id) {
-    await pool.query(
-      `UPDATE beneficiary_master 
+  static async deleteBeneficiary(schoolId, id, branchId = null) {
+    let sql = `UPDATE beneficiary_master 
        SET status = 4
-       WHERE id = ? AND school_id = ?`,
-      [id, schoolId]
-    );
+       WHERE id = ? AND school_id = ?`;
+    const params = [id, schoolId];
+    if (branchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    await pool.query(sql, params);
     return true;
   }
 
@@ -392,8 +419,10 @@ class PayrollModel {
     if (branchId) {
       sql += ` AND (
         (es.branch_id = ?) OR
-        (es.user_type = 2 AND t.branch_id = ?) OR
-        (es.user_type != 2 AND u.branch_id = ?)
+        (es.branch_id IS NULL AND (
+          (es.user_type = 2 AND (t.branch_id = ? OR t.branch_id IS NULL)) OR
+          (es.user_type != 2 AND (u.branch_id = ? OR u.branch_id IS NULL))
+        ))
       )`;
       params.push(Number(branchId), Number(branchId), Number(branchId));
     }
@@ -422,13 +451,16 @@ class PayrollModel {
     return rows || [];
   }
 
-  static async updateSalaryStatus(schoolId, id, payment_status) {
-    await pool.query(
-      `UPDATE employee_salary 
+  static async updateSalaryStatus(schoolId, id, payment_status, branchId = null) {
+    let sql = `UPDATE employee_salary 
        SET payment_status = ? 
-       WHERE id = ? AND school_id = ?`,
-      [Number(payment_status), id, schoolId]
-    );
+       WHERE id = ? AND school_id = ?`;
+    const params = [Number(payment_status), id, schoolId];
+    if (branchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    await pool.query(sql, params);
     return true;
   }
 }

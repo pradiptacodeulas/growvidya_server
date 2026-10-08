@@ -14,8 +14,8 @@ class PermissionModel {
   // 1. ROLES MANAGEMENT
   // =========================================================
 
-  static async getAllRoles(schoolId) {
-    const query = `
+  static async getAllRoles(schoolId, branchId = null) {
+    let query = `
       SELECT 
         r.id,
         r.school_id,
@@ -26,12 +26,20 @@ class PermissionModel {
         COUNT(u.id) AS user_count
       FROM role_master r
       LEFT JOIN user_master u ON u.role = r.id AND u.status = 1
+    `;
+    const params = [];
+    if (branchId) {
+      query += ` AND (u.branch_id = ? OR u.branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    query += `
       WHERE (r.school_id = ? OR r.school_id IS NULL)
         AND (r.status = 1 OR r.status IS NULL)
       GROUP BY r.id, r.school_id, r.role_name, r.is_system_role, r.created_on, r.status
       ORDER BY r.id ASC
     `;
-    const [rows] = await pool.query(query, [schoolId]);
+    params.push(schoolId);
+    const [rows] = await pool.query(query, params);
     return rows.map((r) => ({
       ...r,
       is_system_role: Boolean(

@@ -56,9 +56,10 @@ class AdminParentController {
   static async getParentById(req, res, next) {
     try {
       const schoolId = AdminParentController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const parentId = req.params.id;
 
-      const parent = await ParentModel.getById(parentId, schoolId);
+      const parent = await ParentModel.getById(parentId, schoolId, branchId);
 
       if (!parent) {
         return ApiResponse.error(res, 'Parent record not found.', null, 404);

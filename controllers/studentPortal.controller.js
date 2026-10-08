@@ -38,6 +38,10 @@ class StudentPortalController {
     return Number(schoolId);
   }
 
+  static getBranchId(req) {
+    return req.branchId || req.user?.branchId || req.user?.branch_id || null;
+  }
+
   /**
    * Get Student Dashboard Overview
    */
@@ -45,12 +49,14 @@ class StudentPortalController {
     try {
       const studentId = StudentPortalController.getStudentId(req);
       const schoolId = StudentPortalController.getSchoolId(req);
+      const userBranchId = StudentPortalController.getBranchId(req);
 
       const student = await ParentModel.getChildFullProfile(studentId, schoolId);
       if (!student) {
         return ApiResponse.error(res, 'Student record not found.', null, 404);
       }
 
+      const branchId = userBranchId || student.branch_id || null;
       const classId = student.class;
       const sectionId = student.section;
 
@@ -140,7 +146,7 @@ class StudentPortalController {
       // 5. Recent Notices (Target-filtered for this student)
       let notices = [];
       try {
-        const allNotices = await AnnouncementModel.getAllNotices(schoolId);
+        const allNotices = await AnnouncementModel.getAllNotices(schoolId, branchId);
         const filteredNotices = (allNotices || []).filter((n) => {
           const type = n.target_type || 'all';
 
@@ -206,6 +212,7 @@ class StudentPortalController {
           FROM assignments a
           LEFT JOIN student_assignment_attempts att ON (a.id = att.assignment_id AND att.student_id = ?)
           WHERE (a.school_id = ? OR ? IS NULL)
+            AND (a.branch_id = ? OR a.branch_id IS NULL OR ? IS NULL)
             AND (a.class_id = ? OR ? IS NULL)
             AND (a.section_id = ? OR a.section_id IS NULL OR a.section_id = 0 OR ? IS NULL)
             AND a.status != 4
@@ -215,6 +222,8 @@ class StudentPortalController {
           studentId,
           schoolId,
           schoolId,
+          branchId,
+          branchId,
           classId,
           classId,
           sectionId,
@@ -470,8 +479,10 @@ class StudentPortalController {
     try {
       const studentId = StudentPortalController.getStudentId(req);
       const schoolId = StudentPortalController.getSchoolId(req);
+      const userBranchId = StudentPortalController.getBranchId(req);
 
       const student = await ParentModel.getChildFullProfile(studentId, schoolId);
+      const branchId = userBranchId || student?.branch_id || null;
       const classId = student ? student.class : null;
       const sectionId = student ? student.section : null;
 
@@ -520,6 +531,7 @@ class StudentPortalController {
         ) q ON a.id = q.assignment_id
         LEFT JOIN student_assignment_attempts att ON (a.id = att.assignment_id AND att.student_id = ?)
         WHERE (a.school_id = ? OR ? IS NULL)
+          AND (a.branch_id = ? OR a.branch_id IS NULL OR ? IS NULL)
           AND (a.class_id = ? OR ? IS NULL)
           AND (a.section_id = ? OR a.section_id IS NULL OR a.section_id = 0 OR ? IS NULL)
           AND a.status != 4
@@ -531,6 +543,8 @@ class StudentPortalController {
         studentId,
         schoolId,
         schoolId,
+        branchId,
+        branchId,
         classId,
         classId,
         sectionId,
@@ -835,16 +849,18 @@ class StudentPortalController {
     try {
       const studentId = StudentPortalController.getStudentId(req);
       const schoolId = StudentPortalController.getSchoolId(req);
+      const userBranchId = StudentPortalController.getBranchId(req);
 
       const student = await ParentModel.getChildFullProfile(studentId, schoolId);
       if (!student) {
         return ApiResponse.error(res, 'Student profile not found.', null, 404);
       }
 
+      const branchId = userBranchId || student.branch_id || null;
       const studentClass = student.class ? Number(student.class) : null;
       const studentSection = student.section ? Number(student.section) : null;
 
-      const allNotices = await AnnouncementModel.getAllNotices(schoolId);
+      const allNotices = await AnnouncementModel.getAllNotices(schoolId, branchId);
 
       const filtered = (allNotices || []).filter((n) => {
         const type = n.target_type || 'all';

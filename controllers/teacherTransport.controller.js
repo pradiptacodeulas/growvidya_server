@@ -23,9 +23,9 @@ class TeacherTransportController {
     try {
       const teacherId = TeacherTransportController.getTeacherId(req);
       const schoolId = TeacherTransportController.getSchoolId(req);
+      const branchId = req.branchId || req.user?.branch_id || req.user?.branchId || null;
 
-      const [assignedTransports] = await pool.query(
-        `SELECT 
+      let query = `SELECT 
            tt.id,
            tt.school_id,
            tt.teacher_id,
@@ -54,15 +54,22 @@ class TeacherTransportController {
          LEFT JOIN operator_master op ON (bo.operator_id = op.id AND (op.status != 0 OR op.status IS NULL))
          LEFT JOIN academic_year_master aym ON tt.academic_year = aym.id
          WHERE tt.teacher_id = ? 
-           AND tt.school_id = ?
-         GROUP BY 
+           AND tt.school_id = ?`;
+      const params = [teacherId, schoolId];
+
+      if (branchId) {
+        query += ` AND (trm.branch_id = ? OR bm.branch_id = ? OR trm.branch_id IS NULL)`;
+        params.push(Number(branchId), Number(branchId));
+      }
+
+      query += ` GROUP BY 
            tt.id, tt.school_id, tt.teacher_id, tt.academic_year, tt.route, 
            tt.vehicle_number, tt.pickup_point, tt.drop_point, tt.staus, 
            trm.transport_route, trm.fare, bm.id, bm.name, bm.number_plate, 
            bm.seat, bm.color, aym.academic_year
-         ORDER BY tt.id DESC`,
-        [teacherId, schoolId]
-      );
+         ORDER BY tt.id DESC`;
+
+      const [assignedTransports] = await pool.query(query, params);
 
       return ApiResponse.success(res, 'Assigned transport fetched successfully', {
         transports: assignedTransports || [],

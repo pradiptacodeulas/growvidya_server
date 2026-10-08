@@ -20,12 +20,14 @@ class TeacherPayrollController {
     try {
       const schoolId = TeacherPayrollController.getSchoolId(req);
       const teacherId = TeacherPayrollController.getTeacherId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { search } = req.query;
 
       const filters = {
         search,
         user_type: 2, // 2 = Teacher
         employee_id: teacherId,
+        branchId,
       };
 
       const salaries = await PayrollModel.getAllSalaries(schoolId, filters);

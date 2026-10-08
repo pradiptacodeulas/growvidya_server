@@ -679,29 +679,49 @@ class TeacherModel {
     return teacher;
   }
 
-  static async getTeacherOptions(schoolId) {
+  static async getTeacherOptions(schoolId, branchId = null) {
     try {
       const [academicYears] = await pool.query(
         `SELECT id, start_date, end_date, is_current FROM academic_year_master WHERE status = 1 AND school_id = ? ORDER BY id DESC`,
         [schoolId]
       );
-      const [classes] = await pool.query(
-        `SELECT id, class_name FROM class_master WHERE status = 1 AND school_id = ? ORDER BY id ASC`,
-        [schoolId]
-      );
+      let classSql = `SELECT id, class_name FROM class_master WHERE status = 1 AND school_id = ?`;
+      const classParams = [schoolId];
+      if (branchId) {
+        classSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+        classParams.push(Number(branchId));
+      }
+      classSql += ` ORDER BY id ASC`;
+      const [classes] = await pool.query(classSql, classParams);
+
       const [genders] = await pool.query(`SELECT id, gender FROM gender_master`);
       const [bloodGroups] = await pool.query(`SELECT id, blood_group FROM blood_group_master`);
       const [maritalStatuses] = await pool.query(`SELECT id, marital_status FROM marital_master WHERE status = 1`);
       const [contractTypes] = await pool.query(`SELECT id, contract_type FROM contract_type_master`);
-      const [workShifts] = await pool.query(`SELECT id, shift_name FROM shift_master WHERE status = 1 AND school_id = ?`, [schoolId]);
-      const [transportRoutes] = await pool.query(
-        `SELECT id, transport_route FROM trans_route_master WHERE status = 1 AND school_id = ?`,
-        [schoolId]
-      );
-      const [hostels] = await pool.query(
-        `SELECT id, hostel_name FROM hostel_name_master WHERE status = 1 AND school_id = ?`,
-        [schoolId]
-      );
+
+      let shiftSql = `SELECT id, shift_name FROM shift_master WHERE status = 1 AND school_id = ?`;
+      const shiftParams = [schoolId];
+      if (branchId) {
+        shiftSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+        shiftParams.push(Number(branchId));
+      }
+      const [workShifts] = await pool.query(shiftSql, shiftParams);
+
+      let routeSql = `SELECT id, transport_route FROM trans_route_master WHERE status = 1 AND school_id = ?`;
+      const routeParams = [schoolId];
+      if (branchId) {
+        routeSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+        routeParams.push(Number(branchId));
+      }
+      const [transportRoutes] = await pool.query(routeSql, routeParams);
+
+      let hostelSql = `SELECT id, hostel_name FROM hostel_name_master WHERE status = 1 AND school_id = ?`;
+      const hostelParams = [schoolId];
+      if (branchId) {
+        hostelSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+        hostelParams.push(Number(branchId));
+      }
+      const [hostels] = await pool.query(hostelSql, hostelParams);
       const [documentTypes] = await pool.query(
         `SELECT id, document_type_name FROM document_type_master WHERE school_id = ?`,
         [schoolId]
@@ -1678,11 +1698,14 @@ class TeacherModel {
     return teacher;
   }
 
-  static async deleteTeacher(id, schoolId) {
-    const [result] = await pool.query(
-      `UPDATE teacher_master SET status = 4 WHERE id = ? AND school_id = ?`,
-      [id, schoolId]
-    );
+  static async deleteTeacher(id, schoolId, branchId = null) {
+    let sql = `UPDATE teacher_master SET status = 4 WHERE id = ? AND school_id = ?`;
+    const params = [id, schoolId];
+    if (branchId) {
+      sql += ` AND branch_id = ?`;
+      params.push(Number(branchId));
+    }
+    const [result] = await pool.query(sql, params);
 
     // Also soft-delete teacher class assignments
     try {

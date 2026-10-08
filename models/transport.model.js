@@ -66,11 +66,11 @@ class TransportModel {
     return rows || [];
   }
 
-  static async getRouteById(schoolId, id) {
-    const [rows] = await pool.query(
-      `SELECT 
+  static async getRouteById(schoolId, id, branchId = null) {
+    let sql = `SELECT 
         r.id,
         r.school_id,
+        r.branch_id,
         r.transport_route,
         r.bus_id,
         r.bus_id AS bus,
@@ -85,9 +85,13 @@ class TransportModel {
         b.color AS bus_color
        FROM trans_route_master r
        LEFT JOIN bus_master b ON r.bus_id = b.id
-       WHERE r.id = ? AND r.school_id = ? AND r.status != 0`,
-      [id, schoolId]
-    );
+       WHERE r.id = ? AND r.school_id = ? AND r.status != 0`;
+    const params = [id, schoolId];
+    if (branchId) {
+      sql += ` AND (r.branch_id = ? OR r.branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    const [rows] = await pool.query(sql, params);
     if (!rows || rows.length === 0) return null;
     const route = rows[0];
 
@@ -180,22 +184,31 @@ class TransportModel {
     return routeId;
   }
 
-  static async updateRoute(schoolId, id, { transport_route, bus_id, bus, driver_id, driver, helpers, helper, fare, sort_order, status }) {
+  static async updateRoute(schoolId, id, { transport_route, bus_id, bus, driver_id, driver, helpers, helper, fare, sort_order, status, branch_id }, branchId = null) {
     const selectedBusId = bus_id || bus;
-    await pool.query(
-      `UPDATE trans_route_master 
-       SET transport_route = ?, bus_id = ?, fare = ?, sort_order = ?, status = ?
-       WHERE id = ? AND school_id = ?`,
-      [
-        transport_route.trim(),
-        selectedBusId ? Number(selectedBusId) : null,
-        Number(fare || 0),
-        Number(sort_order || 1),
-        status !== undefined ? Number(status) : 1,
-        id,
-        schoolId,
-      ]
-    );
+    let sql = `UPDATE trans_route_master 
+       SET transport_route = ?, bus_id = ?, fare = ?, sort_order = ?, status = ?`;
+    const params = [
+      transport_route.trim(),
+      selectedBusId ? Number(selectedBusId) : null,
+      Number(fare || 0),
+      Number(sort_order || 1),
+      status !== undefined ? Number(status) : 1,
+    ];
+    if (branch_id !== undefined) {
+      sql += `, branch_id = ?`;
+      params.push(branch_id ? Number(branch_id) : null);
+    }
+    sql += ` WHERE id = ? AND school_id = ?`;
+    params.push(id, schoolId);
+
+    const effectiveBranchId = branchId || (branch_id !== undefined ? branch_id : null);
+    if (effectiveBranchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(effectiveBranchId));
+    }
+
+    await pool.query(sql, params);
 
     if (selectedBusId) {
       const selectedDriverId = driver_id || driver;
@@ -226,11 +239,14 @@ class TransportModel {
     return true;
   }
 
-  static async deleteRoute(schoolId, id) {
-    await pool.query(
-      `UPDATE trans_route_master SET status = 4 WHERE id = ? AND school_id = ?`,
-      [id, schoolId]
-    );
+  static async deleteRoute(schoolId, id, branchId = null) {
+    let sql = `UPDATE trans_route_master SET status = 4 WHERE id = ? AND school_id = ?`;
+    const params = [id, schoolId];
+    if (branchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    await pool.query(sql, params);
     return true;
   }
 
@@ -286,11 +302,11 @@ class TransportModel {
     return rows || [];
   }
 
-  static async getVehicleById(schoolId, id) {
-    const [rows] = await pool.query(
-      `SELECT 
+  static async getVehicleById(schoolId, id, branchId = null) {
+    let sql = `SELECT 
         b.id,
         b.school_id,
+        b.branch_id,
         b.name,
         b.number_plate,
         b.seat,
@@ -302,10 +318,15 @@ class TransportModel {
        FROM bus_master b
        LEFT JOIN bus_to_operator bo ON (b.id = bo.bus_id AND bo.school_id = ? AND bo.status != 0)
        LEFT JOIN operator_master op ON (bo.operator_id = op.id AND op.type = 1 AND op.status != 0)
-       WHERE b.id = ? AND b.school_id = ? AND b.status != 0
-       GROUP BY b.id, b.school_id, b.name, b.number_plate, b.seat, b.color, b.status`,
-      [schoolId, id, schoolId]
-    );
+       WHERE b.id = ? AND b.school_id = ? AND b.status != 0`;
+    const params = [schoolId, id, schoolId];
+    if (branchId) {
+      sql += ` AND (b.branch_id = ? OR b.branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    sql += ` GROUP BY b.id, b.school_id, b.branch_id, b.name, b.number_plate, b.seat, b.color, b.status`;
+
+    const [rows] = await pool.query(sql, params);
     return rows && rows.length > 0 ? rows[0] : null;
   }
 
@@ -343,21 +364,30 @@ class TransportModel {
     return busId;
   }
 
-  static async updateVehicle(schoolId, id, { name, number_plate, seat, color, driver_id, status }) {
-    await pool.query(
-      `UPDATE bus_master 
-       SET name = ?, number_plate = ?, seat = ?, color = ?, status = ?
-       WHERE id = ? AND school_id = ?`,
-      [
-        name.trim(),
-        number_plate ? number_plate.trim() : '',
-        Number(seat || 0),
-        color ? color.trim() : '',
-        status !== undefined ? Number(status) : 1,
-        id,
-        schoolId,
-      ]
-    );
+  static async updateVehicle(schoolId, id, { name, number_plate, seat, color, driver_id, status, branch_id }, branchId = null) {
+    let sql = `UPDATE bus_master 
+       SET name = ?, number_plate = ?, seat = ?, color = ?, status = ?`;
+    const params = [
+      name.trim(),
+      number_plate ? number_plate.trim() : '',
+      Number(seat || 0),
+      color ? color.trim() : '',
+      status !== undefined ? Number(status) : 1,
+    ];
+    if (branch_id !== undefined) {
+      sql += `, branch_id = ?`;
+      params.push(branch_id ? Number(branch_id) : null);
+    }
+    sql += ` WHERE id = ? AND school_id = ?`;
+    params.push(id, schoolId);
+
+    const effectiveBranchId = branchId || (branch_id !== undefined ? branch_id : null);
+    if (effectiveBranchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(effectiveBranchId));
+    }
+
+    await pool.query(sql, params);
 
     // Update driver association
     await pool.query(
@@ -374,11 +404,14 @@ class TransportModel {
     return true;
   }
 
-  static async deleteVehicle(schoolId, id) {
-    await pool.query(
-      `UPDATE bus_master SET status = 4 WHERE id = ? AND school_id = ?`,
-      [id, schoolId]
-    );
+  static async deleteVehicle(schoolId, id, branchId = null) {
+    let sql = `UPDATE bus_master SET status = 4 WHERE id = ? AND school_id = ?`;
+    const params = [id, schoolId];
+    if (branchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    await pool.query(sql, params);
     return true;
   }
 
@@ -438,9 +471,8 @@ class TransportModel {
     return rows || [];
   }
 
-  static async getDriverById(schoolId, id) {
-    const [rows] = await pool.query(
-      `SELECT 
+  static async getDriverById(schoolId, id, branchId = null) {
+    let sql = `SELECT 
         op.id,
         op.school_id,
         op.branch_id,
@@ -455,9 +487,13 @@ class TransportModel {
         op.status
        FROM operator_master op
        LEFT JOIN branch_master bm ON op.branch_id = bm.id
-       WHERE op.id = ? AND op.school_id = ? AND op.type = 1 AND op.status != 0`,
-      [id, schoolId]
-    );
+       WHERE op.id = ? AND op.school_id = ? AND op.type = 1 AND op.status != 0`;
+    const params = [id, schoolId];
+    if (branchId) {
+      sql += ` AND (op.branch_id = ? OR op.branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    const [rows] = await pool.query(sql, params);
     return rows && rows.length > 0 ? rows[0] : null;
   }
 
@@ -554,11 +590,14 @@ class TransportModel {
     return true;
   }
 
-  static async deleteDriver(schoolId, id) {
-    await pool.query(
-      `UPDATE operator_master SET status = 4 WHERE id = ? AND school_id = ? AND type = 1`,
-      [id, schoolId]
-    );
+  static async deleteDriver(schoolId, id, branchId = null) {
+    let sql = `UPDATE operator_master SET status = 4 WHERE id = ? AND school_id = ? AND type = 1`;
+    const params = [id, schoolId];
+    if (branchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    await pool.query(sql, params);
     return true;
   }
 
@@ -618,9 +657,8 @@ class TransportModel {
     return rows || [];
   }
 
-  static async getHelperById(schoolId, id) {
-    const [rows] = await pool.query(
-      `SELECT 
+  static async getHelperById(schoolId, id, branchId = null) {
+    let sql = `SELECT 
         op.id,
         op.school_id,
         op.branch_id,
@@ -635,9 +673,13 @@ class TransportModel {
         op.status
        FROM operator_master op
        LEFT JOIN branch_master bm ON op.branch_id = bm.id
-       WHERE op.id = ? AND op.school_id = ? AND op.type = 2 AND op.status != 0`,
-      [id, schoolId]
-    );
+       WHERE op.id = ? AND op.school_id = ? AND op.type = 2 AND op.status != 0`;
+    const params = [id, schoolId];
+    if (branchId) {
+      sql += ` AND (op.branch_id = ? OR op.branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    const [rows] = await pool.query(sql, params);
     return rows && rows.length > 0 ? rows[0] : null;
   }
 
@@ -721,11 +763,14 @@ class TransportModel {
     return true;
   }
 
-  static async deleteHelper(schoolId, id) {
-    await pool.query(
-      `UPDATE operator_master SET status = 4 WHERE id = ? AND school_id = ? AND type = 2`,
-      [id, schoolId]
-    );
+  static async deleteHelper(schoolId, id, branchId = null) {
+    let sql = `UPDATE operator_master SET status = 4 WHERE id = ? AND school_id = ? AND type = 2`;
+    const params = [id, schoolId];
+    if (branchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    await pool.query(sql, params);
     return true;
   }
 
@@ -793,11 +838,11 @@ class TransportModel {
     return rows || [];
   }
 
-  static async getAllocateById(schoolId, id) {
-    const [rows] = await pool.query(
-      `SELECT 
+  static async getAllocateById(schoolId, id, branchId = null) {
+    let sql = `SELECT 
         st.id,
         st.school_id,
+        st.branch_id,
         st.student_id,
         st.route AS route_id,
         st.vehicle_number AS vehicle_id,
@@ -812,18 +857,28 @@ class TransportModel {
        LEFT JOIN student_master s ON st.student_id = s.id
        LEFT JOIN trans_route_master r ON st.route = r.id
        LEFT JOIN bus_master b ON st.vehicle_number = b.id
-       WHERE st.id = ? AND st.school_id = ? AND st.status != 0`,
-      [id, schoolId]
-    );
+       WHERE st.id = ? AND st.school_id = ? AND st.status != 0`;
+    const params = [id, schoolId];
+    if (branchId) {
+      sql += ` AND (st.branch_id = ? OR s.branch_id = ? OR r.branch_id = ? OR st.branch_id IS NULL)`;
+      params.push(Number(branchId), Number(branchId), Number(branchId));
+    }
+    const [rows] = await pool.query(sql, params);
     return rows && rows.length > 0 ? rows[0] : null;
   }
 
-  static async createAllocation(schoolId, { student_id, route, vehicle_number, pickup_point, drop_point, status }) {
+  static async createAllocation(schoolId, { branch_id = null, student_id, route, vehicle_number, pickup_point, drop_point, status }) {
+    let resolvedBranchId = branch_id ? Number(branch_id) : null;
+    if (!resolvedBranchId && student_id) {
+      const [sm] = await pool.query('SELECT branch_id FROM student_master WHERE id = ? AND school_id = ?', [student_id, schoolId]);
+      if (sm.length && sm[0].branch_id) resolvedBranchId = sm[0].branch_id;
+    }
     const [res] = await pool.query(
-      `INSERT INTO student_transport (school_id, student_id, route, vehicle_number, pickup_point, drop_point, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`,
+      `INSERT INTO student_transport (school_id, branch_id, student_id, route, vehicle_number, pickup_point, drop_point, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
       [
         schoolId,
+        resolvedBranchId,
         Number(student_id),
         Number(route),
         vehicle_number ? Number(vehicle_number) : null,
@@ -835,30 +890,42 @@ class TransportModel {
     return res.insertId;
   }
 
-  static async updateAllocation(schoolId, id, { student_id, route, vehicle_number, pickup_point, drop_point, status }) {
-    await pool.query(
-      `UPDATE student_transport 
-       SET student_id = ?, route = ?, vehicle_number = ?, pickup_point = ?, drop_point = ?, status = ?
-       WHERE id = ? AND school_id = ?`,
-      [
-        Number(student_id),
-        Number(route),
-        vehicle_number ? Number(vehicle_number) : null,
-        pickup_point ? pickup_point.trim() : '',
-        drop_point ? drop_point.trim() : '',
-        status !== undefined ? Number(status) : 1,
-        id,
-        schoolId,
-      ]
-    );
+  static async updateAllocation(schoolId, id, { branch_id, student_id, route, vehicle_number, pickup_point, drop_point, status }, branchId = null) {
+    let sql = `UPDATE student_transport 
+       SET student_id = ?, route = ?, vehicle_number = ?, pickup_point = ?, drop_point = ?, status = ?`;
+    const params = [
+      Number(student_id),
+      Number(route),
+      vehicle_number ? Number(vehicle_number) : null,
+      pickup_point ? pickup_point.trim() : '',
+      drop_point ? drop_point.trim() : '',
+      status !== undefined ? Number(status) : 1,
+    ];
+    if (branch_id !== undefined) {
+      sql += `, branch_id = ?`;
+      params.push(branch_id ? Number(branch_id) : null);
+    }
+    sql += ` WHERE id = ? AND school_id = ?`;
+    params.push(id, schoolId);
+
+    const effectiveBranchId = branchId || (branch_id !== undefined ? branch_id : null);
+    if (effectiveBranchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(effectiveBranchId));
+    }
+
+    await pool.query(sql, params);
     return true;
   }
 
-  static async deleteAllocation(schoolId, id) {
-    await pool.query(
-      `UPDATE student_transport SET status = 4 WHERE id = ? AND school_id = ?`,
-      [id, schoolId]
-    );
+  static async deleteAllocation(schoolId, id, branchId = null) {
+    let sql = `UPDATE student_transport SET status = 4 WHERE id = ? AND school_id = ?`;
+    const params = [id, schoolId];
+    if (branchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    await pool.query(sql, params);
     return true;
   }
 }

@@ -32,14 +32,17 @@ class CertificateModel {
     return rows;
   }
 
-  static async getCategoryById(id, schoolId) {
-    const [rows] = await pool.query(
-      `SELECT c.*, bm.branch_name, bm.branch_code 
+  static async getCategoryById(id, schoolId, branchId = null) {
+    let sql = `SELECT c.*, bm.branch_name, bm.branch_code 
        FROM certificate_category c 
        LEFT JOIN branch_master bm ON c.branch_id = bm.id
-       WHERE c.id = ? AND c.school_id = ? AND c.status != 4`,
-      [id, schoolId]
-    );
+       WHERE c.id = ? AND c.school_id = ? AND c.status != 4`;
+    const params = [id, schoolId];
+    if (branchId) {
+      sql += ` AND (c.branch_id = ? OR c.branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    const [rows] = await pool.query(sql, params);
     return rows[0] || null;
   }
 
@@ -64,7 +67,7 @@ class CertificateModel {
     return result.insertId;
   }
 
-  static async updateCategory(id, school_id, { branch_id, category_name, sort_order, status, modify_by = null }) {
+  static async updateCategory(id, school_id, { branch_id, category_name, sort_order, status, modify_by = null }, branchId = null) {
     let sql = `UPDATE certificate_category 
        SET category_name = COALESCE(?, category_name),
            sort_order = COALESCE(?, sort_order),
@@ -78,15 +81,25 @@ class CertificateModel {
     }
     sql += ` WHERE id = ? AND school_id = ?`;
     params.push(id, school_id);
+
+    const effectiveBranchId = branchId || branch_id;
+    if (effectiveBranchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(effectiveBranchId));
+    }
+
     const [result] = await pool.query(sql, params);
     return result.affectedRows > 0;
   }
 
-  static async deleteCategory(id, school_id) {
-    const [result] = await pool.query(
-      `UPDATE certificate_category SET status = 4, modify_at = NOW() WHERE id = ? AND school_id = ?`,
-      [id, school_id]
-    );
+  static async deleteCategory(id, school_id, branchId = null) {
+    let sql = `UPDATE certificate_category SET status = 4, modify_at = NOW() WHERE id = ? AND school_id = ?`;
+    const params = [id, school_id];
+    if (branchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    const [result] = await pool.query(sql, params);
     return result.affectedRows > 0;
   }
 
@@ -127,15 +140,18 @@ class CertificateModel {
     return rows;
   }
 
-  static async getTemplateById(id, schoolId) {
-    const [rows] = await pool.query(
-      `SELECT t.*, c.category_name, bm.branch_name, bm.branch_code 
+  static async getTemplateById(id, schoolId, branchId = null) {
+    let sql = `SELECT t.*, c.category_name, bm.branch_name, bm.branch_code 
        FROM certificate_template t
        LEFT JOIN certificate_category c ON t.certificate_category = c.id
        LEFT JOIN branch_master bm ON t.branch_id = bm.id
-       WHERE t.id = ? AND t.school_id = ? AND t.status != 4`,
-      [id, schoolId]
-    );
+       WHERE t.id = ? AND t.school_id = ? AND t.status != 4`;
+    const params = [id, schoolId];
+    if (branchId) {
+      sql += ` AND (t.branch_id = ? OR t.branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    const [rows] = await pool.query(sql, params);
     return rows[0] || null;
   }
 
@@ -188,7 +204,8 @@ class CertificateModel {
       certified_by,
       status,
       modify_by = null,
-    }
+    },
+    branchId = null
   ) {
     let sql = `UPDATE certificate_template 
        SET certificate_category = COALESCE(?, certificate_category),
@@ -221,15 +238,24 @@ class CertificateModel {
     sql += ` WHERE id = ? AND school_id = ?`;
     params.push(id, school_id);
 
+    const effectiveBranchId = branchId || branch_id;
+    if (effectiveBranchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(effectiveBranchId));
+    }
+
     const [result] = await pool.query(sql, params);
     return result.affectedRows > 0;
   }
 
-  static async deleteTemplate(id, school_id) {
-    const [result] = await pool.query(
-      `UPDATE certificate_template SET status = 4, modify_at = NOW() WHERE id = ? AND school_id = ?`,
-      [id, school_id]
-    );
+  static async deleteTemplate(id, school_id, branchId = null) {
+    let sql = `UPDATE certificate_template SET status = 4, modify_at = NOW() WHERE id = ? AND school_id = ?`;
+    const params = [id, school_id];
+    if (branchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    const [result] = await pool.query(sql, params);
     return result.affectedRows > 0;
   }
 
@@ -330,7 +356,7 @@ class CertificateModel {
     const params = [schoolId];
 
     if (branchId) {
-      baseWhere += ` AND (sc.branch_id = ? OR s.branch_id = ?)`;
+      baseWhere += ` AND (sc.branch_id = ? OR s.branch_id = ? OR sc.branch_id IS NULL)`;
       params.push(Number(branchId), Number(branchId));
     }
 
@@ -438,9 +464,8 @@ class CertificateModel {
     return rows;
   }
 
-  static async getIssuedCertificateById(id, schoolId) {
-    const [rows] = await pool.query(
-      `SELECT sc.*, 
+  static async getIssuedCertificateById(id, schoolId, branchId = null) {
+    let sql = `SELECT sc.*, 
              s.first_name, s.last_name, s.admission_number, s.date_of_birth,
              COALESCE(g.gender, IF(s.gender = '1', 'Male', IF(s.gender = '2', 'Female', s.gender)), 'Male') AS gender,
              CONCAT(COALESCE(p.first_name, ''), ' ', COALESCE(p.last_name, '')) AS guardian_name,
@@ -466,9 +491,13 @@ class CertificateModel {
       LEFT JOIN certificate_category cat ON sc.certificate_category_id = cat.id
       LEFT JOIN certificate_template ct ON sc.certificate_template_id = ct.id
       LEFT JOIN school_master sch ON sc.school_id = sch.id
-      WHERE sc.id = ? AND sc.school_id = ? AND sc.status != 4`,
-      [id, schoolId]
-    );
+      WHERE sc.id = ? AND sc.school_id = ? AND sc.status != 4`;
+    const params = [id, schoolId];
+    if (branchId) {
+      sql += ` AND (sc.branch_id = ? OR s.branch_id = ? OR sc.branch_id IS NULL)`;
+      params.push(Number(branchId), Number(branchId));
+    }
+    const [rows] = await pool.query(sql, params);
     return rows[0] || null;
   }
 
@@ -520,11 +549,14 @@ class CertificateModel {
     return result.insertId;
   }
 
-  static async deleteIssuedCertificate(id, school_id) {
-    const [result] = await pool.query(
-      `UPDATE student_certificate SET status = 4, modify_at = NOW() WHERE id = ? AND school_id = ?`,
-      [id, school_id]
-    );
+  static async deleteIssuedCertificate(id, school_id, branchId = null) {
+    let sql = `UPDATE student_certificate SET status = 4, modify_at = NOW() WHERE id = ? AND school_id = ?`;
+    const params = [id, school_id];
+    if (branchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    const [result] = await pool.query(sql, params);
     return result.affectedRows > 0;
   }
 }

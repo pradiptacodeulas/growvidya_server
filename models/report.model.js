@@ -27,7 +27,7 @@ class ReportModel {
     let classQuery = `SELECT id, shift_id, class_name, sort_order FROM class_master WHERE school_id = ? AND status = 1`;
     const classParams = [schoolId];
     if (branchId) {
-      classQuery += ` AND branch_id = ?`;
+      classQuery += ` AND (branch_id = ? OR branch_id IS NULL)`;
       classParams.push(Number(branchId));
     }
     classQuery += ` ORDER BY sort_order ASC, id ASC`;
@@ -37,7 +37,7 @@ class ReportModel {
     let secQuery = `SELECT id, class_id, section_name, capacity FROM section_master WHERE school_id = ? AND status = 1`;
     const secParams = [schoolId];
     if (branchId) {
-      secQuery += ` AND branch_id = ?`;
+      secQuery += ` AND (branch_id = ? OR branch_id IS NULL)`;
       secParams.push(Number(branchId));
     }
     secQuery += ` ORDER BY sort_order ASC, id ASC`;
@@ -103,7 +103,7 @@ class ReportModel {
     let queryParams = [schoolId];
 
     if (branchId) {
-      whereConditions.push(`s.branch_id = ?`);
+      whereConditions.push(`(s.branch_id = ? OR s.branch_id IS NULL)`);
       queryParams.push(Number(branchId));
     }
 
@@ -263,7 +263,7 @@ class ReportModel {
     let queryParams = [schoolId];
 
     if (branchId) {
-      whereConditions.push(`s.branch_id = ?`);
+      whereConditions.push(`(s.branch_id = ? OR s.branch_id IS NULL)`);
       queryParams.push(Number(branchId));
     }
 
@@ -467,7 +467,7 @@ class ReportModel {
       let queryParams = [schoolId];
 
       if (branchId) {
-        whereConditions.push(`t.branch_id = ?`);
+        whereConditions.push(`(t.branch_id = ? OR t.branch_id IS NULL)`);
         queryParams.push(Number(branchId));
       }
 
@@ -572,7 +572,7 @@ class ReportModel {
       let queryParams = [schoolId];
 
       if (branchId) {
-        whereConditions.push(`u.branch_id = ?`);
+        whereConditions.push(`(u.branch_id = ? OR u.branch_id IS NULL)`);
         queryParams.push(Number(branchId));
       }
 
@@ -674,7 +674,7 @@ class ReportModel {
       let queryParams = [schoolId];
 
       if (branchId) {
-        whereConditions.push(`s.branch_id = ?`);
+        whereConditions.push(`(s.branch_id = ? OR s.branch_id IS NULL)`);
         queryParams.push(Number(branchId));
       }
 
@@ -824,7 +824,7 @@ class ReportModel {
   /**
    * Fetches Calendar Events (School Events, Holidays, Exam Schedules) for Calendar Report
    */
-  static async getCalendarReportEvents(schoolId, { startDate = '', endDate = '', year = '', month = '' }) {
+  static async getCalendarReportEvents(schoolId, { startDate = '', endDate = '', year = '', month = '', branchId = null }) {
     let sDate = startDate;
     let eDate = endDate;
 
@@ -840,13 +840,16 @@ class ReportModel {
 
     // 1. School Events
     try {
-      const [evList] = await pool.query(
-        `SELECT id, title, from_date, to_date, details 
+      let evQuery = `SELECT id, title, from_date, to_date, details 
          FROM event 
          WHERE school_id = ? AND status = 1 
-           AND ((from_date BETWEEN ? AND ?) OR (to_date BETWEEN ? AND ?) OR (from_date <= ? AND to_date >= ?))`,
-        [schoolId, sDate, eDate, sDate, eDate, sDate, eDate]
-      );
+           AND ((from_date BETWEEN ? AND ?) OR (to_date BETWEEN ? AND ?) OR (from_date <= ? AND to_date >= ?))`;
+      const evParams = [schoolId, sDate, eDate, sDate, eDate, sDate, eDate];
+      if (branchId) {
+        evQuery += ` AND (branch_id = ? OR branch_id IS NULL)`;
+        evParams.push(Number(branchId));
+      }
+      const [evList] = await pool.query(evQuery, evParams);
       for (const ev of evList) {
         events.push({
           id: `event-${ev.id}`,
@@ -865,13 +868,16 @@ class ReportModel {
 
     // 2. Holidays
     try {
-      const [holList] = await pool.query(
-        `SELECT id, title, from_date, to_date, details 
+      let holQuery = `SELECT id, title, from_date, to_date, details 
          FROM holiday 
          WHERE school_id = ? AND status = 1 
-           AND ((from_date BETWEEN ? AND ?) OR (to_date BETWEEN ? AND ?) OR (from_date <= ? AND to_date >= ?))`,
-        [schoolId, sDate, eDate, sDate, eDate, sDate, eDate]
-      );
+           AND ((from_date BETWEEN ? AND ?) OR (to_date BETWEEN ? AND ?) OR (from_date <= ? AND to_date >= ?))`;
+      const holParams = [schoolId, sDate, eDate, sDate, eDate, sDate, eDate];
+      if (branchId) {
+        holQuery += ` AND (branch_id = ? OR branch_id IS NULL)`;
+        holParams.push(Number(branchId));
+      }
+      const [holList] = await pool.query(holQuery, holParams);
       for (const hol of holList) {
         events.push({
           id: `holiday-${hol.id}`,
@@ -890,15 +896,18 @@ class ReportModel {
 
     // 3. Exam Schedules
     try {
-      const [examList] = await pool.query(
-        `SELECT es.id, em.exam, cm.class_name, sub.subject_name, es.date, es.start_time, es.end_time
+      let examQuery = `SELECT es.id, em.exam, cm.class_name, sub.subject_name, es.date, es.start_time, es.end_time
          FROM exam_schedule es
          JOIN exam_master em ON es.exam_id = em.id
          LEFT JOIN class_master cm ON es.class_id = cm.id
          LEFT JOIN subject_master sub ON es.subject_id = sub.id
-         WHERE es.school_id = ? AND es.status = 1 AND es.date BETWEEN ? AND ?`,
-        [schoolId, sDate.substring(0, 10), eDate.substring(0, 10)]
-      );
+         WHERE es.school_id = ? AND es.status = 1 AND es.date BETWEEN ? AND ?`;
+      const examParams = [schoolId, sDate.substring(0, 10), eDate.substring(0, 10)];
+      if (branchId) {
+        examQuery += ` AND (es.branch_id = ? OR es.branch_id IS NULL)`;
+        examParams.push(Number(branchId));
+      }
+      const [examList] = await pool.query(examQuery, examParams);
       for (const ex of examList) {
         const title = `${ex.exam || 'Exam'}: ${ex.subject_name || 'Subject'} (${ex.class_name ? 'Class ' + ex.class_name : ''})`;
         const startTime = ex.start_time ? ` ${ex.start_time}` : ' 09:00:00';

@@ -11,7 +11,8 @@ class AdminAttendanceController {
         (String(req.user?.roleName || '').toLowerCase().includes('teacher')
           ? req.user.teacherId || req.user.userId
           : null);
-      const options = await AttendanceModel.getMetaOptions(schoolId, teacherId);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const options = await AttendanceModel.getMetaOptions(schoolId, teacherId, branchId);
       return ApiResponse.success(res, 'Attendance options fetched successfully.', options);
     } catch (error) {
       next(error);

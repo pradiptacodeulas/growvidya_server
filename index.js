@@ -46,6 +46,7 @@ app.use(
     limit: '50mb',
     type: (req) => {
       const ct = (req.headers['content-type'] || '').toLowerCase();
+      
       if (ct.includes('multipart/form-data') || ct.includes('application/x-www-form-urlencoded')) {
         return false;
       }

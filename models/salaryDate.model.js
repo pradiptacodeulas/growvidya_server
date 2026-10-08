@@ -35,14 +35,17 @@ class SalaryDateModel {
     return { total, rows };
   }
 
-  static async getSalaryDateById(id, schoolId) {
-    const [rows] = await pool.query(
-      `SELECT sd.*, bm.branch_name, bm.branch_code 
+  static async getSalaryDateById(id, schoolId, branchId = null) {
+    let sql = `SELECT sd.*, bm.branch_name, bm.branch_code 
        FROM settings_salary_date sd 
        LEFT JOIN branch_master bm ON sd.branch_id = bm.id
-       WHERE sd.id = ? AND sd.school_id = ? AND sd.status != 4`,
-      [id, schoolId]
-    );
+       WHERE sd.id = ? AND sd.school_id = ? AND sd.status != 4`;
+    const params = [id, schoolId];
+    if (branchId) {
+      sql += ` AND (sd.branch_id = ? OR sd.branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    const [rows] = await pool.query(sql, params);
     return rows[0] || null;
   }
 
@@ -55,7 +58,7 @@ class SalaryDateModel {
     return result.insertId;
   }
 
-  static async updateSalaryDate(id, schoolId, { branch_id, salary_date, status = 1 }) {
+  static async updateSalaryDate(id, schoolId, { branch_id, salary_date, status = 1 }, branchId = null) {
     let sql = `UPDATE settings_salary_date SET salary_date = COALESCE(?, salary_date), status = COALESCE(?, status)`;
     const params = [salary_date, status];
     if (branch_id !== undefined) {
@@ -65,15 +68,24 @@ class SalaryDateModel {
     sql += ` WHERE id = ? AND school_id = ?`;
     params.push(id, schoolId);
 
+    const effectiveBranchId = branchId || branch_id;
+    if (effectiveBranchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(effectiveBranchId));
+    }
+
     const [result] = await pool.query(sql, params);
     return result.affectedRows > 0;
   }
 
-  static async deleteSalaryDate(id, schoolId) {
-    const [result] = await pool.query(
-      `UPDATE settings_salary_date SET status = 4 WHERE id = ? AND school_id = ?`,
-      [id, schoolId]
-    );
+  static async deleteSalaryDate(id, schoolId, branchId = null) {
+    let sql = `UPDATE settings_salary_date SET status = 4 WHERE id = ? AND school_id = ?`;
+    const params = [id, schoolId];
+    if (branchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    const [result] = await pool.query(sql, params);
     return result.affectedRows > 0;
   }
 }

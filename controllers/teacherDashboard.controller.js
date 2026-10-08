@@ -121,11 +121,17 @@ class TeacherDashboardController {
         return ApiResponse.error(res, 'Teacher profile not found.', null, 404);
       }
 
+      const branchId = req.branchId || req.user?.branch_id || req.user?.branchId || teacher.branch_id || null;
+
       // 2. Get Academic Year
-      const [academicYears] = await pool.query(
-        `SELECT id, academic_year, start_date, end_date, is_current FROM academic_year_master WHERE school_id = ? AND status = 1 ORDER BY is_current DESC, id DESC LIMIT 1`,
-        [schoolId]
-      );
+      let aySql = `SELECT id, academic_year, start_date, end_date, is_current FROM academic_year_master WHERE school_id = ? AND status = 1`;
+      const ayParams = [schoolId];
+      if (branchId) {
+        aySql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+        ayParams.push(Number(branchId));
+      }
+      aySql += ` ORDER BY is_current DESC, id DESC LIMIT 1`;
+      const [academicYears] = await pool.query(aySql, ayParams);
       const currentYearObj = academicYears && academicYears.length > 0 ? academicYears[0] : null;
       const academicYearRange = currentYearObj ? AttendanceModel.formatAcademicYearRange(currentYearObj) : null;
       const academicYearId = currentYearObj ? currentYearObj.id : null;
@@ -135,26 +141,35 @@ class TeacherDashboardController {
       let totalStudentsInSchool = 0;
 
       if (teacher.class && teacher.section) {
-        const [classStudents] = await pool.query(
-          `SELECT COUNT(*) AS count FROM student_master WHERE school_id = ? AND class = ? AND section = ? AND status = 1`,
-          [schoolId, teacher.class, teacher.section]
-        );
+        let csSql = `SELECT COUNT(*) AS count FROM student_master WHERE school_id = ? AND class = ? AND section = ? AND status = 1`;
+        const csParams = [schoolId, teacher.class, teacher.section];
+        if (branchId) {
+          csSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+          csParams.push(Number(branchId));
+        }
+        const [classStudents] = await pool.query(csSql, csParams);
         totalStudentsInClass = classStudents[0]?.count || 0;
       } else if (teacher.class_assignments && teacher.class_assignments.length > 0) {
         const classIds = teacher.class_assignments.map((c) => c.class_id).filter(Boolean);
         if (classIds.length > 0) {
-          const [classStudents] = await pool.query(
-            `SELECT COUNT(DISTINCT id) AS count FROM student_master WHERE school_id = ? AND class IN (?) AND status = 1`,
-            [schoolId, classIds]
-          );
+          let csSql = `SELECT COUNT(DISTINCT id) AS count FROM student_master WHERE school_id = ? AND class IN (?) AND status = 1`;
+          const csParams = [schoolId, classIds];
+          if (branchId) {
+            csSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+            csParams.push(Number(branchId));
+          }
+          const [classStudents] = await pool.query(csSql, csParams);
           totalStudentsInClass = classStudents[0]?.count || 0;
         }
       }
 
-      const [schoolStudents] = await pool.query(
-        `SELECT COUNT(*) AS count FROM student_master WHERE school_id = ? AND status = 1`,
-        [schoolId]
-      );
+      let ssSql = `SELECT COUNT(*) AS count FROM student_master WHERE school_id = ? AND status = 1`;
+      const ssParams = [schoolId];
+      if (branchId) {
+        ssSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+        ssParams.push(Number(branchId));
+      }
+      const [schoolStudents] = await pool.query(ssSql, ssParams);
       totalStudentsInSchool = schoolStudents[0]?.count || 0;
 
       // 4. Today's Date and Day
@@ -177,18 +192,21 @@ class TeacherDashboardController {
       };
 
       if (teacher.class && teacher.section) {
-        const [attRows] = await pool.query(
-          `SELECT sa.attendance, COUNT(*) AS count 
+        let attSql = `SELECT sa.attendance, COUNT(*) AS count 
            FROM student_attendance sa
            JOIN student_master s ON sa.student_id = s.id
            WHERE sa.school_id = ? 
              AND s.class = ? 
              AND s.section = ? 
              AND sa.date = ? 
-             AND sa.status = 1 
-           GROUP BY sa.attendance`,
-          [schoolId, teacher.class, teacher.section, todayDate]
-        );
+             AND sa.status = 1`;
+        const attParams = [schoolId, teacher.class, teacher.section, todayDate];
+        if (branchId) {
+          attSql += ` AND (s.branch_id = ? OR s.branch_id IS NULL)`;
+          attParams.push(Number(branchId));
+        }
+        attSql += ` GROUP BY sa.attendance`;
+        const [attRows] = await pool.query(attSql, attParams);
 
         if (attRows && attRows.length > 0) {
           studentAttendanceSummary.marked = true;
@@ -246,8 +264,7 @@ class TeacherDashboardController {
       let todayClasses = [];
       try {
         const dayNum = now.getDay() === 0 ? 7 : now.getDay();
-        const [periods] = await pool.query(
-          `SELECT 
+        let rSql = `SELECT 
             r.id,
             r.period_id,
             pm.period_name,
@@ -265,10 +282,14 @@ class TeacherDashboardController {
           WHERE r.school_id = ?
             AND (r.teacher_id = ? OR r.teacher_id = ? OR r.class_id = ? OR r.section_id = ?)
             AND (LOWER(d.day_name) = LOWER(?) OR d.id = ? OR r.day = ?)
-            AND (r.status != 4 OR r.status IS NULL)
-          ORDER BY pm.start_time ASC, r.id ASC`,
-          [schoolId, teacherId, teacher.teacher_id || '', teacher.class || 0, teacher.section || 0, todayDayName, dayNum, dayNum]
-        );
+            AND (r.status != 4 OR r.status IS NULL)`;
+        const rParams = [schoolId, teacherId, teacher.teacher_id || '', teacher.class || 0, teacher.section || 0, todayDayName, dayNum, dayNum];
+        if (branchId) {
+          rSql += ` AND (r.branch_id = ? OR r.branch_id IS NULL)`;
+          rParams.push(Number(branchId));
+        }
+        rSql += ` ORDER BY pm.start_time ASC, r.id ASC`;
+        const [periods] = await pool.query(rSql, rParams);
         todayClasses = periods || [];
       } catch (err) {
         console.error('Error fetching todayClasses:', err.message);
@@ -277,7 +298,7 @@ class TeacherDashboardController {
       // 6. Recent Notices & Announcements
       let notices = [];
       try {
-        notices = await AnnouncementModel.getAllNotices(schoolId);
+        notices = await AnnouncementModel.getAllNotices(schoolId, branchId);
       } catch (err) {
         console.error('Error fetching notices:', err.message);
       }
@@ -286,8 +307,8 @@ class TeacherDashboardController {
       let events = [];
       let holidays = [];
       try {
-        events = await AnnouncementModel.getAllEvents(schoolId);
-        holidays = await AnnouncementModel.getAllHolidays(schoolId);
+        events = await AnnouncementModel.getAllEvents(schoolId, branchId);
+        holidays = await AnnouncementModel.getAllHolidays(schoolId, branchId);
       } catch (err) {
         console.error('Error fetching events/holidays:', err.message);
       }
@@ -298,10 +319,13 @@ class TeacherDashboardController {
       let syllabus = [];
 
       try {
-        const [assignRows] = await pool.query(
-          `SELECT COUNT(*) AS count FROM assignments WHERE school_id = ? AND (status != 4 OR status IS NULL)`,
-          [schoolId]
-        );
+        let assignSql = `SELECT COUNT(*) AS count FROM assignments WHERE school_id = ? AND (status != 4 OR status IS NULL)`;
+        const assignParams = [schoolId];
+        if (branchId) {
+          assignSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+          assignParams.push(Number(branchId));
+        }
+        const [assignRows] = await pool.query(assignSql, assignParams);
         totalAssignments = assignRows[0]?.count || 0;
 
         // Fetch Syllabus for teacher's school and assigned classes
@@ -318,6 +342,10 @@ class TeacherDashboardController {
             AND (s.status != 4 OR s.status IS NULL)
         `;
         const sylParams = [schoolId];
+        if (branchId) {
+          sylSql += ` AND (s.branch_id = ? OR s.branch_id IS NULL)`;
+          sylParams.push(Number(branchId));
+        }
 
         const assignedClassIds = (teacher.class_assignments || [])
           .map((c) => c.class_id)
@@ -355,16 +383,19 @@ class TeacherDashboardController {
       // 9. Teacher Leaves Dynamic List
       let teacherLeaves = [];
       try {
-        const [leaveRows] = await pool.query(
-          `SELECT l.*, lm.leave_name
+        let leaveSql = `SELECT l.*, lm.leave_name
            FROM leaves l
            LEFT JOIN leave_master lm ON l.leave_id = lm.id
            WHERE (l.staff_id = ? OR l.staff_id = ?) 
              AND l.role = 1 
-             AND (l.status != 4 OR l.status IS NULL)
-           ORDER BY l.id DESC LIMIT 50`,
-          [teacherId, teacher.teacher_id || '']
-        );
+             AND (l.status != 4 OR l.status IS NULL)`;
+        const leaveParams = [teacherId, teacher.teacher_id || ''];
+        if (branchId) {
+          leaveSql += ` AND (l.branch_id = ? OR l.branch_id IS NULL)`;
+          leaveParams.push(Number(branchId));
+        }
+        leaveSql += ` ORDER BY l.id DESC LIMIT 50`;
+        const [leaveRows] = await pool.query(leaveSql, leaveParams);
 
         for (const l of leaveRows || []) {
           const [dateRows] = await pool.query(

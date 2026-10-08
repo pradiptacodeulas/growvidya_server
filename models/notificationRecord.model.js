@@ -195,6 +195,7 @@ class NotificationRecordModel {
    */
   static async list({
     school_id = null,
+    branch_id = null,
     channel = null,
     category = null,
     status = null,
@@ -211,6 +212,10 @@ class NotificationRecordModel {
     if (school_id) {
       conditions.push('school_id = ?');
       params.push(parseInt(school_id, 10));
+    }
+    if (branch_id) {
+      conditions.push('(branch_id = ? OR branch_id IS NULL)');
+      params.push(parseInt(branch_id, 10));
     }
     if (channel && ['sms', 'push'].includes(channel.toLowerCase())) {
       conditions.push('channel = ?');
@@ -268,13 +273,17 @@ class NotificationRecordModel {
   /**
    * Summary of costs and counts grouped by channel and status
    */
-  static async getCostSummary({ school_id = null, start_date = null, end_date = null } = {}) {
+  static async getCostSummary({ school_id = null, branch_id = null, start_date = null, end_date = null } = {}) {
     const conditions = [];
     const params = [];
 
     if (school_id) {
       conditions.push('school_id = ?');
       params.push(parseInt(school_id, 10));
+    }
+    if (branch_id) {
+      conditions.push('(branch_id = ? OR branch_id IS NULL)');
+      params.push(parseInt(branch_id, 10));
     }
     if (start_date) {
       conditions.push('created_at >= ?');

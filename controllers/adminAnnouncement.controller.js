@@ -26,8 +26,9 @@ exports.getAllNotices = async (req, res) => {
 exports.getNoticeById = async (req, res) => {
   try {
     const schoolId = getSchoolId(req);
+    const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
     const { id } = req.params;
-    const notice = await AnnouncementModel.getNoticeById(id, schoolId);
+    const notice = await AnnouncementModel.getNoticeById(id, schoolId, branchId);
     if (!notice) {
       return res.status(404).json({ success: false, message: 'Notice not found' });
     }
@@ -266,7 +267,7 @@ exports.updateNotice = async (req, res) => {
   try {
     const schoolId = getSchoolId(req);
     const { id } = req.params;
-    let branchId = req.body.branch_id !== undefined ? req.body.branch_id : (req.user?.branchId || req.user?.branch_id || null);
+    let branchId = req.body.branch_id !== undefined ? req.body.branch_id : (req.user?.branchId || req.user?.branch_id || req.branchId || null);
     const {
       title,
       notice_date,
@@ -298,7 +299,7 @@ exports.updateNotice = async (req, res) => {
       target_sections,
       target_roles,
       target_user_ids,
-    });
+    }, branchId);
 
     return res.status(200).json({
       success: true,
@@ -313,8 +314,9 @@ exports.updateNotice = async (req, res) => {
 exports.deleteNotice = async (req, res) => {
   try {
     const schoolId = getSchoolId(req);
+    const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
     const { id } = req.params;
-    await AnnouncementModel.deleteNotice(id, schoolId);
+    await AnnouncementModel.deleteNotice(id, schoolId, branchId);
     return res.status(200).json({
       success: true,
       message: 'Notice deleted successfully',
@@ -341,8 +343,9 @@ exports.getAllEvents = async (req, res) => {
 exports.getEventById = async (req, res) => {
   try {
     const schoolId = getSchoolId(req);
+    const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
     const { id } = req.params;
-    const event = await AnnouncementModel.getEventById(id, schoolId);
+    const event = await AnnouncementModel.getEventById(id, schoolId, branchId);
     if (!event) {
       return res.status(404).json({ success: false, message: 'Event not found' });
     }
@@ -400,7 +403,7 @@ exports.updateEvent = async (req, res) => {
     const schoolId = getSchoolId(req);
     const { id } = req.params;
     let { title, from_date, to_date, daterange, details, status } = req.body;
-    const branchId = req.body.branch_id !== undefined ? req.body.branch_id : undefined;
+    const branchId = req.body.branch_id !== undefined ? req.body.branch_id : (req.branchId || null);
 
     if (!title || !title.trim()) {
       return res.status(400).json({ success: false, message: 'Event title is required' });
@@ -424,7 +427,7 @@ exports.updateEvent = async (req, res) => {
       to_date: to_date || from_date || null,
       details: details || null,
       status: status !== undefined ? status : 1,
-    });
+    }, branchId);
 
     return res.status(200).json({
       success: true,
@@ -439,8 +442,9 @@ exports.updateEvent = async (req, res) => {
 exports.deleteEvent = async (req, res) => {
   try {
     const schoolId = getSchoolId(req);
+    const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
     const { id } = req.params;
-    await AnnouncementModel.deleteEvent(id, schoolId);
+    await AnnouncementModel.deleteEvent(id, schoolId, branchId);
     return res.status(200).json({
       success: true,
       message: 'Event deleted successfully',
@@ -467,8 +471,9 @@ exports.getAllHolidays = async (req, res) => {
 exports.getHolidayById = async (req, res) => {
   try {
     const schoolId = getSchoolId(req);
+    const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
     const { id } = req.params;
-    const holiday = await AnnouncementModel.getHolidayById(id, schoolId);
+    const holiday = await AnnouncementModel.getHolidayById(id, schoolId, branchId);
     if (!holiday) {
       return res.status(404).json({ success: false, message: 'Holiday not found' });
     }
@@ -526,7 +531,7 @@ exports.updateHoliday = async (req, res) => {
     const schoolId = getSchoolId(req);
     const { id } = req.params;
     let { title, from_date, to_date, daterange, details, status } = req.body;
-    const branchId = req.body.branch_id !== undefined ? req.body.branch_id : undefined;
+    const branchId = req.body.branch_id !== undefined ? req.body.branch_id : (req.branchId || null);
 
     if (!title || !title.trim()) {
       return res.status(400).json({ success: false, message: 'Holiday title is required' });
@@ -550,7 +555,7 @@ exports.updateHoliday = async (req, res) => {
       to_date: to_date || from_date || null,
       details: details || null,
       status: status !== undefined ? status : 1,
-    });
+    }, branchId);
 
     return res.status(200).json({
       success: true,
@@ -565,8 +570,9 @@ exports.updateHoliday = async (req, res) => {
 exports.deleteHoliday = async (req, res) => {
   try {
     const schoolId = getSchoolId(req);
+    const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
     const { id } = req.params;
-    await AnnouncementModel.deleteHoliday(id, schoolId);
+    await AnnouncementModel.deleteHoliday(id, schoolId, branchId);
     return res.status(200).json({
       success: true,
       message: 'Holiday deleted successfully',
@@ -581,6 +587,7 @@ exports.deleteHoliday = async (req, res) => {
 exports.searchUsers = async (req, res) => {
   try {
     const schoolId = getSchoolId(req);
+    const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
     const query = String(req.query.q || '').trim();
     const filterRole = String(req.query.role || '').toLowerCase();
     const { pool } = require('../config/db.config');
@@ -607,6 +614,10 @@ exports.searchUsers = async (req, res) => {
         WHERE t.school_id = ? AND (t.status = 1 OR t.status IS NULL)
       `;
       const teacherParams = [schoolId];
+      if (branchId) {
+        teacherSql += ` AND (t.branch_id = ? OR t.branch_id IS NULL)`;
+        teacherParams.push(Number(branchId));
+      }
       if (query) {
         teacherSql += ` AND (t.first_name LIKE ? OR t.last_name LIKE ? OR t.teacher_id LIKE ? OR t.primary_contact_number LIKE ? OR t.email_address LIKE ?)`;
         teacherParams.push(searchParam, searchParam, searchParam, searchParam, searchParam);
@@ -645,6 +656,10 @@ exports.searchUsers = async (req, res) => {
         WHERE s.school_id = ? AND (s.status = 1 OR s.status = '1' OR s.status IS NULL)
       `;
       const studentParams = [schoolId];
+      if (branchId) {
+        studentSql += ` AND (s.branch_id = ? OR s.branch_id IS NULL)`;
+        studentParams.push(Number(branchId));
+      }
       if (query) {
         studentSql += ` AND (s.first_name LIKE ? OR s.last_name LIKE ? OR s.admission_number LIKE ? OR s.primary_contact_number LIKE ?)`;
         studentParams.push(searchParam, searchParam, searchParam, searchParam);
@@ -682,6 +697,10 @@ exports.searchUsers = async (req, res) => {
         WHERE p.school_id = ? AND (p.status = 1 OR p.status IS NULL)
       `;
       const parentParams = [schoolId];
+      if (branchId) {
+        parentSql += ` AND (p.branch_id = ? OR p.branch_id IS NULL)`;
+        parentParams.push(Number(branchId));
+      }
       if (query) {
         parentSql += ` AND (p.first_name LIKE ? OR p.last_name LIKE ? OR p.phone LIKE ? OR p.email LIKE ?)`;
         parentParams.push(searchParam, searchParam, searchParam, searchParam);
@@ -719,6 +738,10 @@ exports.searchUsers = async (req, res) => {
         WHERE u.school_id = ? AND (u.status = 1 OR u.status IS NULL)
       `;
       const userParams = [schoolId];
+      if (branchId) {
+        userSql += ` AND (u.branch_id = ? OR u.branch_id IS NULL)`;
+        userParams.push(Number(branchId));
+      }
       if (query) {
         userSql += ` AND (u.first_name LIKE ? OR u.last_name LIKE ? OR u.phone LIKE ? OR u.email LIKE ?)`;
         userParams.push(searchParam, searchParam, searchParam, searchParam);

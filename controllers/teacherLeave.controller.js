@@ -24,12 +24,14 @@ class TeacherLeaveController {
     try {
       const teacherId = TeacherLeaveController.getTeacherId(req);
       const schoolId = TeacherLeaveController.getSchoolId(req);
+      const branchId = req.branchId || req.user?.branch_id || req.user?.branchId || null;
       const { search } = req.query;
 
       let sql = `
         SELECT 
           l.id,
           l.school_id,
+          l.branch_id,
           l.role,
           l.staff_id,
           l.leave_id,
@@ -75,6 +77,11 @@ class TeacherLeaveController {
 
       const params = [schoolId, teacherId];
 
+      if (branchId) {
+        sql += ` AND (l.branch_id = ? OR l.branch_id IS NULL)`;
+        params.push(Number(branchId));
+      }
+
       if (search && search.trim()) {
         sql += ` AND (lm.leave_name LIKE ? OR l.leave_reason LIKE ?)`;
         params.push(`%${search.trim()}%`, `%${search.trim()}%`);
@@ -97,12 +104,13 @@ class TeacherLeaveController {
     try {
       const teacherId = TeacherLeaveController.getTeacherId(req);
       const schoolId = TeacherLeaveController.getSchoolId(req);
+      const branchId = req.branchId || req.user?.branch_id || req.user?.branchId || null;
       const { id } = req.params;
 
-      const [rows] = await pool.query(
-        `SELECT 
+      let sql = `SELECT 
            l.id,
            l.school_id,
+           l.branch_id,
            l.role,
            l.staff_id,
            l.leave_id,
@@ -142,9 +150,15 @@ class TeacherLeaveController {
            AND l.role = 1 
            AND l.staff_id = ?
            AND l.school_id = ?
-           AND l.status != 4 AND l.status != 0`,
-        [id, teacherId, schoolId]
-      );
+           AND l.status != 4 AND l.status != 0`;
+
+      const params = [id, teacherId, schoolId];
+      if (branchId) {
+        sql += ` AND (l.branch_id = ? OR l.branch_id IS NULL)`;
+        params.push(Number(branchId));
+      }
+
+      const [rows] = await pool.query(sql, params);
 
       if (!rows || rows.length === 0) {
         return ApiResponse.error(res, 'Leave record not found.', null, 404);
@@ -212,6 +226,7 @@ class TeacherLeaveController {
     try {
       const teacherId = TeacherLeaveController.getTeacherId(req);
       const schoolId = TeacherLeaveController.getSchoolId(req);
+      const branchId = req.branchId || req.user?.branch_id || req.user?.branchId || null;
       const { leave_id, duration, document, leave_reason, dates = [] } = req.body;
 
       if (!leave_id || !duration) {
@@ -247,34 +262,16 @@ class TeacherLeaveController {
         }
       }
 
-      // 1. Insert into leaves table (status = 1 for pending in leaves table)
-      const [result] = await pool.query(
-        `INSERT INTO leaves (school_id, role, staff_id, leave_id, duration, document, leave_reason, status)
-         VALUES (?, 1, ?, ?, ?, ?, ?, 1)`,
-        [
-          schoolId,
-          teacherId,
-          Number(leave_id),
-          Number(duration),
-          document || '',
-          leave_reason || '',
-        ]
-      );
-
-      const leaveId = result.insertId;
-
-      // 2. Insert into leaves_date
-      if (Array.isArray(dates) && dates.length > 0) {
-        for (const d of dates) {
-          if (d) {
-            await pool.query(
-              `INSERT INTO leaves_date (school_id, staff_leave_id, date, status)
-               VALUES (?, ?, ?, 1)`,
-              [schoolId, leaveId, d]
-            );
-          }
-        }
-      }
+      const leaveId = await LeaveModel.createLeave(schoolId, {
+        role: 1,
+        staff_id: teacherId,
+        leave_id,
+        duration,
+        document,
+        leave_reason,
+        dates,
+        branch_id: branchId,
+      });
 
       return ApiResponse.success(res, 'Leave applied successfully.', { leaveId }, 201);
     } catch (error) {

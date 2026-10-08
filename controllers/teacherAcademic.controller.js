@@ -21,7 +21,8 @@ class TeacherAcademicController {
     try {
       const schoolId = TeacherAcademicController.getSchoolId(req);
       const teacherId = TeacherAcademicController.getTeacherId(req);
-      const classes = await AcademicModel.getClasses(schoolId, true, teacherId);
+      const branchId = req.branchId || req.user?.branch_id || null;
+      const classes = await AcademicModel.getClasses(schoolId, true, teacherId, branchId);
       return ApiResponse.success(res, 'Teacher classes fetched successfully', classes);
     } catch (error) {
       next(error);
@@ -45,7 +46,8 @@ class TeacherAcademicController {
     try {
       const schoolId = TeacherAcademicController.getSchoolId(req);
       const classId = req.params.classId || req.query.classId || req.query.class_id;
-      const sections = await AcademicModel.getSections(schoolId, classId, true);
+      const branchId = req.branchId || req.user?.branch_id || null;
+      const sections = await AcademicModel.getSections(schoolId, classId, true, null, branchId);
       return ApiResponse.success(res, 'Sections fetched successfully', sections);
     } catch (error) {
       next(error);
@@ -83,7 +85,8 @@ class TeacherAcademicController {
       const schoolId = TeacherAcademicController.getSchoolId(req);
       const teacherId = TeacherAcademicController.getTeacherId(req);
       const classId = req.params.classId || req.query.classId || req.query.class_id;
-      const subjects = await AcademicModel.getSubjects(schoolId, classId, true, teacherId);
+      const branchId = req.branchId || req.user?.branch_id || null;
+      const subjects = await AcademicModel.getSubjects(schoolId, classId, true, teacherId, branchId);
       return ApiResponse.success(res, 'Teacher subjects fetched successfully', subjects);
     } catch (error) {
       next(error);
@@ -110,6 +113,7 @@ class TeacherAcademicController {
       const targetClassId = req.query.class_id || req.query.classId;
       const targetSectionId = req.query.section_id || req.query.sectionId;
       const { day, academic_year_id } = req.query;
+      const branchId = req.branchId || req.user?.branch_id || null;
 
       // When a specific class or section is selected, fetch the entire class routine (all subjects and teachers)
       // When no class is selected (default), fetch the teacher's personal schedule
@@ -118,6 +122,7 @@ class TeacherAcademicController {
         sectionId: targetSectionId || null,
         day: day || null,
         academic_year_id: academic_year_id || null,
+        branchId,
       };
 
       if (!targetClassId && !targetSectionId) {
@@ -136,6 +141,7 @@ class TeacherAcademicController {
     try {
       const schoolId = TeacherAcademicController.getSchoolId(req);
       const { class_id, classId, subject_id, subjectId, academic_year, academic_year_id, status, search, page, limit } = req.query;
+      const branchId = req.branchId || req.user?.branch_id || null;
       const data = await AcademicModel.getSyllabusList(schoolId, {
         class_id: class_id || classId,
         subject_id: subject_id || subjectId,
@@ -143,6 +149,7 @@ class TeacherAcademicController {
         academic_year_id: academic_year_id || academic_year,
         status,
         search,
+        branchId,
         page,
         limit,
       });

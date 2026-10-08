@@ -70,7 +70,7 @@ const AnnouncementModel = {
     let query = `SELECT * FROM notice WHERE school_id = ? AND status != 4`;
     const params = [schoolId];
     if (branchId) {
-      query += ` AND branch_id = ?`;
+      query += ` AND (branch_id = ? OR branch_id IS NULL)`;
       params.push(Number(branchId));
     }
     query += ` ORDER BY id DESC`;
@@ -119,12 +119,15 @@ const AnnouncementModel = {
     return notices;
   },
 
-  async getNoticeById(id, schoolId) {
-    const [rows] = await pool.query(
-      `SELECT * FROM notice 
-       WHERE id = ? AND school_id = ? AND status != 4`,
-      [id, schoolId]
-    );
+  async getNoticeById(id, schoolId, branchId = null) {
+    let sql = `SELECT * FROM notice 
+       WHERE id = ? AND school_id = ? AND status != 4`;
+    const params = [id, schoolId];
+    if (branchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    const [rows] = await pool.query(sql, params);
     if (!rows[0]) return null;
     const notice = rows[0];
     const [messages] = await pool.query(
@@ -235,30 +238,37 @@ const AnnouncementModel = {
       target_sections = [],
       target_roles = [],
       target_user_ids = [],
-    }
+    },
+    branchId = null
   ) {
     const branchVal = branch_id !== undefined && branch_id !== null ? Number(branch_id) : null;
-    await pool.query(
-      `UPDATE notice 
+    let sql = `UPDATE notice 
        SET branch_id = COALESCE(?, branch_id), title = ?, notice_date = ?, publish_on = ?, message = ?, status = ?,
            target_type = ?, target_classes = ?, target_sections = ?, target_roles = ?, target_user_ids = ?
-       WHERE id = ? AND school_id = ?`,
-      [
-        branchVal,
-        title,
-        notice_date || null,
-        publish_on || null,
-        message || null,
-        status !== undefined ? parseInt(status, 10) : 1,
-        target_type || 'all',
-        JSON.stringify(target_classes || []),
-        JSON.stringify(target_sections || []),
-        JSON.stringify(target_roles || []),
-        JSON.stringify(target_user_ids || []),
-        id,
-        schoolId,
-      ]
-    );
+       WHERE id = ? AND school_id = ?`;
+    const params = [
+      branchVal,
+      title,
+      notice_date || null,
+      publish_on || null,
+      message || null,
+      status !== undefined ? parseInt(status, 10) : 1,
+      target_type || 'all',
+      JSON.stringify(target_classes || []),
+      JSON.stringify(target_sections || []),
+      JSON.stringify(target_roles || []),
+      JSON.stringify(target_user_ids || []),
+      id,
+      schoolId,
+    ];
+
+    const effectiveBranchId = branchId || branchVal;
+    if (effectiveBranchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(effectiveBranchId));
+    }
+
+    await pool.query(sql, params);
 
     if (Array.isArray(message_to)) {
       await pool.query(`DELETE FROM notice_message WHERE notice_id = ?`, [id]);
@@ -274,11 +284,14 @@ const AnnouncementModel = {
     return true;
   },
 
-  async deleteNotice(id, schoolId) {
-    await pool.query(
-      `UPDATE notice SET status = 4 WHERE id = ? AND school_id = ?`,
-      [id, schoolId]
-    );
+  async deleteNotice(id, schoolId, branchId = null) {
+    let sql = `UPDATE notice SET status = 4 WHERE id = ? AND school_id = ?`;
+    const params = [id, schoolId];
+    if (branchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    await pool.query(sql, params);
     return true;
   },
 
@@ -298,14 +311,17 @@ const AnnouncementModel = {
     return rows;
   },
 
-  async getEventById(id, schoolId) {
-    const [rows] = await pool.query(
-      `SELECT e.*, bm.branch_name, bm.branch_code 
+  async getEventById(id, schoolId, branchId = null) {
+    let sql = `SELECT e.*, bm.branch_name, bm.branch_code 
        FROM event e 
        LEFT JOIN branch_master bm ON e.branch_id = bm.id 
-       WHERE e.id = ? AND e.school_id = ? AND e.status != 4`,
-      [id, schoolId]
-    );
+       WHERE e.id = ? AND e.school_id = ? AND e.status != 4`;
+    const params = [id, schoolId];
+    if (branchId) {
+      sql += ` AND (e.branch_id = ? OR e.branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    const [rows] = await pool.query(sql, params);
     return rows[0] || null;
   },
 
@@ -327,31 +343,40 @@ const AnnouncementModel = {
     return result.insertId;
   },
 
-  async updateEvent(id, schoolId, { branch_id, title, from_date, to_date, details, status }) {
+  async updateEvent(id, schoolId, { branch_id, title, from_date, to_date, details, status }, branchId = null) {
     const resolvedBranchId = branch_id !== undefined ? (branch_id ? Number(branch_id) : null) : null;
-    await pool.query(
-      `UPDATE event 
+    let sql = `UPDATE event 
        SET title = ?, from_date = ?, to_date = ?, details = ?, status = ?, branch_id = COALESCE(?, branch_id)
-       WHERE id = ? AND school_id = ?`,
-      [
-        title,
-        from_date || null,
-        to_date || null,
-        details || null,
-        status !== undefined ? parseInt(status, 10) : 1,
-        resolvedBranchId,
-        id,
-        schoolId,
-      ]
-    );
+       WHERE id = ? AND school_id = ?`;
+    const params = [
+      title,
+      from_date || null,
+      to_date || null,
+      details || null,
+      status !== undefined ? parseInt(status, 10) : 1,
+      resolvedBranchId,
+      id,
+      schoolId,
+    ];
+
+    const effectiveBranchId = branchId || resolvedBranchId;
+    if (effectiveBranchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(effectiveBranchId));
+    }
+
+    await pool.query(sql, params);
     return true;
   },
 
-  async deleteEvent(id, schoolId) {
-    await pool.query(
-      `UPDATE event SET status = 4 WHERE id = ? AND school_id = ?`,
-      [id, schoolId]
-    );
+  async deleteEvent(id, schoolId, branchId = null) {
+    let sql = `UPDATE event SET status = 4 WHERE id = ? AND school_id = ?`;
+    const params = [id, schoolId];
+    if (branchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    await pool.query(sql, params);
     return true;
   },
 
@@ -371,14 +396,17 @@ const AnnouncementModel = {
     return rows;
   },
 
-  async getHolidayById(id, schoolId) {
-    const [rows] = await pool.query(
-      `SELECT h.*, bm.branch_name, bm.branch_code 
+  async getHolidayById(id, schoolId, branchId = null) {
+    let sql = `SELECT h.*, bm.branch_name, bm.branch_code 
        FROM holiday h 
        LEFT JOIN branch_master bm ON h.branch_id = bm.id 
-       WHERE h.id = ? AND h.school_id = ? AND h.status != 4`,
-      [id, schoolId]
-    );
+       WHERE h.id = ? AND h.school_id = ? AND h.status != 4`;
+    const params = [id, schoolId];
+    if (branchId) {
+      sql += ` AND (h.branch_id = ? OR h.branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    const [rows] = await pool.query(sql, params);
     return rows[0] || null;
   },
 
@@ -400,31 +428,40 @@ const AnnouncementModel = {
     return result.insertId;
   },
 
-  async updateHoliday(id, schoolId, { branch_id, title, from_date, to_date, details, status }) {
+  async updateHoliday(id, schoolId, { branch_id, title, from_date, to_date, details, status }, branchId = null) {
     const resolvedBranchId = branch_id !== undefined ? (branch_id ? Number(branch_id) : null) : null;
-    await pool.query(
-      `UPDATE holiday 
+    let sql = `UPDATE holiday 
        SET title = ?, from_date = ?, to_date = ?, details = ?, status = ?, branch_id = COALESCE(?, branch_id)
-       WHERE id = ? AND school_id = ?`,
-      [
-        title,
-        from_date || null,
-        to_date || null,
-        details || null,
-        status !== undefined ? parseInt(status, 10) : 1,
-        resolvedBranchId,
-        id,
-        schoolId,
-      ]
-    );
+       WHERE id = ? AND school_id = ?`;
+    const params = [
+      title,
+      from_date || null,
+      to_date || null,
+      details || null,
+      status !== undefined ? parseInt(status, 10) : 1,
+      resolvedBranchId,
+      id,
+      schoolId,
+    ];
+
+    const effectiveBranchId = branchId || resolvedBranchId;
+    if (effectiveBranchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(effectiveBranchId));
+    }
+
+    await pool.query(sql, params);
     return true;
   },
 
-  async deleteHoliday(id, schoolId) {
-    await pool.query(
-      `UPDATE holiday SET status = 4 WHERE id = ? AND school_id = ?`,
-      [id, schoolId]
-    );
+  async deleteHoliday(id, schoolId, branchId = null) {
+    let sql = `UPDATE holiday SET status = 4 WHERE id = ? AND school_id = ?`;
+    const params = [id, schoolId];
+    if (branchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    await pool.query(sql, params);
     return true;
   },
 };

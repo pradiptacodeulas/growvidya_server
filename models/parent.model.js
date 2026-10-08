@@ -56,7 +56,7 @@ class ParentModel {
     }
 
     if (branchId) {
-      sql += ` AND s.branch_id = ?`;
+      sql += ` AND (s.branch_id = ? OR s.branch_id IS NULL)`;
       params.push(Number(branchId));
     }
 
@@ -103,7 +103,7 @@ class ParentModel {
     }
 
     if (branchId) {
-      countSql += ` AND s.branch_id = ?`;
+      countSql += ` AND (s.branch_id = ? OR s.branch_id IS NULL)`;
       countParams.push(Number(branchId));
     }
 
@@ -113,7 +113,7 @@ class ParentModel {
     return { parents: rows, total };
   }
 
-  static async getById(id, schoolId) {
+  static async getById(id, schoolId, branchId = null) {
     const sql = `
       SELECT 
         p.*,
@@ -128,7 +128,7 @@ class ParentModel {
     const parent = rows[0];
 
     // Fetch linked children (students)
-    const childrenSql = `
+    let childrenSql = `
       SELECT 
         s.id AS student_id,
         s.id,
@@ -154,10 +154,14 @@ class ParentModel {
       WHERE (stp.father_id = ? OR stp.mother_id = ? OR stp.guardian_id = ?) 
         AND (s.school_id = ? OR ? IS NULL)
         AND s.status != 4 AND s.status != 0
-      GROUP BY s.id
-      ORDER BY s.id ASC
     `;
-    const [children] = await pool.query(childrenSql, [id, id, id, schoolId, schoolId]);
+    const childrenParams = [id, id, id, schoolId, schoolId];
+    if (branchId) {
+      childrenSql += ` AND (s.branch_id = ? OR s.branch_id IS NULL)`;
+      childrenParams.push(Number(branchId));
+    }
+    childrenSql += ` GROUP BY s.id ORDER BY s.id ASC`;
+    const [children] = await pool.query(childrenSql, childrenParams);
 
     parent.children = children || [];
     return parent;

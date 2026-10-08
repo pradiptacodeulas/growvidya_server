@@ -32,9 +32,10 @@ class AdminTransportController {
   static async getRouteById(req, res, next) {
     try {
       const schoolId = getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { id } = req.params;
 
-      const route = await TransportModel.getRouteById(schoolId, id);
+      const route = await TransportModel.getRouteById(schoolId, id, branchId);
       if (!route) {
         return ApiResponse.error(res, 'Route not found.', null, 404);
       }
@@ -73,8 +74,9 @@ class AdminTransportController {
   static async updateRoute(req, res, next) {
     try {
       const schoolId = getSchoolId(req);
+      const branchId = req.branchId || req.body?.branch_id || null;
       const { id } = req.params;
-      const { transport_route, bus_id, bus, driver_id, driver, helpers, helper, fare, sort_order, status } = req.body;
+      const { transport_route, bus_id, bus, driver_id, driver, helpers, helper, fare, sort_order, status, branch_id } = req.body;
 
       if (!transport_route) {
         return ApiResponse.error(res, 'Route name is required.', null, 400);
@@ -88,7 +90,8 @@ class AdminTransportController {
         fare,
         sort_order,
         status,
-      });
+        branch_id: branch_id !== undefined ? branch_id : branchId,
+      }, branchId);
       return ApiResponse.success(res, 'Route updated successfully.');
     } catch (error) {
       next(error);
@@ -98,9 +101,10 @@ class AdminTransportController {
   static async deleteRoute(req, res, next) {
     try {
       const schoolId = getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || null;
       const { id } = req.params;
 
-      await TransportModel.deleteRoute(schoolId, id);
+      await TransportModel.deleteRoute(schoolId, id, branchId);
       return ApiResponse.success(res, 'Route deleted successfully.');
     } catch (error) {
       next(error);
@@ -127,9 +131,10 @@ class AdminTransportController {
   static async getVehicleById(req, res, next) {
     try {
       const schoolId = getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { id } = req.params;
 
-      const vehicle = await TransportModel.getVehicleById(schoolId, id);
+      const vehicle = await TransportModel.getVehicleById(schoolId, id, branchId);
       if (!vehicle) {
         return ApiResponse.error(res, 'Vehicle not found.', null, 404);
       }
@@ -167,8 +172,9 @@ class AdminTransportController {
   static async updateVehicle(req, res, next) {
     try {
       const schoolId = getSchoolId(req);
+      const branchId = req.branchId || req.body?.branch_id || null;
       const { id } = req.params;
-      const { name, number_plate, seat, color, driver_id, status } = req.body;
+      const { name, number_plate, seat, color, driver_id, status, branch_id } = req.body;
 
       if (!name) {
         return ApiResponse.error(res, 'Vehicle name is required.', null, 400);
@@ -181,7 +187,8 @@ class AdminTransportController {
         color,
         driver_id,
         status,
-      });
+        branch_id: branch_id !== undefined ? branch_id : branchId,
+      }, branchId);
       return ApiResponse.success(res, 'Vehicle updated successfully.');
     } catch (error) {
       next(error);
@@ -191,9 +198,10 @@ class AdminTransportController {
   static async deleteVehicle(req, res, next) {
     try {
       const schoolId = getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || null;
       const { id } = req.params;
 
-      await TransportModel.deleteVehicle(schoolId, id);
+      await TransportModel.deleteVehicle(schoolId, id, branchId);
       return ApiResponse.success(res, 'Vehicle deleted successfully.');
     } catch (error) {
       next(error);
@@ -220,9 +228,10 @@ class AdminTransportController {
   static async getDriverById(req, res, next) {
     try {
       const schoolId = getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { id } = req.params;
 
-      const driver = await TransportModel.getDriverById(schoolId, id);
+      const driver = await TransportModel.getDriverById(schoolId, id, branchId);
       if (!driver) {
         return ApiResponse.error(res, 'Driver not found.', null, 404);
       }
@@ -412,9 +421,10 @@ class AdminTransportController {
   static async deleteDriver(req, res, next) {
     try {
       const schoolId = getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || null;
       const { id } = req.params;
 
-      await TransportModel.deleteDriver(schoolId, id);
+      await TransportModel.deleteDriver(schoolId, id, branchId);
       return ApiResponse.success(res, 'Driver deleted successfully.');
     } catch (error) {
       next(error);
@@ -441,9 +451,10 @@ class AdminTransportController {
   static async getHelperById(req, res, next) {
     try {
       const schoolId = getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { id } = req.params;
 
-      const helper = await TransportModel.getHelperById(schoolId, id);
+      const helper = await TransportModel.getHelperById(schoolId, id, branchId);
       if (!helper) {
         return ApiResponse.error(res, 'Helper not found.', null, 404);
       }
@@ -598,9 +609,10 @@ class AdminTransportController {
   static async deleteHelper(req, res, next) {
     try {
       const schoolId = getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || null;
       const { id } = req.params;
 
-      await TransportModel.deleteHelper(schoolId, id);
+      await TransportModel.deleteHelper(schoolId, id, branchId);
       return ApiResponse.success(res, 'Helper deleted successfully.');
     } catch (error) {
       next(error);
@@ -633,9 +645,10 @@ class AdminTransportController {
   static async getAllocateById(req, res, next) {
     try {
       const schoolId = getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { id } = req.params;
 
-      const allocation = await TransportModel.getAllocateById(schoolId, id);
+      const allocation = await TransportModel.getAllocateById(schoolId, id, branchId);
       if (!allocation) {
         return ApiResponse.error(res, 'Allocation not found.', null, 404);
       }
@@ -648,6 +661,7 @@ class AdminTransportController {
   static async createAllocation(req, res, next) {
     try {
       const schoolId = getSchoolId(req);
+      const branchId = req.branchId || req.body?.branch_id || req.query.branch_id || null;
       const { student_id, route, vehicle_number, pickup_point, drop_point, status } = req.body;
 
       if (!student_id || !route) {
@@ -655,6 +669,7 @@ class AdminTransportController {
       }
 
       const id = await TransportModel.createAllocation(schoolId, {
+        branch_id: branchId,
         student_id,
         route,
         vehicle_number,
@@ -671,21 +686,23 @@ class AdminTransportController {
   static async updateAllocation(req, res, next) {
     try {
       const schoolId = getSchoolId(req);
+      const branchId = req.branchId || req.body?.branch_id || null;
       const { id } = req.params;
-      const { student_id, route, vehicle_number, pickup_point, drop_point, status } = req.body;
+      const { student_id, route, vehicle_number, pickup_point, drop_point, status, branch_id } = req.body;
 
       if (!student_id || !route) {
         return ApiResponse.error(res, 'Student and Route are required.', null, 400);
       }
 
       await TransportModel.updateAllocation(schoolId, id, {
+        branch_id: branch_id !== undefined ? branch_id : branchId,
         student_id,
         route,
         vehicle_number,
         pickup_point,
         drop_point,
         status,
-      });
+      }, branchId);
       return ApiResponse.success(res, 'Transport allocation updated successfully.');
     } catch (error) {
       next(error);
@@ -695,9 +712,10 @@ class AdminTransportController {
   static async deleteAllocation(req, res, next) {
     try {
       const schoolId = getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || null;
       const { id } = req.params;
 
-      await TransportModel.deleteAllocation(schoolId, id);
+      await TransportModel.deleteAllocation(schoolId, id, branchId);
       return ApiResponse.success(res, 'Transport allocation deleted successfully.');
     } catch (error) {
       next(error);

@@ -30,8 +30,9 @@ exports.getAllHostels = async (req, res) => {
 exports.getHostelById = async (req, res) => {
   try {
     const schoolId = getHostelSchoolId(req);
+    const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
     const { id } = req.params;
-    const hostel = await HostelModel.getHostelById(id, schoolId);
+    const hostel = await HostelModel.getHostelById(id, schoolId, branchId);
     if (!hostel) {
       return res.status(404).json({ success: false, message: 'Hostel not found' });
     }
@@ -75,6 +76,7 @@ exports.createHostel = async (req, res) => {
 exports.updateHostel = async (req, res) => {
   try {
     const schoolId = getHostelSchoolId(req);
+    const branchId = req.branchId || req.body?.branch_id || req.query?.branch_id || null;
     const { id } = req.params;
     const { hostel_name, hostel_fee, sort_order, status } = req.body;
 
@@ -87,7 +89,8 @@ exports.updateHostel = async (req, res) => {
       hostel_fee: hostel_fee || 0,
       sort_order: sort_order || 0,
       status: status !== undefined ? status : 1,
-    });
+      branch_id: branchId,
+    }, branchId);
 
     return res.status(200).json({
       success: true,
@@ -102,8 +105,9 @@ exports.updateHostel = async (req, res) => {
 exports.deleteHostel = async (req, res) => {
   try {
     const schoolId = getHostelSchoolId(req);
+    const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
     const { id } = req.params;
-    await HostelModel.deleteHostel(id, schoolId);
+    await HostelModel.deleteHostel(id, schoolId, branchId);
     return res.status(200).json({
       success: true,
       message: 'Hostel deleted successfully',
@@ -134,8 +138,9 @@ exports.getAllHostelRooms = async (req, res) => {
 exports.getHostelRoomById = async (req, res) => {
   try {
     const schoolId = getHostelSchoolId(req);
+    const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
     const { id } = req.params;
-    const room = await HostelModel.getHostelRoomById(id, schoolId);
+    const room = await HostelModel.getHostelRoomById(id, schoolId, branchId);
     if (!room) {
       return res.status(404).json({ success: false, message: 'Hostel room not found' });
     }
@@ -182,6 +187,7 @@ exports.createHostelRoom = async (req, res) => {
 exports.updateHostelRoom = async (req, res) => {
   try {
     const schoolId = getHostelSchoolId(req);
+    const branchId = req.branchId || req.body?.branch_id || req.query?.branch_id || null;
     const { id } = req.params;
     const { hostel_id, room_number, sort_order, status } = req.body;
 
@@ -197,7 +203,8 @@ exports.updateHostelRoom = async (req, res) => {
       room_number: room_number.trim(),
       sort_order: sort_order || 0,
       status: status !== undefined ? status : 1,
-    });
+      branch_id: branchId,
+    }, branchId);
 
     return res.status(200).json({
       success: true,
@@ -212,8 +219,9 @@ exports.updateHostelRoom = async (req, res) => {
 exports.deleteHostelRoom = async (req, res) => {
   try {
     const schoolId = getHostelSchoolId(req);
+    const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
     const { id } = req.params;
-    await HostelModel.deleteHostelRoom(id, schoolId);
+    await HostelModel.deleteHostelRoom(id, schoolId, branchId);
     return res.status(200).json({
       success: true,
       message: 'Hostel room deleted successfully',

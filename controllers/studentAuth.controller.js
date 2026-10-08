@@ -131,6 +131,8 @@ class StudentAuthController {
       userId: student.id,
       studentId: student.id,
       schoolId: Number(student.school_id),
+      branchId: student.branch_id || null,
+      branch_id: student.branch_id || null,
       schoolName: student.school_name || null,
       schoolLogo: student.school_logo || null,
       email: student.email_address,

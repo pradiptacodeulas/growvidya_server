@@ -48,14 +48,19 @@ class AdminFeesModel {
     return rows;
   }
 
-  static async getComponentById(id, schoolId) {
-    const query = `
+  static async getComponentById(id, schoolId, branchId = null) {
+    let query = `
       SELECT fc.*, brm.branch_name, brm.branch_code 
       FROM fee_components fc
       LEFT JOIN branch_master brm ON brm.id = fc.branch_id
       WHERE fc.id = ? AND fc.school_id = ? AND fc.status != 4
     `;
-    const [rows] = await pool.query(query, [id, schoolId]);
+    const params = [id, schoolId];
+    if (branchId) {
+      query += ` AND (fc.branch_id = ? OR fc.branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    const [rows] = await pool.query(query, params);
     return rows[0] || null;
   }
 
@@ -78,7 +83,7 @@ class AdminFeesModel {
     return result.insertId;
   }
 
-  static async updateComponent(id, schoolId, { branchId, name, code, taxRate, accountCode, description, status }) {
+  static async updateComponent(id, schoolId, { branchId, name, code, taxRate, accountCode, description, status }, currentBranchId = null) {
     let query = `UPDATE fee_components SET `;
     const updates = [];
     const params = [];
@@ -117,13 +122,24 @@ class AdminFeesModel {
     query += updates.join(', ') + ` WHERE id = ? AND school_id = ?`;
     params.push(id, schoolId);
 
+    const effectiveBranchId = currentBranchId || (branchId !== undefined ? branchId : null);
+    if (effectiveBranchId) {
+      query += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(effectiveBranchId));
+    }
+
     const [result] = await pool.query(query, params);
     return Boolean(result.affectedRows > 0 || (result.info && !result.info.includes('Rows matched: 0')));
   }
 
-  static async deleteComponent(id, schoolId) {
-    const query = `UPDATE fee_components SET status = 4 WHERE id = ? AND school_id = ?`;
-    const [result] = await pool.query(query, [id, schoolId]);
+  static async deleteComponent(id, schoolId, branchId = null) {
+    let query = `UPDATE fee_components SET status = 4 WHERE id = ? AND school_id = ?`;
+    const params = [id, schoolId];
+    if (branchId) {
+      query += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    const [result] = await pool.query(query, params);
     return result.affectedRows > 0;
   }
 
@@ -237,8 +253,8 @@ class AdminFeesModel {
     return structures;
   }
 
-  static async getStructureById(id, schoolId) {
-    const query = `
+  static async getStructureById(id, schoolId, branchId = null) {
+    let query = `
       SELECT 
         fs.*,
         brm.branch_name,
@@ -249,7 +265,12 @@ class AdminFeesModel {
       LEFT JOIN branch_master brm ON brm.id = fs.branch_id
       WHERE fs.id = ? AND fs.school_id = ? AND fs.status != 4
     `;
-    const [rows] = await pool.query(query, [id, schoolId]);
+    const params = [id, schoolId];
+    if (branchId) {
+      query += ` AND (fs.branch_id = ? OR fs.branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    const [rows] = await pool.query(query, params);
     if (rows.length === 0) return null;
 
     const structure = rows[0];
@@ -517,19 +538,27 @@ class AdminFeesModel {
     }
   }
 
-  static async deleteStructure(id, schoolId) {
-    const query = `UPDATE fee_structures SET status = 4 WHERE id = ? AND school_id = ?`;
-    const [result] = await pool.query(query, [id, schoolId]);
+  static async deleteStructure(id, schoolId, branchId = null) {
+    let query = `UPDATE fee_structures SET status = 4 WHERE id = ? AND school_id = ?`;
+    const params = [id, schoolId];
+    if (branchId) {
+      query += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    const [result] = await pool.query(query, params);
     return result.affectedRows > 0;
   }
 
-  static async togglePublishStructure(id, schoolId, targetStatus = null) {
-    const [rows] = await pool.query(
-      `SELECT id, name, is_published, class_id, academic_year_id, branch_id, allow_partial_payment 
+  static async togglePublishStructure(id, schoolId, targetStatus = null, branchId = null) {
+    let checkQuery = `SELECT id, name, is_published, class_id, academic_year_id, branch_id, allow_partial_payment 
        FROM fee_structures 
-       WHERE id = ? AND school_id = ? AND status != 4`,
-      [id, schoolId]
-    );
+       WHERE id = ? AND school_id = ? AND status != 4`;
+    const checkParams = [id, schoolId];
+    if (branchId) {
+      checkQuery += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      checkParams.push(Number(branchId));
+    }
+    const [rows] = await pool.query(checkQuery, checkParams);
     if (rows.length === 0) return null;
 
     const current = rows[0];
@@ -553,10 +582,13 @@ class AdminFeesModel {
 
     const newStatus = 1;
 
-    await pool.query(
-      `UPDATE fee_structures SET is_published = ? WHERE id = ? AND school_id = ?`,
-      [newStatus, id, schoolId]
-    );
+    let updateQuery = `UPDATE fee_structures SET is_published = ? WHERE id = ? AND school_id = ?`;
+    const updateParams = [newStatus, id, schoolId];
+    if (branchId) {
+      updateQuery += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      updateParams.push(Number(branchId));
+    }
+    await pool.query(updateQuery, updateParams);
 
     let allocatedCount = 0;
     if (newStatus === 1 && current.class_id) {
@@ -940,8 +972,8 @@ class AdminFeesModel {
     };
   }
 
-  static async getInvoiceById(id, schoolId) {
-    const query = `
+  static async getInvoiceById(id, schoolId, branchId = null) {
+    let query = `
       SELECT 
         fi.*,
         COALESCE(fi.branch_id, sm.branch_id) AS branch_id,
@@ -974,7 +1006,12 @@ class AdminFeesModel {
       LEFT JOIN academic_year_master ay ON ay.id = fi.academic_year_id
       WHERE fi.id = ? AND fi.school_id = ?
     `;
-    const [rows] = await pool.query(query, [id, schoolId]);
+    const params = [id, schoolId];
+    if (branchId) {
+      query += ` AND (fi.branch_id = ? OR sm.branch_id = ?)`;
+      params.push(Number(branchId), Number(branchId));
+    }
+    const [rows] = await pool.query(query, params);
     if (rows.length === 0) return null;
 
     const invoice = rows[0];
@@ -996,7 +1033,7 @@ class AdminFeesModel {
     return invoice;
   }
 
-  static async checkDuplicateInvoice({ schoolId, feeStructureId, issueDate }) {
+  static async checkDuplicateInvoice({ schoolId, branchId, feeStructureId, issueDate }) {
     if (!feeStructureId || !issueDate) {
       return { exists: false };
     }
@@ -1004,18 +1041,21 @@ class AdminFeesModel {
       ? String(issueDate).split('T')[0]
       : String(issueDate).trim();
 
-    const [existing] = await pool.query(
-      `SELECT fi.id, fi.invoice_no, fs.name AS structure_name, fi.issue_date, COUNT(*) AS count
+    let checkQuery = `
+       SELECT fi.id, fi.invoice_no, fs.name AS structure_name, fi.issue_date, COUNT(*) AS count
        FROM fee_invoices fi
        JOIN fee_structures fs ON fs.id = fi.fee_structure_id
        WHERE fi.school_id = ?
          AND fi.fee_structure_id = ?
          AND DATE(fi.issue_date) = DATE(?)
-         AND fi.status != '4'
-       GROUP BY fi.id, fi.invoice_no, fs.name, fi.issue_date
-       LIMIT 1`,
-      [schoolId, feeStructureId, effectiveIssueDate]
-    );
+         AND fi.status != '4'`;
+    const checkParams = [schoolId, feeStructureId, effectiveIssueDate];
+    if (branchId) {
+      checkQuery += ` AND (fi.branch_id = ? OR fi.branch_id IS NULL)`;
+      checkParams.push(Number(branchId));
+    }
+    checkQuery += ` GROUP BY fi.id, fi.invoice_no, fs.name, fi.issue_date LIMIT 1`;
+    const [existing] = await pool.query(checkQuery, checkParams);
 
     if (existing.length > 0) {
       const structName = existing[0].structure_name || 'this Fee Structure';
@@ -1047,10 +1087,13 @@ class AdminFeesModel {
       await connection.beginTransaction();
 
       // 1. Get structure and components
-      const [structRows] = await connection.query(
-        `SELECT * FROM fee_structures WHERE id = ? AND school_id = ?`,
-        [feeStructureId, schoolId]
-      );
+      let structQuery = `SELECT * FROM fee_structures WHERE id = ? AND school_id = ?`;
+      const structParams = [feeStructureId, schoolId];
+      if (branchId) {
+        structQuery += ` AND (branch_id = ? OR branch_id IS NULL)`;
+        structParams.push(Number(branchId));
+      }
+      const [structRows] = await connection.query(structQuery, structParams);
       if (structRows.length === 0) {
         throw new Error('Fee Structure not found.');
       }
@@ -1071,17 +1114,21 @@ class AdminFeesModel {
         : new Date().toISOString().split('T')[0];
 
       // Prevent duplicate fee entries: check if a fee has already been created for the same Fee Structure and Issue Date
-      const [existingInvoices] = await connection.query(
-        `SELECT fi.id, fi.invoice_no, fs.name AS structure_name, fi.issue_date
+      let dupQuery = `
+         SELECT fi.id, fi.invoice_no, fs.name AS structure_name, fi.issue_date
          FROM fee_invoices fi
          JOIN fee_structures fs ON fs.id = fi.fee_structure_id
          WHERE fi.school_id = ? 
            AND fi.fee_structure_id = ? 
            AND DATE(fi.issue_date) = DATE(?)
-           AND fi.status != '4'
-         LIMIT 1`,
-        [schoolId, feeStructureId, effectiveIssueDate]
-      );
+           AND fi.status != '4'`;
+      const dupParams = [schoolId, feeStructureId, effectiveIssueDate];
+      if (branchId) {
+        dupQuery += ` AND (fi.branch_id = ? OR fi.branch_id IS NULL)`;
+        dupParams.push(Number(branchId));
+      }
+      dupQuery += ` LIMIT 1`;
+      const [existingInvoices] = await connection.query(dupQuery, dupParams);
 
       if (existingInvoices.length > 0) {
         const sName = existingInvoices[0].structure_name || structure.name || 'this Fee Structure';
@@ -1220,16 +1267,33 @@ class AdminFeesModel {
     }
   }
 
-  static async deleteInvoice(id, schoolId) {
+  static async deleteInvoice(id, schoolId, branchId = null) {
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
+
+      let invCheckSql = `SELECT id FROM fee_invoices WHERE id = ? AND school_id = ?`;
+      const invCheckParams = [id, schoolId];
+      if (branchId) {
+        invCheckSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+        invCheckParams.push(Number(branchId));
+      }
+      const [invRows] = await connection.query(invCheckSql, invCheckParams);
+      if (invRows.length === 0) {
+        await connection.rollback();
+        return false;
+      }
+
       await connection.query(`UPDATE fee_invoice_items SET status = 4 WHERE invoice_id = ?`, [id]);
       await connection.query(`UPDATE fee_payments SET status = 4 WHERE invoice_id = ?`, [id]);
-      const [res] = await connection.query(
-        `UPDATE fee_invoices SET status = '4', updated_at = NOW() WHERE id = ? AND school_id = ?`,
-        [id, schoolId]
-      );
+
+      let updateSql = `UPDATE fee_invoices SET status = '4', updated_at = NOW() WHERE id = ? AND school_id = ?`;
+      const updateParams = [id, schoolId];
+      if (branchId) {
+        updateSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+        updateParams.push(Number(branchId));
+      }
+      const [res] = await connection.query(updateSql, updateParams);
       await connection.commit();
       return res.affectedRows > 0;
     } catch (error) {
@@ -1407,8 +1471,8 @@ class AdminFeesModel {
     return payments;
   }
 
-  static async getPaymentById(id, schoolId) {
-    const query = `
+  static async getPaymentById(id, schoolId, branchId = null) {
+    let query = `
       SELECT 
         fp.*,
         COALESCE(fp.branch_id, sm.branch_id) AS branch_id,
@@ -1443,7 +1507,12 @@ class AdminFeesModel {
       LEFT JOIN academic_year_master ay ON ay.id = fi.academic_year_id
       WHERE fp.id = ? AND fp.school_id = ?
     `;
-    const [rows] = await pool.query(query, [id, schoolId]);
+    const params = [id, schoolId];
+    if (branchId) {
+      query += ` AND (fp.branch_id = ? OR sm.branch_id = ?)`;
+      params.push(Number(branchId), Number(branchId));
+    }
+    const [rows] = await pool.query(query, params);
     if (rows.length === 0) return null;
 
     const payment = rows[0];
@@ -1462,7 +1531,7 @@ class AdminFeesModel {
   /**
    * Fetches single or batch payment receipt data matching the ID Card data flow pattern
    */
-  static async getReceiptData({ schoolId, paymentIds = [], paymentId = null, classId = null, sectionId = null }) {
+  static async getReceiptData({ schoolId, branchId = null, paymentIds = [], paymentId = null, classId = null, sectionId = null }) {
     let ids = [];
     if (paymentId) {
       ids = [paymentId];
@@ -1507,6 +1576,11 @@ class AdminFeesModel {
     `;
 
     const params = [schoolId];
+
+    if (branchId) {
+      query += ` AND (fp.branch_id = ? OR sm.branch_id = ?)`;
+      params.push(Number(branchId), Number(branchId));
+    }
 
     if (ids.length > 0) {
       query += ` AND fp.id IN (?)`;
@@ -1663,16 +1737,19 @@ class AdminFeesModel {
   /**
    * Verify / Approve or Reject Fee Payment (Offline / Receipt Proof Verification)
    */
-  static async verifyPayment({ paymentId, schoolId, action, rejectionReason, verifiedBy }) {
+  static async verifyPayment({ paymentId, schoolId, branchId = null, action, rejectionReason, verifiedBy }) {
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
 
       // 1. Fetch the payment record
-      const [payRows] = await connection.query(
-        `SELECT * FROM fee_payments WHERE id = ? AND school_id = ?`,
-        [paymentId, schoolId]
-      );
+      let paySql = `SELECT * FROM fee_payments WHERE id = ? AND school_id = ?`;
+      const payParams = [paymentId, schoolId];
+      if (branchId) {
+        paySql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+        payParams.push(Number(branchId));
+      }
+      const [payRows] = await connection.query(paySql, payParams);
       if (payRows.length === 0) {
         throw new Error('Fee payment record not found.');
       }

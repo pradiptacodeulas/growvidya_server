@@ -900,11 +900,12 @@ class AdminExaminationModel {
     }));
   }
 
-  static async getExamScheduleById(id, schoolId) {
+  static async getExamScheduleById(id, schoolId, branchId = null) {
     let query = `
       SELECT 
         es.id,
         es.school_id,
+        es.branch_id,
         es.academic_year_id,
         es.exam_id,
         es.class_id,
@@ -927,6 +928,10 @@ class AdminExaminationModel {
     if (schoolId) {
       query += ` AND es.school_id = ?`;
       params.push(schoolId);
+    }
+    if (branchId) {
+      query += ` AND (es.branch_id = ? OR es.branch_id IS NULL)`;
+      params.push(Number(branchId));
     }
     const [rows] = await pool.query(query, params);
     return rows[0] || null;
@@ -984,6 +989,7 @@ class AdminExaminationModel {
     endTime,
     status,
     schoolId,
+    branchId = null,
   }) {
     let query = `UPDATE exam_schedule SET `;
     const params = [];
@@ -1032,16 +1038,25 @@ class AdminExaminationModel {
       params.push(schoolId);
     }
 
+    if (branchId) {
+      query += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+
     const [result] = await pool.query(query, params);
     return result.affectedRows > 0;
   }
 
-  static async deleteExamSchedule(id, schoolId) {
+  static async deleteExamSchedule(id, schoolId, branchId = null) {
     let query = `UPDATE exam_schedule SET status = 4 WHERE id = ?`;
     const params = [id];
     if (schoolId) {
       query += ` AND school_id = ?`;
       params.push(schoolId);
+    }
+    if (branchId) {
+      query += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
     }
     const [result] = await pool.query(query, params);
     return result.affectedRows > 0;

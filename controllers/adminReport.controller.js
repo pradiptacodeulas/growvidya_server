@@ -170,12 +170,14 @@ class AdminReportController {
       const endDate = paramsSrc.endDate || paramsSrc.end || '';
       const year = paramsSrc.year || '';
       const month = paramsSrc.month || '';
+      const branchId = req.branchId || paramsSrc.branch_id || paramsSrc.branchId || null;
 
       const events = await ReportModel.getCalendarReportEvents(schoolId, {
         startDate,
         endDate,
         year,
         month,
+        branchId,
       });
 
       return ApiResponse.success(res, 'Calendar events fetched successfully.', events);

@@ -486,8 +486,9 @@ class AdminExaminationController {
   static async getExamScheduleById(req, res, next) {
     try {
       const schoolId = req.user?.schoolId;
+      const branchId = req.branchId || req.query.branch_id || null;
       const { id } = req.params;
-      const schedule = await AdminExaminationModel.getExamScheduleById(id, schoolId);
+      const schedule = await AdminExaminationModel.getExamScheduleById(id, schoolId, branchId);
       if (!schedule) {
         return ApiResponse.error(res, 'Exam schedule not found.', null, 404);
       }
@@ -500,6 +501,7 @@ class AdminExaminationController {
   static async createExamSchedule(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.body?.branch_id !== undefined ? req.body.branch_id : (req.branchId || req.query.branch_id || null);
       const { exam_id, class_id, subject_id, date, start_time, end_time, academic_year_id, status, items } = req.body;
 
       const effectiveAyId = academic_year_id
@@ -528,10 +530,13 @@ class AdminExaminationController {
           }
 
           // Delete existing schedules for this exam and class before re-inserting
-          await pool.query(
-            `DELETE FROM exam_schedule WHERE school_id = ? AND exam_id = ? AND class_id = ?`,
-            [schoolId, parseInt(exam_id, 10), parseInt(class_id, 10)]
-          );
+          let delQuery = `DELETE FROM exam_schedule WHERE school_id = ? AND exam_id = ? AND class_id = ?`;
+          const delParams = [schoolId, parseInt(exam_id, 10), parseInt(class_id, 10)];
+          if (branchId) {
+            delQuery += ` AND (branch_id = ? OR branch_id IS NULL)`;
+            delParams.push(Number(branchId));
+          }
+          await pool.query(delQuery, delParams);
         }
 
         const createdIds = [];
@@ -539,6 +544,7 @@ class AdminExaminationController {
           if (item.subject_id && item.date) {
             const id = await AdminExaminationModel.createExamSchedule({
               schoolId,
+              branchId,
               academicYearId: effectiveAyId,
               examId: parseInt(exam_id, 10),
               classId: parseInt(class_id, 10),
@@ -560,6 +566,7 @@ class AdminExaminationController {
 
       const scheduleId = await AdminExaminationModel.createExamSchedule({
         schoolId,
+        branchId,
         academicYearId: effectiveAyId,
         examId: parseInt(exam_id, 10),
         classId: parseInt(class_id, 10),
@@ -579,6 +586,7 @@ class AdminExaminationController {
   static async updateExamSchedule(req, res, next) {
     try {
       const schoolId = req.user?.schoolId;
+      const branchId = req.body?.branch_id !== undefined ? req.body.branch_id : (req.branchId || req.query.branch_id || null);
       const { id } = req.params;
       const { exam_id, class_id, subject_id, date, start_time, end_time, academic_year_id, status } = req.body;
 
@@ -592,6 +600,7 @@ class AdminExaminationController {
         academicYearId: academic_year_id !== undefined ? parseInt(academic_year_id, 10) : undefined,
         status: status !== undefined ? parseInt(status, 10) : undefined,
         schoolId,
+        branchId,
       });
 
       return ApiResponse.success(res, 'Exam schedule updated successfully.');
@@ -603,8 +612,9 @@ class AdminExaminationController {
   static async deleteExamSchedule(req, res, next) {
     try {
       const schoolId = req.user?.schoolId;
+      const branchId = req.branchId || req.query.branch_id || null;
       const { id } = req.params;
-      await AdminExaminationModel.deleteExamSchedule(id, schoolId);
+      await AdminExaminationModel.deleteExamSchedule(id, schoolId, branchId);
       return ApiResponse.success(res, 'Exam schedule deleted successfully.');
     } catch (error) {
       next(error);

@@ -15,6 +15,8 @@ class TeacherAuthController {
       userId: teacher.id,
       teacherId: teacher.id,
       schoolId: teacher.school_id || null,
+      branchId: teacher.branch_id || null,
+      branch_id: teacher.branch_id || null,
       schoolName: teacher.school_name || null,
       schoolLogo: teacher.school_logo || null,
       email: teacher.email_address,

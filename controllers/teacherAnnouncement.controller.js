@@ -14,19 +14,23 @@ const getTeacherSchoolId = (req) => {
 exports.getTeacherNotices = async (req, res) => {
   try {
     const schoolId = getTeacherSchoolId(req);
+    const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
     const teacherId = Number(req.user?.teacherId || req.user?.userId || req.user?.id);
     const { pool } = require('../config/db.config');
 
     // 1. Fetch teacher's assigned classes
-    const [assignedRows] = await pool.query(
-      `SELECT DISTINCT class_id FROM teacher_class_assign 
-       WHERE teacher_id = ? AND school_id = ? AND (status = 1 OR status IS NULL)`,
-      [teacherId, schoolId]
-    ).catch(() => [[]]);
+    let assignQuery = `SELECT DISTINCT class_id FROM teacher_class_assign 
+       WHERE teacher_id = ? AND school_id = ? AND (status = 1 OR status IS NULL)`;
+    const assignParams = [teacherId, schoolId];
+    if (branchId) {
+      assignQuery += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      assignParams.push(Number(branchId));
+    }
+    const [assignedRows] = await pool.query(assignQuery, assignParams).catch(() => [[]]);
     const assignedClassIds = new Set((assignedRows || []).map((r) => Number(r.class_id)));
 
     // 2. Fetch all school notices
-    const allNotices = await AnnouncementModel.getAllNotices(schoolId);
+    const allNotices = await AnnouncementModel.getAllNotices(schoolId, branchId);
 
     // 3. Filter notices relevant to this teacher
     const filtered = allNotices.filter((n) => {
@@ -73,8 +77,9 @@ exports.getTeacherNotices = async (req, res) => {
 exports.getTeacherNoticeById = async (req, res) => {
   try {
     const schoolId = getTeacherSchoolId(req);
+    const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
     const { id } = req.params;
-    const notice = await AnnouncementModel.getNoticeById(id, schoolId);
+    const notice = await AnnouncementModel.getNoticeById(id, schoolId, branchId);
     if (!notice) {
       return res.status(404).json({ success: false, message: 'Notice not found' });
     }
@@ -89,7 +94,8 @@ exports.getTeacherNoticeById = async (req, res) => {
 exports.getTeacherEvents = async (req, res) => {
   try {
     const schoolId = getTeacherSchoolId(req);
-    const events = await AnnouncementModel.getAllEvents(schoolId);
+    const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+    const events = await AnnouncementModel.getAllEvents(schoolId, branchId);
     return res.status(200).json({ success: true, data: events, events });
   } catch (err) {
     console.error('Error in getTeacherEvents:', err);
@@ -100,8 +106,9 @@ exports.getTeacherEvents = async (req, res) => {
 exports.getTeacherEventById = async (req, res) => {
   try {
     const schoolId = getTeacherSchoolId(req);
+    const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
     const { id } = req.params;
-    const event = await AnnouncementModel.getEventById(id, schoolId);
+    const event = await AnnouncementModel.getEventById(id, schoolId, branchId);
     if (!event) {
       return res.status(404).json({ success: false, message: 'Event not found' });
     }
@@ -116,7 +123,8 @@ exports.getTeacherEventById = async (req, res) => {
 exports.getTeacherHolidays = async (req, res) => {
   try {
     const schoolId = getTeacherSchoolId(req);
-    const holidays = await AnnouncementModel.getAllHolidays(schoolId);
+    const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+    const holidays = await AnnouncementModel.getAllHolidays(schoolId, branchId);
     return res.status(200).json({ success: true, data: holidays, holidays });
   } catch (err) {
     console.error('Error in getTeacherHolidays:', err);
@@ -127,8 +135,9 @@ exports.getTeacherHolidays = async (req, res) => {
 exports.getTeacherHolidayById = async (req, res) => {
   try {
     const schoolId = getTeacherSchoolId(req);
+    const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
     const { id } = req.params;
-    const holiday = await AnnouncementModel.getHolidayById(id, schoolId);
+    const holiday = await AnnouncementModel.getHolidayById(id, schoolId, branchId);
     if (!holiday) {
       return res.status(404).json({ success: false, message: 'Holiday not found' });
     }

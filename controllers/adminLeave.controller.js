@@ -18,9 +18,10 @@ class AdminLeaveController {
   static async getLeaveById(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { id } = req.params;
 
-      const leave = await LeaveModel.getLeaveById(schoolId, id);
+      const leave = await LeaveModel.getLeaveById(schoolId, id, branchId);
       if (!leave) {
         return ApiResponse.error(res, 'Leave record not found.', null, 404);
       }
@@ -90,6 +91,7 @@ class AdminLeaveController {
   static async updateLeaveStatus(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { id } = req.params;
       const { status } = req.body;
 
@@ -97,7 +99,7 @@ class AdminLeaveController {
         return ApiResponse.error(res, 'Status is required.', null, 400);
       }
 
-      await LeaveModel.updateLeaveStatus(schoolId, id, Number(status));
+      await LeaveModel.updateLeaveStatus(schoolId, id, Number(status), branchId);
       return ApiResponse.success(res, 'Leave status updated successfully.');
     } catch (error) {
       if (error.statusCode === 400 || error.message.startsWith('Cannot approve')) {
@@ -110,6 +112,7 @@ class AdminLeaveController {
   static async updateLeaveDateStatus(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { dateId } = req.params;
       const { status } = req.body;
 
@@ -117,7 +120,7 @@ class AdminLeaveController {
         return ApiResponse.error(res, 'Status is required.', null, 400);
       }
 
-      await LeaveModel.updateLeaveDateStatus(schoolId, dateId, Number(status));
+      await LeaveModel.updateLeaveDateStatus(schoolId, dateId, Number(status), branchId);
       return ApiResponse.success(res, 'Leave date status updated successfully.');
     } catch (error) {
       if (error.statusCode === 400 || error.message.startsWith('Cannot approve')) {
@@ -234,9 +237,10 @@ class AdminLeaveController {
   static async deleteLeave(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { id } = req.params;
 
-      await LeaveModel.deleteLeave(schoolId, id);
+      await LeaveModel.deleteLeave(schoolId, id, branchId);
       return ApiResponse.success(res, 'Leave application deleted successfully.');
     } catch (error) {
       next(error);
