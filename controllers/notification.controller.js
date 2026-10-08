@@ -68,8 +68,11 @@ class NotificationController {
 
       const userAgent = req.headers['user-agent'] || null;
 
+      const branchId = req.user?.branch_id || req.user?.branchId || req.branchId || null;
+
       const result = await DeviceTokenModel.registerToken({
         school_id: schoolId,
+        branch_id: branchId,
         user_id: userId,
         role,
         device_type: String(device_type).toLowerCase(),

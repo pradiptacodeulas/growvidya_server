@@ -88,13 +88,14 @@ class AdminExaminationModel {
     return rows[0] || null;
   }
 
-  static async createGrade({ schoolId, gradeName, minPercentage, maxPercentage, status }) {
+  static async createGrade({ schoolId, branchId, gradeName, minPercentage, maxPercentage, status }) {
     const query = `
-      INSERT INTO grade_settings (school_id, grade_name, min_percentage, max_percentage, status, created_on)
-      VALUES (?, ?, ?, ?, ?, NOW())
+      INSERT INTO grade_settings (school_id, branch_id, grade_name, min_percentage, max_percentage, status, created_on)
+      VALUES (?, ?, ?, ?, ?, ?, NOW())
     `;
     const [result] = await pool.query(query, [
       schoolId,
+      branchId ? Number(branchId) : null,
       gradeName,
       minPercentage,
       maxPercentage,
@@ -212,17 +213,18 @@ class AdminExaminationModel {
     return rows[0] || null;
   }
 
-  static async createExam({ schoolId, academicYear, examName, status }) {
+  static async createExam({ schoolId, branchId, academicYear, examName, status }) {
     let resolvedYear = academicYear ? parseInt(academicYear, 10) : null;
     if (!resolvedYear) {
       resolvedYear = await AdminExaminationModel.getCurrentAcademicYearId(schoolId);
     }
     const query = `
-      INSERT INTO exam_master (school_id, academic_year, exam, status, created_on)
-      VALUES (?, ?, ?, ?, NOW())
+      INSERT INTO exam_master (school_id, branch_id, academic_year, exam, status, created_on)
+      VALUES (?, ?, ?, ?, ?, NOW())
     `;
     const [result] = await pool.query(query, [
       schoolId,
+      branchId ? Number(branchId) : null,
       resolvedYear,
       examName,
       status !== undefined ? parseInt(status, 10) : 1,
@@ -352,17 +354,18 @@ class AdminExaminationModel {
     return rows[0] || null;
   }
 
-  static async createExamType({ schoolId, academicYear, examId, examType, sortOrder, status }) {
+  static async createExamType({ schoolId, branchId, academicYear, examId, examType, sortOrder, status }) {
     let resolvedYear = academicYear ? parseInt(academicYear, 10) : null;
     if (!resolvedYear) {
       resolvedYear = await AdminExaminationModel.getCurrentAcademicYearId(schoolId, examId);
     }
     const query = `
-      INSERT INTO exam_type_master (school_id, academic_year, exam_id, exam_type, sort_order, status, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, NOW())
+      INSERT INTO exam_type_master (school_id, branch_id, academic_year, exam_id, exam_type, sort_order, status, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
     `;
     const [result] = await pool.query(query, [
       schoolId,
+      branchId ? Number(branchId) : null,
       resolvedYear,
       examId,
       examType,
@@ -694,7 +697,7 @@ class AdminExaminationModel {
     };
   }
 
-  static async saveExamSubjectConfig({ schoolId, examId, classId, items }) {
+  static async saveExamSubjectConfig({ schoolId, branchId, examId, classId, items }) {
     // Security check: Lock pattern if exam is conducted / marks recorded
     const lockStatus = await AdminExaminationModel.isExamPatternLocked({ schoolId, examId, classId });
     if (lockStatus.isLocked) {
@@ -720,6 +723,15 @@ class AdminExaminationModel {
     try {
       await connection.beginTransaction();
 
+      let resolvedBranchId = branchId ? Number(branchId) : null;
+      if (!resolvedBranchId) {
+        const [eRows] = await connection.query(
+          `SELECT branch_id FROM exam_master WHERE id = ?`,
+          [examId]
+        );
+        resolvedBranchId = eRows[0]?.branch_id || null;
+      }
+
       // 1. Get or create exam_subject_master
       const [existing] = await connection.query(
         `SELECT id FROM exam_subject_master WHERE exam_id = ? AND class_id = ? AND school_id = ?`,
@@ -729,11 +741,15 @@ class AdminExaminationModel {
       let examSubjectId;
       if (existing.length > 0) {
         examSubjectId = existing[0].id;
-        await connection.query(`UPDATE exam_subject_master SET status = 1 WHERE id = ?`, [examSubjectId]);
+        if (resolvedBranchId) {
+          await connection.query(`UPDATE exam_subject_master SET status = 1, branch_id = COALESCE(branch_id, ?) WHERE id = ?`, [resolvedBranchId, examSubjectId]);
+        } else {
+          await connection.query(`UPDATE exam_subject_master SET status = 1 WHERE id = ?`, [examSubjectId]);
+        }
       } else {
         const [ins] = await connection.query(
-          `INSERT INTO exam_subject_master (school_id, exam_id, class_id, status, created_at) VALUES (?, ?, ?, 1, NOW())`,
-          [schoolId, examId, classId]
+          `INSERT INTO exam_subject_master (school_id, branch_id, exam_id, class_id, status, created_at) VALUES (?, ?, ?, ?, 1, NOW())`,
+          [schoolId, resolvedBranchId, examId, classId]
         );
         examSubjectId = ins.insertId;
       }
@@ -744,6 +760,7 @@ class AdminExaminationModel {
       // 3. Bulk insert new configured marks
       const values = validItems.map((it) => [
         schoolId,
+        resolvedBranchId,
         examSubjectId,
         it.subjectId || it.subject_id,
         1,
@@ -754,7 +771,7 @@ class AdminExaminationModel {
       ]);
 
       const insertQuery = `
-        INSERT INTO exam_subject_marks (school_id, exam_subject_id, subject_id, is_check, exam_type_id, mark, status, created_on)
+        INSERT INTO exam_subject_marks (school_id, branch_id, exam_subject_id, subject_id, is_check, exam_type_id, mark, status, created_on)
         VALUES ?
       `;
       await connection.query(insertQuery, [values]);
@@ -1310,6 +1327,7 @@ class AdminExaminationModel {
 
   static async saveExamAttendanceBatch({
     schoolId,
+    branchId,
     academicYearId,
     examId,
     classId,
@@ -1324,6 +1342,15 @@ class AdminExaminationModel {
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
+
+      let resolvedBranchId = branchId ? Number(branchId) : null;
+      if (!resolvedBranchId) {
+        const [eRows] = await connection.query(
+          `SELECT branch_id FROM exam_master WHERE id = ?`,
+          [examId]
+        );
+        resolvedBranchId = eRows[0]?.branch_id || null;
+      }
 
       if (!subjectId) {
         throw new Error('Subject ID is required to save exam attendance.');
@@ -1441,17 +1468,18 @@ class AdminExaminationModel {
           // Update existing record
           await connection.query(
             `UPDATE exam_attendance 
-             SET attendance_status = ?, exam_schedule_id = ?, academic_year_id = ?
+             SET attendance_status = ?, exam_schedule_id = ?, academic_year_id = ?, branch_id = COALESCE(branch_id, ?)
              WHERE id = ?`,
-            [statusVal, resolvedScheduleId, resolvedYearId || 1, existingStudentAtt[0].id]
+            [statusVal, resolvedScheduleId, resolvedYearId || 1, resolvedBranchId, existingStudentAtt[0].id]
           );
         } else {
           // Insert new record
           await connection.query(
-            `INSERT INTO exam_attendance (school_id, exam_id, class_id, academic_year_id, student_id, subject_id, exam_schedule_id, attendance_status, status, created_on)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())`,
+            `INSERT INTO exam_attendance (school_id, branch_id, exam_id, class_id, academic_year_id, student_id, subject_id, exam_schedule_id, attendance_status, status, created_on)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())`,
             [
               schoolId,
+              resolvedBranchId,
               examId,
               classId,
               resolvedYearId || 1,
@@ -1717,10 +1745,19 @@ class AdminExaminationModel {
     };
   }
 
-  static async saveStudentMarksBatch({ schoolId, academicYearId, examId, classId, studentMarksList }) {
+  static async saveStudentMarksBatch({ schoolId, branchId, academicYearId, examId, classId, studentMarksList }) {
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
+
+      let resolvedBranchId = branchId ? Number(branchId) : null;
+      if (!resolvedBranchId) {
+        const [eRows] = await connection.query(
+          `SELECT branch_id FROM exam_master WHERE id = ?`,
+          [examId]
+        );
+        resolvedBranchId = eRows[0]?.branch_id || null;
+      }
 
       let resolvedYearId = academicYearId ? parseInt(academicYearId, 10) : null;
       if (!resolvedYearId) {
@@ -1747,11 +1784,14 @@ class AdminExaminationModel {
 
         if (existingResult.length > 0) {
           examResultId = existingResult[0].id;
+          if (resolvedBranchId) {
+            await connection.query(`UPDATE exam_result SET branch_id = COALESCE(branch_id, ?) WHERE id = ?`, [resolvedBranchId, examResultId]);
+          }
         } else {
           const [insResult] = await connection.query(
-            `INSERT INTO exam_result (school_id, academic_year_id, student_id, exam_id, class_id, status, created_on)
-             VALUES (?, ?, ?, ?, ?, 1, NOW())`,
-            [schoolId, resolvedYearId, studentId, examId, classId]
+            `INSERT INTO exam_result (school_id, branch_id, academic_year_id, student_id, exam_id, class_id, status, created_on)
+             VALUES (?, ?, ?, ?, ?, ?, 1, NOW())`,
+            [schoolId, resolvedBranchId, resolvedYearId, studentId, examId, classId]
           );
           examResultId = insResult.insertId;
         }
@@ -1790,10 +1830,11 @@ class AdminExaminationModel {
             }
 
             await connection.query(
-              `INSERT INTO exam_result_subject (school_id, exam_result_id, subject_id, exam_type_id, marks, grade_id, status, created_on)
-               VALUES (?, ?, ?, ?, ?, ?, 1, NOW())`,
+              `INSERT INTO exam_result_subject (school_id, branch_id, exam_result_id, subject_id, exam_type_id, marks, grade_id, status, created_on)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 1, NOW())`,
               [
                 schoolId,
+                resolvedBranchId,
                 examResultId,
                 sm.subjectId,
                 sm.examTypeId || null,

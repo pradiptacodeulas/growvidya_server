@@ -33,6 +33,7 @@ class AdminMiscSettingController {
   static async createReligion(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.body?.branch_id || req.body?.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null;
       const { religion, sort_order = 1, status = 1 } = req.body;
 
       if (!religion || !String(religion).trim()) {
@@ -40,6 +41,7 @@ class AdminMiscSettingController {
       }
 
       const newId = await MiscSettingModel.createReligion(schoolId, {
+        branch_id: branchId,
         religion: String(religion).trim(),
         sort_order,
         status,
@@ -122,6 +124,7 @@ class AdminMiscSettingController {
   static async createMotherTongue(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.body?.branch_id || req.body?.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null;
       const { mother_tongue, sort_order = 1, status = 1 } = req.body;
 
       if (!mother_tongue || !String(mother_tongue).trim()) {
@@ -129,6 +132,7 @@ class AdminMiscSettingController {
       }
 
       const newId = await MiscSettingModel.createMotherTongue(schoolId, {
+        branch_id: branchId,
         mother_tongue: String(mother_tongue).trim(),
         sort_order,
         status,
@@ -238,6 +242,7 @@ class AdminMiscSettingController {
   static async createCategory(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.body?.branch_id || req.body?.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null;
       const { category, sort_order = 1, status = 1 } = req.body;
 
       if (!category || !String(category).trim()) {
@@ -245,6 +250,7 @@ class AdminMiscSettingController {
       }
 
       const newId = await MiscSettingModel.createCategory(schoolId, {
+        branch_id: branchId,
         category: String(category).trim(),
         sort_order,
         status,

@@ -274,9 +274,9 @@ class LeaveModel {
       for (const d of dates) {
         if (d) {
           await pool.query(
-            `INSERT INTO leaves_date (school_id, staff_leave_id, date, status)
-             VALUES (?, ?, ?, 1)`,
-            [schoolId, leaveId, d]
+            `INSERT INTO leaves_date (school_id, branch_id, staff_leave_id, date, status)
+             VALUES (?, ?, ?, ?, 1)`,
+            [schoolId, resolvedBranchId, leaveId, d]
           );
         }
       }
@@ -510,17 +510,22 @@ class LeaveModel {
   /**
    * Create Leave Type Master (Single or Batch)
    */
-  static async createLeaveType(schoolId, data) {
+  static async createLeaveType(schoolId, data, branchId = null) {
+    const finalBranchId = data.branch_id !== undefined && data.branch_id !== null
+      ? Number(data.branch_id)
+      : (data.branchId ? Number(data.branchId) : (branchId ? Number(branchId) : null));
+
     if (Array.isArray(data.leaveRows) && data.leaveRows.length > 0) {
       const role = Number(data.role || 1);
       const ids = [];
       for (const row of data.leaveRows) {
         if (row.leave_name && row.leave_name.trim()) {
           const [res] = await pool.query(
-            `INSERT INTO leave_master (school_id, role, leave_name, need_document, no_leave, sort_order, status)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO leave_master (school_id, branch_id, role, leave_name, need_document, no_leave, sort_order, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               schoolId,
+              finalBranchId,
               role,
               row.leave_name.trim(),
               Number(row.need_document || 0),
@@ -536,10 +541,11 @@ class LeaveModel {
     } else {
       const { role, leave_name, need_document, no_leave, sort_order, status } = data;
       const [res] = await pool.query(
-        `INSERT INTO leave_master (school_id, role, leave_name, need_document, no_leave, sort_order, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO leave_master (school_id, branch_id, role, leave_name, need_document, no_leave, sort_order, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           schoolId,
+          finalBranchId,
           Number(role || 1),
           leave_name,
           Number(need_document || 0),

@@ -259,17 +259,8 @@ class StaffModel {
 
     const hashedPassword = data.password ? await hashPassword(data.password) : null;
 
-    // Resolve branch_id if provided or default to main branch for the school
-    let branchId = data.branch_id ? Number(data.branch_id) : null;
-    if (!branchId) {
-      try {
-        const [mainB] = await pool.query(
-          `SELECT id FROM branch_master WHERE school_id = ? AND is_main_branch = 1 LIMIT 1`,
-          [schoolId]
-        );
-        if (mainB && mainB.length > 0) branchId = mainB[0].id;
-      } catch (bErr) {}
-    }
+    // Resolve branch_id strictly if provided
+    let branchId = data.branch_id ? Number(data.branch_id) : (data.branchId ? Number(data.branchId) : null);
 
     const sql = `
       INSERT INTO user_master (
@@ -304,10 +295,11 @@ class StaffModel {
     if (data.account_name || data.account_number || data.bank_name || data.ifsc_code || data.branch_name) {
       try {
         await pool.query(
-          `INSERT INTO user_bank (school_id, user_id, account_name, account_number, bank_name, ifsc_code, branch_name, status, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 1, NOW())`,
+          `INSERT INTO user_bank (school_id, branch_id, user_id, account_name, account_number, bank_name, ifsc_code, branch_name, status, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())`,
           [
             schoolId,
+            branchId,
             userId,
             data.account_name || `${data.first_name} ${data.last_name}`,
             data.account_number || '',
@@ -325,10 +317,11 @@ class StaffModel {
     if (data.route || data.vehicle_number || data.pickup_point || data.drop_point) {
       try {
         await pool.query(
-          `INSERT INTO user_transport (school_id, user_id, route, vehicle_number, pickup_point, drop_point, staus, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, 1, NOW())`,
+          `INSERT INTO user_transport (school_id, branch_id, user_id, route, vehicle_number, pickup_point, drop_point, staus, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 1, NOW())`,
           [
             schoolId,
+            branchId,
             userId,
             data.route || null,
             data.vehicle_number || null,
@@ -345,10 +338,11 @@ class StaffModel {
     if (data.hostel_name || data.room_no || data.room_number) {
       try {
         await pool.query(
-          `INSERT INTO user_hostel (school_id, user_id, hostel_name, room_number, status, created_at)
-           VALUES (?, ?, ?, ?, 1, NOW())`,
+          `INSERT INTO user_hostel (school_id, branch_id, user_id, hostel_name, room_number, status, created_at)
+           VALUES (?, ?, ?, ?, ?, 1, NOW())`,
           [
             schoolId,
+            branchId,
             userId,
             data.hostel_name || null,
             data.room_no || data.room_number || null,
@@ -371,10 +365,11 @@ class StaffModel {
 
         try {
           await pool.query(
-            `INSERT INTO user_document (school_id, user_id, document_type, attachments, status, created_at)
-             VALUES (?, ?, ?, ?, 1, NOW())`,
+            `INSERT INTO user_document (school_id, branch_id, user_id, document_type, attachments, status, created_at)
+             VALUES (?, ?, ?, ?, ?, 1, NOW())`,
             [
               schoolId,
+              branchId,
               userId,
               doc.document_type || null,
               docPath || doc.attachments || doc.file_name || '',
@@ -473,6 +468,14 @@ class StaffModel {
 
     await pool.query(sql, params);
 
+    let staffBranchId = data.branch_id ? Number(data.branch_id) : (data.branchId ? Number(data.branchId) : null);
+    if (!staffBranchId) {
+      try {
+        const [uRow] = await pool.query('SELECT branch_id FROM user_master WHERE id = ? LIMIT 1', [id]);
+        if (uRow.length && uRow[0].branch_id) staffBranchId = uRow[0].branch_id;
+      } catch (e) {}
+    }
+
     // 1. Bank
     if (data.account_number !== undefined || data.bank_name !== undefined || data.account_name !== undefined) {
       try {
@@ -493,10 +496,11 @@ class StaffModel {
           );
         } else if (data.account_number || data.bank_name || data.account_name) {
           await pool.query(
-            `INSERT INTO user_bank (school_id, user_id, account_name, account_number, bank_name, ifsc_code, branch_name, status, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, 1, NOW())`,
+            `INSERT INTO user_bank (school_id, branch_id, user_id, account_name, account_number, bank_name, ifsc_code, branch_name, status, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())`,
             [
               schoolId,
+              staffBranchId,
               id,
               data.account_name || `${data.first_name || existing.first_name} ${data.last_name || existing.last_name}`,
               data.account_number || '',
@@ -522,9 +526,9 @@ class StaffModel {
           );
         } else if (data.route || data.vehicle_number || data.pickup_point || data.drop_point) {
           await pool.query(
-            `INSERT INTO user_transport (school_id, user_id, route, vehicle_number, pickup_point, drop_point, staus, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, 1, NOW())`,
-            [schoolId, id, data.route || null, data.vehicle_number || null, data.pickup_point || '', data.drop_point || '']
+            `INSERT INTO user_transport (school_id, branch_id, user_id, route, vehicle_number, pickup_point, drop_point, staus, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, 1, NOW())`,
+            [schoolId, staffBranchId, id, data.route || null, data.vehicle_number || null, data.pickup_point || '', data.drop_point || '']
           );
         }
       } catch (err) {
@@ -543,9 +547,9 @@ class StaffModel {
           );
         } else if (data.hostel_name || data.room_no || data.room_number) {
           await pool.query(
-            `INSERT INTO user_hostel (school_id, user_id, hostel_name, room_number, status, created_at)
-             VALUES (?, ?, ?, ?, 1, NOW())`,
-            [schoolId, id, data.hostel_name || null, data.room_no || data.room_number || null]
+            `INSERT INTO user_hostel (school_id, branch_id, user_id, hostel_name, room_number, status, created_at)
+             VALUES (?, ?, ?, ?, ?, 1, NOW())`,
+            [schoolId, staffBranchId, id, data.hostel_name || null, data.room_no || data.room_number || null]
           );
         }
       } catch (err) {
@@ -570,9 +574,9 @@ class StaffModel {
         if (!doc.id) {
           try {
             await pool.query(
-              `INSERT INTO user_document (school_id, user_id, document_type, attachments, status, created_at)
-               VALUES (?, ?, ?, ?, 1, NOW())`,
-              [schoolId, id, doc.document_type || null, doc.attachments || doc.file_name || '']
+              `INSERT INTO user_document (school_id, branch_id, user_id, document_type, attachments, status, created_at)
+               VALUES (?, ?, ?, ?, ?, 1, NOW())`,
+              [schoolId, staffBranchId, id, doc.document_type || null, doc.attachments || doc.file_name || '']
             );
           } catch (err) {
             console.error('Error inserting new user_document:', err);

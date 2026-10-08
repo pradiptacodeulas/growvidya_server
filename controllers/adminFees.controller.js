@@ -143,7 +143,7 @@ class AdminFeesController {
   static async saveStructure(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
-      const branchId = req.body?.branch_id || req.branchId || req.query.branch_id || null;
+      const branchId = req.body?.branch_id || req.body?.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || req.query.branch_id || null;
       const {
         id,
         name,
@@ -342,6 +342,7 @@ class AdminFeesController {
   static async allocateStructureToStudents(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.body?.branch_id || req.body?.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null;
       const {
         academic_year_id,
         academicYearId,
@@ -363,6 +364,7 @@ class AdminFeesController {
 
       const count = await AdminFeesModel.allocateStructureToStudents({
         schoolId,
+        branchId,
         academicYearId: targetYearId,
         feeStructureId: targetStructureId,
         studentIds: targetStudentIds,

@@ -148,7 +148,7 @@ class AdminTeacherController {
         );
       }
 
-      const branchId = req.body.branch_id || req.body.branchId || req.branchId || null;
+      const branchId = req.body.branch_id || req.body.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null;
       const insertId = await TeacherModel.createTeacher(schoolId, {
         ...req.body,
         branch_id: branchId,
@@ -162,7 +162,7 @@ class AdminTeacherController {
   static async updateTeacher(req, res, next) {
     try {
       const schoolId = AdminTeacherController.getSchoolId(req);
-      const branchId = req.body.branch_id || req.body.branchId || undefined;
+      const branchId = req.body.branch_id || req.body.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || undefined;
       const updated = await TeacherModel.updateTeacher(req.params.id, schoolId, {
         ...req.body,
         ...(branchId !== undefined ? { branch_id: branchId } : {}),

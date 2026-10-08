@@ -36,7 +36,7 @@ class AdminLeaveController {
     try {
       const schoolId = req.user.schoolId;
       const { role, staff_id, leave_id, duration, document, leave_reason, dates } = req.body;
-      const branchId = req.body?.branch_id || req.branchId || null;
+      const branchId = req.body?.branch_id || req.body?.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null;
 
       if (!role || !staff_id || !leave_id || !duration) {
         return ApiResponse.error(res, 'Role, staff, leave type, and duration are required.', null, 400);
@@ -173,6 +173,7 @@ class AdminLeaveController {
   static async createLeaveType(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.body?.branch_id || req.body?.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null;
       const { role, leave_name, need_document, no_leave, sort_order, status, leaveRows } = req.body;
 
       if (!role) {
@@ -180,7 +181,7 @@ class AdminLeaveController {
       }
 
       if (Array.isArray(leaveRows) && leaveRows.length > 0) {
-        const ids = await LeaveModel.createLeaveType(schoolId, { role, leaveRows });
+        const ids = await LeaveModel.createLeaveType(schoolId, { branch_id: branchId, role, leaveRows });
         return ApiResponse.success(res, 'Leave assignments created successfully.', { ids }, 201);
       }
 
@@ -189,6 +190,7 @@ class AdminLeaveController {
       }
 
       const id = await LeaveModel.createLeaveType(schoolId, {
+        branch_id: branchId,
         role,
         leave_name,
         need_document,

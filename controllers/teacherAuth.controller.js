@@ -595,9 +595,12 @@ class TeacherAuthController {
           const addr2 = address2 !== undefined ? (address2 ? String(address2).trim() : '') : (existingTeacher.address2 || '');
           const samePermanent = req.body.same_permanent !== undefined ? (Number(req.body.same_permanent) === 0 ? 0 : 1) : 1;
 
+          const teacherBranchId = req.user?.branch_id || req.user?.branchId || existingTeacher.branch_id || null;
+
           if (addrRows && addrRows.length > 0) {
             const addrUpdates = [];
             const addrParams = [];
+
             if (address1 !== undefined) {
               addrUpdates.push('address1 = ?');
               addrParams.push(addr1);
@@ -637,10 +640,11 @@ class TeacherAuthController {
           } else {
             await pool.query(
               `INSERT INTO teacher_address 
-               (school_id, teacher_id, address1, address2, country, state, city, postal_code, same_permanent, address_type, status)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)`,
+               (school_id, branch_id, teacher_id, address1, address2, country, state, city, postal_code, same_permanent, address_type, status)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)`,
               [
                 schoolId || existingTeacher.school_id,
+                teacherBranchId,
                 teacherId,
                 addr1,
                 addr2,
@@ -677,9 +681,9 @@ class TeacherAuthController {
               );
             } else {
               await pool.query(
-                `INSERT INTO teacher_address (school_id, teacher_id, address1, address2, country, state, city, postal_code, same_permanent, address_type, status)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 2, 1)`,
-                [schoolId || existingTeacher.school_id, teacherId, pAddr1, pAddr2, cleanPermCountry, cleanPermState, cleanPermCity, cleanPermPostal]
+                `INSERT INTO teacher_address (school_id, branch_id, teacher_id, address1, address2, country, state, city, postal_code, same_permanent, address_type, status)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 2, 1)`,
+                [schoolId || existingTeacher.school_id, teacherBranchId, teacherId, pAddr1, pAddr2, cleanPermCountry, cleanPermState, cleanPermCity, cleanPermPostal]
               );
             }
           }

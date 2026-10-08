@@ -689,17 +689,8 @@ class StudentModel {
     }
     const studentHashedPassword = defaultPlainPassword ? await hashPassword(defaultPlainPassword) : null;
 
-    // Resolve branch_id if provided or default to main branch for the school
-    let branchId = data.branch_id ? Number(data.branch_id) : null;
-    if (!branchId) {
-      try {
-        const [mainB] = await pool.query(
-          `SELECT id FROM branch_master WHERE school_id = ? AND is_main_branch = 1 LIMIT 1`,
-          [data.school_id]
-        );
-        if (mainB && mainB.length > 0) branchId = mainB[0].id;
-      } catch (bErr) {}
-    }
+    // Resolve branch_id if provided
+    const branchId = data.branch_id || data.branchId ? Number(data.branch_id || data.branchId) : null;
 
     const sql = `
       INSERT INTO student_master (
@@ -746,7 +737,7 @@ class StudentModel {
            VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
           [
             data.school_id,
-            data.branch_id || null,
+            branchId,
             studentId,
             data.transport_info.route || null,
             data.transport_info.vehicle_number || 0,
@@ -762,10 +753,11 @@ class StudentModel {
     if (data.hostel_required === '1' && data.hostel_info && data.hostel_info.hostel_name) {
       try {
         await pool.execute(
-          `INSERT INTO student_hostel (school_id, student_id, hostel_name, room_number, academic_year, status)
-           VALUES (?, ?, ?, ?, ?, 1)`,
+          `INSERT INTO student_hostel (school_id, branch_id, student_id, hostel_name, room_number, academic_year, status)
+           VALUES (?, ?, ?, ?, ?, ?, 1)`,
           [
             data.school_id,
+            branchId,
             studentId,
             data.hostel_info.hostel_name || null,
             data.hostel_info.hostel_room || null,
@@ -792,10 +784,11 @@ class StudentModel {
             }
           }
           await pool.execute(
-            `INSERT INTO student_medical_history (school_id, student_id, medical_condition, description, medical_time, is_informed, status)
-             VALUES (?, ?, ?, ?, ?, ?, 1)`,
+            `INSERT INTO student_medical_history (school_id, branch_id, student_id, medical_condition, description, medical_time, is_informed, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
             [
               data.school_id,
+              branchId,
               studentId,
               med.medical_condition || 1,
               med.description || '',
@@ -813,10 +806,11 @@ class StudentModel {
     if (prevSchool && (prevSchool.previous_school_name || prevSchool.school_name)) {
       try {
         await pool.execute(
-          `INSERT INTO previous_school_address (school_id, student_id, school_name, address1, address2, country, state, city, postal_code)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO previous_school_address (school_id, branch_id, student_id, school_name, address1, address2, country, state, city, postal_code)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             data.school_id,
+            branchId,
             studentId,
             prevSchool.previous_school_name || prevSchool.school_name || '',
             prevSchool.prev_school_address_1 || prevSchool.address1 || '',
@@ -840,10 +834,11 @@ class StudentModel {
           const rawDoc = doc.attachments || doc.file_url || doc.file_name || '';
           const savedDocPath = saveBase64File(rawDoc, 'student/attachment', 'Attachment');
           await pool.execute(
-            `INSERT INTO student_document (school_id, student_id, document_type, attachments, file_name, status, created_at)
-             VALUES (?, ?, ?, ?, ?, 1, NOW())`,
+            `INSERT INTO student_document (school_id, branch_id, student_id, document_type, attachments, file_name, status, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, 1, NOW())`,
             [
               data.school_id,
+              branchId,
               studentId,
               doc.document_type || 1,
               savedDocPath,
@@ -860,7 +855,7 @@ class StudentModel {
     await StudentModel.syncParents(studentId, data.school_id, data);
 
     // Sync student addresses
-    await StudentModel.syncAddresses(studentId, data.school_id, data);
+    await StudentModel.syncAddresses(studentId, data.school_id, data, branchId);
 
     return studentId;
   }
@@ -943,7 +938,7 @@ class StudentModel {
             [data.transport_info.route, data.transport_info.pickup_point || '', data.transport_info.drop_point || '', existingTransport[0].id]
           );
         } else {
-          let studentBranchId = data.branch_id || null;
+          let studentBranchId = data.branch_id || data.branchId || null;
           if (!studentBranchId) {
             try {
               const [stRow] = await pool.query('SELECT branch_id FROM student_master WHERE id = ? LIMIT 1', [id]);
@@ -969,6 +964,15 @@ class StudentModel {
       }
     }
 
+    let studentBranchId = data.branch_id || data.branchId || null;
+    if (!studentBranchId) {
+      try {
+        const [stRow] = await pool.query('SELECT branch_id FROM student_master WHERE id = ? LIMIT 1', [id]);
+        if (stRow.length && stRow[0].branch_id) studentBranchId = stRow[0].branch_id;
+      } catch (e) {}
+    }
+    if (studentBranchId) data.branch_id = studentBranchId;
+
     // Handle Hostel update
     if (data.hostel_required === '1' && data.hostel_info && data.hostel_info.hostel_name) {
       try {
@@ -983,8 +987,8 @@ class StudentModel {
           );
         } else {
           await pool.execute(
-            `INSERT INTO student_hostel (school_id, student_id, hostel_name, room_number, academic_year, status) VALUES (?, ?, ?, ?, ?, 1)`,
-            [schoolId, id, data.hostel_info.hostel_name, data.hostel_info.hostel_room || null, data.academic_year || null]
+            `INSERT INTO student_hostel (school_id, branch_id, student_id, hostel_name, room_number, academic_year, status) VALUES (?, ?, ?, ?, ?, ?, 1)`,
+            [schoolId, studentBranchId, id, data.hostel_info.hostel_name, data.hostel_info.hostel_room || null, data.academic_year || null]
           );
         }
       } catch (hostelErr) {
@@ -1017,10 +1021,11 @@ class StudentModel {
             }
           }
           await pool.execute(
-            `INSERT INTO student_medical_history (school_id, student_id, medical_condition, description, medical_time, is_informed, status)
-             VALUES (?, ?, ?, ?, ?, ?, 1)`,
+            `INSERT INTO student_medical_history (school_id, branch_id, student_id, medical_condition, description, medical_time, is_informed, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
             [
               schoolId,
+              studentBranchId,
               id,
               med.medical_condition || 1,
               med.description || '',
@@ -1066,10 +1071,11 @@ class StudentModel {
           );
         } else if (prevSchool.previous_school_name || prevSchool.school_name) {
           await pool.execute(
-            `INSERT INTO previous_school_address (school_id, student_id, school_name, address1, address2, country, state, city, postal_code)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO previous_school_address (school_id, branch_id, student_id, school_name, address1, address2, country, state, city, postal_code)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               schoolId,
+              studentBranchId,
               id,
               prevSchool.previous_school_name || prevSchool.school_name || '',
               prevSchool.prev_school_address_1 || prevSchool.address1 || '',
@@ -1098,10 +1104,11 @@ class StudentModel {
           const rawDoc = doc.attachments || doc.file_url || doc.file_name || '';
           const savedDocPath = saveBase64File(rawDoc, 'student/attachment', 'Attachment');
           await pool.execute(
-            `INSERT INTO student_document (school_id, student_id, document_type, attachments, file_name, status, created_at)
-             VALUES (?, ?, ?, ?, ?, 1, NOW())`,
+            `INSERT INTO student_document (school_id, branch_id, student_id, document_type, attachments, file_name, status, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, 1, NOW())`,
             [
               schoolId,
+              studentBranchId,
               id,
               doc.document_type || 1,
               savedDocPath,
@@ -1118,7 +1125,7 @@ class StudentModel {
     await StudentModel.syncParents(id, schoolId, data);
 
     // Update student addresses
-    await StudentModel.syncAddresses(id, schoolId, data);
+    await StudentModel.syncAddresses(id, schoolId, data, studentBranchId);
 
     return true;
   }
@@ -1128,6 +1135,14 @@ class StudentModel {
       let fatherId = null;
       let motherId = null;
       let guardianId = null;
+
+      let studentBranchId = data.branch_id || data.branchId || null;
+      if (!studentBranchId) {
+        try {
+          const [stRow] = await pool.query('SELECT branch_id FROM student_master WHERE id = ? LIMIT 1', [studentId]);
+          if (stRow.length && stRow[0].branch_id) studentBranchId = stRow[0].branch_id;
+        } catch (e) {}
+      }
 
       // Check existing student_to_parent record
       const [stpRows] = await pool.execute(
@@ -1175,9 +1190,9 @@ class StudentModel {
             );
           } else {
             await pool.execute(
-              `INSERT INTO parent_master_address (school_id, parent_id, parent_type, country, state, city, postal_code, address1, address2, created_at)
-               VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, NOW())`,
-              [schoolId, fatherId, fCountry, fState, fCity, fPostal, fAddr1, fAddr2]
+              `INSERT INTO parent_master_address (school_id, branch_id, parent_id, parent_type, country, state, city, postal_code, address1, address2, created_at)
+               VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, NOW())`,
+              [schoolId, studentBranchId, fatherId, fCountry, fState, fCity, fPostal, fAddr1, fAddr2]
             );
           }
         } else {
@@ -1208,9 +1223,9 @@ class StudentModel {
             const fPlainPass = (fPhone && String(fPhone).trim()) ? String(fPhone).trim() : null;
             const hashedFatherPass = fPlainPass ? await hashPassword(fPlainPass) : null;
             const [fRes] = await pool.execute(
-              `INSERT INTO parent_master (school_id, first_name, last_name, phone, email, occupation, relation, parent_type, picture, password, status, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, 'Father', 1, ?, ?, 1, NOW())`,
-              [schoolId, fFirst, fLast, fPhone, fEmail, fOcc, fatherPic, hashedFatherPass]
+              `INSERT INTO parent_master (school_id, branch_id, first_name, last_name, phone, email, occupation, relation, parent_type, picture, password, status, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 'Father', 1, ?, ?, 1, NOW())`,
+              [schoolId, studentBranchId, fFirst, fLast, fPhone, fEmail, fOcc, fatherPic, hashedFatherPass]
             );
             fatherId = fRes.insertId;
             const fCountry = fInfo.father_country || data.father_country || null;
@@ -1220,9 +1235,9 @@ class StudentModel {
             const fAddr1 = fInfo.father_address_1 || data.father_address_1 || '';
             const fAddr2 = fInfo.father_address_2 || data.father_address_2 || '';
             await pool.execute(
-              `INSERT INTO parent_master_address (school_id, parent_id, parent_type, country, state, city, postal_code, address1, address2, created_at)
-               VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, NOW())`,
-              [schoolId, fatherId, fCountry, fState, fCity, fPostal, fAddr1, fAddr2]
+              `INSERT INTO parent_master_address (school_id, branch_id, parent_id, parent_type, country, state, city, postal_code, address1, address2, created_at)
+               VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, NOW())`,
+              [schoolId, studentBranchId, fatherId, fCountry, fState, fCity, fPostal, fAddr1, fAddr2]
             );
           }
         }
@@ -1269,9 +1284,9 @@ class StudentModel {
             );
           } else {
             await pool.execute(
-              `INSERT INTO parent_master_address (school_id, parent_id, parent_type, country, state, city, postal_code, address1, address2, created_at)
-               VALUES (?, ?, 2, ?, ?, ?, ?, ?, ?, NOW())`,
-              [schoolId, motherId, mCountry, mState, mCity, mPostal, mAddr1, mAddr2]
+              `INSERT INTO parent_master_address (school_id, branch_id, parent_id, parent_type, country, state, city, postal_code, address1, address2, created_at)
+               VALUES (?, ?, ?, 2, ?, ?, ?, ?, ?, ?, NOW())`,
+              [schoolId, studentBranchId, motherId, mCountry, mState, mCity, mPostal, mAddr1, mAddr2]
             );
           }
         } else {
@@ -1302,9 +1317,9 @@ class StudentModel {
             const mPlainPass = (mPhone && String(mPhone).trim()) ? String(mPhone).trim() : null;
             const hashedMotherPass = mPlainPass ? await hashPassword(mPlainPass) : null;
             const [mRes] = await pool.execute(
-              `INSERT INTO parent_master (school_id, first_name, last_name, phone, email, occupation, relation, parent_type, picture, password, status, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, 'Mother', 2, ?, ?, 1, NOW())`,
-              [schoolId, mFirst, mLast, mPhone, mEmail, mOcc, motherPic, hashedMotherPass]
+              `INSERT INTO parent_master (school_id, branch_id, first_name, last_name, phone, email, occupation, relation, parent_type, picture, password, status, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 'Mother', 2, ?, ?, 1, NOW())`,
+              [schoolId, studentBranchId, mFirst, mLast, mPhone, mEmail, mOcc, motherPic, hashedMotherPass]
             );
             motherId = mRes.insertId;
             const mCountry = mInfo.mother_country || data.mother_country || null;
@@ -1314,9 +1329,9 @@ class StudentModel {
             const mAddr1 = mInfo.mother_address_1 || data.mother_address_1 || '';
             const mAddr2 = mInfo.mother_address_2 || data.mother_address_2 || '';
             await pool.execute(
-              `INSERT INTO parent_master_address (school_id, parent_id, parent_type, country, state, city, postal_code, address1, address2, created_at)
-               VALUES (?, ?, 2, ?, ?, ?, ?, ?, ?, NOW())`,
-              [schoolId, motherId, mCountry, mState, mCity, mPostal, mAddr1, mAddr2]
+              `INSERT INTO parent_master_address (school_id, branch_id, parent_id, parent_type, country, state, city, postal_code, address1, address2, created_at)
+               VALUES (?, ?, ?, 2, ?, ?, ?, ?, ?, ?, NOW())`,
+              [schoolId, studentBranchId, motherId, mCountry, mState, mCity, mPostal, mAddr1, mAddr2]
             );
           }
         }
@@ -1356,9 +1371,9 @@ class StudentModel {
             const gPlainPass = (ogInfo.phone && String(ogInfo.phone).trim()) ? String(ogInfo.phone).trim() : null;
             const hashedGuardianPass = gPlainPass ? await hashPassword(gPlainPass) : null;
             const [gRes] = await pool.execute(
-              `INSERT INTO parent_master (school_id, first_name, last_name, phone, email, occupation, relation, parent_type, password, status, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 3, ?, 1, NOW())`,
-              [schoolId, ogInfo.first_name || '', ogInfo.last_name || '', ogInfo.phone || null, ogInfo.email || null, ogInfo.occupation || null, ogInfo.relation || 'Guardian', hashedGuardianPass]
+              `INSERT INTO parent_master (school_id, branch_id, first_name, last_name, phone, email, occupation, relation, parent_type, password, status, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 3, ?, 1, NOW())`,
+              [schoolId, studentBranchId, ogInfo.first_name || '', ogInfo.last_name || '', ogInfo.phone || null, ogInfo.email || null, ogInfo.occupation || null, ogInfo.relation || 'Guardian', hashedGuardianPass]
             );
             guardianId = gRes.insertId;
           }
@@ -1371,14 +1386,14 @@ class StudentModel {
       if (fatherId || motherId || guardianId) {
         if (existingStp) {
           await pool.execute(
-            `UPDATE student_to_parent SET father_id = ?, mother_id = ?, guardian_id = ?, status = 1 WHERE id = ?`,
-            [fatherId, motherId, guardianId, existingStp.id]
+            `UPDATE student_to_parent SET father_id = ?, mother_id = ?, guardian_id = ?, branch_id = COALESCE(branch_id, ?), status = 1 WHERE id = ?`,
+            [fatherId, motherId, guardianId, studentBranchId ? Number(studentBranchId) : null, existingStp.id]
           );
         } else {
           await pool.execute(
-            `INSERT INTO student_to_parent (school_id, student_id, father_id, mother_id, guardian_id, status)
-             VALUES (?, ?, ?, ?, ?, 1)`,
-            [schoolId, studentId, fatherId, motherId, guardianId]
+            `INSERT INTO student_to_parent (school_id, branch_id, student_id, father_id, mother_id, guardian_id, status)
+             VALUES (?, ?, ?, ?, ?, ?, 1)`,
+            [schoolId, studentBranchId ? Number(studentBranchId) : null, studentId, fatherId, motherId, guardianId]
           );
         }
       }
@@ -1387,8 +1402,16 @@ class StudentModel {
     }
   }
 
-  static async syncAddresses(studentId, schoolId, data) {
+  static async syncAddresses(studentId, schoolId, data, branchId = null) {
     try {
+      let studentBranchId = branchId || data.branch_id || data.branchId || null;
+      if (!studentBranchId) {
+        try {
+          const [stRow] = await pool.query('SELECT branch_id FROM student_master WHERE id = ? LIMIT 1', [studentId]);
+          if (stRow.length && stRow[0].branch_id) studentBranchId = stRow[0].branch_id;
+        } catch (e) {}
+      }
+
       const cAddr = data.current_address || {};
       const samePerm = (data.same_permanent === true || data.same_permanent === 1 || data.same_permanent === '1') ? 1 : 0;
       const pAddr = samePerm ? cAddr : (data.permanent_address || {});
@@ -1416,18 +1439,18 @@ class StudentModel {
       // Insert Current Address (address_type = 1)
       if (cCountry || cState || cCity || cAddr1 || cPostal) {
         await pool.execute(
-          `INSERT INTO student_address (school_id, student_id, address_type, same_permanent, country, state, city, postal_code, address1, address2, created_at)
-           VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, NOW())`,
-          [schoolId, studentId, samePerm, cCountry, cState, cCity, cPostal, cAddr1, cAddr2]
+          `INSERT INTO student_address (school_id, branch_id, student_id, address_type, same_permanent, country, state, city, postal_code, address1, address2, created_at)
+           VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+          [schoolId, studentBranchId ? Number(studentBranchId) : null, studentId, samePerm, cCountry, cState, cCity, cPostal, cAddr1, cAddr2]
         );
       }
 
       // Insert Permanent Address (address_type = 2)
       if (pCountry || pState || pCity || pAddr1 || pPostal) {
         await pool.execute(
-          `INSERT INTO student_address (school_id, student_id, address_type, same_permanent, country, state, city, postal_code, address1, address2, created_at)
-           VALUES (?, ?, 2, ?, ?, ?, ?, ?, ?, ?, NOW())`,
-          [schoolId, studentId, samePerm, pCountry, pState, pCity, pPostal, pAddr1, pAddr2]
+          `INSERT INTO student_address (school_id, branch_id, student_id, address_type, same_permanent, country, state, city, postal_code, address1, address2, created_at)
+           VALUES (?, ?, ?, 2, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+          [schoolId, studentBranchId ? Number(studentBranchId) : null, studentId, samePerm, pCountry, pState, pCity, pPostal, pAddr1, pAddr2]
         );
       }
     } catch (addrErr) {

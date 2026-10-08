@@ -143,7 +143,8 @@ class AdminParentController {
         return ApiResponse.error(res, 'First name is required.', null, 400);
       }
 
-      const insertId = await ParentModel.create(schoolId, req.body || {});
+      const branchId = req.body?.branch_id || req.body?.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null;
+      const insertId = await ParentModel.create(schoolId, { ...(req.body || {}), branch_id: branchId });
 
       return ApiResponse.success(res, 'Parent registered successfully.', { id: insertId }, 201);
     } catch (error) {

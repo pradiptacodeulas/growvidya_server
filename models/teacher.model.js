@@ -850,17 +850,8 @@ class TeacherModel {
 
     const hashedPassword = password ? await hashPassword(password) : null;
 
-    // Resolve branch_id if provided or default to main branch for the school
-    let branchId = data.branch_id ? Number(data.branch_id) : null;
-    if (!branchId) {
-      try {
-        const [mainB] = await pool.query(
-          `SELECT id FROM branch_master WHERE school_id = ? AND is_main_branch = 1 LIMIT 1`,
-          [schoolId]
-        );
-        if (mainB && mainB.length > 0) branchId = mainB[0].id;
-      } catch (bErr) {}
-    }
+    // Resolve branch_id strictly if provided
+    let branchId = data.branch_id ? Number(data.branch_id) : (data.branchId ? Number(data.branchId) : null);
 
     const [result] = await pool.query(
       `INSERT INTO teacher_master 
@@ -910,10 +901,11 @@ class TeacherModel {
       try {
         await pool.query(
           `INSERT INTO teacher_address 
-           (school_id, teacher_id, address1, address2, country, state, city, postal_code, same_permanent, address_type, status)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)`,
+           (school_id, branch_id, teacher_id, address1, address2, country, state, city, postal_code, same_permanent, address_type, status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)`,
           [
             schoolId,
+            branchId,
             newId,
             current_address.address1 || '',
             current_address.address2 || '',
@@ -928,10 +920,11 @@ class TeacherModel {
         if (!same_permanent && permanent_address) {
           await pool.query(
             `INSERT INTO teacher_address 
-             (school_id, teacher_id, address1, address2, country, state, city, postal_code, same_permanent, address_type, status)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 2, 2)`,
+             (school_id, branch_id, teacher_id, address1, address2, country, state, city, postal_code, same_permanent, address_type, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 2, 2)`,
             [
               schoolId,
+              branchId,
               newId,
               permanent_address.address1 || '',
               permanent_address.address2 || '',
@@ -963,9 +956,9 @@ class TeacherModel {
         }
         for (const item of uniqueAssignments) {
           await pool.query(
-            `INSERT INTO teacher_class_assign (school_id, teacher_id, class_id, subject_id, academic_year, status)
-             VALUES (?, ?, ?, ?, ?, ?)`,
-            [schoolId, newId, item.class_id, item.subject_id || 0, academic_year || null, assignStatus]
+            `INSERT INTO teacher_class_assign (school_id, branch_id, teacher_id, class_id, subject_id, academic_year, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [schoolId, branchId, newId, item.class_id, item.subject_id || 0, academic_year || null, assignStatus]
           );
         }
       } catch (assignErr) {
@@ -978,10 +971,11 @@ class TeacherModel {
       try {
         await pool.query(
           `INSERT INTO teacher_payroll 
-           (school_id, teacher_id, academic_year, epf_no, basic_salary, contract_type, work_shift, work_location, date_of_leaving, status)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+           (school_id, branch_id, teacher_id, academic_year, epf_no, basic_salary, contract_type, work_shift, work_location, date_of_leaving, status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
           [
             schoolId,
+            branchId,
             newId,
             academic_year || null,
             payroll.epf_no || '',
@@ -1002,10 +996,11 @@ class TeacherModel {
       try {
         await pool.query(
           `INSERT INTO teacher_bank 
-           (school_id, teacher_id, academic_year, account_name, account_number, bank_name, ifsc_code, branch_name, status)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+           (school_id, branch_id, teacher_id, academic_year, account_name, account_number, bank_name, ifsc_code, branch_name, status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
           [
             schoolId,
+            branchId,
             newId,
             academic_year || null,
             bank.account_name || '',
@@ -1025,10 +1020,11 @@ class TeacherModel {
       try {
         await pool.query(
           `INSERT INTO teacher_transport 
-           (school_id, teacher_id, academic_year, route, vehicle_number, pickup_point, drop_point, staus)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+           (school_id, branch_id, teacher_id, academic_year, route, vehicle_number, pickup_point, drop_point, staus)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
           [
             schoolId,
+            branchId,
             newId,
             academic_year || null,
             transport.route,
@@ -1047,10 +1043,11 @@ class TeacherModel {
       try {
         await pool.query(
           `INSERT INTO teacher_hostel 
-           (school_id, teacher_id, academic_year, hostel_name, room_number, status)
-           VALUES (?, ?, ?, ?, ?, 1)`,
+           (school_id, branch_id, teacher_id, academic_year, hostel_name, room_number, status)
+           VALUES (?, ?, ?, ?, ?, ?, 1)`,
           [
             schoolId,
+            branchId,
             newId,
             academic_year || null,
             hostel.hostel_name,
@@ -1067,10 +1064,11 @@ class TeacherModel {
       try {
         await pool.query(
           `INSERT INTO teacher_social_link 
-           (school_id, teacher_id, academic_year, facebook_link, instagram_link, linkedin_link, youtube_link, twitter_link, staus)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+           (school_id, branch_id, teacher_id, academic_year, facebook_link, instagram_link, linkedin_link, youtube_link, twitter_link, staus)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
           [
             schoolId,
+            branchId,
             newId,
             academic_year || null,
             social.facebook_link || '',
@@ -1092,10 +1090,11 @@ class TeacherModel {
           if (doc.document_type || doc.attachments) {
             await pool.query(
               `INSERT INTO teacher_document 
-               (school_id, teacher_id, document_type, academic_year, file_name, attachments, status)
-               VALUES (?, ?, ?, ?, ?, ?, 1)`,
+               (school_id, branch_id, teacher_id, document_type, academic_year, file_name, attachments, status)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
               [
                 schoolId,
+                branchId,
                 newId,
                 doc.document_type || 1,
                 academic_year || null,
@@ -1234,6 +1233,14 @@ class TeacherModel {
 
     await pool.query(updateSql, params);
 
+    let teacherBranchId = data.branch_id ? Number(data.branch_id) : (data.branchId ? Number(data.branchId) : null);
+    if (!teacherBranchId) {
+      try {
+        const [tRow] = await pool.query('SELECT branch_id FROM teacher_master WHERE id = ? LIMIT 1', [id]);
+        if (tRow.length && tRow[0].branch_id) teacherBranchId = tRow[0].branch_id;
+      } catch (e) {}
+    }
+
     // 1. Update Address (only if current_address is provided)
     if (data.current_address) {
       try {
@@ -1241,10 +1248,11 @@ class TeacherModel {
 
         await pool.query(
           `INSERT INTO teacher_address 
-           (school_id, teacher_id, address1, address2, country, state, city, postal_code, same_permanent, address_type, status)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)`,
+           (school_id, branch_id, teacher_id, address1, address2, country, state, city, postal_code, same_permanent, address_type, status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)`,
           [
             schoolId,
+            teacherBranchId,
             id,
             data.current_address.address1 || '',
             data.current_address.address2 || '',
@@ -1259,10 +1267,11 @@ class TeacherModel {
         if (!data.same_permanent && data.permanent_address) {
           await pool.query(
             `INSERT INTO teacher_address 
-             (school_id, teacher_id, address1, address2, country, state, city, postal_code, same_permanent, address_type, status)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 2, 2)`,
+             (school_id, branch_id, teacher_id, address1, address2, country, state, city, postal_code, same_permanent, address_type, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 2, 2)`,
             [
               schoolId,
+              teacherBranchId,
               id,
               data.permanent_address.address1 || '',
               data.permanent_address.address2 || '',
@@ -1307,9 +1316,9 @@ class TeacherModel {
         }
         for (const item of uniqueAssignments) {
           await pool.query(
-            `INSERT INTO teacher_class_assign (school_id, teacher_id, class_id, subject_id, academic_year, status)
-             VALUES (?, ?, ?, ?, ?, ?)`,
-            [schoolId, id, item.class_id, item.subject_id || 0, academic_year || null, assignStatus]
+            `INSERT INTO teacher_class_assign (school_id, branch_id, teacher_id, class_id, subject_id, academic_year, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [schoolId, teacherBranchId, id, item.class_id, item.subject_id || 0, academic_year || null, assignStatus]
           );
         }
 
@@ -1365,10 +1374,11 @@ class TeacherModel {
         if (data.payroll.epf_no || data.payroll.basic_salary || data.payroll.contract_type) {
           await pool.query(
             `INSERT INTO teacher_payroll 
-             (school_id, teacher_id, academic_year, epf_no, basic_salary, contract_type, work_shift, work_location, date_of_leaving, status)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+             (school_id, branch_id, teacher_id, academic_year, epf_no, basic_salary, contract_type, work_shift, work_location, date_of_leaving, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
             [
               schoolId,
+              teacherBranchId,
               id,
               academic_year || null,
               data.payroll.epf_no || '',
@@ -1393,10 +1403,11 @@ class TeacherModel {
         if (bankPayload.account_name || bankPayload.account_number || bankPayload.bank_name) {
           await pool.query(
             `INSERT INTO teacher_bank 
-             (school_id, teacher_id, academic_year, account_name, account_number, bank_name, ifsc_code, branch_name, status)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+             (school_id, branch_id, teacher_id, academic_year, account_name, account_number, bank_name, ifsc_code, branch_name, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
             [
               schoolId,
+              teacherBranchId,
               id,
               academic_year || null,
               bankPayload.account_name || '',
@@ -1419,10 +1430,11 @@ class TeacherModel {
         if (data.transport.route) {
           await pool.query(
             `INSERT INTO teacher_transport 
-             (school_id, teacher_id, academic_year, route, vehicle_number, pickup_point, drop_point, staus)
-             VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+             (school_id, branch_id, teacher_id, academic_year, route, vehicle_number, pickup_point, drop_point, staus)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
             [
               schoolId,
+              teacherBranchId,
               id,
               academic_year || null,
               data.transport.route,
@@ -1444,10 +1456,11 @@ class TeacherModel {
         if (data.hostel.hostel_name) {
           await pool.query(
             `INSERT INTO teacher_hostel 
-             (school_id, teacher_id, academic_year, hostel_name, room_number, status)
+             (school_id, branch_id, teacher_id, academic_year, hostel_name, room_number, status)
              VALUES (?, ?, ?, ?, ?, 1)`,
             [
               schoolId,
+              teacherBranchId,
               id,
               academic_year || null,
               data.hostel.hostel_name,
@@ -1466,10 +1479,11 @@ class TeacherModel {
         await pool.query(`DELETE FROM teacher_social_link WHERE teacher_id = ?`, [id]);
         await pool.query(
           `INSERT INTO teacher_social_link 
-           (school_id, teacher_id, academic_year, facebook_link, instagram_link, linkedin_link, youtube_link, twitter_link, staus)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+           (school_id, branch_id, teacher_id, academic_year, facebook_link, instagram_link, linkedin_link, youtube_link, twitter_link, staus)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
           [
             schoolId,
+            teacherBranchId,
             id,
             academic_year || null,
             data.social.facebook_link || '',
@@ -1492,10 +1506,11 @@ class TeacherModel {
           if (doc.document_type || doc.attachments) {
             await pool.query(
               `INSERT INTO teacher_document 
-               (school_id, teacher_id, document_type, academic_year, file_name, attachments, status)
-               VALUES (?, ?, ?, ?, ?, ?, 1)`,
+               (school_id, branch_id, teacher_id, document_type, academic_year, file_name, attachments, status)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
               [
                 schoolId,
+                teacherBranchId,
                 id,
                 doc.document_type || 1,
                 academic_year || null,

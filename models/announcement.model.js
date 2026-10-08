@@ -22,6 +22,7 @@ const initAnnouncementTables = async () => {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS notice_message (
         id INT AUTO_INCREMENT PRIMARY KEY,
+        branch_id INT DEFAULT NULL,
         notice_id INT NOT NULL,
         message_to VARCHAR(100) NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -213,8 +214,8 @@ const AnnouncementModel = {
       for (const recipient of message_to) {
         if (recipient) {
           await pool.query(
-            `INSERT INTO notice_message (notice_id, message_to) VALUES (?, ?)`,
-            [noticeId, recipient]
+            `INSERT INTO notice_message (branch_id, notice_id, message_to) VALUES (?, ?, ?)`,
+            [branchVal, noticeId, recipient]
           );
         }
       }
@@ -272,11 +273,16 @@ const AnnouncementModel = {
 
     if (Array.isArray(message_to)) {
       await pool.query(`DELETE FROM notice_message WHERE notice_id = ?`, [id]);
+      let msgBranchId = effectiveBranchId;
+      if (!msgBranchId) {
+        const [nRows] = await pool.query(`SELECT branch_id FROM notice WHERE id = ?`, [id]);
+        msgBranchId = nRows[0]?.branch_id || null;
+      }
       for (const recipient of message_to) {
         if (recipient) {
           await pool.query(
-            `INSERT INTO notice_message (notice_id, message_to) VALUES (?, ?)`,
-            [id, recipient]
+            `INSERT INTO notice_message (branch_id, notice_id, message_to) VALUES (?, ?, ?)`,
+            [msgBranchId ? Number(msgBranchId) : null, id, recipient]
           );
         }
       }

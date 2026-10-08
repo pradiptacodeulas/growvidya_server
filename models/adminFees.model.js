@@ -434,9 +434,9 @@ class AdminFeesModel {
           const amount = parseFloat(comp.amount) || 0;
           if (compId && amount >= 0) {
             await connection.query(
-              `INSERT INTO fee_structure_components (fee_structure_id, fee_component_id, amount, created_at)
-               VALUES (?, ?, ?, NOW())`,
-              [structureId, compId, amount]
+              `INSERT INTO fee_structure_components (branch_id, fee_structure_id, fee_component_id, amount, created_at)
+               VALUES (?, ?, ?, ?, NOW())`,
+              [branchId ? Number(branchId) : null, structureId, compId, amount]
             );
           }
         }
@@ -506,6 +506,7 @@ class AdminFeesModel {
               const todayStr = now.toISOString().split('T')[0];
               const insertRows = toAllocateStudentIds.map((sid) => [
                 schoolId,
+                branchId ? Number(branchId) : null,
                 sid,
                 structureId,
                 effectiveAcademicYearId,
@@ -517,7 +518,7 @@ class AdminFeesModel {
 
               await connection.query(
                 `INSERT INTO student_fee_allocations (
-                   school_id, student_id, fee_structure_id, academic_year_id,
+                   school_id, branch_id, student_id, fee_structure_id, academic_year_id,
                    assigned_date, status, allow_partial_payment, created_at
                  ) VALUES ?`,
                 [insertRows]
@@ -638,8 +639,10 @@ class AdminFeesModel {
             if (toAllocateStudentIds.length > 0) {
               const now = new Date();
               const todayStr = now.toISOString().split('T')[0];
+              const resolvedBranchId = branchId ? Number(branchId) : (current.branch_id ? Number(current.branch_id) : null);
               const insertRows = toAllocateStudentIds.map((sid) => [
                 schoolId,
+                resolvedBranchId,
                 sid,
                 id,
                 effectiveAcademicYearId,
@@ -651,7 +654,7 @@ class AdminFeesModel {
 
               await pool.query(
                 `INSERT INTO student_fee_allocations (
-                   school_id, student_id, fee_structure_id, academic_year_id,
+                   school_id, branch_id, student_id, fee_structure_id, academic_year_id,
                    assigned_date, status, allow_partial_payment, created_at
                  ) VALUES ?`,
                 [insertRows]
@@ -776,6 +779,7 @@ class AdminFeesModel {
 
   static async allocateStructureToStudents({
     schoolId,
+    branchId,
     academicYearId,
     feeStructureId,
     studentIds,
@@ -787,7 +791,7 @@ class AdminFeesModel {
 
       // Check if structure is published
       const [structRows] = await connection.query(
-        `SELECT id, name, is_published, status, academic_year_id FROM fee_structures WHERE id = ? AND school_id = ? AND status != 4`,
+        `SELECT id, name, is_published, status, academic_year_id, branch_id FROM fee_structures WHERE id = ? AND school_id = ? AND status != 4`,
         [feeStructureId, schoolId]
       );
       if (structRows.length === 0) {
@@ -796,6 +800,8 @@ class AdminFeesModel {
       if (Number(structRows[0].is_published) !== 1) {
         throw new Error(`Cannot assign fee structure: "${structRows[0].name}" is in Draft mode. Fee structures must be published before students can be allocated.`);
       }
+
+      let resolvedBranchId = branchId ? Number(branchId) : (structRows[0].branch_id ? Number(structRows[0].branch_id) : null);
 
       let resolvedYearId = academicYearId || structRows[0].academic_year_id || null;
       if (!resolvedYearId) {
@@ -818,10 +824,10 @@ class AdminFeesModel {
         if (existing.length === 0) {
           await connection.query(
             `INSERT INTO student_fee_allocations (
-               school_id, student_id, fee_structure_id, academic_year_id,
+               school_id, branch_id, student_id, fee_structure_id, academic_year_id,
                assigned_date, status, allow_partial_payment, created_at
-             ) VALUES (?, ?, ?, ?, CURDATE(), 1, ?, NOW())`,
-            [schoolId, studentId, feeStructureId, resolvedYearId, allowPartialPayment ? 1 : 0]
+             ) VALUES (?, ?, ?, ?, ?, CURDATE(), 1, ?, NOW())`,
+            [schoolId, resolvedBranchId, studentId, feeStructureId, resolvedYearId, allowPartialPayment ? 1 : 0]
           );
           count++;
         }
@@ -1242,9 +1248,9 @@ class AdminFeesModel {
         // Insert invoice items
         for (const comp of components) {
           await connection.query(
-            `INSERT INTO fee_invoice_items (invoice_id, fee_component_id, component_name, amount)
-             VALUES (?, ?, ?, ?)`,
-            [invoiceId, comp.fee_component_id, comp.component_name || 'Fee Component', comp.amount]
+            `INSERT INTO fee_invoice_items (branch_id, invoice_id, fee_component_id, component_name, amount)
+             VALUES (?, ?, ?, ?, ?)`,
+            [invBranchId ? Number(invBranchId) : null, invoiceId, comp.fee_component_id, comp.component_name || 'Fee Component', comp.amount]
           );
         }
 

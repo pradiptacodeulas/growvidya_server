@@ -275,7 +275,8 @@ class AdminAcademicController {
   static async createSubject(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const insertId = await AcademicModel.createSubject(schoolId, req.body);
+      const branchId = req.body.branch_id || req.body.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null;
+      const insertId = await AcademicModel.createSubject(schoolId, { ...req.body, branch_id: branchId });
       return ApiResponse.success(res, 'Subject created successfully.', { id: insertId }, 201);
     } catch (error) {
       next(error);
@@ -734,7 +735,8 @@ class AdminAcademicController {
   static async createDocumentType(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const insertId = await AcademicModel.createDocumentType(schoolId, req.body);
+      const branchId = req.body.branch_id || req.body.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null;
+      const insertId = await AcademicModel.createDocumentType(schoolId, { ...req.body, branch_id: branchId });
       return ApiResponse.success(res, 'Document type added', { id: insertId }, 201);
     } catch (error) {
       next(error);
@@ -952,7 +954,8 @@ class AdminAcademicController {
   static async createLesson(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const insertId = await AcademicModel.createLesson(schoolId, req.body);
+      const branchId = req.body.branch_id || req.body.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null;
+      const insertId = await AcademicModel.createLesson(schoolId, { ...req.body, branch_id: branchId });
       return ApiResponse.success(res, 'Lesson created successfully', { id: insertId }, 201);
     } catch (error) {
       next(error);
@@ -1002,7 +1005,8 @@ class AdminAcademicController {
   static async createAssignmentType(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const insertId = await AcademicModel.createAssignmentType(schoolId, req.body);
+      const branchId = req.body.branch_id || req.body.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null;
+      const insertId = await AcademicModel.createAssignmentType(schoolId, { ...req.body, branch_id: branchId });
       return ApiResponse.success(res, 'Assignment type created successfully', { id: insertId }, 201);
     } catch (error) {
       next(error);
@@ -1143,7 +1147,8 @@ class AdminAcademicController {
   static async createMaterialType(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const insertId = await AcademicModel.createMaterialType(schoolId, req.body);
+      const branchId = req.body.branch_id || req.body.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null;
+      const insertId = await AcademicModel.createMaterialType(schoolId, { ...req.body, branch_id: branchId });
       return ApiResponse.success(res, 'Material type created successfully', { id: insertId }, 201);
     } catch (error) {
       next(error);
@@ -1315,7 +1320,8 @@ class AdminAcademicController {
   static async createLesson(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const insertId = await AcademicModel.createLesson(schoolId, req.body);
+      const branchId = req.body.branch_id || req.body.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null;
+      const insertId = await AcademicModel.createLesson(schoolId, { ...req.body, branch_id: branchId });
       return ApiResponse.success(res, 'Lesson created successfully', { id: insertId }, 201);
     } catch (error) {
       next(error);

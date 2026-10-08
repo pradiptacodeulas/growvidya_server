@@ -303,15 +303,18 @@ class ParentModel {
       : (phone && String(phone).trim() ? String(phone).trim() : null);
     const hashedPassword = plainPassword ? await hashPassword(plainPassword) : null;
 
+    const branchId = data.branch_id || data.branchId || null;
+
     const sql = `
       INSERT INTO parent_master (
-        school_id, first_name, last_name, email, phone, password,
+        school_id, branch_id, first_name, last_name, email, phone, password,
         occupation, relation, parent_type, picture, status, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
     `;
 
     const [result] = await pool.query(sql, [
       schoolId,
+      branchId ? Number(branchId) : null,
       first_name,
       last_name,
       email,
@@ -417,7 +420,13 @@ class ParentModel {
     return result.affectedRows > 0;
   }
 
-  static async linkStudentToParent(schoolId, { student_id, father_id = null, mother_id = null, guardian_id = null }) {
+  static async linkStudentToParent(schoolId, { student_id, father_id = null, mother_id = null, guardian_id = null, branch_id = null, branchId = null }) {
+    let finalBranchId = branch_id || branchId;
+    if (!finalBranchId) {
+      const [stRows] = await pool.query(`SELECT branch_id FROM student_master WHERE id = ?`, [student_id]);
+      finalBranchId = stRows[0]?.branch_id || null;
+    }
+
     const [existing] = await pool.query(
       `SELECT id FROM student_to_parent WHERE student_id = ? AND (school_id = ? OR ? IS NULL)`,
       [student_id, schoolId, schoolId]
@@ -425,14 +434,14 @@ class ParentModel {
 
     if (existing.length > 0) {
       const [result] = await pool.query(
-        `UPDATE student_to_parent SET father_id = ?, mother_id = ?, guardian_id = ? WHERE student_id = ? AND (school_id = ? OR ? IS NULL)`,
-        [father_id, mother_id, guardian_id, student_id, schoolId, schoolId]
+        `UPDATE student_to_parent SET father_id = ?, mother_id = ?, guardian_id = ?, branch_id = COALESCE(branch_id, ?) WHERE student_id = ? AND (school_id = ? OR ? IS NULL)`,
+        [father_id, mother_id, guardian_id, finalBranchId ? Number(finalBranchId) : null, student_id, schoolId, schoolId]
       );
       return result.affectedRows > 0;
     } else {
       const [result] = await pool.query(
-        `INSERT INTO student_to_parent (school_id, student_id, father_id, mother_id, guardian_id, status) VALUES (?, ?, ?, ?, ?, 1)`,
-        [schoolId, student_id, father_id, mother_id, guardian_id]
+        `INSERT INTO student_to_parent (school_id, branch_id, student_id, father_id, mother_id, guardian_id, status) VALUES (?, ?, ?, ?, ?, ?, 1)`,
+        [schoolId, finalBranchId ? Number(finalBranchId) : null, student_id, father_id, mother_id, guardian_id]
       );
       return result.insertId;
     }
@@ -1305,11 +1314,18 @@ class ParentModel {
           ]
         );
       } else {
+        let parentBranchId = data.branch_id || data.branchId || null;
+        if (!parentBranchId) {
+          const [pRows] = await pool.query(`SELECT branch_id FROM parent_master WHERE id = ?`, [parentId]);
+          parentBranchId = pRows[0]?.branch_id || null;
+        }
+
         await pool.query(
-          `INSERT INTO parent_master_address (school_id, parent_id, country, state, city, postal_code, address1, address2, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+          `INSERT INTO parent_master_address (school_id, branch_id, parent_id, country, state, city, postal_code, address1, address2, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
           [
             schoolId,
+            parentBranchId ? Number(parentBranchId) : null,
             parentId,
             country || null,
             state || null,

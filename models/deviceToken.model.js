@@ -27,6 +27,7 @@ class DeviceTokenModel {
     school_id,
     user_id,
     role,
+    branch_id = null,
     device_type,
     token,
     device_name = null,
@@ -41,6 +42,31 @@ class DeviceTokenModel {
     const normalizedRole = String(role).toLowerCase();
     const normalizedDeviceType = String(device_type).toLowerCase();
 
+    let resolvedBranchId = branch_id ? Number(branch_id) : null;
+    if (!resolvedBranchId && user_id && school_id) {
+      if (normalizedRole === 'student') {
+        try {
+          const [sRow] = await pool.query('SELECT branch_id FROM student_master WHERE id = ? AND school_id = ? LIMIT 1', [user_id, school_id]);
+          if (sRow.length && sRow[0].branch_id) resolvedBranchId = sRow[0].branch_id;
+        } catch (e) {}
+      } else if (normalizedRole === 'teacher') {
+        try {
+          const [tRow] = await pool.query('SELECT branch_id FROM teacher_master WHERE id = ? AND school_id = ? LIMIT 1', [user_id, school_id]);
+          if (tRow.length && tRow[0].branch_id) resolvedBranchId = tRow[0].branch_id;
+        } catch (e) {}
+      } else if (normalizedRole === 'parent') {
+        try {
+          const [pRow] = await pool.query('SELECT branch_id FROM parent_master WHERE id = ? AND school_id = ? LIMIT 1', [user_id, school_id]);
+          if (pRow.length && pRow[0].branch_id) resolvedBranchId = pRow[0].branch_id;
+        } catch (e) {}
+      } else {
+        try {
+          const [uRow] = await pool.query('SELECT branch_id FROM user_master WHERE id = ? AND school_id = ? LIMIT 1', [user_id, school_id]);
+          if (uRow.length && uRow[0].branch_id) resolvedBranchId = uRow[0].branch_id;
+        } catch (e) {}
+      }
+    }
+
     // Deactivate any other user session registered on this physical browser endpoint
     await pool.query(
       `UPDATE user_device_tokens 
@@ -51,11 +77,12 @@ class DeviceTokenModel {
 
     const query = `
       INSERT INTO user_device_tokens (
-        school_id, user_id, role, device_type, token, endpoint_hash,
+        school_id, branch_id, user_id, role, device_type, token, endpoint_hash,
         device_name, user_agent, is_active, last_used_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
       ON DUPLICATE KEY UPDATE
         school_id = VALUES(school_id),
+        branch_id = COALESCE(VALUES(branch_id), branch_id),
         device_type = VALUES(device_type),
         token = VALUES(token),
         device_name = COALESCE(VALUES(device_name), device_name),
@@ -66,6 +93,7 @@ class DeviceTokenModel {
 
     const [result] = await pool.query(query, [
       school_id,
+      resolvedBranchId,
       user_id,
       normalizedRole,
       normalizedDeviceType,

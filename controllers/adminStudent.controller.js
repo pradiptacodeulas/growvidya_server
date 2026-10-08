@@ -149,7 +149,7 @@ class AdminStudentController {
         return ApiResponse.error(res, "Mother's profile picture must not exceed 100 KB.", null, 400);
       }
 
-      const branchId = req.body.branch_id || req.body.branchId || req.branchId || null;
+      const branchId = req.body.branch_id || req.body.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null;
       const newId = await StudentModel.create({
         ...req.body,
         branch_id: branchId,
@@ -192,8 +192,9 @@ class AdminStudentController {
         return ApiResponse.error(res, "Mother's profile picture must not exceed 100 KB.", null, 400);
       }
 
-      if (req.body.branch_id !== undefined || req.body.branchId !== undefined) {
-        req.body.branch_id = req.body.branch_id || req.body.branchId;
+      const branchId = req.body.branch_id || req.body.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null;
+      if (branchId) {
+        req.body.branch_id = branchId;
       }
 
       const updated = await StudentModel.update(studentId, schoolId, req.body);

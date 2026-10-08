@@ -37,6 +37,7 @@ class AdminExaminationController {
   static async createGrade(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.body.branch_id || req.body.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null;
       const { grade_name, min_percentage, max_percentage, status } = req.body;
 
       if (!grade_name || grade_name.trim() === '') {
@@ -48,6 +49,7 @@ class AdminExaminationController {
 
       const gradeId = await AdminExaminationModel.createGrade({
         schoolId,
+        branchId,
         gradeName: grade_name.trim(),
         minPercentage: parseInt(min_percentage, 10),
         maxPercentage: parseInt(max_percentage, 10),
@@ -134,6 +136,7 @@ class AdminExaminationController {
   static async createExam(req, res, next) {
     try {
       const schoolId = req.user?.schoolId;
+      const branchId = req.body.branch_id || req.body.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null;
       const { exam_name, academic_year, status } = req.body;
 
       if (!exam_name || exam_name.trim() === '') {
@@ -142,6 +145,7 @@ class AdminExaminationController {
 
       const examId = await AdminExaminationModel.createExam({
         schoolId,
+        branchId,
         academicYear: academic_year ? parseInt(academic_year, 10) : undefined,
         examName: exam_name.trim(),
         status: status !== undefined ? parseInt(status, 10) : 1,
@@ -225,6 +229,7 @@ class AdminExaminationController {
   static async createExamType(req, res, next) {
     try {
       const schoolId = req.user?.schoolId;
+      const branchId = req.body.branch_id || req.body.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null;
       const { exam_id, academic_year, exam_type, sort_order, status, items } = req.body;
 
       if (Array.isArray(items) && items.length > 0) {
@@ -233,6 +238,7 @@ class AdminExaminationController {
           if (item.exam_type && item.exam_type.trim()) {
             const id = await AdminExaminationModel.createExamType({
               schoolId,
+              branchId,
               academicYear: academic_year ? parseInt(academic_year, 10) : undefined,
               examId: exam_id ? parseInt(exam_id, 10) : undefined,
               examType: item.exam_type.trim(),
@@ -251,6 +257,7 @@ class AdminExaminationController {
 
       const examTypeId = await AdminExaminationModel.createExamType({
         schoolId,
+        branchId,
         academicYear: academic_year ? parseInt(academic_year, 10) : undefined,
         examId: exam_id ? parseInt(exam_id, 10) : undefined,
         examType: exam_type.trim(),
@@ -362,6 +369,7 @@ class AdminExaminationController {
   static async saveExamSubjectConfig(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.body.branch_id || req.body.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null;
       const { exam_id, class_id, items } = req.body;
 
       if (!exam_id || !class_id) {
@@ -424,6 +432,7 @@ class AdminExaminationController {
 
       const examSubjectId = await AdminExaminationModel.saveExamSubjectConfig({
         schoolId,
+        branchId,
         examId: parseInt(exam_id, 10),
         classId: parseInt(class_id, 10),
         items: validItems,
@@ -678,6 +687,7 @@ class AdminExaminationController {
   static async saveExamAttendanceBatch(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.body.branch_id || req.body.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null;
       const userRole = req.user.roleName || req.user.role || '';
       const { exam_id, class_id, section_id, subject_id, exam_schedule_id, schedule_id, academic_year_id, records } = req.body;
 
@@ -712,6 +722,7 @@ class AdminExaminationController {
 
       await AdminExaminationModel.saveExamAttendanceBatch({
         schoolId,
+        branchId,
         academicYearId: academic_year_id ? parseInt(academic_year_id, 10) : undefined,
         examId: parseInt(exam_id, 10),
         classId: parseInt(class_id, 10),
@@ -782,6 +793,7 @@ class AdminExaminationController {
   static async saveStudentMarksBatch(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.body.branch_id || req.body.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null;
       const {
         exam_id,
         examId,
@@ -908,6 +920,7 @@ class AdminExaminationController {
 
       await AdminExaminationModel.saveStudentMarksBatch({
         schoolId,
+        branchId,
         academicYearId: finalYearId,
         examId: finalExamId,
         classId: finalClassId,

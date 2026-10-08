@@ -135,7 +135,7 @@ class AdminStaffController {
         return ApiResponse.error(res, 'Role is required.', null, 400);
       }
 
-      const branchId = req.body.branch_id || req.body.branchId || req.branchId || null;
+      const branchId = req.body.branch_id || req.body.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null;
       const createdStaff = await StaffModel.create(schoolId, {
         ...data,
         branch_id: branchId,
@@ -153,7 +153,7 @@ class AdminStaffController {
       const schoolId = req.user.schoolId;
       const staffId = req.params.id;
       const data = req.body;
-      const branchId = req.body.branch_id || req.body.branchId || undefined;
+      const branchId = req.body.branch_id || req.body.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || undefined;
 
       const updatedStaff = await StaffModel.update(staffId, schoolId, {
         ...data,

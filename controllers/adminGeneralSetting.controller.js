@@ -42,6 +42,8 @@ class AdminGeneralSettingController {
         return ApiResponse.error(res, 'School context required. Please log in again.', null, 401);
       }
       const data = req.body;
+      const branchId = req.body?.branch_id || req.body?.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null;
+      if (branchId) data.branch_id = branchId;
 
       const updatedSchool = await GeneralSettingModel.updateSchoolSettings(schoolId, data);
       return ApiResponse.success(res, 'General settings updated successfully.', {

@@ -43,10 +43,11 @@ class MiscSettingModel {
     return rows[0] || null;
   }
 
-  static async createReligion(schoolId, { religion, sort_order = 1, status = 1 }) {
+  static async createReligion(schoolId, { branch_id, branchId, religion, sort_order = 1, status = 1 }) {
+    const finalBranchId = branch_id !== undefined && branch_id !== null ? Number(branch_id) : (branchId ? Number(branchId) : null);
     const [result] = await pool.query(
-      `INSERT INTO religion_master (school_id, religion, sort_order, status) VALUES (?, ?, ?, ?)`,
-      [schoolId, religion, Number(sort_order) || 1, Number(status) || 1]
+      `INSERT INTO religion_master (school_id, branch_id, religion, sort_order, status) VALUES (?, ?, ?, ?, ?)`,
+      [schoolId, finalBranchId, religion, Number(sort_order) || 1, Number(status) || 1]
     );
     return result.insertId;
   }
@@ -128,10 +129,11 @@ class MiscSettingModel {
     return rows[0] || null;
   }
 
-  static async createMotherTongue(schoolId, { mother_tongue, sort_order = 1, status = 1 }) {
+  static async createMotherTongue(schoolId, { branch_id, branchId, mother_tongue, sort_order = 1, status = 1 }) {
+    const finalBranchId = branch_id !== undefined && branch_id !== null ? Number(branch_id) : (branchId ? Number(branchId) : null);
     const [result] = await pool.query(
-      `INSERT INTO mother_tongue_master (school_id, mother_tongue, sort_order, status) VALUES (?, ?, ?, ?)`,
-      [schoolId, mother_tongue, Number(sort_order) || 1, Number(status) || 1]
+      `INSERT INTO mother_tongue_master (school_id, branch_id, mother_tongue, sort_order, status) VALUES (?, ?, ?, ?, ?)`,
+      [schoolId, finalBranchId, mother_tongue, Number(sort_order) || 1, Number(status) || 1]
     );
     return result.insertId;
   }
@@ -247,10 +249,11 @@ class MiscSettingModel {
     return rows[0] || null;
   }
 
-  static async createCategory(schoolId, { category, sort_order = 1, status = 1 }) {
+  static async createCategory(schoolId, { branch_id, branchId, category, sort_order = 1, status = 1 }) {
+    const finalBranchId = branch_id !== undefined && branch_id !== null ? Number(branch_id) : (branchId ? Number(branchId) : null);
     const [result] = await pool.query(
-      `INSERT INTO student_category_master (school_id, category, sort_order, status) VALUES (?, ?, ?, ?)`,
-      [schoolId, category, Number(sort_order) || 1, Number(status) || 1]
+      `INSERT INTO student_category_master (school_id, branch_id, category, sort_order, status) VALUES (?, ?, ?, ?, ?)`,
+      [schoolId, finalBranchId, category, Number(sort_order) || 1, Number(status) || 1]
     );
     return result.insertId;
   }

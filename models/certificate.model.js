@@ -319,11 +319,12 @@ class CertificateModel {
     return rows[0] || null;
   }
 
-  static async createBorder({ school_id, image, status = 1 }) {
+  static async createBorder({ school_id, branch_id = null, branchId = null, image, status = 1 }) {
+    const finalBranchId = branch_id !== undefined && branch_id !== null ? Number(branch_id) : (branchId ? Number(branchId) : null);
     const [result] = await pool.query(
-      `INSERT INTO certificate_border_master (school_id, image, status, created_on)
-       VALUES (?, ?, ?, NOW())`,
-      [school_id, image, status]
+      `INSERT INTO certificate_border_master (school_id, branch_id, image, status, created_on)
+       VALUES (?, ?, ?, ?, NOW())`,
+      [school_id, finalBranchId, image, status]
     );
     return result.insertId;
   }

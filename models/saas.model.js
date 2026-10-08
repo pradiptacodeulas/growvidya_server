@@ -411,16 +411,6 @@ class SaasModel {
       ]);
       const schoolId = schoolResult.insertId;
 
-      // Seed default weekends for the newly created school (Saturday: 6, Sunday: 7)
-      try {
-        await connection.query(
-          `INSERT INTO weekends (school_id, weekends) VALUES (?, 6), (?, 7)`,
-          [schoolId, schoolId]
-        );
-      } catch (weekendErr) {
-        console.warn('Could not insert default weekends:', weekendErr.message);
-      }
-
       // 4b. Create default Main Campus branch for the new school
       const cleanBranchCode = (schoolCode || 'MAIN').toUpperCase();
       const branchCode = cleanBranchCode === 'MAIN' ? 'MAIN-01' : `${cleanBranchCode}-MAIN`;
@@ -443,6 +433,16 @@ class SaasModel {
         ]
       );
       const mainBranchId = branchResult.insertId;
+
+      // Seed default weekends for the newly created school and branch (Saturday: 6, Sunday: 7)
+      try {
+        await connection.query(
+          `INSERT INTO weekends (school_id, branch_id, weekends) VALUES (?, ?, 6), (?, ?, 7)`,
+          [schoolId, mainBranchId, schoolId, mainBranchId]
+        );
+      } catch (weekendErr) {
+        console.warn('Could not insert default weekends:', weekendErr.message);
+      }
 
       // 5. Get plan details to calculate subscription duration
       let effectivePlanId = parseInt(planId, 10);

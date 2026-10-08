@@ -131,15 +131,14 @@ class TransportModel {
   }
 
   static async createRoute(schoolId, { branch_id = null, transport_route, bus_id, bus, driver_id, driver, helpers, helper, fare, sort_order, status }) {
-    let resolvedBranchId = branch_id;
-    if (!resolvedBranchId) {
-      const [mb] = await pool.query(
-        'SELECT id FROM branch_master WHERE school_id = ? AND (is_main_branch = 1 OR id > 0) ORDER BY is_main_branch DESC LIMIT 1',
-        [schoolId]
-      );
-      if (mb.length) resolvedBranchId = mb[0].id;
-    }
     const selectedBusId = bus_id || bus;
+    let resolvedBranchId = branch_id ? Number(branch_id) : null;
+    if (!resolvedBranchId && selectedBusId) {
+      try {
+        const [bRow] = await pool.query('SELECT branch_id FROM bus_master WHERE id = ? AND school_id = ? LIMIT 1', [Number(selectedBusId), schoolId]);
+        if (bRow.length && bRow[0].branch_id) resolvedBranchId = bRow[0].branch_id;
+      } catch (e) {}
+    }
     const [res] = await pool.query(
       `INSERT INTO trans_route_master (school_id, branch_id, transport_route, bus_id, fare, sort_order, status)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -167,15 +166,15 @@ class TransportModel {
         );
         if (selectedDriverId) {
           await pool.query(
-            `INSERT INTO bus_to_operator (school_id, bus_id, operator_id, status) VALUES (?, ?, ?, 1)`,
-            [schoolId, Number(selectedBusId), Number(selectedDriverId)]
+            `INSERT INTO bus_to_operator (school_id, branch_id, bus_id, operator_id, status) VALUES (?, ?, ?, ?, 1)`,
+            [schoolId, resolvedBranchId, Number(selectedBusId), Number(selectedDriverId)]
           );
         }
         for (const hid of helperArr) {
           if (hid) {
             await pool.query(
-              `INSERT INTO bus_to_operator (school_id, bus_id, operator_id, status) VALUES (?, ?, ?, 1)`,
-              [schoolId, Number(selectedBusId), Number(hid)]
+              `INSERT INTO bus_to_operator (school_id, branch_id, bus_id, operator_id, status) VALUES (?, ?, ?, ?, 1)`,
+              [schoolId, resolvedBranchId, Number(selectedBusId), Number(hid)]
             );
           }
         }
@@ -211,6 +210,19 @@ class TransportModel {
     await pool.query(sql, params);
 
     if (selectedBusId) {
+      let routeBranchId = effectiveBranchId ? Number(effectiveBranchId) : null;
+      if (!routeBranchId) {
+        try {
+          const [rRow] = await pool.query('SELECT branch_id FROM trans_route_master WHERE id = ? AND school_id = ? LIMIT 1', [id, schoolId]);
+          if (rRow.length && rRow[0].branch_id) routeBranchId = rRow[0].branch_id;
+        } catch (e) {}
+      }
+      if (!routeBranchId) {
+        try {
+          const [bRow] = await pool.query('SELECT branch_id FROM bus_master WHERE id = ? AND school_id = ? LIMIT 1', [Number(selectedBusId), schoolId]);
+          if (bRow.length && bRow[0].branch_id) routeBranchId = bRow[0].branch_id;
+        } catch (e) {}
+      }
       const selectedDriverId = driver_id || driver;
       const helperList = helpers || helper || [];
       const helperArr = Array.isArray(helperList) ? helperList : [helperList].filter(Boolean);
@@ -222,15 +234,15 @@ class TransportModel {
         );
         if (selectedDriverId) {
           await pool.query(
-            `INSERT INTO bus_to_operator (school_id, bus_id, operator_id, status) VALUES (?, ?, ?, 1)`,
-            [schoolId, Number(selectedBusId), Number(selectedDriverId)]
+            `INSERT INTO bus_to_operator (school_id, branch_id, bus_id, operator_id, status) VALUES (?, ?, ?, ?, 1)`,
+            [schoolId, routeBranchId, Number(selectedBusId), Number(selectedDriverId)]
           );
         }
         for (const hid of helperArr) {
           if (hid) {
             await pool.query(
-              `INSERT INTO bus_to_operator (school_id, bus_id, operator_id, status) VALUES (?, ?, ?, 1)`,
-              [schoolId, Number(selectedBusId), Number(hid)]
+              `INSERT INTO bus_to_operator (school_id, branch_id, bus_id, operator_id, status) VALUES (?, ?, ?, ?, 1)`,
+              [schoolId, routeBranchId, Number(selectedBusId), Number(hid)]
             );
           }
         }
@@ -331,14 +343,7 @@ class TransportModel {
   }
 
   static async createVehicle(schoolId, { branch_id = null, name, number_plate, seat, color, driver_id, status }) {
-    let resolvedBranchId = branch_id;
-    if (!resolvedBranchId) {
-      const [mb] = await pool.query(
-        'SELECT id FROM branch_master WHERE school_id = ? AND (is_main_branch = 1 OR id > 0) ORDER BY is_main_branch DESC LIMIT 1',
-        [schoolId]
-      );
-      if (mb.length) resolvedBranchId = mb[0].id;
-    }
+    const resolvedBranchId = branch_id ? Number(branch_id) : null;
     const [res] = await pool.query(
       `INSERT INTO bus_master (school_id, branch_id, name, number_plate, seat, color, status)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -356,9 +361,9 @@ class TransportModel {
 
     if (driver_id) {
       await pool.query(
-        `INSERT INTO bus_to_operator (school_id, bus_id, operator_id, status)
-         VALUES (?, ?, ?, 1)`,
-        [schoolId, busId, Number(driver_id)]
+        `INSERT INTO bus_to_operator (school_id, branch_id, bus_id, operator_id, status)
+         VALUES (?, ?, ?, ?, 1)`,
+        [schoolId, resolvedBranchId, busId, Number(driver_id)]
       );
     }
     return busId;
@@ -389,6 +394,14 @@ class TransportModel {
 
     await pool.query(sql, params);
 
+    let busBranchId = effectiveBranchId ? Number(effectiveBranchId) : null;
+    if (!busBranchId) {
+      try {
+        const [bRow] = await pool.query('SELECT branch_id FROM bus_master WHERE id = ? AND school_id = ? LIMIT 1', [id, schoolId]);
+        if (bRow.length && bRow[0].branch_id) busBranchId = bRow[0].branch_id;
+      } catch (e) {}
+    }
+
     // Update driver association
     await pool.query(
       `DELETE FROM bus_to_operator WHERE bus_id = ? AND school_id = ?`,
@@ -396,9 +409,9 @@ class TransportModel {
     );
     if (driver_id) {
       await pool.query(
-        `INSERT INTO bus_to_operator (school_id, bus_id, operator_id, status)
-         VALUES (?, ?, ?, 1)`,
-        [schoolId, id, Number(driver_id)]
+        `INSERT INTO bus_to_operator (school_id, branch_id, bus_id, operator_id, status)
+         VALUES (?, ?, ?, ?, 1)`,
+        [schoolId, busBranchId, id, Number(driver_id)]
       );
     }
     return true;

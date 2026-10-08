@@ -400,10 +400,10 @@ class AcademicModel {
     }
   }
 
-  static async createSubject(schoolId, { class_id = null, subject_name, sort_order = 1, status = 1 }) {
+  static async createSubject(schoolId, { class_id = null, subject_name, sort_order = 1, status = 1, branch_id = null }) {
     const [result] = await pool.query(
-      `INSERT INTO subject_master (school_id, class_id, subject_name, sort_order, status) VALUES (?, ?, ?, ?, ?)`,
-      [schoolId, class_id ? Number(class_id) : null, subject_name, Number(sort_order) || 0, Number(status)]
+      `INSERT INTO subject_master (school_id, branch_id, class_id, subject_name, sort_order, status) VALUES (?, ?, ?, ?, ?, ?)`,
+      [schoolId, branch_id ? Number(branch_id) : null, class_id ? Number(class_id) : null, subject_name, Number(sort_order) || 0, Number(status)]
     );
     return result.insertId;
   }
@@ -963,10 +963,10 @@ class AcademicModel {
   }
 
   // ==================== DOCUMENT TYPES ====================
-  static async createDocumentType(schoolId, { document_type_name, status = 1 }) {
+  static async createDocumentType(schoolId, { document_type_name, status = 1, branch_id = null }) {
     const [result] = await pool.query(
-      `INSERT INTO document_type_master (school_id, document_type_name, status) VALUES (?, ?, ?)`,
-      [schoolId, document_type_name, Number(status)]
+      `INSERT INTO document_type_master (school_id, branch_id, document_type_name, status) VALUES (?, ?, ?, ?)`,
+      [schoolId, branch_id ? Number(branch_id) : null, document_type_name, Number(status)]
     );
     return result.insertId;
   }
@@ -1360,11 +1360,11 @@ class AcademicModel {
     }
   }
 
-  static async createLesson(schoolId, { class_id, subject_id, lession_name, lession_description }) {
+  static async createLesson(schoolId, { class_id, subject_id, lession_name, lession_description, branch_id = null }) {
     const [result] = await pool.query(
-      `INSERT INTO lession_master (school_id, class_id, subject_id, lession_name, lession_description, status)
-       VALUES (?, ?, ?, ?, ?, 1)`,
-      [schoolId, class_id, subject_id, lession_name, lession_description || '']
+      `INSERT INTO lession_master (school_id, branch_id, class_id, subject_id, lession_name, lession_description, status)
+       VALUES (?, ?, ?, ?, ?, ?, 1)`,
+      [schoolId, branch_id ? Number(branch_id) : null, class_id, subject_id, lession_name, lession_description || '']
     );
     return result.insertId;
   }
@@ -1448,10 +1448,10 @@ class AcademicModel {
     }
   }
 
-  static async createAssignmentType(schoolId, { type_name, status = 1 }) {
+  static async createAssignmentType(schoolId, { type_name, status = 1, branch_id = null }) {
     const [result] = await pool.query(
-      `INSERT INTO assignment_types (school_id, type_name, status, created_on) VALUES (?, ?, ?, NOW())`,
-      [schoolId, type_name, status || 1]
+      `INSERT INTO assignment_types (school_id, branch_id, type_name, status, created_on) VALUES (?, ?, ?, ?, NOW())`,
+      [schoolId, branch_id ? Number(branch_id) : null, type_name, status || 1]
     );
     return result.insertId;
   }
@@ -1645,9 +1645,9 @@ class AcademicModel {
           if (!qText.trim()) continue;
 
           const [qResult] = await connection.query(
-            `INSERT INTO assignment_questions (school_id, assignment_id, question, status, created_at)
-             VALUES (?, ?, ?, 1, NOW())`,
-            [schoolId, assignmentId, qText]
+            `INSERT INTO assignment_questions (school_id, branch_id, assignment_id, question, status, created_at)
+             VALUES (?, ?, ?, ?, 1, NOW())`,
+            [schoolId, resolvedBranchId, assignmentId, qText]
           );
           const questionId = qResult.insertId;
 
@@ -1659,9 +1659,9 @@ class AcademicModel {
 
             const isCorrect = (typeof ans === 'object' && Number(ans.is_correct) === 1) || (Number(q.correct_answer) === i) ? 1 : 0;
             await connection.query(
-              `INSERT INTO assignment_answers (school_id, question_id, answer, is_correct, status, created_at)
-               VALUES (?, ?, ?, ?, 1, NOW())`,
-              [schoolId, questionId, ansText, isCorrect]
+              `INSERT INTO assignment_answers (school_id, branch_id, question_id, answer, is_correct, status, created_at)
+               VALUES (?, ?, ?, ?, ?, 1, NOW())`,
+              [schoolId, resolvedBranchId, questionId, ansText, isCorrect]
             );
           }
         }
@@ -1694,6 +1694,13 @@ class AcademicModel {
       );
 
       if (Array.isArray(questions)) {
+        // Resolve branch_id from assignment
+        const [existingAsg] = await connection.query(
+          `SELECT branch_id FROM assignments WHERE id = ? AND school_id = ?`,
+          [id, schoolId]
+        );
+        const branchId = existingAsg.length ? existingAsg[0].branch_id : null;
+
         // Soft delete old questions and answers
         const [oldQuestions] = await connection.query(
           `SELECT id FROM assignment_questions WHERE assignment_id = ? AND school_id = ?`,
@@ -1717,9 +1724,9 @@ class AcademicModel {
           if (!qText.trim()) continue;
 
           const [qResult] = await connection.query(
-            `INSERT INTO assignment_questions (school_id, assignment_id, question, status, created_at)
-             VALUES (?, ?, ?, 1, NOW())`,
-            [schoolId, id, qText]
+            `INSERT INTO assignment_questions (school_id, branch_id, assignment_id, question, status, created_at)
+             VALUES (?, ?, ?, ?, 1, NOW())`,
+            [schoolId, branchId, id, qText]
           );
           const questionId = qResult.insertId;
 
@@ -1731,9 +1738,9 @@ class AcademicModel {
 
             const isCorrect = (typeof ans === 'object' && Number(ans.is_correct) === 1) || (Number(q.correct_answer) === i) ? 1 : 0;
             await connection.query(
-              `INSERT INTO assignment_answers (school_id, question_id, answer, is_correct, status, created_at)
-               VALUES (?, ?, ?, ?, 1, NOW())`,
-              [schoolId, questionId, ansText, isCorrect]
+              `INSERT INTO assignment_answers (school_id, branch_id, question_id, answer, is_correct, status, created_at)
+               VALUES (?, ?, ?, ?, ?, 1, NOW())`,
+              [schoolId, branchId, questionId, ansText, isCorrect]
             );
           }
         }
@@ -1818,10 +1825,10 @@ class AcademicModel {
     }
   }
 
-  static async createMaterialType(schoolId, { material_type_name, description = '', display_order = 0, status = 1 }) {
+  static async createMaterialType(schoolId, { material_type_name, description = '', display_order = 0, status = 1, branch_id = null }) {
     const [result] = await pool.query(
-      `INSERT INTO material_types (school_id, material_type_name, description, display_order, status, created_at) VALUES (?, ?, ?, ?, ?, NOW())`,
-      [schoolId, material_type_name, description, display_order || 0, status || 1]
+      `INSERT INTO material_types (school_id, branch_id, material_type_name, description, display_order, status, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+      [schoolId, branch_id ? Number(branch_id) : null, material_type_name, description, display_order || 0, status || 1]
     );
     return result.insertId;
   }

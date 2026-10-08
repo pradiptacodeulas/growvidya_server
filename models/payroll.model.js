@@ -143,8 +143,8 @@ class PayrollModel {
     const uType = Number(user_type) || 1;
     const empId = Number(employee_id);
 
-    let resolvedBranchId = branch_id;
-    if (!resolvedBranchId) {
+    let resolvedBranchId = branch_id || branchId || null;
+    if (!resolvedBranchId && empId) {
       if (uType === 2) {
         const [tm] = await pool.query('SELECT branch_id FROM teacher_master WHERE id = ? AND school_id = ?', [empId, sId]);
         if (tm.length && tm[0].branch_id) resolvedBranchId = tm[0].branch_id;
@@ -152,10 +152,6 @@ class PayrollModel {
         const [um] = await pool.query('SELECT branch_id FROM user_master WHERE id = ? AND school_id = ?', [empId, sId]);
         if (um.length && um[0].branch_id) resolvedBranchId = um[0].branch_id;
       }
-    }
-    if (!resolvedBranchId) {
-      const [mb] = await pool.query('SELECT id FROM branch_master WHERE school_id = ? AND is_main = 1 LIMIT 1', [sId]);
-      if (mb.length) resolvedBranchId = mb[0].id;
     }
 
     const [res] = await pool.query(
@@ -181,9 +177,9 @@ class PayrollModel {
           );
         } else {
           await pool.query(
-            `INSERT INTO teacher_bank (school_id, teacher_id, bank_name, account_name, account_number, ifsc_code, branch_name, status)
-             VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
-            [sId, empId, bank_name || '', account_name || '', account_no || '', ifsc_code || '', branch_name || '']
+            `INSERT INTO teacher_bank (school_id, branch_id, teacher_id, bank_name, account_name, account_number, ifsc_code, branch_name, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+            [sId, resolvedBranchId, empId, bank_name || '', account_name || '', account_no || '', ifsc_code || '', branch_name || '']
           );
         }
       } else {
@@ -200,9 +196,9 @@ class PayrollModel {
           );
         } else {
           await pool.query(
-            `INSERT INTO user_bank (school_id, user_id, bank_name, account_name, account_number, ifsc_code, branch_name, status)
-             VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
-            [sId, empId, bank_name || '', account_name || '', account_no || '', ifsc_code || '', branch_name || '']
+            `INSERT INTO user_bank (school_id, branch_id, user_id, bank_name, account_name, account_number, ifsc_code, branch_name, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+            [sId, resolvedBranchId, empId, bank_name || '', account_name || '', account_no || '', ifsc_code || '', branch_name || '']
           );
         }
       }
@@ -233,6 +229,17 @@ class PayrollModel {
 
     await pool.query(sql, params);
 
+    let resolvedBranchId = effectiveBranchId || null;
+    if (!resolvedBranchId && empId) {
+      if (uType === 2) {
+        const [tm] = await pool.query('SELECT branch_id FROM teacher_master WHERE id = ? AND school_id = ?', [empId, sId]);
+        if (tm.length && tm[0].branch_id) resolvedBranchId = tm[0].branch_id;
+      } else {
+        const [um] = await pool.query('SELECT branch_id FROM user_master WHERE id = ? AND school_id = ?', [empId, sId]);
+        if (um.length && um[0].branch_id) resolvedBranchId = um[0].branch_id;
+      }
+    }
+
     // Sync bank details if provided
     if (bank_name || account_name || account_no || ifsc_code || branch_name) {
       if (uType === 2) {
@@ -249,9 +256,9 @@ class PayrollModel {
           );
         } else {
           await pool.query(
-            `INSERT INTO teacher_bank (school_id, teacher_id, bank_name, account_name, account_number, ifsc_code, branch_name, status)
-             VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
-            [sId, empId, bank_name || '', account_name || '', account_no || '', ifsc_code || '', branch_name || '']
+            `INSERT INTO teacher_bank (school_id, branch_id, teacher_id, bank_name, account_name, account_number, ifsc_code, branch_name, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+            [sId, resolvedBranchId, empId, bank_name || '', account_name || '', account_no || '', ifsc_code || '', branch_name || '']
           );
         }
       } else {
@@ -268,9 +275,9 @@ class PayrollModel {
           );
         } else {
           await pool.query(
-            `INSERT INTO user_bank (school_id, user_id, bank_name, account_name, account_number, ifsc_code, branch_name, status)
-             VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
-            [sId, empId, bank_name || '', account_name || '', account_no || '', ifsc_code || '', branch_name || '']
+            `INSERT INTO user_bank (school_id, branch_id, user_id, bank_name, account_name, account_number, ifsc_code, branch_name, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+            [sId, resolvedBranchId, empId, bank_name || '', account_name || '', account_no || '', ifsc_code || '', branch_name || '']
           );
         }
       }

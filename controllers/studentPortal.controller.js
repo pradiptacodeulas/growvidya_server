@@ -669,7 +669,7 @@ class StudentPortalController {
 
       // 0. Verify assignment existence and check if deadline has passed
       const [asgRows] = await connection.query(
-        `SELECT id, title, due_date, status, is_published FROM assignments WHERE id = ? AND (school_id = ? OR ? IS NULL) AND status != 4`,
+        `SELECT id, branch_id, title, due_date, status, is_published FROM assignments WHERE id = ? AND (school_id = ? OR ? IS NULL) AND status != 4`,
         [assignmentId, schoolId, schoolId]
       );
 
@@ -679,6 +679,17 @@ class StudentPortalController {
       }
 
       const assignment = asgRows[0];
+
+      let branchId = req.user?.branch_id || req.user?.branchId || null;
+      if (!branchId) {
+        try {
+          const [stRow] = await connection.query('SELECT branch_id FROM student_master WHERE id = ? LIMIT 1', [studentId]);
+          if (stRow.length && stRow[0].branch_id) branchId = stRow[0].branch_id;
+        } catch (e) {}
+      }
+      if (!branchId && assignment.branch_id) {
+        branchId = assignment.branch_id;
+      }
 
       // STRICT DEADLINE ENFORCEMENT: Reject any submission attempt after due date and time
       if (isAssignmentExpired(assignment.due_date)) {
@@ -736,9 +747,9 @@ class StudentPortalController {
 
       const [attRes] = await connection.query(
         `INSERT INTO student_assignment_attempts 
-         (school_id, assignment_id, student_id, total_questions, correct_answers, score_percentage, attempted_at, status)
-         VALUES (?, ?, ?, ?, ?, ?, NOW(), 1)`,
-        [schoolId, assignmentId, studentId, totalQuestions, correctAnswersCount, scorePercentage]
+         (school_id, branch_id, assignment_id, student_id, total_questions, correct_answers, score_percentage, attempted_at, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), 1)`,
+        [schoolId, branchId, assignmentId, studentId, totalQuestions, correctAnswersCount, scorePercentage]
       );
       const attemptId = attRes.insertId;
 
@@ -751,9 +762,9 @@ class StudentPortalController {
       for (const sub of submissionRecords) {
         await connection.query(
           `INSERT INTO student_assignment_submissions 
-           (school_id, attempt_id, assignment_id, student_id, question_id, selected_answer_id, is_correct, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`,
-          [schoolId, attemptId, assignmentId, studentId, sub.question_id, sub.selected_answer_id, sub.is_correct]
+           (school_id, branch_id, attempt_id, assignment_id, student_id, question_id, selected_answer_id, is_correct, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+          [schoolId, branchId, attemptId, assignmentId, studentId, sub.question_id, sub.selected_answer_id, sub.is_correct]
         );
       }
 

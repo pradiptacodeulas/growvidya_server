@@ -42,19 +42,7 @@ exports.getNoticeById = async (req, res) => {
 exports.createNotice = async (req, res) => {
   try {
     const schoolId = getSchoolId(req);
-    let branchId = req.body.branch_id !== undefined ? req.body.branch_id : (req.user?.branchId || req.user?.branch_id || null);
-    if (!branchId) {
-      try {
-        const { pool } = require('../config/db.config');
-        const [branches] = await pool.query(
-          `SELECT id FROM branch_master WHERE school_id = ? AND status = 1 ORDER BY is_main_branch DESC, id ASC LIMIT 1`,
-          [schoolId]
-        );
-        if (branches && branches[0]) {
-          branchId = branches[0].id;
-        }
-      } catch (_) {}
-    }
+    const branchId = req.body.branch_id || req.body.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null;
 
     const {
       title,

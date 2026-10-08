@@ -246,11 +246,16 @@ class GeneralSettingModel {
 
     // Update weekends
     if (Array.isArray(weekends)) {
-      await pool.query(`DELETE FROM weekends WHERE school_id = ?`, [schoolId]);
+      const branchVal = data.branch_id || data.branchId || null;
+      if (branchVal) {
+        await pool.query(`DELETE FROM weekends WHERE school_id = ? AND (branch_id = ? OR branch_id IS NULL)`, [schoolId, Number(branchVal)]);
+      } else {
+        await pool.query(`DELETE FROM weekends WHERE school_id = ?`, [schoolId]);
+      }
       if (weekends.length > 0) {
-        const weekendValues = weekends.map((w) => [schoolId, Number(w)]);
+        const weekendValues = weekends.map((w) => [schoolId, branchVal ? Number(branchVal) : null, Number(w)]);
         await pool.query(
-          `INSERT INTO weekends (school_id, weekends) VALUES ?`,
+          `INSERT INTO weekends (school_id, branch_id, weekends) VALUES ?`,
           [weekendValues]
         );
       }

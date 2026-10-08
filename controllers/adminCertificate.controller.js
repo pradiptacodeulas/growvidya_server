@@ -454,6 +454,7 @@ exports.createBorder = async (req, res) => {
 
     const insertId = await CertificateModel.createBorder({
       school_id: schoolId,
+      branch_id: req.body?.branch_id || req.body?.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null,
       image: imagePath,
       status: status,
     });
