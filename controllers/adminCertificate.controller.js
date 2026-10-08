@@ -112,11 +112,11 @@ exports.createCategory = async (req, res) => {
       return ApiResponse.error(res, 'Validation failed. Please check the fields.', errors, 400);
     }
 
-    // Check for duplicate category name within this school
-    const existing = await CertificateModel.getCategoryByName(category_name.trim(), schoolId);
+    // Check for duplicate category name within this branch/school
+    const existing = await CertificateModel.getCategoryByName(category_name.trim(), schoolId, null, branchId);
     if (existing) {
-      return ApiResponse.error(res, 'A certificate category with this name already exists.', {
-        category_name: 'A category with this name already exists in your school.',
+      return ApiResponse.error(res, 'A certificate category with this name already exists in this branch.', {
+        category_name: 'A category with this name already exists in this branch.',
       }, 409);
     }
 
@@ -162,9 +162,10 @@ exports.updateCategory = async (req, res) => {
         errors.category_name = 'Category name cannot exceed 100 characters.';
       } else {
         cleanName = category_name.trim();
-        const duplicate = await CertificateModel.getCategoryByName(cleanName, schoolId, id);
+        const effectiveBranchId = req.body.branch_id !== undefined ? req.body.branch_id : (existingCategory.branch_id || branchId);
+        const duplicate = await CertificateModel.getCategoryByName(cleanName, schoolId, id, effectiveBranchId);
         if (duplicate) {
-          errors.category_name = 'A category with this name already exists in your school.';
+          errors.category_name = 'A category with this name already exists in this branch.';
         }
       }
     }

@@ -1038,7 +1038,116 @@ class AcademicModel {
     }
   }
 
+  static async checkRoutineConflicts(schoolId, { routineId = null, class_id, section_id, day, period_id, teacher_id }) {
+    // 1. Check if this Class and Section already has a scheduled routine for this day and period
+    if (class_id && section_id && day && period_id) {
+      let slotSql = `
+        SELECT r.id, sm.subject_name, pm.period_name
+        FROM routine r
+        LEFT JOIN subject_master sm ON sm.id = r.subject_id
+        LEFT JOIN period_master pm ON pm.id = r.period_id
+        WHERE r.school_id = ?
+          AND r.class_id = ?
+          AND r.section_id = ?
+          AND r.day = ?
+          AND r.period_id = ?
+          AND (r.status != 4 OR r.status IS NULL)
+      `;
+      const slotParams = [schoolId, class_id, section_id, day, period_id];
+      if (routineId) {
+        slotSql += ` AND r.id != ?`;
+        slotParams.push(routineId);
+      }
+      slotSql += ` LIMIT 1`;
+      const [existingSlots] = await pool.query(slotSql, slotParams);
+      if (existingSlots.length > 0) {
+        const slot = existingSlots[0];
+        const subName = slot.subject_name ? `"${slot.subject_name}"` : 'a subject';
+        const perName = slot.period_name ? ` (${slot.period_name})` : '';
+        const err = new Error(`Conflict: This class and section already has ${subName} scheduled for this period${perName}.`);
+        err.statusCode = 409;
+        err.status = 409;
+        throw err;
+      }
+    }
+
+    // 2. Check if the teacher is already assigned to another class/section with overlapping time on the same day
+    if (teacher_id && day && period_id) {
+      const [targetPerRows] = await pool.query(
+        `SELECT start_time, end_time, period_name FROM period_master WHERE id = ?`,
+        [period_id]
+      );
+      const targetPer = targetPerRows[0] || null;
+      const targetStart = targetPer?.start_time || null;
+      const targetEnd = targetPer?.end_time || null;
+
+      let teacherSql = `
+        SELECT 
+          r.id,
+          cm.class_name,
+          sec.section_name,
+          sm.subject_name,
+          pm.period_name,
+          TIME_FORMAT(pm.start_time, '%H:%i') AS start_time,
+          TIME_FORMAT(pm.end_time, '%H:%i') AS end_time,
+          CONCAT(TRIM(IFNULL(tm.first_name, '')), ' ', IFNULL(TRIM(tm.last_name), '')) AS teacher_name
+        FROM routine r
+        JOIN period_master pm ON pm.id = r.period_id
+        LEFT JOIN class_master cm ON cm.id = r.class_id
+        LEFT JOIN section_master sec ON sec.id = r.section_id
+        LEFT JOIN subject_master sm ON sm.id = r.subject_id
+        LEFT JOIN teacher_master tm ON tm.id = r.teacher_id
+        WHERE r.school_id = ?
+          AND r.day = ?
+          AND r.teacher_id = ?
+          AND (r.status != 4 OR r.status IS NULL)
+      `;
+      const teacherParams = [schoolId, day, teacher_id];
+
+      if (targetStart && targetEnd) {
+        teacherSql += ` AND (
+          (pm.start_time IS NOT NULL AND pm.end_time IS NOT NULL AND ? < pm.end_time AND ? > pm.start_time)
+          OR r.period_id = ?
+        )`;
+        teacherParams.push(targetStart, targetEnd, period_id);
+      } else {
+        teacherSql += ` AND r.period_id = ?`;
+        teacherParams.push(period_id);
+      }
+
+      if (routineId) {
+        teacherSql += ` AND r.id != ?`;
+        teacherParams.push(routineId);
+      }
+      teacherSql += ` LIMIT 1`;
+
+      const [conflicts] = await pool.query(teacherSql, teacherParams);
+      if (conflicts.length > 0) {
+        const c = conflicts[0];
+        const teacherName = c.teacher_name?.trim() || 'This teacher';
+        const className = c.class_name || 'another class';
+        const sectionName = c.section_name ? ` - Section ${c.section_name}` : '';
+        const timeRange = (c.start_time && c.end_time) ? ` (${c.start_time} - ${c.end_time})` : '';
+        const periodName = c.period_name ? ` during ${c.period_name}` : '';
+        const err = new Error(
+          `Conflict: Teacher ${teacherName} is already scheduled in ${className}${sectionName}${periodName}${timeRange}.`
+        );
+        err.statusCode = 409;
+        err.status = 409;
+        throw err;
+      }
+    }
+  }
+
   static async createRoutine(schoolId, { branch_id = null, class_id, section_id, day, period_id, teacher_id, subject_id, shift_id }) {
+    await AcademicModel.checkRoutineConflicts(schoolId, {
+      class_id,
+      section_id,
+      day,
+      period_id,
+      teacher_id,
+    });
+
     let resolvedBranchId = branch_id;
     if (!resolvedBranchId && class_id) {
       const [cm] = await pool.query(`SELECT branch_id FROM class_master WHERE id = ?`, [class_id]);
@@ -1071,9 +1180,29 @@ class AcademicModel {
   }
 
   static async updateRoutine(id, schoolId, { class_id, section_id, day, period_id, teacher_id, subject_id, shift_id }) {
+    const [existing] = await pool.query(`SELECT * FROM routine WHERE id = ? AND school_id = ?`, [id, schoolId]);
+    if (existing.length === 0) return false;
+    const current = existing[0];
+
+    const finalClassId = class_id !== undefined ? class_id : current.class_id;
+    const finalSectionId = section_id !== undefined ? section_id : current.section_id;
+    const finalDay = day !== undefined ? day : current.day;
+    const finalPeriodId = period_id !== undefined ? period_id : current.period_id;
+    const finalTeacherId = teacher_id !== undefined ? teacher_id : current.teacher_id;
+    const finalSubjectId = subject_id !== undefined ? subject_id : current.subject_id;
+
+    await AcademicModel.checkRoutineConflicts(schoolId, {
+      routineId: id,
+      class_id: finalClassId,
+      section_id: finalSectionId,
+      day: finalDay,
+      period_id: finalPeriodId,
+      teacher_id: finalTeacherId,
+    });
+
     let finalShiftId = shift_id;
-    if (!finalShiftId && period_id) {
-      const [perRows] = await pool.query(`SELECT shift_id FROM period_master WHERE id = ?`, [period_id]);
+    if (!finalShiftId && finalPeriodId) {
+      const [perRows] = await pool.query(`SELECT shift_id FROM period_master WHERE id = ?`, [finalPeriodId]);
       if (perRows.length > 0 && perRows[0].shift_id) {
         finalShiftId = perRows[0].shift_id;
       }
@@ -1081,7 +1210,7 @@ class AcademicModel {
     const [result] = await pool.query(
       `UPDATE routine SET class_id = ?, section_id = ?, day = ?, period_id = ?, teacher_id = ?, subject_id = ?, shift_id = ?, updated_at = NOW()
        WHERE id = ? AND school_id = ?`,
-      [class_id, section_id, day, period_id, teacher_id || null, subject_id, finalShiftId || null, id, schoolId]
+      [finalClassId, finalSectionId, finalDay, finalPeriodId, finalTeacherId || null, finalSubjectId, finalShiftId || null, id, schoolId]
     );
     return result.affectedRows > 0;
   }

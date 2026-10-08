@@ -46,12 +46,16 @@ class CertificateModel {
     return rows[0] || null;
   }
 
-  static async getCategoryByName(categoryName, schoolId, excludeId = null) {
+  static async getCategoryByName(categoryName, schoolId, excludeId = null, branchId = null) {
     let sql = `SELECT * FROM certificate_category WHERE LOWER(TRIM(category_name)) = LOWER(TRIM(?)) AND school_id = ? AND status != 4`;
     const params = [categoryName, schoolId];
     if (excludeId) {
       sql += ` AND id != ?`;
       params.push(excludeId);
+    }
+    if (branchId !== null && branchId !== undefined && branchId !== '') {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
     }
     const [rows] = await pool.query(sql, params);
     return rows[0] || null;

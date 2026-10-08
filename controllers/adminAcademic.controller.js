@@ -804,6 +804,9 @@ class AdminAcademicController {
       const insertId = await AcademicModel.createRoutine(schoolId, { ...req.body, branch_id: branchId });
       return ApiResponse.success(res, 'Routine period scheduled', { id: insertId }, 201);
     } catch (error) {
+      if (error.statusCode === 409 || error.status === 409) {
+        return ApiResponse.error(res, error.message, null, 409);
+      }
       next(error);
     }
   }
@@ -816,6 +819,9 @@ class AdminAcademicController {
       if (!updated) return ApiResponse.error(res, 'Routine period not found', null, 404);
       return ApiResponse.success(res, 'Routine period updated successfully');
     } catch (error) {
+      if (error.statusCode === 409 || error.status === 409) {
+        return ApiResponse.error(res, error.message, null, 409);
+      }
       next(error);
     }
   }
