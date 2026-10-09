@@ -169,7 +169,7 @@ class AcademicModel {
   static async deleteAcademicYear(id, schoolId, branchId = null) {
     let sql = `UPDATE academic_year_master SET status = 4 WHERE id = ? AND school_id = ?`;
     const params = [id, schoolId];
-    if (branchId) {
+    if (branchId && branchId !== 'all') {
       sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
       params.push(Number(branchId));
     }
@@ -222,7 +222,7 @@ class AcademicModel {
   }
 
   static async createClass(schoolId, { class_name, shift_id = null, sort_order = 0, status = 1, branch_id = null }) {
-    let resolvedBranchId = branch_id ? Number(branch_id) : null;
+    let resolvedBranchId = (branch_id && branch_id !== 'all') ? Number(branch_id) : null;
     if (!resolvedBranchId) {
       try {
         const [mainB] = await pool.query(
@@ -258,7 +258,7 @@ class AcademicModel {
   }
 
   static async updateClass(id, schoolId, { class_name, shift_id, sort_order, status, branch_id = null }, branchId = null) {
-    const targetBranchId = branch_id ? Number(branch_id) : (branchId ? Number(branchId) : null);
+    let targetBranchId = (branch_id && branch_id !== 'all') ? Number(branch_id) : ((branchId && branchId !== 'all') ? Number(branchId) : null);
 
     // Branch-aware duplicate check on update
     if (class_name && String(class_name).trim()) {
@@ -348,7 +348,7 @@ class AcademicModel {
   }
 
   static async createSection(schoolId, { class_id, section_name, capacity = 40, note = '', sort_order = 1, status = 1, branch_id = null }) {
-    let resolvedBranchId = branch_id ? Number(branch_id) : null;
+    let resolvedBranchId = (branch_id && branch_id !== 'all') ? Number(branch_id) : null;
     if (!resolvedBranchId && class_id) {
       try {
         const [cls] = await pool.query(`SELECT branch_id FROM class_master WHERE id = ? LIMIT 1`, [class_id]);
@@ -390,7 +390,7 @@ class AcademicModel {
   }
 
   static async updateSection(id, schoolId, { class_id, section_name, capacity, note, sort_order, status, branch_id = null }, branchId = null) {
-    const targetBranchId = branch_id ? Number(branch_id) : (branchId ? Number(branchId) : null);
+    let targetBranchId = (branch_id && branch_id !== 'all') ? Number(branch_id) : ((branchId && branchId !== 'all') ? Number(branchId) : null);
 
     // Branch-aware duplicate check on update
     if (section_name && String(section_name).trim() && class_id) {
@@ -433,9 +433,10 @@ class AcademicModel {
   // ==================== SUBJECTS ====================
   // Filter subjects strictly by teacher_class_assign for teachers, status = 1
   static async getSubjects(schoolId, classId = null, activeOnly = false, teacherId = null, branchId = null) {
-    let sql = `SELECT sm.*, cm.class_name 
+    let sql = `SELECT sm.*, cm.class_name, bm.branch_name, bm.branch_code 
                FROM subject_master sm
                LEFT JOIN class_master cm ON sm.class_id = cm.id
+               LEFT JOIN branch_master bm ON COALESCE(sm.branch_id, cm.branch_id) = bm.id
                WHERE sm.school_id = ?`;
     const params = [schoolId];
 
@@ -445,9 +446,9 @@ class AcademicModel {
       sql += ` AND (sm.status != 4 OR sm.status IS NULL)`;
     }
 
-    if (branchId) {
-      sql += ` AND (sm.branch_id = ? OR sm.branch_id IS NULL OR cm.branch_id = ?)`;
-      params.push(Number(branchId), Number(branchId));
+    if (branchId && branchId !== 'all') {
+      sql += ` AND (COALESCE(sm.branch_id, cm.branch_id) = ? OR (sm.branch_id IS NULL AND cm.branch_id IS NULL))`;
+      params.push(Number(branchId));
     }
 
     if (classId) {
@@ -474,13 +475,14 @@ class AcademicModel {
 
   static async getSubjectById(id, schoolId, branchId = null) {
     try {
-      let sql = `SELECT sm.*, cm.class_name 
+      let sql = `SELECT sm.*, cm.class_name, bm.branch_name, bm.branch_code 
          FROM subject_master sm 
          LEFT JOIN class_master cm ON sm.class_id = cm.id 
+         LEFT JOIN branch_master bm ON COALESCE(sm.branch_id, cm.branch_id) = bm.id
          WHERE sm.id = ? AND sm.school_id = ? AND (sm.status != 4 OR sm.status IS NULL)`;
       const params = [id, schoolId];
-      if (branchId) {
-        sql += ` AND (sm.branch_id = ? OR sm.branch_id IS NULL)`;
+      if (branchId && branchId !== 'all') {
+        sql += ` AND (COALESCE(sm.branch_id, cm.branch_id) = ? OR (sm.branch_id IS NULL AND cm.branch_id IS NULL))`;
         params.push(Number(branchId));
       }
       sql += ` LIMIT 1`;
@@ -553,9 +555,15 @@ class AcademicModel {
       }
     }
 
-    let sql = `UPDATE subject_master SET class_id = ?, subject_name = ?, sort_order = ?, status = ? WHERE id = ? AND school_id = ?`;
-    const params = [class_id ? Number(class_id) : null, subject_name, Number(sort_order) || 0, Number(status), id, schoolId];
-    if (branchId) {
+    let sql = `UPDATE subject_master SET class_id = ?, subject_name = ?, sort_order = ?, status = ?`;
+    const params = [class_id ? Number(class_id) : null, subject_name, Number(sort_order) || 0, Number(status)];
+    if (targetBranchId) {
+      sql += `, branch_id = ?`;
+      params.push(targetBranchId);
+    }
+    sql += ` WHERE id = ? AND school_id = ?`;
+    params.push(id, schoolId);
+    if (branchId && branchId !== 'all') {
       sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
       params.push(Number(branchId));
     }

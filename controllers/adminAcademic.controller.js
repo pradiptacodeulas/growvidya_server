@@ -12,7 +12,8 @@ class AdminAcademicController {
   static async getAllMasters(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const rawBranch = req.branchId !== undefined ? req.branchId : (req.query.branch_id || req.query.branchId || null);
+      const branchId = (rawBranch && rawBranch !== 'all') ? Number(rawBranch) : null;
       const [years, classes, sections, subjects, shifts, houses, periods, days] = await Promise.all([
         AcademicModel.getAcademicYears(schoolId, branchId),
         AcademicModel.getClasses(schoolId, false, null, branchId),
@@ -43,7 +44,8 @@ class AdminAcademicController {
   static async getAcademicYears(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const rawBranch = req.branchId !== undefined ? req.branchId : (req.query.branch_id || req.query.branchId || null);
+      const branchId = (rawBranch && rawBranch !== 'all') ? Number(rawBranch) : null;
       const data = await AcademicModel.getAcademicYears(schoolId, branchId);
       return ApiResponse.success(res, 'Academic years fetched', data);
     } catch (error) {
@@ -54,7 +56,8 @@ class AdminAcademicController {
   static async getAcademicYearById(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const rawBranch = req.branchId !== undefined ? req.branchId : (req.query.branch_id || req.query.branchId || null);
+      const branchId = (rawBranch && rawBranch !== 'all') ? Number(rawBranch) : null;
       const { id } = req.params;
       const data = await AcademicModel.getAcademicYearById(id, schoolId, branchId);
       if (!data) return ApiResponse.error(res, 'Academic year not found', null, 404);
@@ -96,7 +99,8 @@ class AdminAcademicController {
   static async deleteAcademicYear(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const rawBranch = req.branchId !== undefined ? req.branchId : (req.query.branch_id || req.query.branchId || null);
+      const branchId = (rawBranch && rawBranch !== 'all') ? Number(rawBranch) : null;
       const deleted = await AcademicModel.deleteAcademicYear(req.params.id, schoolId, branchId);
       if (!deleted) return ApiResponse.error(res, 'Academic year not found', null, 404);
       return ApiResponse.success(res, 'Academic year deleted successfully.', null);
@@ -110,7 +114,8 @@ class AdminAcademicController {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
       const activeOnly = req.query.activeOnly === 'true' || req.query.status === '1' || req.user?.roleName === 'Teacher';
-      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const rawBranch = req.branchId !== undefined ? req.branchId : (req.query.branch_id || req.query.branchId || null);
+      const branchId = (rawBranch && rawBranch !== 'all') ? Number(rawBranch) : null;
       const teacherId =
         req.query.teacher_id ||
         req.query.teacherId ||
@@ -127,7 +132,8 @@ class AdminAcademicController {
   static async getClassById(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const rawBranch = req.branchId !== undefined ? req.branchId : (req.query.branch_id || req.query.branchId || null);
+      const branchId = (rawBranch && rawBranch !== 'all') ? Number(rawBranch) : null;
       const data = await AcademicModel.getClassById(req.params.id, schoolId, branchId);
       if (!data) return ApiResponse.error(res, 'Class not found', null, 404);
       return ApiResponse.success(res, 'Class fetched successfully.', data);
@@ -249,7 +255,8 @@ class AdminAcademicController {
       const schoolId = AdminAcademicController.getSchoolId(req);
       const classId = req.query.classId || req.query.class_id || req.params.classId || null;
       const activeOnly = req.query.activeOnly === 'true' || req.query.status === '1' || req.user?.roleName === 'Teacher';
-      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const rawBranch = req.branchId !== undefined ? req.branchId : (req.query.branch_id || req.query.branchId || null);
+      const branchId = (rawBranch && rawBranch !== 'all') ? Number(rawBranch) : null;
       const teacherId =
         req.query.teacher_id ||
         req.query.teacherId ||
@@ -266,7 +273,8 @@ class AdminAcademicController {
   static async getSubjectById(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const rawBranch = req.branchId !== undefined ? req.branchId : (req.query.branch_id || req.query.branchId || null);
+      const branchId = (rawBranch && rawBranch !== 'all') ? Number(rawBranch) : null;
       const { id } = req.params;
       const data = await AcademicModel.getSubjectById(id, schoolId, branchId);
       if (!data) return ApiResponse.error(res, 'Subject not found', null, 404);
@@ -290,8 +298,11 @@ class AdminAcademicController {
   static async updateSubject(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const branchId = req.branchId || req.body.branch_id || null;
-      const updated = await AcademicModel.updateSubject(req.params.id, schoolId, req.body, branchId);
+      const branchId = req.body.branch_id || req.body.branchId || req.branchId || undefined;
+      const updated = await AcademicModel.updateSubject(req.params.id, schoolId, {
+        ...req.body,
+        ...(branchId !== undefined ? { branch_id: branchId } : {}),
+      }, req.branchId || null);
       if (!updated) return ApiResponse.error(res, 'Subject not found', null, 404);
       return ApiResponse.success(res, 'Subject updated successfully.', null);
     } catch (error) {
