@@ -617,7 +617,12 @@ class SubscriptionModel {
    */
   static async getConfigurationCatalog() {
     const [storagePlans] = await pool.query(
-      'SELECT id, plan_name, storage_capacity, capacity_unit_id, monthly_price, annual_price, description FROM storage_master WHERE status = 1 ORDER BY storage_capacity ASC'
+      `SELECT sm.id, sm.plan_name, sm.storage_capacity, sm.capacity_unit_id, sm.monthly_price, sm.annual_price, sm.description,
+              cu.unit_name, cu.unit_code, cu.factor_in_mb
+       FROM storage_master sm
+       LEFT JOIN capacity_unit_master cu ON sm.capacity_unit_id = cu.id
+       WHERE sm.status = 1
+       ORDER BY (sm.storage_capacity * COALESCE(cu.factor_in_mb, 1024)) ASC`
     );
     const [attendanceMachines] = await pool.query(
       'SELECT id, machine_name, model_number, brand, machine_type, connectivity, user_capacity, log_capacity, push_protocol, unit_price, amc_price, machine_image, specifications FROM attendance_machine_master WHERE status = 1 ORDER BY unit_price ASC'
