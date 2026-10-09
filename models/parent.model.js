@@ -860,14 +860,24 @@ class ParentModel {
 
   static async getChildExamResults(studentId, schoolId) {
     try {
-      // Fetch grade settings for the school for accurate grade calculations
-      const [gradeSettings] = await pool.query(
-        `SELECT id, grade_name, min_percentage, max_percentage 
-         FROM grade_settings 
-         WHERE (school_id = ? OR ? IS NULL) AND status = 1 
-         ORDER BY min_percentage DESC`,
-        [schoolId, schoolId]
+      // Fetch student's branchId
+      const [stuRows] = await pool.query(
+        `SELECT branch_id FROM student_master WHERE id = ? LIMIT 1`,
+        [studentId]
       );
+      const studentBranchId = stuRows[0]?.branch_id || null;
+
+      // Fetch grade settings for the school and branch for accurate grade calculations
+      let gradeSql = `SELECT id, grade_name, min_percentage, max_percentage 
+         FROM grade_settings 
+         WHERE (school_id = ? OR ? IS NULL) AND status = 1`;
+      const gradeParams = [schoolId, schoolId];
+      if (studentBranchId) {
+        gradeSql += ` AND branch_id = ?`;
+        gradeParams.push(studentBranchId);
+      }
+      gradeSql += ` ORDER BY min_percentage DESC`;
+      const [gradeSettings] = await pool.query(gradeSql, gradeParams);
 
       const computeGrade = (pct) => {
         const val = Number(pct);

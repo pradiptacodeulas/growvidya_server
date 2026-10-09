@@ -28,19 +28,20 @@ async function authMiddleware(req, res, next) {
       const getCookie = (name) => req.cookies?.[name] || req.signedCookies?.[name];
       const url = (req.baseUrl || '') + (req.path || '') + (req.originalUrl || '');
 
-      const isTeacherPortal = url.includes('/v1/teacher/') || url.includes('/teacheraccount');
-      const isParentPortal = url.includes('/v1/parent/') || url.includes('/parentchild') || url.includes('/parentaccount');
-      const isStudentPortal = url.includes('/v1/student/') || url.includes('/studentaccount');
-      const isAdminPortal = url.includes('/v1/admin/') || url.includes('/admin/');
+      const portalHeader = req.headers['x-portal-type'];
+      const isTeacherPortal = portalHeader === 'TeacherPortal' || url.includes('/v1/teacher/') || url.includes('/teacheraccount');
+      const isParentPortal = portalHeader === 'ParentPortal' || url.includes('/v1/parent/') || url.includes('/parentchild') || url.includes('/parentaccount');
+      const isStudentPortal = portalHeader === 'StudentPortal' || url.includes('/v1/student/') || url.includes('/studentaccount');
+      const isAdminPortal = !isTeacherPortal && !isParentPortal && !isStudentPortal && (url.includes('/v1/admin/') || url.includes('/admin/'));
 
-      if (isAdminPortal) {
-        token = getCookie('growvidya_admin_session') || getCookie(config.cookie?.name || 'growvidya_session');
-      } else if (isTeacherPortal) {
+      if (isTeacherPortal) {
         token = getCookie('growvidya_teacher_session');
       } else if (isParentPortal) {
         token = getCookie('growvidya_parent_session');
       } else if (isStudentPortal) {
         token = getCookie('growvidya_student_session');
+      } else if (isAdminPortal) {
+        token = getCookie('growvidya_admin_session') || getCookie(config.cookie?.name || 'growvidya_session');
       }
 
       if (!token) {

@@ -46,43 +46,65 @@ class AdminExaminationModel {
   // 1. GRADE SETTINGS
   // =========================================================
 
-  static async getAllGrades(schoolId, status) {
+  static async getAllGrades(schoolId, status, branchId = null) {
     let query = `
       SELECT 
-        id,
-        school_id,
-        grade_name,
-        min_percentage,
-        max_percentage,
-        status,
-        created_on
-      FROM grade_settings
-      WHERE school_id = ?
+        g.id,
+        g.school_id,
+        g.branch_id,
+        g.grade_name,
+        g.min_percentage,
+        g.max_percentage,
+        g.status,
+        g.created_on,
+        bm.branch_name
+      FROM grade_settings g
+      LEFT JOIN branch_master bm ON bm.id = g.branch_id
+      WHERE (g.school_id = ? OR ? IS NULL)
     `;
-    const params = [schoolId];
+    const params = [schoolId, schoolId];
 
-    if (status !== undefined && status !== null && status !== '') {
-      query += ` AND status = ?`;
-      params.push(status);
-    } else {
-      query += ` AND status != 4`;
+    if (branchId) {
+      query += ` AND g.branch_id = ?`;
+      params.push(Number(branchId));
     }
 
-    query += ` ORDER BY min_percentage DESC`;
+    if (status !== undefined && status !== null && status !== '') {
+      query += ` AND g.status = ?`;
+      params.push(status);
+    } else {
+      query += ` AND (g.status != 4 OR g.status IS NULL)`;
+    }
+
+    query += ` ORDER BY g.min_percentage DESC`;
     const [rows] = await pool.query(query, params);
     return rows;
   }
 
-  static async getGradeById(id, schoolId) {
+  static async getGradeById(id, schoolId, branchId = null) {
     let query = `
-      SELECT id, school_id, grade_name, min_percentage, max_percentage, status, created_on
-      FROM grade_settings
-      WHERE id = ?
+      SELECT 
+        g.id, 
+        g.school_id, 
+        g.branch_id, 
+        g.grade_name, 
+        g.min_percentage, 
+        g.max_percentage, 
+        g.status, 
+        g.created_on,
+        bm.branch_name
+      FROM grade_settings g
+      LEFT JOIN branch_master bm ON bm.id = g.branch_id
+      WHERE g.id = ?
     `;
     const params = [id];
     if (schoolId) {
-      query += ` AND school_id = ?`;
-      params.push(schoolId);
+      query += ` AND (g.school_id = ? OR ? IS NULL)`;
+      params.push(schoolId, schoolId);
+    }
+    if (branchId) {
+      query += ` AND g.branch_id = ?`;
+      params.push(Number(branchId));
     }
     const [rows] = await pool.query(query, params);
     return rows[0] || null;
@@ -104,7 +126,7 @@ class AdminExaminationModel {
     return result.insertId;
   }
 
-  static async updateGrade(id, { gradeName, minPercentage, maxPercentage, status, schoolId }) {
+  static async updateGrade(id, { gradeName, minPercentage, maxPercentage, status, branchId, schoolId }) {
     let query = `UPDATE grade_settings SET `;
     const params = [];
     const updates = [];
@@ -124,6 +146,10 @@ class AdminExaminationModel {
     if (status !== undefined) {
       updates.push('status = ?');
       params.push(status);
+    }
+    if (branchId !== undefined) {
+      updates.push('branch_id = ?');
+      params.push(branchId ? Number(branchId) : null);
     }
 
     if (updates.length === 0) return false;
@@ -175,7 +201,7 @@ class AdminExaminationModel {
     const params = [schoolId, schoolId];
 
     if (branchId) {
-      query += ` AND (e.branch_id = ? OR e.branch_id IS NULL)`;
+      query += ` AND e.branch_id = ?`;
       params.push(Number(branchId));
     }
 
@@ -217,7 +243,7 @@ class AdminExaminationModel {
       params.push(schoolId, schoolId);
     }
     if (branchId) {
-      query += ` AND (e.branch_id = ? OR e.branch_id IS NULL)`;
+      query += ` AND e.branch_id = ?`;
       params.push(Number(branchId));
     }
     const [rows] = await pool.query(query, params);
@@ -271,7 +297,7 @@ class AdminExaminationModel {
       params.push(schoolId, schoolId);
     }
     if (branchId) {
-      query += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      query += ` AND branch_id = ?`;
       params.push(Number(branchId));
     }
 
@@ -288,7 +314,7 @@ class AdminExaminationModel {
       marksParams.push(schoolId, schoolId);
     }
     if (branchId) {
-      marksQuery += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      marksQuery += ` AND branch_id = ?`;
       marksParams.push(Number(branchId));
     }
     marksQuery += ` LIMIT 1`;
@@ -306,7 +332,7 @@ class AdminExaminationModel {
       params.push(schoolId, schoolId);
     }
     if (branchId) {
-      query += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      query += ` AND branch_id = ?`;
       params.push(Number(branchId));
     }
     const [result] = await pool.query(query, params);
@@ -337,7 +363,7 @@ class AdminExaminationModel {
     const params = [schoolId, schoolId];
 
     if (branchId) {
-      query += ` AND (et.branch_id = ? OR et.branch_id IS NULL)`;
+      query += ` AND et.branch_id = ?`;
       params.push(Number(branchId));
     }
 
@@ -381,7 +407,7 @@ class AdminExaminationModel {
       params.push(schoolId, schoolId);
     }
     if (branchId) {
-      query += ` AND (et.branch_id = ? OR et.branch_id IS NULL)`;
+      query += ` AND et.branch_id = ?`;
       params.push(Number(branchId));
     }
     const [rows] = await pool.query(query, params);
@@ -445,7 +471,7 @@ class AdminExaminationModel {
       params.push(schoolId, schoolId);
     }
     if (branchId) {
-      query += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      query += ` AND branch_id = ?`;
       params.push(Number(branchId));
     }
 
@@ -464,7 +490,7 @@ class AdminExaminationModel {
       marksParams.push(schoolId, schoolId);
     }
     if (branchId) {
-      marksQuery += ` AND (er.branch_id = ? OR er.branch_id IS NULL)`;
+      marksQuery += ` AND er.branch_id = ?`;
       marksParams.push(Number(branchId));
     }
     marksQuery += ` LIMIT 1`;
@@ -482,7 +508,7 @@ class AdminExaminationModel {
       params.push(schoolId, schoolId);
     }
     if (branchId) {
-      query += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      query += ` AND branch_id = ?`;
       params.push(Number(branchId));
     }
     const [result] = await pool.query(query, params);
@@ -517,7 +543,7 @@ class AdminExaminationModel {
     const params = [schoolId, schoolId];
 
     if (branchId) {
-      query += ` AND (esm.branch_id = ? OR esm.branch_id IS NULL)`;
+      query += ` AND esm.branch_id = ?`;
       params.push(Number(branchId));
     }
 
@@ -538,18 +564,20 @@ class AdminExaminationModel {
     return rows;
   }
 
-  static async isExamPatternLocked({ schoolId, examId, classId }) {
+  static async isExamPatternLocked({ schoolId, examId, classId, branchId = null }) {
     if (!schoolId || !examId || !classId) {
       return { isLocked: false, lockReason: null };
     }
 
     // 1. Check if student marks are already recorded for this exam and class
-    const [results] = await pool.query(
-      `SELECT id FROM exam_result 
-       WHERE school_id = ? AND exam_id = ? AND class_id = ? AND status != 4 
-       LIMIT 1`,
-      [schoolId, examId, classId]
-    );
+    let resQuery = `SELECT id FROM exam_result WHERE school_id = ? AND exam_id = ? AND class_id = ? AND status != 4`;
+    const resParams = [schoolId, examId, classId];
+    if (branchId) {
+      resQuery += ` AND branch_id = ?`;
+      resParams.push(Number(branchId));
+    }
+    resQuery += ` LIMIT 1`;
+    const [results] = await pool.query(resQuery, resParams);
     if (results.length > 0) {
       return {
         isLocked: true,
@@ -558,12 +586,14 @@ class AdminExaminationModel {
     }
 
     // 2. Check if student attendance is already marked for this exam and class
-    const [attendance] = await pool.query(
-      `SELECT id FROM exam_attendance 
-       WHERE school_id = ? AND exam_id = ? AND class_id = ? AND status != 4 
-       LIMIT 1`,
-      [schoolId, examId, classId]
-    );
+    let attQuery = `SELECT id FROM exam_attendance WHERE school_id = ? AND exam_id = ? AND class_id = ? AND status != 4`;
+    const attParams = [schoolId, examId, classId];
+    if (branchId) {
+      attQuery += ` AND branch_id = ?`;
+      attParams.push(Number(branchId));
+    }
+    attQuery += ` LIMIT 1`;
+    const [attendance] = await pool.query(attQuery, attParams);
     if (attendance.length > 0) {
       return {
         isLocked: true,
@@ -572,13 +602,16 @@ class AdminExaminationModel {
     }
 
     // 3. Check if exam schedule has already taken place or been completed
-    const [schedules] = await pool.query(
-      `SELECT id, date, status FROM exam_schedule 
+    let schedQuery = `SELECT id, date, status FROM exam_schedule 
        WHERE school_id = ? AND exam_id = ? AND class_id = ? AND (status != 4 OR status IS NULL)
-         AND (status = 2 OR date < CURDATE() OR (date = CURDATE() AND end_time <= CURTIME()))
-       LIMIT 1`,
-      [schoolId, examId, classId]
-    );
+         AND (status = 2 OR date < CURDATE() OR (date = CURDATE() AND end_time <= CURTIME()))`;
+    const schedParams = [schoolId, examId, classId];
+    if (branchId) {
+      schedQuery += ` AND branch_id = ?`;
+      schedParams.push(Number(branchId));
+    }
+    schedQuery += ` LIMIT 1`;
+    const [schedules] = await pool.query(schedQuery, schedParams);
     if (schedules.length > 0) {
       return {
         isLocked: true,
@@ -615,19 +648,22 @@ class AdminExaminationModel {
     }
   }
 
-  static async getExamSubjectConfig({ schoolId, examId, classId, configuredOnly = false, teacherId = null }) {
-    const lockStatus = await AdminExaminationModel.isExamPatternLocked({ schoolId, examId, classId });
+  static async getExamSubjectConfig({ schoolId, examId, classId, configuredOnly = false, teacherId = null, branchId = null }) {
+    const lockStatus = await AdminExaminationModel.isExamPatternLocked({ schoolId, examId, classId, branchId });
 
     // 1. Get existing exam_subject_master if exists
-    const [existingMaster] = await pool.query(
-      `SELECT id, status FROM exam_subject_master 
+    let masterQuery = `SELECT id, status FROM exam_subject_master 
        WHERE school_id = ? 
          AND exam_id = ? 
          AND class_id = ? 
-         AND status != 4 
-       LIMIT 1`,
-      [schoolId, examId, classId]
-    );
+         AND status != 4`;
+    const masterParams = [schoolId, examId, classId];
+    if (branchId) {
+      masterQuery += ` AND branch_id = ?`;
+      masterParams.push(Number(branchId));
+    }
+    masterQuery += ` LIMIT 1`;
+    const [existingMaster] = await pool.query(masterQuery, masterParams);
 
     const masterId = existingMaster.length > 0 ? existingMaster[0].id : null;
     const masterStatus = existingMaster.length > 0 ? existingMaster[0].status : null;
@@ -700,20 +736,17 @@ class AdminExaminationModel {
         AND status != 4
     `;
     const examTypeParams = [schoolId];
+    if (branchId) {
+      examTypeQuery += ` AND branch_id = ?`;
+      examTypeParams.push(Number(branchId));
+    }
     if (examId) {
-      examTypeQuery += ` AND (exam_id = ? OR exam_id IS NULL OR exam_id = 0)`;
+      examTypeQuery += ` AND (exam_id = ? OR exam_id = 0)`;
       examTypeParams.push(examId);
     }
     examTypeQuery += ` ORDER BY sort_order ASC, id ASC`;
     let [examTypes] = await pool.query(examTypeQuery, examTypeParams);
-
-    if (!examTypes || examTypes.length === 0) {
-      const [fallbackTypes] = await pool.query(
-        `SELECT id AS exam_type_id, exam_type, sort_order FROM exam_type_master WHERE school_id = ? AND status = 1 AND status != 4 ORDER BY sort_order ASC, id ASC`,
-        [schoolId]
-      );
-      examTypes = fallbackTypes || [];
-    }
+    examTypes = examTypes || [];
 
     // Attach full mark for each exam type from configuredMarks
     const examTypesWithMarks = examTypes.map((et) => {
@@ -854,7 +887,7 @@ class AdminExaminationModel {
         checkParams.push(schoolId, schoolId);
       }
       if (branchId) {
-        checkQuery += ` AND (branch_id = ? OR branch_id IS NULL)`;
+        checkQuery += ` AND branch_id = ?`;
         checkParams.push(Number(branchId));
       }
       const [existing] = await connection.query(checkQuery, checkParams);
@@ -863,6 +896,7 @@ class AdminExaminationModel {
           schoolId: existing[0].school_id,
           examId: existing[0].exam_id,
           classId: existing[0].class_id,
+          branchId,
         });
         if (lockStatus.isLocked) {
           const err = new Error(`Cannot delete this exam configuration: ${lockStatus.lockReason}`);
@@ -879,7 +913,7 @@ class AdminExaminationModel {
         updateParams.push(schoolId, schoolId);
       }
       if (branchId) {
-        updateSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+        updateSql += ` AND branch_id = ?`;
         updateParams.push(Number(branchId));
       }
       const [res] = await connection.query(updateSql, updateParams);
@@ -943,8 +977,8 @@ class AdminExaminationModel {
       params.push(academicYearId, academicYearId, academicYearId);
     }
     if (branchId) {
-      query += ` AND (es.branch_id = ? OR c.branch_id = ?)`;
-      params.push(Number(branchId), Number(branchId));
+      query += ` AND es.branch_id = ?`;
+      params.push(Number(branchId));
     }
 
     query += ` GROUP BY es.id ORDER BY es.date ASC, es.start_time ASC, es.id ASC`;
@@ -1016,7 +1050,7 @@ class AdminExaminationModel {
       params.push(schoolId);
     }
     if (branchId) {
-      query += ` AND (es.branch_id = ? OR es.branch_id IS NULL)`;
+      query += ` AND es.branch_id = ?`;
       params.push(Number(branchId));
     }
     const [rows] = await pool.query(query, params);
@@ -1125,7 +1159,7 @@ class AdminExaminationModel {
     }
 
     if (branchId) {
-      query += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      query += ` AND branch_id = ?`;
       params.push(Number(branchId));
     }
 
@@ -1141,7 +1175,7 @@ class AdminExaminationModel {
       params.push(schoolId);
     }
     if (branchId) {
-      query += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      query += ` AND branch_id = ?`;
       params.push(Number(branchId));
     }
     const [result] = await pool.query(query, params);
@@ -1213,6 +1247,10 @@ class AdminExaminationModel {
         WHERE school_id = ? AND exam_id = ? AND class_id = ? AND (status != 4 OR status IS NULL)
       `;
       const schedParams = [schoolId, examId, classId];
+      if (branchId) {
+        schedQuery += ` AND branch_id = ?`;
+        schedParams.push(Number(branchId));
+      }
       if (academicYearId) {
         schedQuery += ` AND (academic_year_id = ? OR academic_year_id = 0 OR academic_year_id IS NULL)`;
         schedParams.push(academicYearId);
@@ -1668,15 +1706,18 @@ class AdminExaminationModel {
     // Check configured subject marks
     if (examId && classId) {
       try {
-        const [configMarks] = await pool.query(
-          `SELECT esm_marks.subject_id, COALESCE(SUM(esm_marks.mark), 100) AS subject_max_mark
+        let configMarksQuery = `SELECT esm_marks.subject_id, COALESCE(SUM(esm_marks.mark), 100) AS subject_max_mark
            FROM exam_subject_master esm
            JOIN exam_subject_marks esm_marks ON esm_marks.exam_subject_id = esm.id AND esm_marks.status != 4 AND esm_marks.is_check = 1
            WHERE esm.school_id = ?
-             AND esm.exam_id = ? AND esm.class_id = ? AND esm.status != 4
-           GROUP BY esm_marks.subject_id`,
-          [schoolId, examId, classId]
-        );
+             AND esm.exam_id = ? AND esm.class_id = ? AND esm.status != 4`;
+        const configMarksParams = [schoolId, examId, classId];
+        if (branchId) {
+          configMarksQuery += ` AND esm.branch_id = ?`;
+          configMarksParams.push(Number(branchId));
+        }
+        configMarksQuery += ` GROUP BY esm_marks.subject_id`;
+        const [configMarks] = await pool.query(configMarksQuery, configMarksParams);
         configMarks.forEach((cm) => {
           if (subjectsMap[cm.subject_id]) {
             subjectsMap[cm.subject_id].max_marks = parseFloat(cm.subject_max_mark) || 100;
@@ -1773,7 +1814,7 @@ class AdminExaminationModel {
       metaParams.push(schoolId, schoolId);
     }
     if (branchId) {
-      metaQuery += ` AND (s.branch_id = ? OR s.branch_id IS NULL)`;
+      metaQuery += ` AND s.branch_id = ?`;
       metaParams.push(Number(branchId));
     }
     const [metaRows] = await pool.query(metaQuery, metaParams);
@@ -1806,16 +1847,22 @@ class AdminExaminationModel {
     }
 
     // 3. Get subject-wise exam attendance for this student and exam
-    const [attendanceRows] = await pool.query(
-      `SELECT subject_id, attendance_status
+    let attSql = `SELECT subject_id, attendance_status
        FROM exam_attendance
-       WHERE student_id = ? AND exam_id = ? AND status != 4`,
-      [studentId, examId]
-    );
+       WHERE student_id = ? AND exam_id = ? AND status != 4`;
+    const attParams = [studentId, examId];
+    if (branchId) {
+      attSql += ` AND branch_id = ?`;
+      attParams.push(Number(branchId));
+    }
+    attSql += ` ORDER BY id DESC`;
+    const [attendanceRows] = await pool.query(attSql, attParams);
 
     const attendanceMap = {};
     for (const r of attendanceRows) {
-      attendanceMap[r.subject_id] = Number(r.attendance_status);
+      if (attendanceMap[r.subject_id] === undefined) {
+        attendanceMap[r.subject_id] = Number(r.attendance_status);
+      }
     }
 
     return {
@@ -1845,12 +1892,18 @@ class AdminExaminationModel {
       }
 
       // Fetch all grades for automatic grade assignment
-      const [grades] = await connection.query(`
+      let gradeSql = `
         SELECT id, grade_name, min_percentage, max_percentage 
         FROM grade_settings 
-        WHERE status != 0 
-        ORDER BY min_percentage DESC
-      `);
+        WHERE (school_id = ? OR ? IS NULL) AND (status != 4 AND status != 0)
+      `;
+      const gradeQueryParams = [schoolId, schoolId];
+      if (resolvedBranchId) {
+        gradeSql += ` AND branch_id = ?`;
+        gradeQueryParams.push(resolvedBranchId);
+      }
+      gradeSql += ` ORDER BY min_percentage DESC`;
+      const [grades] = await connection.query(gradeSql, gradeQueryParams);
 
       for (const item of studentMarksList) {
         const { studentId, marksPerSubject } = item;
@@ -2116,6 +2169,10 @@ class AdminExaminationModel {
     // 3. Fetch All Exams (Terms) & Exam Types for this Academic Year
     let examQuery = `SELECT id, exam AS exam_name FROM exam_master WHERE school_id = ? AND (status != 4 OR status IS NULL)`;
     const examParams = [schoolId];
+    if (branchId) {
+      examQuery += ` AND branch_id = ?`;
+      examParams.push(Number(branchId));
+    }
     if (academicYearId) {
       examQuery += ` AND (academic_year = ? OR academic_year IS NULL)`;
       examParams.push(academicYearId);
@@ -2125,6 +2182,10 @@ class AdminExaminationModel {
 
     let typeQuery = `SELECT id, exam_id, exam_type, sort_order FROM exam_type_master WHERE school_id = ? AND (status != 4 OR status IS NULL)`;
     const typeParams = [schoolId];
+    if (branchId) {
+      typeQuery += ` AND branch_id = ?`;
+      typeParams.push(Number(branchId));
+    }
     if (academicYearId) {
       typeQuery += ` AND (academic_year = ? OR academic_year IS NULL)`;
       typeParams.push(academicYearId);
@@ -2144,13 +2205,16 @@ class AdminExaminationModel {
     });
 
     // 4. Fetch Grading Settings
-    const [gradeRows] = await pool.query(
-      `SELECT id, grade_name, min_percentage, max_percentage 
+    let gradeMarksheetSql = `SELECT id, grade_name, min_percentage, max_percentage 
        FROM grade_settings 
-       WHERE school_id = ? AND status != 0 
-       ORDER BY min_percentage DESC`,
-      [schoolId]
-    );
+       WHERE (school_id = ? OR ? IS NULL) AND status != 4 AND status != 0`;
+    const gradeMarksheetParams = [schoolId, schoolId];
+    if (branchId) {
+      gradeMarksheetSql += ` AND branch_id = ?`;
+      gradeMarksheetParams.push(Number(branchId));
+    }
+    gradeMarksheetSql += ` ORDER BY min_percentage DESC`;
+    const [gradeRows] = await pool.query(gradeMarksheetSql, gradeMarksheetParams);
     const grades = gradeRows.length > 0 ? gradeRows : undefined;
 
     // 5. Fetch Students with Father's Name

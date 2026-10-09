@@ -904,7 +904,7 @@ class ReportModel {
          WHERE es.school_id = ? AND es.status = 1 AND es.date BETWEEN ? AND ?`;
       const examParams = [schoolId, sDate.substring(0, 10), eDate.substring(0, 10)];
       if (branchId) {
-        examQuery += ` AND (es.branch_id = ? OR es.branch_id IS NULL)`;
+        examQuery += ` AND es.branch_id = ?`;
         examParams.push(Number(branchId));
       }
       const [examList] = await pool.query(examQuery, examParams);

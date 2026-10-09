@@ -12,8 +12,9 @@ class AdminExaminationController {
   static async getAllGrades(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { status } = req.query;
-      const grades = await AdminExaminationModel.getAllGrades(schoolId, status);
+      const grades = await AdminExaminationModel.getAllGrades(schoolId, status, branchId);
       return ApiResponse.success(res, 'Grade settings retrieved successfully.', { grades });
     } catch (error) {
       next(error);
@@ -24,7 +25,8 @@ class AdminExaminationController {
     try {
       const { id } = req.params;
       const schoolId = req.user?.schoolId;
-      const grade = await AdminExaminationModel.getGradeById(id, schoolId);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const grade = await AdminExaminationModel.getGradeById(id, schoolId, branchId);
       if (!grade) {
         return ApiResponse.error(res, 'Grade setting not found.', null, 404);
       }
@@ -37,7 +39,9 @@ class AdminExaminationController {
   static async createGrade(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
-      const branchId = req.body.branch_id || req.body.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null;
+      const branchId = req.body.branch_id !== undefined
+        ? (req.body.branch_id ? Number(req.body.branch_id) : null)
+        : (req.branchId || req.user?.branch_id || req.user?.branchId || null);
       const { grade_name, min_percentage, max_percentage, status } = req.body;
 
       if (!grade_name || grade_name.trim() === '') {
@@ -65,10 +69,11 @@ class AdminExaminationController {
   static async updateGrade(req, res, next) {
     try {
       const schoolId = req.user?.schoolId;
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { id } = req.params;
-      const { grade_name, min_percentage, max_percentage, status } = req.body;
+      const { grade_name, min_percentage, max_percentage, status, branch_id } = req.body;
 
-      const existing = await AdminExaminationModel.getGradeById(id, schoolId);
+      const existing = await AdminExaminationModel.getGradeById(id, schoolId, branchId);
       if (!existing) {
         return ApiResponse.error(res, 'Grade setting not found.', null, 404);
       }
@@ -78,6 +83,7 @@ class AdminExaminationController {
         minPercentage: min_percentage !== undefined ? parseInt(min_percentage, 10) : undefined,
         maxPercentage: max_percentage !== undefined ? parseInt(max_percentage, 10) : undefined,
         status: status !== undefined ? parseInt(status, 10) : undefined,
+        branchId: branch_id !== undefined ? (branch_id ? Number(branch_id) : null) : undefined,
         schoolId,
       });
 
@@ -90,8 +96,9 @@ class AdminExaminationController {
   static async deleteGrade(req, res, next) {
     try {
       const schoolId = req.user?.schoolId;
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { id } = req.params;
-      const existing = await AdminExaminationModel.getGradeById(id, schoolId);
+      const existing = await AdminExaminationModel.getGradeById(id, schoolId, branchId);
       if (!existing) {
         return ApiResponse.error(res, 'Grade setting not found.', null, 404);
       }
@@ -352,6 +359,7 @@ class AdminExaminationController {
   static async getExamSubjectConfig(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { exam_id, class_id, configured_only } = req.query;
 
       if (!exam_id || !class_id) {
@@ -366,6 +374,7 @@ class AdminExaminationController {
 
       const config = await AdminExaminationModel.getExamSubjectConfig({
         schoolId,
+        branchId,
         examId: parseInt(exam_id, 10),
         classId: parseInt(class_id, 10),
         configuredOnly: isConfiguredOnly,
@@ -533,14 +542,17 @@ class AdminExaminationController {
       if (Array.isArray(items) && items.length > 0) {
         if (exam_id && class_id) {
           // Verify exam subjects & marks are configured before creating schedule
-          const [configured] = await pool.query(
-            `SELECT esm.id 
+          let configCheckSql = `SELECT esm.id 
              FROM exam_subject_master esm
              JOIN exam_subject_marks esm_marks ON esm_marks.exam_subject_id = esm.id
-             WHERE esm.school_id = ? AND esm.exam_id = ? AND esm.class_id = ? AND esm.status = 1 AND esm_marks.status != 4
-             LIMIT 1`,
-            [schoolId, parseInt(exam_id, 10), parseInt(class_id, 10)]
-          );
+             WHERE esm.school_id = ? AND esm.exam_id = ? AND esm.class_id = ? AND esm.status = 1 AND esm_marks.status != 4`;
+          const configParams = [schoolId, parseInt(exam_id, 10), parseInt(class_id, 10)];
+          if (branchId) {
+            configCheckSql += ` AND esm.branch_id = ?`;
+            configParams.push(Number(branchId));
+          }
+          configCheckSql += ` LIMIT 1`;
+          const [configured] = await pool.query(configCheckSql, configParams);
 
           if (!configured || configured.length === 0) {
             return ApiResponse.error(
@@ -555,7 +567,7 @@ class AdminExaminationController {
           let delQuery = `DELETE FROM exam_schedule WHERE school_id = ? AND exam_id = ? AND class_id = ?`;
           const delParams = [schoolId, parseInt(exam_id, 10), parseInt(class_id, 10)];
           if (branchId) {
-            delQuery += ` AND (branch_id = ? OR branch_id IS NULL)`;
+            delQuery += ` AND branch_id = ?`;
             delParams.push(Number(branchId));
           }
           await pool.query(delQuery, delParams);
@@ -837,11 +849,14 @@ class AdminExaminationController {
           return ApiResponse.error(res, 'Teacher identification not found in session.', null, 403);
         }
 
-        const [assignRows] = await pool.query(
-          `SELECT subject_id FROM teacher_class_assign 
-           WHERE school_id = ? AND teacher_id = ? AND class_id = ? AND status = 1`,
-          [schoolId, teacherId, finalClassId]
-        );
+        let assignSql = `SELECT subject_id FROM teacher_class_assign 
+           WHERE school_id = ? AND teacher_id = ? AND class_id = ? AND status = 1`;
+        const assignParams = [schoolId, teacherId, finalClassId];
+        if (branchId) {
+          assignSql += ` AND branch_id = ?`;
+          assignParams.push(Number(branchId));
+        }
+        const [assignRows] = await pool.query(assignSql, assignParams);
         assignedSubjectIds = assignRows.map((r) => r.subject_id);
 
         if (assignedSubjectIds.length === 0) {
@@ -895,42 +910,105 @@ class AdminExaminationController {
         }
       }
 
-      // If teacher, enforce that the student is marked present (attendance_status = 1) for each subject
-      if (isTeacher) {
-        for (const st of marksList) {
-          const sId = st.studentId;
-          const subjectIds = [
-            ...new Set((st.marksPerSubject || []).map((sm) => parseInt(sm.subjectId || sm.subject_id, 10))),
-          ];
+      let finalBranchId = branchId ? Number(branchId) : null;
+      if (!finalBranchId) {
+        const [eRows] = await pool.query(`SELECT branch_id FROM exam_master WHERE id = ?`, [finalExamId]);
+        finalBranchId = eRows[0]?.branch_id ? Number(eRows[0].branch_id) : null;
+      }
 
-          if (subjectIds.length > 0) {
-            const [attRecords] = await pool.query(
-              `SELECT subject_id, attendance_status 
-               FROM exam_attendance 
-               WHERE school_id = ? AND exam_id = ? AND student_id = ? AND subject_id IN (?) AND status != 4`,
-              [schoolId, finalExamId, sId, subjectIds]
-            );
+      // Fetch exam types involved in this submission to identify Theory types
+      const allExamTypeIds = [
+        ...new Set(
+          marksList.flatMap((st) =>
+            (st.marksPerSubject || []).map((sm) => parseInt(sm.examTypeId || sm.exam_type_id, 10)).filter(Boolean)
+          )
+        ),
+      ];
 
-            const presentSubjectIdSet = new Set(
-              attRecords
-                .filter((r) => Number(r.attendance_status) === 1)
-                .map((r) => r.subject_id)
-            );
+      let theoryTypeIdSet = new Set();
+      if (allExamTypeIds.length > 0) {
+        const [typeRows] = await pool.query(
+          `SELECT id, exam_type FROM exam_type_master WHERE id IN (?)`,
+          [allExamTypeIds]
+        );
+        theoryTypeIdSet = new Set(
+          typeRows
+            .filter((r) => /theory|written/i.test(r.exam_type || ''))
+            .map((r) => r.id)
+        );
+      }
 
-            const unpermittedSubjects = subjectIds.filter((subId) => !presentSubjectIdSet.has(subId));
-            if (unpermittedSubjects.length > 0) {
-              const [unpRows] = await pool.query(
-                `SELECT subject_name FROM subject_master WHERE id IN (?)`,
-                [unpermittedSubjects]
-              );
-              const unpNames = unpRows.map((r) => r.subject_name).join(', ') || 'the selected subject(s)';
-              return ApiResponse.error(
-                res,
-                `Cannot enter marks: The student is not marked present in exam attendance for ${unpNames}.`,
-                null,
-                403
-              );
+      // Universal validation (applies to both Admin and Teacher):
+      // 1. Attendance MUST be recorded for each subject prior to entering marks.
+      // 2. If student is absent, theory marks cannot be entered (> 0), but practical/assessment marks CAN be entered.
+      for (const st of marksList) {
+        const sId = st.studentId;
+        const subjectIds = [
+          ...new Set((st.marksPerSubject || []).map((sm) => parseInt(sm.subjectId || sm.subject_id, 10))),
+        ];
+
+        if (subjectIds.length > 0) {
+          let attSql = `SELECT subject_id, attendance_status 
+             FROM exam_attendance 
+             WHERE school_id = ? AND exam_id = ? AND student_id = ? AND subject_id IN (?) AND status != 4`;
+          const attParams = [schoolId, finalExamId, sId, subjectIds];
+          if (finalBranchId) {
+            attSql += ` AND branch_id = ?`;
+            attParams.push(finalBranchId);
+          }
+          attSql += ` ORDER BY id DESC`;
+          const [attRecords] = await pool.query(attSql, attParams);
+
+          const attendanceBySubject = new Map();
+          for (const r of attRecords) {
+            if (!attendanceBySubject.has(r.subject_id)) {
+              attendanceBySubject.set(r.subject_id, Number(r.attendance_status));
             }
+          }
+
+          // 1. Check if attendance was recorded at all for each subject
+          const unrecordedSubjects = subjectIds.filter((subId) => !attendanceBySubject.has(subId));
+          if (unrecordedSubjects.length > 0) {
+            const [unrecRows] = await pool.query(
+              `SELECT subject_name FROM subject_master WHERE id IN (?)`,
+              [unrecordedSubjects]
+            );
+            const unrecNames = unrecRows.map((r) => r.subject_name).join(', ') || 'the selected subject(s)';
+            return ApiResponse.error(
+              res,
+              `Cannot enter marks: Exam attendance has not been recorded for ${unrecNames}. Please record attendance first.`,
+              null,
+              400
+            );
+          }
+
+          // 2. If student is absent, block entering positive theory marks (while allowing practical/assessment)
+          const absentTheorySubjectIds = [];
+          for (const sm of st.marksPerSubject || []) {
+            const subId = parseInt(sm.subjectId || sm.subject_id, 10);
+            const etId = parseInt(sm.examTypeId || sm.exam_type_id, 10);
+            const attStatus = attendanceBySubject.get(subId);
+            const isAbsent = attStatus === 0 || attStatus === 2;
+            const isTheory = allExamTypeIds.length > 0 ? theoryTypeIdSet.has(etId) : true;
+            const markVal = parseFloat(sm.marks) || 0;
+
+            if (isAbsent && isTheory && markVal > 0) {
+              absentTheorySubjectIds.push(subId);
+            }
+          }
+
+          if (absentTheorySubjectIds.length > 0) {
+            const [absRows] = await pool.query(
+              `SELECT subject_name FROM subject_master WHERE id IN (?)`,
+              [[...new Set(absentTheorySubjectIds)]]
+            );
+            const absNames = absRows.map((r) => r.subject_name).join(', ') || 'the selected subject(s)';
+            return ApiResponse.error(
+              res,
+              `Cannot enter theory marks: The student is marked absent in exam attendance for ${absNames}.`,
+              null,
+              400
+            );
           }
         }
       }
