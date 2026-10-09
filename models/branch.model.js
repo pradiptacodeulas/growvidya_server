@@ -163,6 +163,16 @@ class BranchModel {
           WHERE tm.branch_id IS NOT NULL AND ta.branch_id != tm.branch_id
         `);
       } catch (syncErr) {}
+
+      // Synchronize main branches missing head_user_id with the school's superadmin user
+      try {
+        await pool.query(`
+          UPDATE branch_master bm
+          INNER JOIN user_master um ON um.school_id = bm.school_id AND um.admin_type = 1
+          SET bm.head_user_id = um.id, bm.updated_at = NOW()
+          WHERE bm.is_main_branch = 1 AND bm.head_user_id IS NULL
+        `);
+      } catch (headSyncErr) {}
     } catch (err) {
       console.error('[BranchModel] Error initializing branch_master schema:', err.message);
     }

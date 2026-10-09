@@ -642,7 +642,7 @@ class SaasModel {
           gender, picture, country_id, state_id, city, role, admin_type, status, date
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, NOW())
       `;
-      await connection.query(insertAdminQuery, [
+      const [adminResult] = await connection.query(insertAdminQuery, [
         schoolId,
         mainBranchId,
         (adminData.first_name || '').trim(),
@@ -657,6 +657,15 @@ class SaasModel {
         adminCityId,
         adminRole,
       ]);
+      const adminUserId = adminResult.insertId;
+
+      // Associate the newly created admin user ID as head_user_id of the main branch
+      if (adminUserId && mainBranchId) {
+        await connection.query(
+          `UPDATE branch_master SET head_user_id = ?, updated_at = NOW() WHERE id = ? AND school_id = ?`,
+          [adminUserId, mainBranchId, schoolId]
+        );
+      }
 
       await connection.commit();
 
@@ -665,6 +674,7 @@ class SaasModel {
         schoolName: schoolData.school_name,
         schoolCode,
         branchId: mainBranchId,
+        adminUserId,
         adminEmail,
         planName: plan.plan_name,
         transactionId: finalTxnId,
