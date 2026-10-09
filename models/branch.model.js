@@ -214,7 +214,12 @@ class BranchModel {
         u.email AS head_email,
         u.phone AS head_phone,
         u.picture AS head_picture,
-        r.role_name AS head_role,
+        u.gender AS head_gender,
+        CASE 
+          WHEN u.admin_type = 1 THEN 'Super Admin'
+          WHEN u.admin_type = 2 AND r.role_name IS NULL THEN 'Branch Head'
+          ELSE r.role_name 
+        END AS head_role,
         COALESCE(NULLIF(TRIM(CONCAT(IFNULL(u.first_name, ''), ' ', IFNULL(u.last_name, ''))), ''), b.principal_name) AS principal_name,
         b.address,
         b.country_id,
@@ -275,7 +280,12 @@ class BranchModel {
         u.email AS head_email,
         u.phone AS head_phone,
         u.picture AS head_picture,
-        r.role_name AS head_role,
+        u.gender AS head_gender,
+        CASE 
+          WHEN u.admin_type = 1 THEN 'Super Admin'
+          WHEN u.admin_type = 2 AND r.role_name IS NULL THEN 'Branch Head'
+          ELSE r.role_name 
+        END AS head_role,
         COALESCE(NULLIF(TRIM(CONCAT(IFNULL(u.first_name, ''), ' ', IFNULL(u.last_name, ''))), ''), b.principal_name) AS principal_name,
         b.address,
         b.country_id,
@@ -330,13 +340,19 @@ class BranchModel {
 
     const resolvedHeadUserId = head_user_id ? Number(head_user_id) : null;
     let resolvedPrincipalName = principal_name;
-    if (!resolvedPrincipalName && resolvedHeadUserId) {
+    let resolvedPhone = phone;
+    let resolvedEmail = email;
+    if (resolvedHeadUserId && (!resolvedPrincipalName || !resolvedPhone || !resolvedEmail)) {
       try {
         const [uRows] = await pool.query(
-          'SELECT CONCAT(IFNULL(first_name, ""), " ", IFNULL(last_name, "")) AS name FROM user_master WHERE id = ?',
+          'SELECT CONCAT(IFNULL(first_name, ""), " ", IFNULL(last_name, "")) AS name, phone, email FROM user_master WHERE id = ?',
           [resolvedHeadUserId]
         );
-        if (uRows[0]?.name?.trim()) resolvedPrincipalName = uRows[0].name.trim();
+        if (uRows[0]) {
+          if (!resolvedPrincipalName && uRows[0].name?.trim()) resolvedPrincipalName = uRows[0].name.trim();
+          if (!resolvedPhone && uRows[0].phone) resolvedPhone = uRows[0].phone;
+          if (!resolvedEmail && uRows[0].email) resolvedEmail = uRows[0].email;
+        }
       } catch (_) {}
     }
 
@@ -365,8 +381,8 @@ class BranchModel {
       state_id !== undefined && state_id !== null && state_id !== '' ? Number(state_id) : null,
       city_id !== undefined && city_id !== null && city_id !== '' ? Number(city_id) : null,
       pincode || null,
-      phone || null,
-      email || null,
+      resolvedPhone || null,
+      resolvedEmail || null,
       resolvedPrincipalName || null,
       Number(is_main_branch) === 1 ? 1 : 0,
       status !== undefined ? Number(status) : 1,
@@ -563,13 +579,20 @@ class BranchModel {
         CONCAT(IFNULL(u.first_name, ''), ' ', IFNULL(u.last_name, '')) AS full_name,
         u.email,
         u.phone,
+        u.phone AS head_phone,
         u.picture,
+        u.gender,
         u.admin_type,
-        r.role_name
+        CASE 
+          WHEN u.admin_type = 2 AND r.role_name IS NULL THEN 'Branch Head'
+          ELSE r.role_name 
+        END AS role_name
       FROM user_master u
       LEFT JOIN branch_master bm ON u.branch_id = bm.id
       LEFT JOIN role_master r ON u.role = r.id
-      WHERE u.school_id = ? AND u.status = 1 AND (u.admin_type IS NULL OR u.admin_type != 1)
+      WHERE u.school_id = ? 
+        AND u.status = 1 
+        AND (u.admin_type IS NULL OR u.admin_type != 1)
       ORDER BY u.first_name ASC, u.last_name ASC
     `;
     const [rows] = await pool.query(sql, [parsedSchoolId]);
@@ -689,7 +712,12 @@ class BranchModel {
         u.email AS head_email,
         u.phone AS head_phone,
         u.picture AS head_picture,
-        r.role_name AS head_role,
+        u.gender AS head_gender,
+        CASE 
+          WHEN u.admin_type = 1 THEN 'Super Admin'
+          WHEN u.admin_type = 2 AND r.role_name IS NULL THEN 'Branch Head'
+          ELSE r.role_name 
+        END AS head_role,
         COALESCE(NULLIF(TRIM(CONCAT(IFNULL(u.first_name, ''), ' ', IFNULL(u.last_name, ''))), ''), b.principal_name) AS principal_name,
         b.address,
         b.country_id,

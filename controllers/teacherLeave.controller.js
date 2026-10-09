@@ -238,6 +238,54 @@ class TeacherLeaveController {
         return ApiResponse.error(res, 'Leave type and duration are required.', null, 400);
       }
 
+      if (!Array.isArray(dates) || dates.length === 0) {
+        return ApiResponse.error(res, 'At least one leave date is required.', null, 400);
+      }
+
+      // Format current date in local YYYY-MM-DD
+      const now = new Date();
+      const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+      // Date validation
+      const sortedDates = [...dates].map((d) => String(d).split('T')[0]).filter(Boolean).sort();
+      const firstDate = sortedDates[0];
+      const lastDate = sortedDates[sortedDates.length - 1];
+
+      // Duration specific date validation
+      if (Number(duration) === 3) {
+        // Multiple days: Start Date must not be earlier than today
+        if (firstDate < todayStr) {
+          return ApiResponse.error(res, 'Start Date must not be earlier than today.', null, 400);
+        }
+        // End Date must not be earlier than Start Date
+        if (lastDate < firstDate) {
+          return ApiResponse.error(res, 'End Date must not be earlier than the selected Start Date.', null, 400);
+        }
+      } else {
+        // Single Day / Half Day: Date must not be earlier than today
+        if (firstDate < todayStr) {
+          return ApiResponse.error(res, 'Leave date must not be earlier than today.', null, 400);
+        }
+      }
+
+      // Check duplicate leave applications
+      const duplicateCheck = await LeaveModel.checkDuplicateLeave(schoolId, {
+        role: 1,
+        staff_id: teacherId,
+        dates,
+      });
+
+      if (duplicateCheck.hasDuplicate) {
+        const dupDates = [...new Set(duplicateCheck.duplicates.map((d) => d.leave_date))].join(', ');
+        const dupTypes = [...new Set(duplicateCheck.duplicates.map((d) => d.leave_name).filter(Boolean))].join(', ');
+        return ApiResponse.error(
+          res,
+          `Cannot apply for leave: An active leave application already exists for ${dupDates}${dupTypes ? ` (${dupTypes})` : ''}. Duplicate leave applications on the same day are not allowed.`,
+          null,
+          400
+        );
+      }
+
       // Check quota restriction
       const quota = await LeaveModel.getStaffLeaveQuota(schoolId, 1, teacherId, Number(leave_id));
       if (quota && quota.max_quota > 0) {

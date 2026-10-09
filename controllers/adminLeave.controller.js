@@ -5,10 +5,10 @@ class AdminLeaveController {
   static async getAllLeaves(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
-      const { name, role, date, status } = req.query;
+      const { name, role, staff_id, date, status } = req.query;
       const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
 
-      const leaves = await LeaveModel.getAllLeaves(schoolId, { name, role, date, status, branchId });
+      const leaves = await LeaveModel.getAllLeaves(schoolId, { name, role, staff_id, date, status, branchId });
       return ApiResponse.success(res, 'Leaves fetched successfully.', { leaves });
     } catch (error) {
       next(error);
@@ -40,6 +40,54 @@ class AdminLeaveController {
 
       if (!role || !staff_id || !leave_id || !duration) {
         return ApiResponse.error(res, 'Role, staff, leave type, and duration are required.', null, 400);
+      }
+
+      if (!Array.isArray(dates) || dates.length === 0) {
+        return ApiResponse.error(res, 'At least one leave date is required.', null, 400);
+      }
+
+      // Format current date in local YYYY-MM-DD
+      const now = new Date();
+      const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+      // Date validation
+      const sortedDates = [...dates].map((d) => String(d).split('T')[0]).filter(Boolean).sort();
+      const firstDate = sortedDates[0];
+      const lastDate = sortedDates[sortedDates.length - 1];
+
+      // Duration specific date validation
+      if (Number(duration) === 3) {
+        // Multiple days: Start Date must not be earlier than today
+        if (firstDate < todayStr) {
+          return ApiResponse.error(res, 'Start Date must not be earlier than today.', null, 400);
+        }
+        // End Date must not be earlier than Start Date
+        if (lastDate < firstDate) {
+          return ApiResponse.error(res, 'End Date must not be earlier than the selected Start Date.', null, 400);
+        }
+      } else {
+        // Single Day / Half Day: Date must not be earlier than today
+        if (firstDate < todayStr) {
+          return ApiResponse.error(res, 'Leave date must not be earlier than today.', null, 400);
+        }
+      }
+
+      // Check duplicate leave applications
+      const duplicateCheck = await LeaveModel.checkDuplicateLeave(schoolId, {
+        role: Number(role),
+        staff_id: Number(staff_id),
+        dates,
+      });
+
+      if (duplicateCheck.hasDuplicate) {
+        const dupDates = [...new Set(duplicateCheck.duplicates.map((d) => d.leave_date))].join(', ');
+        const dupTypes = [...new Set(duplicateCheck.duplicates.map((d) => d.leave_name).filter(Boolean))].join(', ');
+        return ApiResponse.error(
+          res,
+          `Cannot apply for leave: An active leave application already exists for ${dupDates}${dupTypes ? ` (${dupTypes})` : ''}. Duplicate leave applications on the same day are not allowed.`,
+          null,
+          400
+        );
       }
 
       // Check quota restriction

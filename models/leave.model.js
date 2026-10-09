@@ -4,7 +4,7 @@ class LeaveModel {
   /**
    * Fetch all applied leaves with applicant details and status
    */
-  static async getAllLeaves(schoolId, { name, role, date, status, branchId = null } = {}) {
+  static async getAllLeaves(schoolId, { name, role, staff_id, date, status, branchId = null } = {}) {
     let sql = `
       SELECT 
         l.id,
@@ -33,6 +33,8 @@ class LeaveModel {
           (SELECT MIN(ld.date) FROM leaves_date ld WHERE ld.staff_leave_id = l.id),
           DATE(l.created_at)
         ) AS leave_date,
+        (SELECT GROUP_CONCAT(DATE_FORMAT(ld.date, '%Y-%m-%d') ORDER BY ld.date ASC SEPARATOR ',') 
+         FROM leaves_date ld WHERE ld.staff_leave_id = l.id) AS leave_dates_str,
         CASE
           WHEN l.role = 1 THEN CONCAT(IFNULL(t.first_name, ''), ' ', IFNULL(t.last_name, ''))
           ELSE CONCAT(IFNULL(u.first_name, ''), ' ', IFNULL(u.last_name, ''))
@@ -68,6 +70,10 @@ class LeaveModel {
     if (role) {
       sql += ` AND l.role = ?`;
       params.push(Number(role));
+    }
+    if (staff_id) {
+      sql += ` AND l.staff_id = ?`;
+      params.push(Number(staff_id));
     }
     if (status !== undefined && status !== '') {
       sql += ` AND l.status = ?`;
@@ -232,6 +238,73 @@ class LeaveModel {
       approved_days: approvedDays,
       remaining_days: remainingDays,
       is_exhausted: maxQuota > 0 && approvedDays >= maxQuota,
+    };
+  }
+
+  /**
+   * Check for duplicate leave applications on the requested dates.
+   * Prevents applying for leave on any date where the applicant already has an active (pending/approved) leave.
+   * Returns { hasDuplicate: boolean, duplicates: Array<{ leave_date, leave_name, leave_id, leave_status }> }
+   */
+  static async checkDuplicateLeave(schoolId, { role, staff_id, dates = [] }) {
+    if (!Array.isArray(dates) || dates.length === 0) {
+      return { hasDuplicate: false, duplicates: [] };
+    }
+
+    const normalizedDates = [...new Set(dates.map((d) => String(d).split('T')[0]).filter(Boolean))];
+    if (normalizedDates.length === 0) {
+      return { hasDuplicate: false, duplicates: [] };
+    }
+
+    const placeholders = normalizedDates.map(() => '?').join(',');
+
+    // 1) Check existing active dates in leaves_date
+    const sql = `
+      SELECT 
+        DATE_FORMAT(ld.date, '%Y-%m-%d') AS leave_date,
+        lm.leave_name,
+        l.id AS leave_id,
+        l.status AS leave_status,
+        ld.status AS date_status
+      FROM leaves_date ld
+      JOIN leaves l ON ld.staff_leave_id = l.id
+      LEFT JOIN leave_master lm ON (l.leave_id = lm.id AND lm.school_id = l.school_id)
+      WHERE (l.school_id = ? OR ? IS NULL)
+        AND l.role = ?
+        AND l.staff_id = ?
+        AND DATE(ld.date) IN (${placeholders})
+        AND l.status IN (1, 2)
+        AND ld.status IN (1, 2)
+      ORDER BY ld.date ASC
+    `;
+
+    const params = [schoolId, schoolId, Number(role), Number(staff_id), ...normalizedDates];
+    const [rows] = await pool.query(sql, params);
+
+    // 2) Check any standalone leaves without leaves_date rows
+    const fallbackSql = `
+      SELECT 
+        DATE_FORMAT(l.created_at, '%Y-%m-%d') AS leave_date,
+        lm.leave_name,
+        l.id AS leave_id,
+        l.status AS leave_status,
+        l.status AS date_status
+      FROM leaves l
+      LEFT JOIN leave_master lm ON (l.leave_id = lm.id AND lm.school_id = l.school_id)
+      WHERE (l.school_id = ? OR ? IS NULL)
+        AND l.role = ?
+        AND l.staff_id = ?
+        AND DATE(l.created_at) IN (${placeholders})
+        AND l.status IN (1, 2)
+        AND NOT EXISTS (SELECT 1 FROM leaves_date ld WHERE ld.staff_leave_id = l.id)
+      ORDER BY l.created_at ASC
+    `;
+    const [fallbackRows] = await pool.query(fallbackSql, params);
+
+    const allDuplicates = [...(rows || []), ...(fallbackRows || [])];
+    return {
+      hasDuplicate: allDuplicates.length > 0,
+      duplicates: allDuplicates,
     };
   }
 
