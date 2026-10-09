@@ -167,6 +167,24 @@ class AcademicModel {
   }
 
   static async deleteAcademicYear(id, schoolId, branchId = null) {
+    // Check if the academic year is current (is_current = 1)
+    let checkSql = `SELECT id, is_current, academic_year FROM academic_year_master WHERE id = ? AND school_id = ? AND (status != 4 OR status IS NULL)`;
+    const checkParams = [id, schoolId];
+    if (branchId && branchId !== 'all') {
+      checkSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      checkParams.push(Number(branchId));
+    }
+    checkSql += ` LIMIT 1`;
+    const [rows] = await pool.query(checkSql, checkParams);
+    if (!rows || rows.length === 0) {
+      return false;
+    }
+    if (Number(rows[0].is_current) === 1) {
+      const err = new Error('Current academic year cannot be deleted.');
+      err.statusCode = 400;
+      throw err;
+    }
+
     let sql = `UPDATE academic_year_master SET status = 4 WHERE id = ? AND school_id = ?`;
     const params = [id, schoolId];
     if (branchId && branchId !== 'all') {
