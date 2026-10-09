@@ -9,7 +9,8 @@ class AdminReportController {
   static async getClassReportOptions(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
-      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const rawBranch = req.branchId !== undefined ? req.branchId : (req.query.branch_id || req.query.branchId || null);
+      const branchId = (rawBranch && rawBranch !== 'all') ? Number(rawBranch) : null;
       const options = await ReportModel.getFilterOptions(schoolId, branchId);
       return ApiResponse.success(res, 'Report filter options fetched successfully.', options);
     } catch (error) {
@@ -31,7 +32,8 @@ class AdminReportController {
       const classId = paramsSrc.classId || paramsSrc.class || '';
       const sectionId = paramsSrc.sectionId || paramsSrc.section || '';
       const search = paramsSrc.search || '';
-      const branchId = req.branchId || paramsSrc.branch_id || paramsSrc.branchId || null;
+      const rawBranch = req.branchId !== undefined ? req.branchId : (paramsSrc.branch_id || paramsSrc.branchId || null);
+      const branchId = (rawBranch && rawBranch !== 'all') ? Number(rawBranch) : null;
       const page = Number(paramsSrc.page) || 1;
       const limit = Number(paramsSrc.limit) || 10;
       const offset = (page - 1) * limit;

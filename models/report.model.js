@@ -15,13 +15,16 @@ class ReportModel {
     );
 
     // 2. Shifts
-    const [shifts] = await pool.query(
-      `SELECT id, shift_name, start_time, end_time 
+    let shiftQuery = `SELECT id, shift_name, start_time, end_time 
        FROM shift_master 
-       WHERE school_id = ? AND status = 1 
-       ORDER BY id ASC`,
-      [schoolId]
-    );
+       WHERE school_id = ? AND status = 1`;
+    const shiftParams = [schoolId];
+    if (branchId) {
+      shiftQuery += ` AND (branch_id = ? OR branch_id IS NULL OR id IN (SELECT DISTINCT shift_id FROM class_master WHERE school_id = ? AND (branch_id = ? OR branch_id IS NULL) AND shift_id IS NOT NULL AND status = 1))`;
+      shiftParams.push(Number(branchId), schoolId, Number(branchId));
+    }
+    shiftQuery += ` ORDER BY id ASC`;
+    const [shifts] = await pool.query(shiftQuery, shiftParams);
 
     // 3. Classes with Shift ID
     let classQuery = `SELECT id, shift_id, class_name, sort_order FROM class_master WHERE school_id = ? AND status = 1`;
