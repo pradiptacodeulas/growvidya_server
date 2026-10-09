@@ -434,29 +434,38 @@ class LeaveModel {
   /**
    * Get Leave Types (from leave_master)
    */
-  static async getLeaveTypes(schoolId, role) {
+  static async getLeaveTypes(schoolId, role = null, branchId = null) {
     let sql = `
       SELECT 
-        id, 
-        school_id, 
-        role, 
-        CASE WHEN role = 1 THEN 'Teacher' ELSE 'User' END AS role_label,
-        leave_name, 
-        need_document, 
-        no_leave, 
-        sort_order, 
-        status 
-      FROM leave_master 
-      WHERE school_id = ? AND status != 4 AND status != 0
+        lm.id, 
+        lm.school_id, 
+        lm.branch_id,
+        bm.branch_name,
+        bm.branch_code,
+        lm.role, 
+        CASE WHEN lm.role = 1 THEN 'Teacher' ELSE 'User' END AS role_label,
+        lm.leave_name, 
+        lm.need_document, 
+        lm.no_leave, 
+        lm.sort_order, 
+        lm.status 
+      FROM leave_master lm
+      LEFT JOIN branch_master bm ON lm.branch_id = bm.id
+      WHERE lm.school_id = ? AND lm.status != 4 AND lm.status != 0
     `;
     const params = [schoolId];
 
+    if (branchId && branchId !== 'all') {
+      sql += ` AND (lm.branch_id = ? OR lm.branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+
     if (role) {
-      sql += ` AND role = ?`;
+      sql += ` AND lm.role = ?`;
       params.push(Number(role));
     }
 
-    sql += ` ORDER BY role ASC, sort_order ASC, id ASC`;
+    sql += ` ORDER BY lm.role ASC, lm.sort_order ASC, lm.id ASC`;
     const [rows] = await pool.query(sql, params);
     return rows || [];
   }
@@ -497,13 +506,31 @@ class LeaveModel {
   /**
    * Get Leave Type by ID
    */
-  static async getLeaveTypeById(schoolId, id) {
-    const [rows] = await pool.query(
-      `SELECT id, school_id, role, leave_name, need_document, no_leave, sort_order, status 
-       FROM leave_master 
-       WHERE id = ? AND school_id = ? AND status != 4 AND status != 0`,
-      [id, schoolId]
-    );
+  static async getLeaveTypeById(schoolId, id, branchId = null) {
+    let sql = `
+      SELECT 
+        lm.id, 
+        lm.school_id, 
+        lm.branch_id,
+        bm.branch_name,
+        bm.branch_code,
+        lm.role, 
+        lm.leave_name, 
+        lm.need_document, 
+        lm.no_leave, 
+        lm.sort_order, 
+        lm.status 
+      FROM leave_master lm
+      LEFT JOIN branch_master bm ON lm.branch_id = bm.id
+      WHERE lm.id = ? AND lm.school_id = ? AND lm.status != 4 AND lm.status != 0
+    `;
+    const params = [id, schoolId];
+    if (branchId && branchId !== 'all') {
+      sql += ` AND (lm.branch_id = ? OR lm.branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    sql += ` LIMIT 1`;
+    const [rows] = await pool.query(sql, params);
     return rows && rows.length > 0 ? rows[0] : null;
   }
 
@@ -511,12 +538,45 @@ class LeaveModel {
    * Create Leave Type Master (Single or Batch)
    */
   static async createLeaveType(schoolId, data, branchId = null) {
-    const finalBranchId = data.branch_id !== undefined && data.branch_id !== null
+    let finalBranchId = (data.branch_id && data.branch_id !== 'all')
       ? Number(data.branch_id)
-      : (data.branchId ? Number(data.branchId) : (branchId ? Number(branchId) : null));
+      : ((data.branchId && data.branchId !== 'all') ? Number(data.branchId) : ((branchId && branchId !== 'all') ? Number(branchId) : null));
+
+    if (!finalBranchId) {
+      try {
+        const [mainB] = await pool.query(
+          `SELECT id FROM branch_master WHERE school_id = ? AND (is_main_branch = 1 OR id > 0) ORDER BY is_main_branch DESC, id ASC LIMIT 1`,
+          [schoolId]
+        );
+        if (mainB && mainB.length > 0) finalBranchId = mainB[0].id;
+      } catch (e) {}
+    }
+
+    const checkDuplicate = async (leaveName, roleVal) => {
+      if (!leaveName || !String(leaveName).trim()) return;
+      let dupSql = `SELECT id FROM leave_master WHERE school_id = ? AND role = ? AND LOWER(TRIM(leave_name)) = LOWER(TRIM(?)) AND status != 4 AND status != 0`;
+      const dupParams = [schoolId, Number(roleVal), String(leaveName).trim()];
+      if (finalBranchId) {
+        dupSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+        dupParams.push(finalBranchId);
+      }
+      dupSql += ` LIMIT 1`;
+      const [existing] = await pool.query(dupSql, dupParams);
+      if (existing && existing.length > 0) {
+        const err = new Error(`A leave assignment named "${leaveName}" already exists for this role in this branch.`);
+        err.statusCode = 400;
+        throw err;
+      }
+    };
 
     if (Array.isArray(data.leaveRows) && data.leaveRows.length > 0) {
       const role = Number(data.role || 1);
+      for (const row of data.leaveRows) {
+        if (row.leave_name && row.leave_name.trim()) {
+          await checkDuplicate(row.leave_name, role);
+        }
+      }
+
       const ids = [];
       for (const row of data.leaveRows) {
         if (row.leave_name && row.leave_name.trim()) {
@@ -540,6 +600,8 @@ class LeaveModel {
       return ids;
     } else {
       const { role, leave_name, need_document, no_leave, sort_order, status } = data;
+      await checkDuplicate(leave_name, Number(role || 1));
+
       const [res] = await pool.query(
         `INSERT INTO leave_master (school_id, branch_id, role, leave_name, need_document, no_leave, sort_order, status)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -547,7 +609,7 @@ class LeaveModel {
           schoolId,
           finalBranchId,
           Number(role || 1),
-          leave_name,
+          leave_name ? String(leave_name).trim() : '',
           Number(need_document || 0),
           Number(no_leave || 0),
           Number(sort_order || 1),
@@ -561,33 +623,65 @@ class LeaveModel {
   /**
    * Update Leave Type Master
    */
-  static async updateLeaveType(schoolId, id, { role, leave_name, need_document, no_leave, sort_order, status }) {
-    await pool.query(
-      `UPDATE leave_master SET role = ?, leave_name = ?, need_document = ?, no_leave = ?, sort_order = ?, status = ?
-       WHERE id = ? AND school_id = ?`,
-      [
-        Number(role || 1),
-        leave_name,
-        Number(need_document || 0),
-        Number(no_leave || 0),
-        Number(sort_order || 1),
-        status !== undefined ? Number(status) : 1,
-        id,
-        schoolId,
-      ]
-    );
-    return true;
+  static async updateLeaveType(schoolId, id, { role, leave_name, need_document, no_leave, sort_order, status, branch_id = null }, branchId = null) {
+    let targetBranchId = (branch_id && branch_id !== 'all')
+      ? Number(branch_id)
+      : ((branchId && branchId !== 'all') ? Number(branchId) : null);
+
+    // Branch-aware duplicate check on update
+    if (leave_name && String(leave_name).trim()) {
+      let dupSql = `SELECT id FROM leave_master WHERE school_id = ? AND role = ? AND LOWER(TRIM(leave_name)) = LOWER(TRIM(?)) AND id != ? AND status != 4 AND status != 0`;
+      const dupParams = [schoolId, Number(role || 1), String(leave_name).trim(), id];
+      if (targetBranchId) {
+        dupSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+        dupParams.push(targetBranchId);
+      }
+      dupSql += ` LIMIT 1`;
+      const [existing] = await pool.query(dupSql, dupParams);
+      if (existing && existing.length > 0) {
+        const err = new Error(`Another leave assignment named "${leave_name}" already exists for this role in this branch.`);
+        err.statusCode = 400;
+        throw err;
+      }
+    }
+
+    let sql = `UPDATE leave_master SET role = ?, leave_name = ?, need_document = ?, no_leave = ?, sort_order = ?, status = ?`;
+    const params = [
+      Number(role || 1),
+      leave_name ? String(leave_name).trim() : '',
+      Number(need_document || 0),
+      Number(no_leave || 0),
+      Number(sort_order || 1),
+      status !== undefined ? Number(status) : 1,
+    ];
+    if (targetBranchId) {
+      sql += `, branch_id = ?`;
+      params.push(targetBranchId);
+    }
+    sql += ` WHERE id = ? AND school_id = ?`;
+    params.push(id, schoolId);
+
+    if (branchId && branchId !== 'all') {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+
+    const [result] = await pool.query(sql, params);
+    return result.affectedRows > 0;
   }
 
   /**
    * Delete / Soft Delete Leave Type Master (status = 4)
    */
-  static async deleteLeaveType(schoolId, id) {
-    await pool.query(
-      `UPDATE leave_master SET status = 4 WHERE id = ? AND school_id = ?`,
-      [id, schoolId]
-    );
-    return true;
+  static async deleteLeaveType(schoolId, id, branchId = null) {
+    let sql = `UPDATE leave_master SET status = 4 WHERE id = ? AND school_id = ?`;
+    const params = [id, schoolId];
+    if (branchId && branchId !== 'all') {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    const [result] = await pool.query(sql, params);
+    return result.affectedRows > 0;
   }
 
   /**

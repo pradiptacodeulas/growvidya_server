@@ -134,8 +134,10 @@ class AdminLeaveController {
     try {
       const schoolId = req.user.schoolId;
       const { role } = req.query;
+      const rawBranch = req.branchId !== undefined ? req.branchId : (req.query.branch_id || req.query.branchId || null);
+      const branchId = (rawBranch && rawBranch !== 'all') ? Number(rawBranch) : null;
 
-      const types = await LeaveModel.getLeaveTypes(schoolId, role);
+      const types = await LeaveModel.getLeaveTypes(schoolId, role, branchId);
       return ApiResponse.success(res, 'Leave types fetched successfully.', { types });
     } catch (error) {
       next(error);
@@ -145,7 +147,8 @@ class AdminLeaveController {
   static async getStaffByRole(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
-      const branchId = req.branchId || req.query.branch_id || null;
+      const rawBranch = req.branchId || req.query.branch_id || null;
+      const branchId = (rawBranch && rawBranch !== 'all') ? Number(rawBranch) : null;
       const { role } = req.params;
 
       const staff = await LeaveModel.getStaffByRole(schoolId, role, branchId);
@@ -158,9 +161,11 @@ class AdminLeaveController {
   static async getLeaveTypeById(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const rawBranch = req.branchId !== undefined ? req.branchId : (req.query.branch_id || req.query.branchId || null);
+      const branchId = (rawBranch && rawBranch !== 'all') ? Number(rawBranch) : null;
       const { id } = req.params;
 
-      const type = await LeaveModel.getLeaveTypeById(schoolId, id);
+      const type = await LeaveModel.getLeaveTypeById(schoolId, id, branchId);
       if (!type) {
         return ApiResponse.error(res, 'Leave assignment not found.', null, 404);
       }
@@ -173,7 +178,8 @@ class AdminLeaveController {
   static async createLeaveType(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
-      const branchId = req.body?.branch_id || req.body?.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null;
+      const rawBranch = req.body?.branch_id || req.body?.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null;
+      const branchId = (rawBranch && rawBranch !== 'all') ? Number(rawBranch) : null;
       const { role, leave_name, need_document, no_leave, sort_order, status, leaveRows } = req.body;
 
       if (!role) {
@@ -181,7 +187,7 @@ class AdminLeaveController {
       }
 
       if (Array.isArray(leaveRows) && leaveRows.length > 0) {
-        const ids = await LeaveModel.createLeaveType(schoolId, { branch_id: branchId, role, leaveRows });
+        const ids = await LeaveModel.createLeaveType(schoolId, { branch_id: branchId, role, leaveRows }, branchId);
         return ApiResponse.success(res, 'Leave assignments created successfully.', { ids }, 201);
       }
 
@@ -197,9 +203,12 @@ class AdminLeaveController {
         no_leave,
         sort_order,
         status,
-      });
+      }, branchId);
       return ApiResponse.success(res, 'Leave assignment created successfully.', { id }, 201);
     } catch (error) {
+      if (error.statusCode === 400) {
+        return ApiResponse.error(res, error.message, null, 400);
+      }
       next(error);
     }
   }
@@ -207,19 +216,29 @@ class AdminLeaveController {
   static async updateLeaveType(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const rawBranch = req.body?.branch_id || req.body?.branchId || req.branchId || req.user?.branch_id || null;
+      const branchId = (rawBranch && rawBranch !== 'all') ? Number(rawBranch) : null;
       const { id } = req.params;
       const { role, leave_name, need_document, no_leave, sort_order, status } = req.body;
 
-      await LeaveModel.updateLeaveType(schoolId, id, {
+      const updated = await LeaveModel.updateLeaveType(schoolId, id, {
         role,
         leave_name,
         need_document,
         no_leave,
         sort_order,
         status,
-      });
-      return ApiResponse.success(res, 'Leave type updated successfully.');
+        branch_id: branchId,
+      }, req.branchId || null);
+
+      if (!updated) {
+        return ApiResponse.error(res, 'Leave assignment not found.', null, 404);
+      }
+      return ApiResponse.success(res, 'Leave assignment updated successfully.');
     } catch (error) {
+      if (error.statusCode === 400) {
+        return ApiResponse.error(res, error.message, null, 400);
+      }
       next(error);
     }
   }
@@ -227,9 +246,14 @@ class AdminLeaveController {
   static async deleteLeaveType(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const rawBranch = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const branchId = (rawBranch && rawBranch !== 'all') ? Number(rawBranch) : null;
       const { id } = req.params;
 
-      await LeaveModel.deleteLeaveType(schoolId, id);
+      const deleted = await LeaveModel.deleteLeaveType(schoolId, id, branchId);
+      if (!deleted) {
+        return ApiResponse.error(res, 'Leave assignment not found.', null, 404);
+      }
       return ApiResponse.success(res, 'Leave assignment deleted successfully.');
     } catch (error) {
       next(error);

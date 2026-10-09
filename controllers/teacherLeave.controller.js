@@ -190,15 +190,20 @@ class TeacherLeaveController {
     try {
       const schoolId = TeacherLeaveController.getSchoolId(req);
       const teacherId = TeacherLeaveController.getTeacherId(req);
-      const [types] = await pool.query(
-        `SELECT id, leave_name, need_document, no_leave, sort_order, status 
+      const rawBranch = req.branchId || req.user?.branch_id || req.user?.branchId || null;
+      const branchId = (rawBranch && rawBranch !== 'all') ? Number(rawBranch) : null;
+      let typesSql = `SELECT id, leave_name, need_document, no_leave, sort_order, status 
          FROM leave_master 
          WHERE school_id = ? 
            AND role = 1 
-           AND status = 1 
-         ORDER BY sort_order ASC, id ASC`,
-        [schoolId]
-      );
+           AND status = 1`;
+      const typesParams = [schoolId];
+      if (branchId) {
+        typesSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+        typesParams.push(branchId);
+      }
+      typesSql += ` ORDER BY sort_order ASC, id ASC`;
+      const [types] = await pool.query(typesSql, typesParams);
 
       const typesWithQuota = await Promise.all(
         (types || []).map(async (t) => {

@@ -482,10 +482,14 @@ class TeacherModel {
 
     // Fetch Leave Types & Quotas (Role 1 = Teacher)
     try {
-      const [leaveMasters] = await pool.query(
-        `SELECT * FROM leave_master WHERE (school_id = ? OR ? IS NULL) AND role = 1 AND status = 1 ORDER BY sort_order ASC, id ASC`,
-        [teacher.school_id, teacher.school_id]
-      );
+      let leaveMasterSql = `SELECT * FROM leave_master WHERE (school_id = ? OR ? IS NULL) AND role = 1 AND status = 1`;
+      const leaveMasterParams = [teacher.school_id, teacher.school_id];
+      if (teacher.branch_id) {
+        leaveMasterSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+        leaveMasterParams.push(teacher.branch_id);
+      }
+      leaveMasterSql += ` ORDER BY sort_order ASC, id ASC`;
+      const [leaveMasters] = await pool.query(leaveMasterSql, leaveMasterParams);
 
       const [usedLeaves] = await pool.query(
         `SELECT l.leave_id, 
