@@ -8,7 +8,7 @@ const ApiResponse = require('../utils/api.response');
  * 1. Mobile Apps / API Clients: via 'Authorization: Bearer <token>' header
  * 2. Web Browser Clients: via HTTP-Only session cookies ('growvidya_session' / 'token')
  */
-function authMiddleware(req, res, next) {
+async function authMiddleware(req, res, next) {
   try {
     let token = null;
     let authSource = 'none';
@@ -129,6 +129,29 @@ function authMiddleware(req, res, next) {
       req.user.branch_id = activeBranchId;
       req.user.branchId = activeBranchId;
       req.branchId = activeBranchId;
+
+      // Validate that activeBranchId actually belongs to this school
+      if (activeBranchId && req.user?.schoolId) {
+        try {
+          const { pool } = require('../config/db.config');
+          const [validRows] = await pool.query(
+            'SELECT id FROM branch_master WHERE id = ? AND school_id = ? AND status != 4 LIMIT 1',
+            [activeBranchId, req.user.schoolId]
+          );
+          if (!validRows || validRows.length === 0) {
+            // Provided branch does not belong to this school! Fall back to user's assigned branch or null
+            activeBranchId = userAssignedBranch || null;
+            req.user.branch_id = activeBranchId;
+            req.user.branchId = activeBranchId;
+            req.branchId = activeBranchId;
+          }
+        } catch (e) {
+          activeBranchId = userAssignedBranch || null;
+          req.user.branch_id = activeBranchId;
+          req.user.branchId = activeBranchId;
+          req.branchId = activeBranchId;
+        }
+      }
 
       // Ensure non-superadmins cannot manipulate branch_id in query or request body
       if (!isSuperAdmin && activeBranchId) {

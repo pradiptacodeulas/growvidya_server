@@ -173,6 +173,21 @@ class BranchModel {
           WHERE bm.is_main_branch = 1 AND bm.head_user_id IS NULL
         `);
       } catch (headSyncErr) {}
+
+      // Synchronize any user records having mismatched/cross-school branch_id to their school's main branch
+      try {
+        await pool.query(`
+          UPDATE user_master u
+          LEFT JOIN branch_master bm ON u.branch_id = bm.id
+          JOIN (
+            SELECT school_id, id AS main_branch_id
+            FROM branch_master
+            WHERE is_main_branch = 1
+          ) mb ON mb.school_id = u.school_id
+          SET u.branch_id = mb.main_branch_id
+          WHERE u.branch_id IS NOT NULL AND (bm.school_id IS NULL OR bm.school_id != u.school_id)
+        `);
+      } catch (userBranchSyncErr) {}
     } catch (err) {
       console.error('[BranchModel] Error initializing branch_master schema:', err.message);
     }

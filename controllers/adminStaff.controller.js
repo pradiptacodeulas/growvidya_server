@@ -1,16 +1,18 @@
 const StaffModel = require('../models/staff.model');
 const ApiResponse = require('../utils/api.response');
+const DataScope = require('../utils/dataScope.util');
 
 class AdminStaffController {
   static async getAllStaff(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
+      const scope = DataScope.getDataScope(req);
+      const schoolId = scope.schoolId;
       const paramsSrc = { ...req.query, ...req.body };
 
       const search = paramsSrc.search || paramsSrc.name || '';
       const role = paramsSrc.role || paramsSrc.role_id || '';
       const status = paramsSrc.status !== undefined ? paramsSrc.status : '';
-      const branchId = req.branchId || paramsSrc.branch_id || paramsSrc.branchId || null;
+      const branchId = scope.branchId;
       const page = paramsSrc.page || 1;
       const limit = paramsSrc.limit || 12;
       const offset = (Number(page) - 1) * Number(limit);
@@ -40,8 +42,9 @@ class AdminStaffController {
 
   static async getStaffById(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
-      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const scope = DataScope.getDataScope(req);
+      const schoolId = scope.schoolId;
+      const branchId = scope.branchId;
       const staffId = req.params.id;
 
       const staffMember = await StaffModel.getById(staffId, schoolId, branchId);
@@ -60,8 +63,9 @@ class AdminStaffController {
 
   static async checkEmail(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
-      const branchId = req.branchId || req.query.branch_id || req.query.branchId || req.body?.branch_id || null;
+      const scope = DataScope.getDataScope(req);
+      const schoolId = scope.schoolId;
+      const branchId = scope.branchId;
       const email = req.body?.email || req.query?.email || '';
       const excludeId = req.body?.exclude_id || req.query?.exclude_id || null;
       if (!email) {
@@ -79,8 +83,9 @@ class AdminStaffController {
 
   static async checkPhone(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
-      const branchId = req.branchId || req.query.branch_id || req.query.branchId || req.body?.branch_id || null;
+      const scope = DataScope.getDataScope(req);
+      const schoolId = scope.schoolId;
+      const branchId = scope.branchId;
       const phone = req.body?.phone || req.query?.phone || '';
       const excludeId = req.body?.exclude_id || req.query?.exclude_id || null;
       if (!phone) {
@@ -98,8 +103,9 @@ class AdminStaffController {
 
   static async checkDuplicate(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
-      const branchId = req.branchId || req.query.branch_id || req.query.branchId || req.body?.branch_id || null;
+      const scope = DataScope.getDataScope(req);
+      const schoolId = scope.schoolId;
+      const branchId = scope.branchId;
       const email = req.body?.email || req.query?.email || '';
       const phone = req.body?.phone || req.query?.phone || '';
       const excludeId = req.body?.exclude_id || req.query?.exclude_id || null;
@@ -127,7 +133,8 @@ class AdminStaffController {
 
   static async createStaff(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
+      const scope = DataScope.getDataScope(req);
+      const schoolId = scope.schoolId;
       const data = req.body;
 
       if (!data.first_name || !data.last_name) {
@@ -140,7 +147,7 @@ class AdminStaffController {
         return ApiResponse.error(res, 'Role is required.', null, 400);
       }
 
-      const branchId = req.body.branch_id || req.body.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null;
+      const branchId = await scope.resolveBranchForCreate(req.body.branch_id || req.body.branchId);
       const createdStaff = await StaffModel.create(schoolId, {
         ...data,
         branch_id: branchId,
@@ -155,15 +162,19 @@ class AdminStaffController {
 
   static async updateStaff(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
+      const scope = DataScope.getDataScope(req);
+      const schoolId = scope.schoolId;
       const staffId = req.params.id;
       const data = req.body;
-      const branchId = req.body.branch_id || req.body.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || undefined;
+      let branchId = undefined;
+      if (req.body.branch_id !== undefined || req.body.branchId !== undefined) {
+        branchId = await scope.resolveBranchForCreate(req.body.branch_id || req.body.branchId);
+      }
 
       const updatedStaff = await StaffModel.update(staffId, schoolId, {
         ...data,
         ...(branchId !== undefined ? { branch_id: branchId } : {}),
-      }, branchId);
+      }, scope.branchId || branchId);
 
       if (!updatedStaff) {
         return ApiResponse.error(res, 'Staff member record not found or could not be updated.', null, 404);
@@ -179,9 +190,10 @@ class AdminStaffController {
 
   static async deleteStaff(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
+      const scope = DataScope.getDataScope(req);
+      const schoolId = scope.schoolId;
       const staffId = req.params.id;
-      const branchId = req.branchId || req.query.branch_id || null;
+      const branchId = scope.branchId;
 
       const success = await StaffModel.delete(staffId, schoolId, branchId);
 
