@@ -84,8 +84,8 @@ class StaffModel {
     return { staff: rows || [], total };
   }
 
-  static async getById(id, schoolId) {
-    const sql = `
+  static async getById(id, schoolId, branchId = null) {
+    let sql = `
       SELECT 
         u.id,
         u.school_id,
@@ -130,11 +130,13 @@ class StaffModel {
         (g.id = 3 AND (u.gender = 3 OR u.gender = '3' OR LOWER(CAST(u.gender AS CHAR)) IN ('other', 'others')))
       )
       LEFT JOIN blood_group_master bg ON bg.id = u.blood_group
-      WHERE u.id = ? AND u.school_id = ?
+      WHERE u.id = ? AND u.school_id = ? ${branchId ? ' AND (u.branch_id = ? OR u.branch_id IS NULL)' : ''}
       LIMIT 1
     `;
 
-    const [rows] = await pool.query(sql, [id, schoolId]);
+    const params = [id, schoolId];
+    if (branchId) params.push(Number(branchId));
+    const [rows] = await pool.query(sql, params);
     const staffMember = rows[0];
     if (!staffMember) return null;
 
@@ -198,10 +200,14 @@ class StaffModel {
     return staffMember;
   }
 
-  static async checkEmail(schoolId, email, excludeId = null) {
+  static async checkEmail(schoolId, email, excludeId = null, branchId = null) {
     if (!email || !String(email).trim()) return false;
     let sql = `SELECT id FROM user_master WHERE email = ? AND school_id = ? AND status != 4`;
     const params = [String(email).trim(), schoolId];
+    if (branchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
     if (excludeId) {
       sql += ` AND id != ?`;
       params.push(excludeId);
@@ -210,10 +216,14 @@ class StaffModel {
     return rows.length > 0;
   }
 
-  static async checkPhone(schoolId, phone, excludeId = null) {
+  static async checkPhone(schoolId, phone, excludeId = null, branchId = null) {
     if (!phone || !String(phone).trim()) return false;
     let sql = `SELECT id FROM user_master WHERE phone = ? AND school_id = ? AND status != 4`;
     const params = [String(phone).trim(), schoolId];
+    if (branchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
     if (excludeId) {
       sql += ` AND id != ?`;
       params.push(excludeId);
@@ -222,9 +232,9 @@ class StaffModel {
     return rows.length > 0;
   }
 
-  static async checkDuplicate(schoolId, { email, phone }, excludeId = null) {
-    const isEmailDuplicate = email ? await StaffModel.checkEmail(schoolId, email, excludeId) : false;
-    const isPhoneDuplicate = phone ? await StaffModel.checkPhone(schoolId, phone, excludeId) : false;
+  static async checkDuplicate(schoolId, { email, phone }, excludeId = null, branchId = null) {
+    const isEmailDuplicate = email ? await StaffModel.checkEmail(schoolId, email, excludeId, branchId) : false;
+    const isPhoneDuplicate = phone ? await StaffModel.checkPhone(schoolId, phone, excludeId, branchId) : false;
     return { isEmailDuplicate, isPhoneDuplicate };
   }
 
@@ -384,8 +394,9 @@ class StaffModel {
     return this.getById(userId, schoolId);
   }
 
-  static async update(id, schoolId, data) {
-    const existing = await this.getById(id, schoolId);
+  static async update(id, schoolId, data, branchId = null) {
+    const resolvedBranchId = branchId || data.branch_id || data.branchId || null;
+    const existing = await this.getById(id, schoolId, resolvedBranchId);
     if (!existing) return null;
 
     const trimmedEmail = data.email !== undefined
@@ -396,7 +407,7 @@ class StaffModel {
       : existing.phone;
 
     if (trimmedEmail) {
-      const isEmailDup = await StaffModel.checkEmail(schoolId, trimmedEmail, id);
+      const isEmailDup = await StaffModel.checkEmail(schoolId, trimmedEmail, id, resolvedBranchId);
       if (isEmailDup) {
         const err = new Error('A staff member with this email address already exists.');
         err.statusCode = 400;
@@ -405,7 +416,7 @@ class StaffModel {
     }
 
     if (trimmedPhone) {
-      const isPhoneDup = await StaffModel.checkPhone(schoolId, trimmedPhone, id);
+      const isPhoneDup = await StaffModel.checkPhone(schoolId, trimmedPhone, id, resolvedBranchId);
       if (isPhoneDup) {
         const err = new Error('A staff member with this mobile number already exists.');
         err.statusCode = 400;
@@ -446,6 +457,11 @@ class StaffModel {
     }
 
     params.push(id, schoolId);
+    let whereBranchClause = '';
+    if (resolvedBranchId) {
+      whereBranchClause = ' AND (branch_id = ? OR branch_id IS NULL)';
+      params.push(Number(resolvedBranchId));
+    }
 
     const sql = `
       UPDATE user_master SET
@@ -463,7 +479,7 @@ class StaffModel {
         status = ?,
         branch_id = COALESCE(?, branch_id)
         ${updatePasswordClause}
-      WHERE id = ? AND school_id = ?
+      WHERE id = ? AND school_id = ?${whereBranchClause}
     `;
 
     await pool.query(sql, params);
@@ -652,10 +668,14 @@ class StaffModel {
     routeSql += ` ORDER BY transport_route ASC`;
     const [routes] = await pool.query(routeSql, routeParams);
 
-    const [vehicles] = await pool.query(
-      `SELECT id, vehicle_number FROM trans_vehicle_master WHERE school_id = ? AND status = 1 ORDER BY vehicle_number ASC`,
-      [schoolId]
-    );
+    let vehicleSql = `SELECT id, vehicle_number FROM trans_vehicle_master WHERE school_id = ? AND status = 1`;
+    const vehicleParams = [schoolId];
+    if (branchId) {
+      vehicleSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      vehicleParams.push(Number(branchId));
+    }
+    vehicleSql += ` ORDER BY vehicle_number ASC`;
+    const [vehicles] = await pool.query(vehicleSql, vehicleParams);
 
     let hostelSql = `SELECT id, hostel_name, hostel_fee FROM hostel_name_master WHERE school_id = ? AND status = 1`;
     const hostelParams = [schoolId];
@@ -666,10 +686,14 @@ class StaffModel {
     hostelSql += ` ORDER BY hostel_name ASC`;
     const [hostels] = await pool.query(hostelSql, hostelParams);
 
-    const [documentTypes] = await pool.query(
-      `SELECT id, document_type_name FROM document_type_master WHERE school_id = ? AND status = 1 ORDER BY document_type_name ASC`,
-      [schoolId]
-    );
+    let docSql = `SELECT id, document_type_name FROM document_type_master WHERE school_id = ? AND status = 1`;
+    const docParams = [schoolId];
+    if (branchId) {
+      docSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      docParams.push(Number(branchId));
+    }
+    docSql += ` ORDER BY document_type_name ASC`;
+    const [documentTypes] = await pool.query(docSql, docParams);
 
     const [bloodGroups] = await pool.query(
       `SELECT id, blood_group, blood_group AS name FROM blood_group_master ORDER BY id ASC`
@@ -707,11 +731,15 @@ class StaffModel {
     return rows || [];
   }
 
-  static async getRooms(hostelId, schoolId) {
-    const [rows] = await pool.query(
-      `SELECT id, room_number, hostel_id FROM hostel_room_master WHERE hostel_id = ? AND school_id = ? AND status = 1 ORDER BY room_number ASC`,
-      [hostelId, schoolId]
-    );
+  static async getRooms(hostelId, schoolId, branchId = null) {
+    let sql = `SELECT id, room_number, hostel_id FROM hostel_room_master WHERE hostel_id = ? AND school_id = ? AND status = 1`;
+    const params = [hostelId, schoolId];
+    if (branchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    sql += ` ORDER BY room_number ASC`;
+    const [rows] = await pool.query(sql, params);
     return rows || [];
   }
 }

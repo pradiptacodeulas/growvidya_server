@@ -59,12 +59,13 @@ class AdminTeacherController {
   static async checkEmail(req, res, next) {
     try {
       const schoolId = AdminTeacherController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || req.body?.branch_id || null;
       const email = req.body?.email || req.query?.email || '';
       const excludeId = req.body?.exclude_id || req.query?.exclude_id || null;
       if (!email) {
         return ApiResponse.success(res, 'Email is valid.', { exists: false });
       }
-      const exists = await TeacherModel.checkEmail(schoolId, email, excludeId);
+      const exists = await TeacherModel.checkEmail(schoolId, email, excludeId, branchId);
       return ApiResponse.success(res, exists ? 'Email address already exists.' : 'Email is available.', {
         exists,
         message: exists ? 'Email address already registered' : '',
@@ -77,12 +78,13 @@ class AdminTeacherController {
   static async checkPhone(req, res, next) {
     try {
       const schoolId = AdminTeacherController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || req.body?.branch_id || null;
       const phone = req.body?.phone || req.query?.phone || '';
       const excludeId = req.body?.exclude_id || req.query?.exclude_id || null;
       if (!phone) {
         return ApiResponse.success(res, 'Phone is valid.', { exists: false });
       }
-      const exists = await TeacherModel.checkPhone(schoolId, phone, excludeId);
+      const exists = await TeacherModel.checkPhone(schoolId, phone, excludeId, branchId);
       return ApiResponse.success(res, exists ? 'Mobile number already exists.' : 'Mobile number is available.', {
         exists,
         message: exists ? 'Mobile number already registered' : '',
@@ -95,6 +97,7 @@ class AdminTeacherController {
   static async checkDuplicate(req, res, next) {
     try {
       const schoolId = AdminTeacherController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || req.body?.branch_id || null;
       const email = req.body?.email || req.query?.email || '';
       const phone = req.body?.phone || req.query?.phone || '';
       const excludeId = req.body?.exclude_id || req.query?.exclude_id || null;
@@ -102,7 +105,8 @@ class AdminTeacherController {
       const { isEmailDuplicate, isPhoneDuplicate } = await TeacherModel.checkDuplicate(
         schoolId,
         { email, phone },
-        excludeId
+        excludeId,
+        branchId
       );
 
       return ApiResponse.success(res, 'Duplicate check completed.', {
@@ -122,7 +126,8 @@ class AdminTeacherController {
   static async getTeacherById(req, res, next) {
     try {
       const schoolId = AdminTeacherController.getSchoolId(req);
-      const teacher = await TeacherModel.getTeacherById(req.params.id, schoolId);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const teacher = await TeacherModel.getTeacherById(req.params.id, schoolId, branchId);
       if (!teacher) return ApiResponse.error(res, 'Teacher not found.', null, 404);
       return ApiResponse.success(res, 'Teacher details retrieved.', teacher);
     } catch (error) {
@@ -166,7 +171,7 @@ class AdminTeacherController {
       const updated = await TeacherModel.updateTeacher(req.params.id, schoolId, {
         ...req.body,
         ...(branchId !== undefined ? { branch_id: branchId } : {}),
-      });
+      }, branchId);
       if (!updated) return ApiResponse.error(res, 'Teacher record not found.', null, 404);
       return ApiResponse.success(res, 'Teacher updated successfully.', null);
     } catch (error) {

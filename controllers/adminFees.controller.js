@@ -380,8 +380,9 @@ class AdminFeesController {
   static async deleteAllocation(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { id } = req.params;
-      const success = await AdminFeesModel.deleteAllocation(id, schoolId);
+      const success = await AdminFeesModel.deleteAllocation(id, schoolId, branchId);
       if (!success) {
         return ApiResponse.error(res, 'Allocation not found.', null, 404);
       }

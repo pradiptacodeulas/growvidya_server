@@ -127,7 +127,8 @@ class AdminAcademicController {
   static async getClassById(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const data = await AcademicModel.getClassById(req.params.id, schoolId);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const data = await AcademicModel.getClassById(req.params.id, schoolId, branchId);
       if (!data) return ApiResponse.error(res, 'Class not found', null, 404);
       return ApiResponse.success(res, 'Class fetched successfully.', data);
     } catch (error) {
@@ -152,11 +153,11 @@ class AdminAcademicController {
   static async updateClass(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const branchId = req.body.branch_id || req.body.branchId || undefined;
+      const branchId = req.body.branch_id || req.body.branchId || req.branchId || undefined;
       const updated = await AcademicModel.updateClass(req.params.id, schoolId, {
         ...req.body,
         ...(branchId !== undefined ? { branch_id: branchId } : {}),
-      });
+      }, req.branchId || null);
       if (!updated) return ApiResponse.error(res, 'Class not found', null, 404);
       return ApiResponse.success(res, 'Class updated successfully.', null);
     } catch (error) {
@@ -194,8 +195,9 @@ class AdminAcademicController {
   static async getSectionById(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { id } = req.params;
-      const data = await AcademicModel.getSectionById(id, schoolId);
+      const data = await AcademicModel.getSectionById(id, schoolId, branchId);
       if (!data) return ApiResponse.error(res, 'Section not found', null, 404);
       return ApiResponse.success(res, 'Section fetched successfully.', data);
     } catch (error) {
@@ -220,7 +222,8 @@ class AdminAcademicController {
   static async updateSection(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const updated = await AcademicModel.updateSection(req.params.id, schoolId, req.body);
+      const branchId = req.branchId || req.body.branch_id || null;
+      const updated = await AcademicModel.updateSection(req.params.id, schoolId, req.body, branchId);
       if (!updated) return ApiResponse.error(res, 'Section not found', null, 404);
       return ApiResponse.success(res, 'Section updated successfully.', null);
     } catch (error) {
@@ -263,8 +266,9 @@ class AdminAcademicController {
   static async getSubjectById(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { id } = req.params;
-      const data = await AcademicModel.getSubjectById(id, schoolId);
+      const data = await AcademicModel.getSubjectById(id, schoolId, branchId);
       if (!data) return ApiResponse.error(res, 'Subject not found', null, 404);
       return ApiResponse.success(res, 'Subject fetched successfully.', data);
     } catch (error) {
@@ -286,7 +290,8 @@ class AdminAcademicController {
   static async updateSubject(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const updated = await AcademicModel.updateSubject(req.params.id, schoolId, req.body);
+      const branchId = req.branchId || req.body.branch_id || null;
+      const updated = await AcademicModel.updateSubject(req.params.id, schoolId, req.body, branchId);
       if (!updated) return ApiResponse.error(res, 'Subject not found', null, 404);
       return ApiResponse.success(res, 'Subject updated successfully.', null);
     } catch (error) {
@@ -297,7 +302,8 @@ class AdminAcademicController {
   static async deleteSubject(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const deleted = await AcademicModel.deleteSubject(req.params.id, schoolId);
+      const branchId = req.branchId || req.query.branch_id || null;
+      const deleted = await AcademicModel.deleteSubject(req.params.id, schoolId, branchId);
       if (!deleted) return ApiResponse.error(res, 'Subject not found', null, 404);
       return ApiResponse.success(res, 'Subject deleted successfully.', null);
     } catch (error) {
@@ -321,7 +327,8 @@ class AdminAcademicController {
   static async getShiftById(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const data = await AcademicModel.getShiftById(req.params.id, schoolId);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const data = await AcademicModel.getShiftById(req.params.id, schoolId, branchId);
       if (!data) return ApiResponse.error(res, 'Shift not found', null, 404);
       return ApiResponse.success(res, 'Shift fetched successfully.', data);
     } catch (error) {
@@ -346,11 +353,11 @@ class AdminAcademicController {
   static async updateShift(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const branchId = req.body.branch_id !== undefined ? req.body.branch_id : undefined;
+      const branchId = req.body.branch_id !== undefined ? req.body.branch_id : (req.branchId || undefined);
       const updated = await AcademicModel.updateShift(req.params.id, schoolId, {
         ...req.body,
         branch_id: branchId,
-      });
+      }, req.branchId || null);
       if (!updated) return ApiResponse.error(res, 'Shift not found', null, 404);
       return ApiResponse.success(res, 'Shift updated successfully.', null);
     } catch (error) {
@@ -361,7 +368,8 @@ class AdminAcademicController {
   static async deleteShift(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const deleted = await AcademicModel.deleteShift(req.params.id, schoolId);
+      const branchId = req.branchId || req.query.branch_id || null;
+      const deleted = await AcademicModel.deleteShift(req.params.id, schoolId, branchId);
       if (!deleted) return ApiResponse.error(res, 'Shift not found', null, 404);
       return ApiResponse.success(res, 'Shift deleted successfully.', null);
     } catch (error) {
@@ -384,8 +392,9 @@ class AdminAcademicController {
   static async getHouseById(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { id } = req.params;
-      const data = await AcademicModel.getHouseById(id, schoolId);
+      const data = await AcademicModel.getHouseById(id, schoolId, branchId);
       if (!data) return ApiResponse.error(res, 'House not found', null, 404);
       return ApiResponse.success(res, 'House fetched successfully.', data);
     } catch (error) {
@@ -410,11 +419,11 @@ class AdminAcademicController {
   static async updateHouse(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const branchId = req.body.branch_id !== undefined ? req.body.branch_id : undefined;
+      const branchId = req.body.branch_id !== undefined ? req.body.branch_id : (req.branchId || undefined);
       const updated = await AcademicModel.updateHouse(req.params.id, schoolId, {
         ...req.body,
         branch_id: branchId,
-      });
+      }, req.branchId || null);
       if (!updated) return ApiResponse.error(res, 'House not found', null, 404);
       return ApiResponse.success(res, 'House updated successfully.', null);
     } catch (error) {
@@ -425,7 +434,8 @@ class AdminAcademicController {
   static async deleteHouse(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const deleted = await AcademicModel.deleteHouse(req.params.id, schoolId);
+      const branchId = req.branchId || req.query.branch_id || null;
+      const deleted = await AcademicModel.deleteHouse(req.params.id, schoolId, branchId);
       if (!deleted) return ApiResponse.error(res, 'House not found', null, 404);
       return ApiResponse.success(res, 'House deleted successfully.', null);
     } catch (error) {
@@ -448,8 +458,9 @@ class AdminAcademicController {
   static async getPeriodById(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { id } = req.params;
-      const data = await AcademicModel.getPeriodById(id, schoolId);
+      const data = await AcademicModel.getPeriodById(id, schoolId, branchId);
       if (!data) return ApiResponse.error(res, 'Period not found', null, 404);
       return ApiResponse.success(res, 'Period fetched successfully.', data);
     } catch (error) {
@@ -474,11 +485,11 @@ class AdminAcademicController {
   static async updatePeriod(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const branchId = req.body.branch_id !== undefined ? req.body.branch_id : undefined;
+      const branchId = req.body.branch_id !== undefined ? req.body.branch_id : (req.branchId || undefined);
       const updated = await AcademicModel.updatePeriod(req.params.id, schoolId, {
         ...req.body,
         branch_id: branchId,
-      });
+      }, req.branchId || null);
       if (!updated) return ApiResponse.error(res, 'Period not found', null, 404);
       return ApiResponse.success(res, 'Period updated successfully.', null);
     } catch (error) {
@@ -489,7 +500,8 @@ class AdminAcademicController {
   static async deletePeriod(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const deleted = await AcademicModel.deletePeriod(req.params.id, schoolId);
+      const branchId = req.branchId || req.query.branch_id || null;
+      const deleted = await AcademicModel.deletePeriod(req.params.id, schoolId, branchId);
       if (!deleted) return ApiResponse.error(res, 'Period not found', null, 404);
       return ApiResponse.success(res, 'Period deleted successfully.', null);
     } catch (error) {
@@ -530,7 +542,8 @@ class AdminAcademicController {
   static async getTransportRoutes(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const data = await AcademicModel.getTransportRoutes(schoolId);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const data = await AcademicModel.getTransportRoutes(schoolId, branchId);
       return ApiResponse.success(res, 'Transport routes fetched', data);
     } catch (error) {
       next(error);
@@ -540,7 +553,8 @@ class AdminAcademicController {
   static async getHostels(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const data = await AcademicModel.getHostels(schoolId);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const data = await AcademicModel.getHostels(schoolId, branchId);
       return ApiResponse.success(res, 'Hostels fetched', data);
     } catch (error) {
       next(error);
@@ -551,7 +565,8 @@ class AdminAcademicController {
     try {
       const hostelId = req.query.hostel_id || req.query.hostelId;
       const schoolId = req.user?.schoolId;
-      const data = await AcademicModel.getHostelRooms(hostelId, schoolId);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const data = await AcademicModel.getHostelRooms(hostelId, schoolId, branchId);
       return ApiResponse.success(res, 'Hostel rooms fetched', data);
     } catch (error) {
       next(error);
@@ -618,7 +633,8 @@ class AdminAcademicController {
   static async getStudentMasters(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const data = await AcademicModel.getStudentMasters(schoolId);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const data = await AcademicModel.getStudentMasters(schoolId, branchId);
       return ApiResponse.success(res, 'Student masters fetched', data);
     } catch (error) {
       next(error);
@@ -628,9 +644,10 @@ class AdminAcademicController {
   static async getNextRollNumber(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const classId = req.query.class_id || req.query.classId;
       const sectionId = req.query.section_id || req.query.sectionId;
-      const rollNumber = await AcademicModel.getNextRollNumber(schoolId, classId, sectionId);
+      const rollNumber = await AcademicModel.getNextRollNumber(schoolId, classId, sectionId, branchId);
       return ApiResponse.success(res, 'Next roll number generated', { roll_number: rollNumber });
     } catch (error) {
       next(error);
@@ -652,8 +669,9 @@ class AdminAcademicController {
   static async getDayById(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { id } = req.params;
-      const data = await AcademicModel.getDayById(id, schoolId);
+      const data = await AcademicModel.getDayById(id, schoolId, branchId);
       if (!data) return ApiResponse.error(res, 'Day not found', null, 404);
       return ApiResponse.success(res, 'Day fetched successfully', data);
     } catch (error) {
@@ -687,11 +705,11 @@ class AdminAcademicController {
           ? req.body.branch_id
           : req.body.branch_id === null || req.body.branch_id === ''
           ? null
-          : undefined;
+          : (req.branchId || undefined);
       await AcademicModel.updateDay(id, schoolId, {
         ...req.body,
         ...(branchId !== undefined ? { branch_id: branchId } : {}),
-      });
+      }, req.branchId || null);
       return ApiResponse.success(res, 'Day updated successfully');
     } catch (error) {
       next(error);
@@ -701,8 +719,9 @@ class AdminAcademicController {
   static async deleteDay(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || null;
       const { id } = req.params;
-      await AcademicModel.deleteDay(id, schoolId);
+      await AcademicModel.deleteDay(id, schoolId, branchId);
       return ApiResponse.success(res, 'Day deleted successfully');
     } catch (error) {
       next(error);
@@ -713,7 +732,8 @@ class AdminAcademicController {
   static async getDocumentTypes(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const data = await AcademicModel.getDocumentTypes(schoolId);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const data = await AcademicModel.getDocumentTypes(schoolId, branchId);
       return ApiResponse.success(res, 'Document types fetched', data);
     } catch (error) {
       next(error);
@@ -723,8 +743,9 @@ class AdminAcademicController {
   static async getDocumentTypeById(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { id } = req.params;
-      const data = await AcademicModel.getDocumentTypeById(id, schoolId);
+      const data = await AcademicModel.getDocumentTypeById(id, schoolId, branchId);
       if (!data) return ApiResponse.error(res, 'Document type not found', null, 404);
       return ApiResponse.success(res, 'Document type fetched successfully.', data);
     } catch (error) {
@@ -746,8 +767,9 @@ class AdminAcademicController {
   static async updateDocumentType(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.body.branch_id || null;
       const { id } = req.params;
-      const updated = await AcademicModel.updateDocumentType(id, schoolId, req.body);
+      const updated = await AcademicModel.updateDocumentType(id, schoolId, req.body, branchId);
       if (!updated) return ApiResponse.error(res, 'Document type not found', null, 404);
       return ApiResponse.success(res, 'Document type updated successfully.', null);
     } catch (error) {
@@ -758,8 +780,9 @@ class AdminAcademicController {
   static async deleteDocumentType(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || null;
       const { id } = req.params;
-      const deleted = await AcademicModel.deleteDocumentType(id, schoolId);
+      const deleted = await AcademicModel.deleteDocumentType(id, schoolId, branchId);
       if (!deleted) return ApiResponse.error(res, 'Document type not found', null, 404);
       return ApiResponse.success(res, 'Document type deleted');
     } catch (error) {
@@ -814,8 +837,9 @@ class AdminAcademicController {
   static async updateRoutine(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.body?.branch_id || null;
       const { id } = req.params;
-      const updated = await AcademicModel.updateRoutine(id, schoolId, req.body);
+      const updated = await AcademicModel.updateRoutine(id, schoolId, req.body, branchId);
       if (!updated) return ApiResponse.error(res, 'Routine period not found', null, 404);
       return ApiResponse.success(res, 'Routine period updated successfully');
     } catch (error) {
@@ -879,8 +903,9 @@ class AdminAcademicController {
   static async getSyllabusById(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { id } = req.params;
-      const data = await AcademicModel.getSyllabusById(id, schoolId);
+      const data = await AcademicModel.getSyllabusById(id, schoolId, branchId);
       if (!data) return ApiResponse.error(res, 'Syllabus item not found', null, 404);
       return ApiResponse.success(res, 'Syllabus item fetched successfully', data);
     } catch (error) {
@@ -902,8 +927,9 @@ class AdminAcademicController {
   static async updateSyllabus(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.body?.branch_id || null;
       const { id } = req.params;
-      const updated = await AcademicModel.updateSyllabus(id, schoolId, req.body);
+      const updated = await AcademicModel.updateSyllabus(id, schoolId, req.body, branchId);
       if (!updated) return ApiResponse.error(res, 'Syllabus record not found', null, 404);
       return ApiResponse.success(res, 'Syllabus updated successfully');
     } catch (error) {
@@ -914,6 +940,7 @@ class AdminAcademicController {
   static async updateSyllabusStatus(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || null;
       const { id } = req.params;
       const { status } = req.body;
 
@@ -921,7 +948,7 @@ class AdminAcademicController {
         return ApiResponse.error(res, 'Status is required.', null, 400);
       }
 
-      const updated = await AcademicModel.updateSyllabusStatus(id, schoolId, status);
+      const updated = await AcademicModel.updateSyllabusStatus(id, schoolId, status, branchId);
       if (!updated) return ApiResponse.error(res, 'Syllabus record not found', null, 404);
       return ApiResponse.success(res, 'Syllabus status updated successfully');
     } catch (error) {
@@ -971,8 +998,9 @@ class AdminAcademicController {
   static async deleteLesson(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || null;
       const { id } = req.params;
-      await AcademicModel.deleteLesson(id, schoolId);
+      await AcademicModel.deleteLesson(id, schoolId, branchId);
       return ApiResponse.success(res, 'Lesson deleted');
     } catch (error) {
       next(error);
@@ -983,12 +1011,14 @@ class AdminAcademicController {
   static async getAssignmentTypes(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { search, status, page, limit } = req.query;
       const data = await AcademicModel.getAssignmentTypes(schoolId, {
         search,
         status,
         page: Number(page) || 1,
         limit: Number(limit) || 10,
+        branchId,
       });
       return ApiResponse.success(res, 'Assignment types fetched successfully', data);
     } catch (error) {
@@ -999,8 +1029,9 @@ class AdminAcademicController {
   static async getAssignmentTypeById(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { id } = req.params;
-      const data = await AcademicModel.getAssignmentTypeById(id, schoolId);
+      const data = await AcademicModel.getAssignmentTypeById(id, schoolId, branchId);
       if (!data) return ApiResponse.error(res, 'Assignment type not found', null, 404);
       return ApiResponse.success(res, 'Assignment type fetched successfully', data);
     } catch (error) {
@@ -1022,10 +1053,24 @@ class AdminAcademicController {
   static async updateAssignmentType(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.body?.branch_id || null;
       const { id } = req.params;
-      const updated = await AcademicModel.updateAssignmentType(id, schoolId, req.body);
+      const updated = await AcademicModel.updateAssignmentType(id, schoolId, req.body, branchId);
       if (!updated) return ApiResponse.error(res, 'Assignment type not found', null, 404);
       return ApiResponse.success(res, 'Assignment type updated successfully');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async deleteAssignmentType(req, res, next) {
+    try {
+      const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || null;
+      const { id } = req.params;
+      const deleted = await AcademicModel.deleteAssignmentType(id, schoolId, branchId);
+      if (!deleted) return ApiResponse.error(res, 'Assignment type not found', null, 404);
+      return ApiResponse.success(res, 'Assignment type deleted successfully');
     } catch (error) {
       next(error);
     }
@@ -1055,8 +1100,9 @@ class AdminAcademicController {
   static async getAssignmentById(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { id } = req.params;
-      const data = await AcademicModel.getAssignmentById(id, schoolId);
+      const data = await AcademicModel.getAssignmentById(id, schoolId, branchId);
       if (!data) return ApiResponse.error(res, 'Assignment not found', null, 404);
       return ApiResponse.success(res, 'Assignment fetched successfully', data);
     } catch (error) {
@@ -1067,8 +1113,9 @@ class AdminAcademicController {
   static async getAssignmentQuestions(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { id } = req.params;
-      const data = await AcademicModel.getAssignmentQuestions(id, schoolId);
+      const data = await AcademicModel.getAssignmentQuestions(id, schoolId, branchId);
       return ApiResponse.success(res, 'Assignment questions fetched successfully', data);
     } catch (error) {
       next(error);
@@ -1078,8 +1125,9 @@ class AdminAcademicController {
   static async publishAssignment(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || null;
       const { id } = req.params;
-      const updated = await AcademicModel.publishAssignment(id, schoolId);
+      const updated = await AcademicModel.publishAssignment(id, schoolId, branchId);
       if (!updated) return ApiResponse.error(res, 'Assignment not found', null, 404);
       return ApiResponse.success(res, 'Assignment published successfully');
     } catch (error) {
@@ -1101,8 +1149,9 @@ class AdminAcademicController {
   static async updateAssignment(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.body?.branch_id || null;
       const { id } = req.params;
-      await AcademicModel.updateAssignment(id, schoolId, req.body);
+      await AcademicModel.updateAssignment(id, schoolId, req.body, branchId);
       return ApiResponse.success(res, 'Assignment updated successfully');
     } catch (error) {
       next(error);
@@ -1125,12 +1174,14 @@ class AdminAcademicController {
   static async getMaterialTypes(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { search, status, page, limit } = req.query;
       const data = await AcademicModel.getMaterialTypes(schoolId, {
         search,
         status,
         page: Number(page) || 1,
         limit: Number(limit) || 100,
+        branchId,
       });
       return ApiResponse.success(res, 'Material types fetched successfully', data);
     } catch (error) {
@@ -1141,8 +1192,9 @@ class AdminAcademicController {
   static async getMaterialTypeById(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { id } = req.params;
-      const data = await AcademicModel.getMaterialTypeById(id, schoolId);
+      const data = await AcademicModel.getMaterialTypeById(id, schoolId, branchId);
       if (!data) return ApiResponse.error(res, 'Material type not found', null, 404);
       return ApiResponse.success(res, 'Material type fetched successfully', data);
     } catch (error) {
@@ -1164,8 +1216,9 @@ class AdminAcademicController {
   static async updateMaterialType(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.body?.branch_id || null;
       const { id } = req.params;
-      const updated = await AcademicModel.updateMaterialType(id, schoolId, req.body);
+      const updated = await AcademicModel.updateMaterialType(id, schoolId, req.body, branchId);
       if (!updated) return ApiResponse.error(res, 'Material type not found', null, 404);
       return ApiResponse.success(res, 'Material type updated successfully');
     } catch (error) {
@@ -1176,8 +1229,9 @@ class AdminAcademicController {
   static async deleteMaterialType(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || null;
       const { id } = req.params;
-      await AcademicModel.deleteMaterialType(id, schoolId);
+      await AcademicModel.deleteMaterialType(id, schoolId, branchId);
       return ApiResponse.success(res, 'Material type deleted successfully');
     } catch (error) {
       next(error);
@@ -1210,8 +1264,9 @@ class AdminAcademicController {
   static async getStudyMaterialById(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { id } = req.params;
-      const data = await AcademicModel.getStudyMaterialById(id, schoolId);
+      const data = await AcademicModel.getStudyMaterialById(id, schoolId, branchId);
       if (!data) return ApiResponse.error(res, 'Study material not found', null, 404);
       return ApiResponse.success(res, 'Study material fetched successfully', data);
     } catch (error) {
@@ -1234,8 +1289,9 @@ class AdminAcademicController {
   static async updateStudyMaterial(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.body?.branch_id || null;
       const { id } = req.params;
-      const updated = await AcademicModel.updateStudyMaterial(id, schoolId, req.body);
+      const updated = await AcademicModel.updateStudyMaterial(id, schoolId, req.body, branchId);
       if (!updated) return ApiResponse.error(res, 'Study material not found', null, 404);
       return ApiResponse.success(res, 'Study material updated successfully');
     } catch (error) {
@@ -1271,8 +1327,9 @@ class AdminAcademicController {
   static async downloadStudyMaterial(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || null;
       const { id } = req.params;
-      const data = await AcademicModel.getStudyMaterialById(id, schoolId);
+      const data = await AcademicModel.getStudyMaterialById(id, schoolId, branchId);
       if (!data) return ApiResponse.error(res, 'Study material not found', null, 404);
       if (!data.attachment) return ApiResponse.error(res, 'No attachment for this study material', null, 404);
 
@@ -1337,8 +1394,9 @@ class AdminAcademicController {
   static async deleteLesson(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || null;
       const { id } = req.params;
-      const success = await AcademicModel.deleteLesson(id, schoolId);
+      const success = await AcademicModel.deleteLesson(id, schoolId, branchId);
       if (!success) return ApiResponse.error(res, 'Lesson not found or delete failed', null, 400);
       return ApiResponse.success(res, 'Lesson deleted successfully');
     } catch (error) {

@@ -104,8 +104,11 @@ function authMiddleware(req, res, next) {
         // Super Admin can freely switch branch context via header or query, or view consolidated 'all'
         const branchFromHeader = req.headers['x-branch-id'] || req.headers['x-branch'];
         const branchFromQuery = req.query?.branch_id !== undefined ? req.query.branch_id : req.query?.branchId;
+        const branchFromBody = req.body?.branch_id !== undefined ? req.body.branch_id : req.body?.branchId;
         const rawBranch = (branchFromQuery !== undefined && branchFromQuery !== null && branchFromQuery !== '')
           ? branchFromQuery
+          : (branchFromBody !== undefined && branchFromBody !== null && branchFromBody !== '')
+          ? branchFromBody
           : branchFromHeader;
 
         if (rawBranch !== undefined && rawBranch !== null) {

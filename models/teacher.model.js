@@ -271,7 +271,7 @@ class TeacherModel {
     return { teachers, total };
   }
 
-  static async getTeacherById(id, schoolId) {
+  static async getTeacherById(id, schoolId, branchId = null) {
     const [rows] = await pool.query(
       `SELECT 
         t.*,
@@ -308,9 +308,9 @@ class TeacherModel {
           CAST(t.marital_status AS CHAR) = CAST(mm.id AS CHAR) OR
           (t.marital_status NOT IN ('0', 0, '') AND CAST(t.marital_status AS CHAR) COLLATE utf8mb4_unicode_ci = mm.marital_status)
         )
-       WHERE t.id = ? AND t.school_id = ? AND t.status != 4
+       WHERE t.id = ? AND t.school_id = ? AND t.status != 4 ${branchId ? ' AND (t.branch_id = ? OR t.branch_id IS NULL)' : ''}
        LIMIT 1`,
-      [id, schoolId]
+      branchId ? [id, schoolId, Number(branchId)] : [id, schoolId]
     );
     const teacher = rows[0] || null;
     if (!teacher) return null;
@@ -747,10 +747,14 @@ class TeacherModel {
     }
   }
 
-  static async checkEmail(schoolId, email, excludeId = null) {
+  static async checkEmail(schoolId, email, excludeId = null, branchId = null) {
     if (!email || !String(email).trim()) return false;
     let sql = `SELECT id FROM teacher_master WHERE email_address = ? AND school_id = ? AND status != 4`;
     const params = [String(email).trim(), schoolId];
+    if (branchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
     if (excludeId) {
       sql += ` AND id != ?`;
       params.push(excludeId);
@@ -759,10 +763,14 @@ class TeacherModel {
     return rows.length > 0;
   }
 
-  static async checkPhone(schoolId, phone, excludeId = null) {
+  static async checkPhone(schoolId, phone, excludeId = null, branchId = null) {
     if (!phone || !String(phone).trim()) return false;
     let sql = `SELECT id FROM teacher_master WHERE primary_contact_number = ? AND school_id = ? AND status != 4`;
     const params = [String(phone).trim(), schoolId];
+    if (branchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
     if (excludeId) {
       sql += ` AND id != ?`;
       params.push(excludeId);
@@ -771,13 +779,16 @@ class TeacherModel {
     return rows.length > 0;
   }
 
-  static async checkDuplicate(schoolId, { email, phone }, excludeId = null) {
-    const isEmailDuplicate = email ? await TeacherModel.checkEmail(schoolId, email, excludeId) : false;
-    const isPhoneDuplicate = phone ? await TeacherModel.checkPhone(schoolId, phone, excludeId) : false;
+  static async checkDuplicate(schoolId, { email, phone }, excludeId = null, branchId = null) {
+    const isEmailDuplicate = email ? await TeacherModel.checkEmail(schoolId, email, excludeId, branchId) : false;
+    const isPhoneDuplicate = phone ? await TeacherModel.checkPhone(schoolId, phone, excludeId, branchId) : false;
     return { isEmailDuplicate, isPhoneDuplicate };
   }
 
   static async createTeacher(schoolId, data) {
+    // Resolve branch_id strictly if provided
+    let branchId = data.branch_id ? Number(data.branch_id) : (data.branchId ? Number(data.branchId) : null);
+
     const {
       picture,
       academic_year,
@@ -831,7 +842,7 @@ class TeacherModel {
     const primarySubject = subject || subject_id || (class_assignments && class_assignments[0]?.subject_id ? class_assignments[0].subject_id : null);
 
     if (email_address && String(email_address).trim()) {
-      const isEmailDup = await TeacherModel.checkEmail(schoolId, email_address);
+      const isEmailDup = await TeacherModel.checkEmail(schoolId, email_address, null, branchId);
       if (isEmailDup) {
         const err = new Error('A teacher with this email address already exists.');
         err.statusCode = 400;
@@ -840,7 +851,7 @@ class TeacherModel {
     }
 
     if (primary_contact_number && String(primary_contact_number).trim()) {
-      const isPhoneDup = await TeacherModel.checkPhone(schoolId, primary_contact_number);
+      const isPhoneDup = await TeacherModel.checkPhone(schoolId, primary_contact_number, null, branchId);
       if (isPhoneDup) {
         const err = new Error('A teacher with this mobile number already exists.');
         err.statusCode = 400;
@@ -849,9 +860,6 @@ class TeacherModel {
     }
 
     const hashedPassword = password ? await hashPassword(password) : null;
-
-    // Resolve branch_id strictly if provided
-    let branchId = data.branch_id ? Number(data.branch_id) : (data.branchId ? Number(data.branchId) : null);
 
     const [result] = await pool.query(
       `INSERT INTO teacher_master 
@@ -1112,11 +1120,16 @@ class TeacherModel {
     return newId;
   }
 
-  static async updateTeacher(id, schoolId, data) {
-    const [existingRows] = await pool.query(
-      `SELECT * FROM teacher_master WHERE id = ? AND school_id = ? LIMIT 1`,
-      [id, schoolId]
-    );
+  static async updateTeacher(id, schoolId, data, branchId = null) {
+    const resolvedBranchId = branchId || (data.branch_id ? Number(data.branch_id) : (data.branchId ? Number(data.branchId) : null));
+    let selectSql = `SELECT * FROM teacher_master WHERE id = ? AND school_id = ?`;
+    const selectParams = [id, schoolId];
+    if (resolvedBranchId) {
+      selectSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      selectParams.push(Number(resolvedBranchId));
+    }
+    selectSql += ` LIMIT 1`;
+    const [existingRows] = await pool.query(selectSql, selectParams);
     if (!existingRows || existingRows.length === 0) return false;
     const existing = existingRows[0];
 
@@ -1162,7 +1175,7 @@ class TeacherModel {
     const primarySubject = subject || existing.subject || (data.class_assignments && data.class_assignments[0]?.subject_id ? data.class_assignments[0].subject_id : null);
 
     if (email_address && String(email_address).trim()) {
-      const isEmailDup = await TeacherModel.checkEmail(schoolId, email_address, id);
+      const isEmailDup = await TeacherModel.checkEmail(schoolId, email_address, id, resolvedBranchId);
       if (isEmailDup) {
         const err = new Error('A teacher with this email address already exists.');
         err.statusCode = 400;
@@ -1171,7 +1184,7 @@ class TeacherModel {
     }
 
     if (primary_contact_number && String(primary_contact_number).trim()) {
-      const isPhoneDup = await TeacherModel.checkPhone(schoolId, primary_contact_number, id);
+      const isPhoneDup = await TeacherModel.checkPhone(schoolId, primary_contact_number, id, resolvedBranchId);
       if (isPhoneDup) {
         const err = new Error('A teacher with this mobile number already exists.');
         err.statusCode = 400;
@@ -1230,6 +1243,11 @@ class TeacherModel {
 
     updateSql += ` WHERE id = ? AND school_id = ?`;
     params.push(id, schoolId);
+
+    if (resolvedBranchId) {
+      updateSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(resolvedBranchId));
+    }
 
     await pool.query(updateSql, params);
 

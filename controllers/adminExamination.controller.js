@@ -110,9 +110,10 @@ class AdminExaminationController {
   static async getAllExams(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const academic_year = req.query.academic_year || req.query.academic_year_id || req.query.academicYear;
       const { status } = req.query;
-      const exams = await AdminExaminationModel.getAllExams(schoolId, academic_year, status);
+      const exams = await AdminExaminationModel.getAllExams(schoolId, academic_year, status, branchId);
       return ApiResponse.success(res, 'Exams retrieved successfully.', { exams });
     } catch (error) {
       next(error);
@@ -122,8 +123,9 @@ class AdminExaminationController {
   static async getExamById(req, res, next) {
     try {
       const schoolId = req.user?.schoolId;
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { id } = req.params;
-      const exam = await AdminExaminationModel.getExamById(id, schoolId);
+      const exam = await AdminExaminationModel.getExamById(id, schoolId, branchId);
       if (!exam) {
         return ApiResponse.error(res, 'Exam not found.', null, 404);
       }
@@ -136,7 +138,7 @@ class AdminExaminationController {
   static async createExam(req, res, next) {
     try {
       const schoolId = req.user?.schoolId;
-      const branchId = req.body.branch_id || req.body.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null;
+      const branchId = req.branchId || req.body.branch_id || req.body.branchId || req.user?.branch_id || req.user?.branchId || null;
       const { exam_name, academic_year, status } = req.body;
 
       if (!exam_name || exam_name.trim() === '') {
@@ -160,10 +162,11 @@ class AdminExaminationController {
   static async updateExam(req, res, next) {
     try {
       const schoolId = req.user?.schoolId;
+      const branchId = req.branchId || req.body.branch_id || req.body.branchId || req.query.branch_id || null;
       const { id } = req.params;
       const { exam_name, academic_year, status } = req.body;
 
-      const existing = await AdminExaminationModel.getExamById(id, schoolId);
+      const existing = await AdminExaminationModel.getExamById(id, schoolId, branchId);
       if (!existing) {
         return ApiResponse.error(res, 'Exam not found.', null, 404);
       }
@@ -173,6 +176,7 @@ class AdminExaminationController {
         academicYear: academic_year !== undefined ? parseInt(academic_year, 10) : undefined,
         status: status !== undefined ? parseInt(status, 10) : undefined,
         schoolId,
+        branchId,
       });
 
       return ApiResponse.success(res, 'Exam updated successfully.');
@@ -184,13 +188,14 @@ class AdminExaminationController {
   static async deleteExam(req, res, next) {
     try {
       const schoolId = req.user?.schoolId;
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { id } = req.params;
-      const existing = await AdminExaminationModel.getExamById(id, schoolId);
+      const existing = await AdminExaminationModel.getExamById(id, schoolId, branchId);
       if (!existing) {
         return ApiResponse.error(res, 'Exam not found.', null, 404);
       }
 
-      await AdminExaminationModel.deleteExam(id, schoolId);
+      await AdminExaminationModel.deleteExam(id, schoolId, branchId);
       return ApiResponse.success(res, 'Exam deleted successfully.');
     } catch (error) {
       next(error);
@@ -204,8 +209,9 @@ class AdminExaminationController {
   static async getAllExamTypes(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { exam_id, status } = req.query;
-      const examTypes = await AdminExaminationModel.getAllExamTypes(schoolId, exam_id, status);
+      const examTypes = await AdminExaminationModel.getAllExamTypes(schoolId, exam_id, status, branchId);
       return ApiResponse.success(res, 'Exam types retrieved successfully.', { examTypes });
     } catch (error) {
       next(error);
@@ -215,8 +221,9 @@ class AdminExaminationController {
   static async getExamTypeById(req, res, next) {
     try {
       const schoolId = req.user?.schoolId;
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { id } = req.params;
-      const examType = await AdminExaminationModel.getExamTypeById(id, schoolId);
+      const examType = await AdminExaminationModel.getExamTypeById(id, schoolId, branchId);
       if (!examType) {
         return ApiResponse.error(res, 'Exam type not found.', null, 404);
       }
@@ -229,7 +236,7 @@ class AdminExaminationController {
   static async createExamType(req, res, next) {
     try {
       const schoolId = req.user?.schoolId;
-      const branchId = req.body.branch_id || req.body.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null;
+      const branchId = req.branchId || req.body.branch_id || req.body.branchId || req.user?.branch_id || req.user?.branchId || null;
       const { exam_id, academic_year, exam_type, sort_order, status, items } = req.body;
 
       if (Array.isArray(items) && items.length > 0) {
@@ -274,6 +281,7 @@ class AdminExaminationController {
   static async updateExamType(req, res, next) {
     try {
       const schoolId = req.user?.schoolId;
+      const branchId = req.branchId || req.body.branch_id || req.body.branchId || req.query.branch_id || null;
       const { id } = req.params;
       const { exam_id, academic_year, exam_type, sort_order, status } = req.body;
 
@@ -284,6 +292,7 @@ class AdminExaminationController {
         sortOrder: sort_order !== undefined ? parseInt(sort_order, 10) : undefined,
         status: status !== undefined ? parseInt(status, 10) : undefined,
         schoolId,
+        branchId,
       });
 
       return ApiResponse.success(res, 'Exam type updated successfully.');
@@ -295,8 +304,9 @@ class AdminExaminationController {
   static async deleteExamType(req, res, next) {
     try {
       const schoolId = req.user?.schoolId;
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { id } = req.params;
-      await AdminExaminationModel.deleteExamType(id, schoolId);
+      await AdminExaminationModel.deleteExamType(id, schoolId, branchId);
       return ApiResponse.success(res, 'Exam type deleted successfully.');
     } catch (error) {
       next(error);
@@ -310,12 +320,14 @@ class AdminExaminationController {
   static async getExamSubjectsList(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { exam_id, class_id } = req.query;
 
       const examSubjects = await AdminExaminationModel.getExamSubjectsList(
         schoolId,
         exam_id ? parseInt(exam_id, 10) : undefined,
-        class_id ? parseInt(class_id, 10) : undefined
+        class_id ? parseInt(class_id, 10) : undefined,
+        branchId
       );
 
       let config = {};
@@ -448,7 +460,8 @@ class AdminExaminationController {
     try {
       const { id } = req.params;
       const schoolId = req.user.schoolId;
-      await AdminExaminationModel.deleteExamSubject(id, schoolId);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      await AdminExaminationModel.deleteExamSubject(id, schoolId, branchId);
       return ApiResponse.success(res, 'Exam subject configuration deleted successfully.');
     } catch (error) {
       next(error);
@@ -768,6 +781,8 @@ class AdminExaminationController {
 
   static async getStudentMarksheet(req, res, next) {
     try {
+      const schoolId = req.user?.schoolId;
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const studentId = req.params.studentId || req.query.student_id || req.query.studentId;
       const examId = req.query.exam_id || req.query.examId;
 
@@ -778,6 +793,8 @@ class AdminExaminationController {
       const marksheet = await AdminExaminationModel.getStudentMarksheet({
         studentId: parseInt(studentId, 10),
         examId: parseInt(examId, 10),
+        schoolId,
+        branchId,
       });
 
       if (!marksheet) {

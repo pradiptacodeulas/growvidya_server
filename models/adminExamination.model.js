@@ -155,11 +155,12 @@ class AdminExaminationModel {
   // 2. EXAM MASTER
   // =========================================================
 
-  static async getAllExams(schoolId, academicYear, status) {
+  static async getAllExams(schoolId, academicYear, status, branchId = null) {
     let query = `
       SELECT 
         e.id,
         e.school_id,
+        e.branch_id,
         e.academic_year,
         e.exam AS exam_name,
         e.status,
@@ -169,9 +170,14 @@ class AdminExaminationModel {
         (SELECT COUNT(id) FROM exam_schedule WHERE exam_id = e.id) AS schedules_count
       FROM exam_master e
       LEFT JOIN academic_year_master ay ON ay.id = e.academic_year
-      WHERE e.school_id = ?
+      WHERE (e.school_id = ? OR ? IS NULL)
     `;
-    const params = [schoolId];
+    const params = [schoolId, schoolId];
+
+    if (branchId) {
+      query += ` AND (e.branch_id = ? OR e.branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
 
     if (status !== undefined && status !== null && status !== '') {
       query += ` AND e.status = ?`;
@@ -190,11 +196,12 @@ class AdminExaminationModel {
     return rows;
   }
 
-  static async getExamById(id, schoolId) {
+  static async getExamById(id, schoolId, branchId = null) {
     let query = `
       SELECT 
         e.id,
         e.school_id,
+        e.branch_id,
         e.academic_year,
         e.exam AS exam_name,
         e.status,
@@ -206,8 +213,12 @@ class AdminExaminationModel {
     `;
     const params = [id];
     if (schoolId) {
-      query += ` AND e.school_id = ?`;
-      params.push(schoolId);
+      query += ` AND (e.school_id = ? OR ? IS NULL)`;
+      params.push(schoolId, schoolId);
+    }
+    if (branchId) {
+      query += ` AND (e.branch_id = ? OR e.branch_id IS NULL)`;
+      params.push(Number(branchId));
     }
     const [rows] = await pool.query(query, params);
     return rows[0] || null;
@@ -232,7 +243,7 @@ class AdminExaminationModel {
     return result.insertId;
   }
 
-  static async updateExam(id, { academicYear, examName, status, schoolId }) {
+  static async updateExam(id, { academicYear, examName, status, schoolId, branchId = null }) {
     let query = `UPDATE exam_master SET `;
     const params = [];
     const updates = [];
@@ -256,21 +267,29 @@ class AdminExaminationModel {
     params.push(id);
 
     if (schoolId) {
-      query += ` AND school_id = ?`;
-      params.push(schoolId);
+      query += ` AND (school_id = ? OR ? IS NULL)`;
+      params.push(schoolId, schoolId);
+    }
+    if (branchId) {
+      query += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
     }
 
     const [result] = await pool.query(query, params);
     return result.affectedRows > 0;
   }
 
-  static async deleteExam(id, schoolId) {
+  static async deleteExam(id, schoolId, branchId = null) {
     // Check if student marks are recorded for this exam
     let marksQuery = `SELECT id FROM exam_result WHERE exam_id = ? AND status != 4`;
     const marksParams = [id];
     if (schoolId) {
-      marksQuery += ` AND school_id = ?`;
-      marksParams.push(schoolId);
+      marksQuery += ` AND (school_id = ? OR ? IS NULL)`;
+      marksParams.push(schoolId, schoolId);
+    }
+    if (branchId) {
+      marksQuery += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      marksParams.push(Number(branchId));
     }
     marksQuery += ` LIMIT 1`;
     const [hasMarks] = await pool.query(marksQuery, marksParams);
@@ -283,8 +302,12 @@ class AdminExaminationModel {
     let query = `UPDATE exam_master SET status = 4 WHERE id = ?`;
     const params = [id];
     if (schoolId) {
-      query += ` AND school_id = ?`;
-      params.push(schoolId);
+      query += ` AND (school_id = ? OR ? IS NULL)`;
+      params.push(schoolId, schoolId);
+    }
+    if (branchId) {
+      query += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
     }
     const [result] = await pool.query(query, params);
     return result.affectedRows > 0;
@@ -294,11 +317,12 @@ class AdminExaminationModel {
   // 3. EXAM TYPES (Theory, Practical, Assessment, Viva, etc.)
   // =========================================================
 
-  static async getAllExamTypes(schoolId, examId, status) {
+  static async getAllExamTypes(schoolId, examId, status, branchId = null) {
     let query = `
       SELECT 
         et.id,
         et.school_id,
+        et.branch_id,
         et.academic_year,
         et.exam_id,
         et.exam_type,
@@ -308,9 +332,14 @@ class AdminExaminationModel {
         e.exam AS exam_name
       FROM exam_type_master et
       LEFT JOIN exam_master e ON e.id = et.exam_id
-      WHERE et.school_id = ?
+      WHERE (et.school_id = ? OR ? IS NULL)
     `;
-    const params = [schoolId];
+    const params = [schoolId, schoolId];
+
+    if (branchId) {
+      query += ` AND (et.branch_id = ? OR et.branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
 
     if (status !== undefined && status !== null && status !== '') {
       query += ` AND et.status = ?`;
@@ -329,11 +358,12 @@ class AdminExaminationModel {
     return rows;
   }
 
-  static async getExamTypeById(id, schoolId) {
+  static async getExamTypeById(id, schoolId, branchId = null) {
     let query = `
       SELECT 
         et.id,
         et.school_id,
+        et.branch_id,
         et.academic_year,
         et.exam_id,
         et.exam_type,
@@ -347,8 +377,12 @@ class AdminExaminationModel {
     `;
     const params = [id];
     if (schoolId) {
-      query += ` AND et.school_id = ?`;
-      params.push(schoolId);
+      query += ` AND (et.school_id = ? OR ? IS NULL)`;
+      params.push(schoolId, schoolId);
+    }
+    if (branchId) {
+      query += ` AND (et.branch_id = ? OR et.branch_id IS NULL)`;
+      params.push(Number(branchId));
     }
     const [rows] = await pool.query(query, params);
     return rows[0] || null;
@@ -375,7 +409,7 @@ class AdminExaminationModel {
     return result.insertId;
   }
 
-  static async updateExamType(id, { academicYear, examId, examType, sortOrder, status, schoolId }) {
+  static async updateExamType(id, { academicYear, examId, examType, sortOrder, status, schoolId, branchId = null }) {
     let query = `UPDATE exam_type_master SET `;
     const params = [];
     const updates = [];
@@ -407,23 +441,34 @@ class AdminExaminationModel {
     params.push(id);
 
     if (schoolId) {
-      query += ` AND school_id = ?`;
-      params.push(schoolId);
+      query += ` AND (school_id = ? OR ? IS NULL)`;
+      params.push(schoolId, schoolId);
+    }
+    if (branchId) {
+      query += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
     }
 
     const [result] = await pool.query(query, params);
     return result.affectedRows > 0;
   }
 
-  static async deleteExamType(id, schoolId) {
+  static async deleteExamType(id, schoolId, branchId = null) {
     // Check if this exam type is used in student results
-    const [usedInMarks] = await pool.query(
-      `SELECT ers.id FROM exam_result_subject ers
+    let marksQuery = `SELECT ers.id FROM exam_result_subject ers
        JOIN exam_result er ON er.id = ers.exam_result_id
-       WHERE ers.exam_type_id = ? AND ers.status != 4 AND er.status != 4
-       LIMIT 1`,
-      [id]
-    );
+       WHERE ers.exam_type_id = ? AND ers.status != 4 AND er.status != 4`;
+    const marksParams = [id];
+    if (schoolId) {
+      marksQuery += ` AND (er.school_id = ? OR ? IS NULL)`;
+      marksParams.push(schoolId, schoolId);
+    }
+    if (branchId) {
+      marksQuery += ` AND (er.branch_id = ? OR er.branch_id IS NULL)`;
+      marksParams.push(Number(branchId));
+    }
+    marksQuery += ` LIMIT 1`;
+    const [usedInMarks] = await pool.query(marksQuery, marksParams);
     if (usedInMarks.length > 0) {
       const err = new Error('Cannot delete this exam type because student results have already been recorded with it.');
       err.statusCode = 400;
@@ -433,8 +478,12 @@ class AdminExaminationModel {
     let query = `UPDATE exam_type_master SET status = 4 WHERE id = ?`;
     const params = [id];
     if (schoolId) {
-      query += ` AND school_id = ?`;
-      params.push(schoolId);
+      query += ` AND (school_id = ? OR ? IS NULL)`;
+      params.push(schoolId, schoolId);
+    }
+    if (branchId) {
+      query += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
     }
     const [result] = await pool.query(query, params);
     return result.affectedRows > 0;
@@ -444,11 +493,12 @@ class AdminExaminationModel {
   // 4. EXAM SUBJECTS & MARKS CONFIGURATION
   // =========================================================
 
-  static async getExamSubjectsList(schoolId, examId, classId) {
+  static async getExamSubjectsList(schoolId, examId, classId, branchId = null) {
     let query = `
       SELECT 
         esm.id,
         esm.school_id,
+        esm.branch_id,
         esm.exam_id,
         esm.class_id,
         esm.status,
@@ -461,10 +511,15 @@ class AdminExaminationModel {
       LEFT JOIN exam_master e ON e.id = esm.exam_id
       LEFT JOIN class_master c ON c.id = esm.class_id
       LEFT JOIN exam_subject_marks esmarks ON esmarks.exam_subject_id = esm.id AND esmarks.status != 4
-      WHERE esm.school_id = ?
+      WHERE (esm.school_id = ? OR ? IS NULL)
         AND esm.status != 4
     `;
-    const params = [schoolId];
+    const params = [schoolId, schoolId];
+
+    if (branchId) {
+      query += ` AND (esm.branch_id = ? OR esm.branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
 
     if (examId) {
       query += ` AND esm.exam_id = ?`;
@@ -476,7 +531,7 @@ class AdminExaminationModel {
     }
 
     query += `
-      GROUP BY esm.id, esm.school_id, esm.exam_id, esm.class_id, esm.status, esm.created_at, e.exam, c.class_name
+      GROUP BY esm.id, esm.school_id, esm.branch_id, esm.exam_id, esm.class_id, esm.status, esm.created_at, e.exam, c.class_name
       ORDER BY esm.id DESC
     `;
     const [rows] = await pool.query(query, params);
@@ -786,17 +841,21 @@ class AdminExaminationModel {
     }
   }
 
-  static async deleteExamSubject(id, schoolId = null) {
+  static async deleteExamSubject(id, schoolId = null, branchId = null) {
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
 
       // Security check: Lock pattern if exam is conducted / marks recorded
-      let checkQuery = `SELECT school_id, exam_id, class_id FROM exam_subject_master WHERE id = ?`;
+      let checkQuery = `SELECT school_id, branch_id, exam_id, class_id FROM exam_subject_master WHERE id = ?`;
       const checkParams = [id];
       if (schoolId) {
-        checkQuery += ` AND school_id = ?`;
-        checkParams.push(schoolId);
+        checkQuery += ` AND (school_id = ? OR ? IS NULL)`;
+        checkParams.push(schoolId, schoolId);
+      }
+      if (branchId) {
+        checkQuery += ` AND (branch_id = ? OR branch_id IS NULL)`;
+        checkParams.push(Number(branchId));
       }
       const [existing] = await connection.query(checkQuery, checkParams);
       if (existing.length > 0) {
@@ -813,7 +872,17 @@ class AdminExaminationModel {
       }
 
       await connection.query(`UPDATE exam_subject_marks SET status = 4 WHERE exam_subject_id = ?`, [id]);
-      const [res] = await connection.query(`UPDATE exam_subject_master SET status = 4 WHERE id = ?`, [id]);
+      let updateSql = `UPDATE exam_subject_master SET status = 4 WHERE id = ?`;
+      const updateParams = [id];
+      if (schoolId) {
+        updateSql += ` AND (school_id = ? OR ? IS NULL)`;
+        updateParams.push(schoolId, schoolId);
+      }
+      if (branchId) {
+        updateSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+        updateParams.push(Number(branchId));
+      }
+      const [res] = await connection.query(updateSql, updateParams);
       await connection.commit();
       return res.affectedRows > 0;
     } catch (error) {
@@ -1673,11 +1742,13 @@ class AdminExaminationModel {
     };
   }
 
-  static async getStudentMarksheet({ studentId, examId }) {
+  static async getStudentMarksheet({ studentId, examId, schoolId = null, branchId = null }) {
     // 1. Get student & exam meta
-    const metaQuery = `
+    let metaQuery = `
       SELECT 
         s.id AS student_id,
+        s.school_id,
+        s.branch_id,
         s.first_name,
         s.last_name,
         s.admission_number AS admission_no,
@@ -1696,7 +1767,16 @@ class AdminExaminationModel {
       LEFT JOIN exam_master e ON e.id = ?
       WHERE s.id = ?
     `;
-    const [metaRows] = await pool.query(metaQuery, [examId, examId, studentId]);
+    const metaParams = [examId, examId, studentId];
+    if (schoolId) {
+      metaQuery += ` AND (s.school_id = ? OR ? IS NULL)`;
+      metaParams.push(schoolId, schoolId);
+    }
+    if (branchId) {
+      metaQuery += ` AND (s.branch_id = ? OR s.branch_id IS NULL)`;
+      metaParams.push(Number(branchId));
+    }
+    const [metaRows] = await pool.query(metaQuery, metaParams);
     if (metaRows.length === 0) return null;
 
     const studentInfo = metaRows[0];

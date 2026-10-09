@@ -206,7 +206,7 @@ class StudentModel {
     return { students: rows || [], total };
   }
 
-  static async getById(id, schoolId) {
+  static async getById(id, schoolId, branchId = null) {
     const sql = `
       SELECT 
         s.*,
@@ -372,10 +372,10 @@ class StudentModel {
       LEFT JOIN hostel_name_master hnm ON sh.hostel_name = hnm.id
       LEFT JOIN hostel_room_master hrm ON sh.room_number = hrm.id
       LEFT JOIN academic_year_master aym ON (s.academic_year = aym.id OR s.academic_year = aym.academic_year)
-      WHERE s.id = ? AND s.school_id = ?
+      WHERE s.id = ? AND s.school_id = ? ${branchId ? 'AND (s.branch_id = ? OR s.branch_id IS NULL)' : ''}
       LIMIT 1
     `;
-    const [rows] = await pool.execute(sql, [id, schoolId]);
+    const [rows] = await pool.execute(sql, branchId ? [id, schoolId, Number(branchId)] : [id, schoolId]);
     const student = rows[0];
     if (!student) return null;
 
@@ -644,7 +644,7 @@ class StudentModel {
     return result.affectedRows > 0;
   }
 
-  static async checkDuplicateEmail(schoolId, email, excludeStudentId = null) {
+  static async checkDuplicateEmail(schoolId, email, excludeStudentId = null, branchId = null) {
     if (!email || !String(email).trim()) return null;
     const cleanEmail = String(email).trim().toLowerCase();
 
@@ -656,6 +656,40 @@ class StudentModel {
         AND status != 4
     `;
     const params = [schoolId, cleanEmail];
+
+    if (branchId) {
+      query += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+
+    if (excludeStudentId) {
+      query += ` AND id != ?`;
+      params.push(excludeStudentId);
+    }
+
+    query += ` LIMIT 1`;
+
+    const [rows] = await pool.execute(query, params);
+    return rows.length > 0 ? rows[0] : null;
+  }
+
+  static async checkDuplicateAdmissionNumber(schoolId, admissionNumber, excludeStudentId = null, branchId = null) {
+    if (!admissionNumber || !String(admissionNumber).trim()) return null;
+    const cleanNum = String(admissionNumber).trim();
+
+    let query = `
+      SELECT id, first_name, last_name, admission_number 
+      FROM student_master 
+      WHERE school_id = ? 
+        AND admission_number = ? 
+        AND status != 4
+    `;
+    const params = [schoolId, cleanNum];
+
+    if (branchId) {
+      query += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
 
     if (excludeStudentId) {
       query += ` AND id != ?`;
@@ -669,10 +703,19 @@ class StudentModel {
   }
 
   static async create(data) {
+    const branchId = data.branch_id || data.branchId ? Number(data.branch_id || data.branchId) : null;
     if (data.email_address && String(data.email_address).trim()) {
-      const existing = await StudentModel.checkDuplicateEmail(data.school_id, data.email_address);
+      const existing = await StudentModel.checkDuplicateEmail(data.school_id, data.email_address, null, branchId);
       if (existing) {
         const err = new Error('A student with this email address already exists.');
+        err.statusCode = 400;
+        throw err;
+      }
+    }
+    if (data.admission_number && String(data.admission_number).trim()) {
+      const existingAdm = await StudentModel.checkDuplicateAdmissionNumber(data.school_id, data.admission_number, null, branchId);
+      if (existingAdm) {
+        const err = new Error('A student with this admission number already exists.');
         err.statusCode = 400;
         throw err;
       }
@@ -688,9 +731,6 @@ class StudentModel {
       defaultPlainPassword = String(data.primary_contact_number).trim();
     }
     const studentHashedPassword = defaultPlainPassword ? await hashPassword(defaultPlainPassword) : null;
-
-    // Resolve branch_id if provided
-    const branchId = data.branch_id || data.branchId ? Number(data.branch_id || data.branchId) : null;
 
     const sql = `
       INSERT INTO student_master (
@@ -860,11 +900,20 @@ class StudentModel {
     return studentId;
   }
 
-  static async update(id, schoolId, data) {
+  static async update(id, schoolId, data, branchId = null) {
+    const resolvedBranchId = branchId || data.branch_id || data.branchId || null;
     if (data.email_address && String(data.email_address).trim()) {
-      const existing = await StudentModel.checkDuplicateEmail(schoolId, data.email_address, id);
+      const existing = await StudentModel.checkDuplicateEmail(schoolId, data.email_address, id, resolvedBranchId);
       if (existing) {
         const err = new Error('A student with this email address already exists.');
+        err.statusCode = 400;
+        throw err;
+      }
+    }
+    if (data.admission_number && String(data.admission_number).trim()) {
+      const existingAdm = await StudentModel.checkDuplicateAdmissionNumber(schoolId, data.admission_number, id, resolvedBranchId);
+      if (existingAdm) {
+        const err = new Error('A student with this admission number already exists.');
         err.statusCode = 400;
         throw err;
       }
@@ -872,7 +921,7 @@ class StudentModel {
 
     const savedStudentPic = data.picture !== undefined ? (data.picture ? saveBase64File(data.picture, 'student/student_pic', 'Profile') : null) : undefined;
 
-    const sql = `
+    let sql = `
       UPDATE student_master SET
         branch_id = COALESCE(?, branch_id),
         academic_year = ?,
@@ -898,7 +947,7 @@ class StudentModel {
         picture = COALESCE(?, picture)
       WHERE id = ? AND school_id = ?
     `;
-    const [result] = await pool.execute(sql, [
+    const updateParams = [
       data.branch_id || null,
       data.academic_year || null,
       data.admission_number || null,
@@ -923,7 +972,14 @@ class StudentModel {
       savedStudentPic !== undefined ? savedStudentPic : null,
       id,
       schoolId,
-    ]);
+    ];
+
+    if (resolvedBranchId) {
+      sql += ' AND (branch_id = ? OR branch_id IS NULL)';
+      updateParams.push(Number(resolvedBranchId));
+    }
+
+    const [result] = await pool.execute(sql, updateParams);
 
     // Handle Transport update
     if (data.transport_required === '1' && data.transport_info && data.transport_info.route) {
@@ -1469,21 +1525,23 @@ class StudentModel {
 
     // Cascade soft delete to student associations
     try {
+      const cascadeBranchClause = branchId ? ' AND (branch_id = ? OR branch_id IS NULL)' : '';
+      const cascadeParams = branchId ? [id, schoolId, Number(branchId)] : [id, schoolId];
       await pool.execute(
-        `UPDATE student_to_parent SET status = 4 WHERE student_id = ? AND school_id = ?`,
-        [id, schoolId]
+        `UPDATE student_to_parent SET status = 4 WHERE student_id = ? AND school_id = ?${cascadeBranchClause}`,
+        cascadeParams
       );
       await pool.execute(
-        `UPDATE student_transport SET status = 4 WHERE student_id = ? AND school_id = ?`,
-        [id, schoolId]
+        `UPDATE student_transport SET status = 4 WHERE student_id = ? AND school_id = ?${cascadeBranchClause}`,
+        cascadeParams
       );
       await pool.execute(
-        `UPDATE student_hostel SET status = 4 WHERE student_id = ? AND school_id = ?`,
-        [id, schoolId]
+        `UPDATE student_hostel SET status = 4 WHERE student_id = ? AND school_id = ?${cascadeBranchClause}`,
+        cascadeParams
       );
       await pool.execute(
-        `UPDATE student_fee_allocations SET status = 4 WHERE student_id = ? AND school_id = ?`,
-        [id, schoolId]
+        `UPDATE student_fee_allocations SET status = 4 WHERE student_id = ? AND school_id = ?${cascadeBranchClause}`,
+        cascadeParams
       );
     } catch (cascadeErr) {
       console.error('[StudentModel.delete] Error cascading soft delete:', cascadeErr.message);

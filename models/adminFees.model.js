@@ -843,9 +843,14 @@ class AdminFeesModel {
     }
   }
 
-  static async deleteAllocation(id, schoolId) {
-    const query = `UPDATE student_fee_allocations SET status = 4 WHERE id = ? AND school_id = ?`;
-    const [result] = await pool.query(query, [id, schoolId]);
+  static async deleteAllocation(id, schoolId, branchId = null) {
+    let query = `UPDATE student_fee_allocations SET status = 4 WHERE id = ? AND school_id = ?`;
+    const params = [id, schoolId];
+    if (branchId) {
+      query += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    const [result] = await pool.query(query, params);
     return result.affectedRows > 0;
   }
 

@@ -41,9 +41,10 @@ class AdminStaffController {
   static async getStaffById(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const staffId = req.params.id;
 
-      const staffMember = await StaffModel.getById(staffId, schoolId);
+      const staffMember = await StaffModel.getById(staffId, schoolId, branchId);
 
       if (!staffMember) {
         return ApiResponse.error(res, 'Staff member record not found.', null, 404);
@@ -60,12 +61,13 @@ class AdminStaffController {
   static async checkEmail(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || req.body?.branch_id || null;
       const email = req.body?.email || req.query?.email || '';
       const excludeId = req.body?.exclude_id || req.query?.exclude_id || null;
       if (!email) {
         return ApiResponse.success(res, 'Email is valid.', { exists: false });
       }
-      const exists = await StaffModel.checkEmail(schoolId, email, excludeId);
+      const exists = await StaffModel.checkEmail(schoolId, email, excludeId, branchId);
       return ApiResponse.success(res, exists ? 'Email address already exists.' : 'Email is available.', {
         exists,
         message: exists ? 'Email address already registered' : '',
@@ -78,12 +80,13 @@ class AdminStaffController {
   static async checkPhone(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || req.body?.branch_id || null;
       const phone = req.body?.phone || req.query?.phone || '';
       const excludeId = req.body?.exclude_id || req.query?.exclude_id || null;
       if (!phone) {
         return ApiResponse.success(res, 'Phone is valid.', { exists: false });
       }
-      const exists = await StaffModel.checkPhone(schoolId, phone, excludeId);
+      const exists = await StaffModel.checkPhone(schoolId, phone, excludeId, branchId);
       return ApiResponse.success(res, exists ? 'Mobile number already exists.' : 'Mobile number is available.', {
         exists,
         message: exists ? 'Mobile number already registered' : '',
@@ -96,6 +99,7 @@ class AdminStaffController {
   static async checkDuplicate(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || req.body?.branch_id || null;
       const email = req.body?.email || req.query?.email || '';
       const phone = req.body?.phone || req.query?.phone || '';
       const excludeId = req.body?.exclude_id || req.query?.exclude_id || null;
@@ -103,7 +107,8 @@ class AdminStaffController {
       const { isEmailDuplicate, isPhoneDuplicate } = await StaffModel.checkDuplicate(
         schoolId,
         { email, phone },
-        excludeId
+        excludeId,
+        branchId
       );
 
       return ApiResponse.success(res, 'Duplicate check completed.', {
@@ -158,7 +163,7 @@ class AdminStaffController {
       const updatedStaff = await StaffModel.update(staffId, schoolId, {
         ...data,
         ...(branchId !== undefined ? { branch_id: branchId } : {}),
-      });
+      }, branchId);
 
       if (!updatedStaff) {
         return ApiResponse.error(res, 'Staff member record not found or could not be updated.', null, 404);
@@ -234,8 +239,9 @@ class AdminStaffController {
   static async getRooms(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const hostelId = req.params.hostelId || req.query.hostel_id;
-      const rooms = await StaffModel.getRooms(hostelId, schoolId);
+      const rooms = await StaffModel.getRooms(hostelId, schoolId, branchId);
       return ApiResponse.success(res, 'Hostel rooms fetched successfully.', { rooms });
     } catch (error) {
       next(error);

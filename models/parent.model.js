@@ -114,15 +114,20 @@ class ParentModel {
   }
 
   static async getById(id, schoolId, branchId = null) {
-    const sql = `
+    let sql = `
       SELECT 
         p.*,
         CONCAT(IFNULL(p.first_name, ''), ' ', IFNULL(p.last_name, '')) AS full_name
       FROM parent_master p
       WHERE p.id = ? AND (p.school_id = ? OR ? IS NULL) AND p.status != 4
-      LIMIT 1
     `;
-    const [rows] = await pool.query(sql, [id, schoolId, schoolId]);
+    const params = [id, schoolId, schoolId];
+    if (branchId) {
+      sql += ` AND (p.branch_id = ? OR p.branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    sql += ` LIMIT 1`;
+    const [rows] = await pool.query(sql, params);
     if (!rows[0]) return null;
 
     const parent = rows[0];
@@ -154,23 +159,29 @@ class ParentModel {
     if (stpRows.length > 0) {
       const { father_id, mother_id } = stpRows[0];
       if (father_id) {
-        const [fRows] = await pool.query(
-          `SELECT p.*, a.country, a.state, a.city, a.postal_code, a.address1, a.address2 
+        let fSql = `SELECT p.*, a.country, a.state, a.city, a.postal_code, a.address1, a.address2 
            FROM parent_master p 
            LEFT JOIN parent_master_address a ON p.id = a.parent_id 
-           WHERE p.id = ? AND (p.school_id = ? OR ? IS NULL) AND p.status != 4`,
-          [father_id, schoolId, schoolId]
-        );
+           WHERE p.id = ? AND (p.school_id = ? OR ? IS NULL) AND p.status != 4`;
+        const fParams = [father_id, schoolId, schoolId];
+        if (branchId) {
+          fSql += ` AND (p.branch_id = ? OR p.branch_id IS NULL)`;
+          fParams.push(Number(branchId));
+        }
+        const [fRows] = await pool.query(fSql, fParams);
         if (fRows.length > 0) father = fRows[0];
       }
       if (mother_id) {
-        const [mRows] = await pool.query(
-          `SELECT p.*, a.country, a.state, a.city, a.postal_code, a.address1, a.address2 
+        let mSql = `SELECT p.*, a.country, a.state, a.city, a.postal_code, a.address1, a.address2 
            FROM parent_master p 
            LEFT JOIN parent_master_address a ON p.id = a.parent_id 
-           WHERE p.id = ? AND (p.school_id = ? OR ? IS NULL) AND p.status != 4`,
-          [mother_id, schoolId, schoolId]
-        );
+           WHERE p.id = ? AND (p.school_id = ? OR ? IS NULL) AND p.status != 4`;
+        const mParams = [mother_id, schoolId, schoolId];
+        if (branchId) {
+          mSql += ` AND (p.branch_id = ? OR p.branch_id IS NULL)`;
+          mParams.push(Number(branchId));
+        }
+        const [mRows] = await pool.query(mSql, mParams);
         if (mRows.length > 0) mother = mRows[0];
       }
     }
@@ -234,10 +245,14 @@ class ParentModel {
     return parent;
   }
 
-  static async checkEmail(schoolId, email, excludeId = null) {
+  static async checkEmail(schoolId, email, excludeId = null, branchId = null) {
     if (!email || !String(email).trim()) return false;
     let sql = `SELECT id FROM parent_master WHERE email = ? AND school_id = ? AND status != 4`;
     const params = [String(email).trim(), schoolId];
+    if (branchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
     if (excludeId) {
       sql += ` AND id != ?`;
       params.push(excludeId);
@@ -246,10 +261,14 @@ class ParentModel {
     return rows.length > 0;
   }
 
-  static async checkPhone(schoolId, phone, excludeId = null) {
+  static async checkPhone(schoolId, phone, excludeId = null, branchId = null) {
     if (!phone || !String(phone).trim()) return false;
     let sql = `SELECT id FROM parent_master WHERE phone = ? AND school_id = ? AND status != 4`;
     const params = [String(phone).trim(), schoolId];
+    if (branchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
     if (excludeId) {
       sql += ` AND id != ?`;
       params.push(excludeId);
@@ -258,13 +277,13 @@ class ParentModel {
     return rows.length > 0;
   }
 
-  static async checkDuplicate(schoolId, { email, phone }, excludeId = null) {
-    const isEmailDuplicate = email ? await ParentModel.checkEmail(schoolId, email, excludeId) : false;
-    const isPhoneDuplicate = phone ? await ParentModel.checkPhone(schoolId, phone, excludeId) : false;
+  static async checkDuplicate(schoolId, { email, phone }, excludeId = null, branchId = null) {
+    const isEmailDuplicate = email ? await ParentModel.checkEmail(schoolId, email, excludeId, branchId) : false;
+    const isPhoneDuplicate = phone ? await ParentModel.checkPhone(schoolId, phone, excludeId, branchId) : false;
     return { isEmailDuplicate, isPhoneDuplicate };
   }
 
-  static async create(schoolId, data) {
+  static async create(schoolId, data, branchId = null) {
     const {
       first_name,
       last_name = '',
@@ -277,8 +296,10 @@ class ParentModel {
       status = 1,
     } = data;
 
+    const finalBranchId = branchId || data.branch_id || data.branchId || null;
+
     if (email && String(email).trim()) {
-      const isEmailDup = await ParentModel.checkEmail(schoolId, email);
+      const isEmailDup = await ParentModel.checkEmail(schoolId, email, null, finalBranchId);
       if (isEmailDup) {
         const err = new Error('A parent with this email address already exists.');
         err.statusCode = 400;
@@ -287,7 +308,7 @@ class ParentModel {
     }
 
     if (phone && String(phone).trim()) {
-      const isPhoneDup = await ParentModel.checkPhone(schoolId, phone);
+      const isPhoneDup = await ParentModel.checkPhone(schoolId, phone, null, finalBranchId);
       if (isPhoneDup) {
         const err = new Error('A parent with this mobile number already exists.');
         err.statusCode = 400;
@@ -303,8 +324,6 @@ class ParentModel {
       : (phone && String(phone).trim() ? String(phone).trim() : null);
     const hashedPassword = plainPassword ? await hashPassword(plainPassword) : null;
 
-    const branchId = data.branch_id || data.branchId || null;
-
     const sql = `
       INSERT INTO parent_master (
         school_id, branch_id, first_name, last_name, email, phone, password,
@@ -314,7 +333,7 @@ class ParentModel {
 
     const [result] = await pool.query(sql, [
       schoolId,
-      branchId ? Number(branchId) : null,
+      finalBranchId ? Number(finalBranchId) : null,
       first_name,
       last_name,
       email,
@@ -330,7 +349,7 @@ class ParentModel {
     return result.insertId;
   }
 
-  static async update(id, schoolId, data) {
+  static async update(id, schoolId, data, branchId = null) {
     const {
       first_name,
       last_name = '',
@@ -343,8 +362,10 @@ class ParentModel {
       status = 1,
     } = data;
 
+    const finalBranchId = branchId || data.branch_id || data.branchId || null;
+
     if (email && String(email).trim()) {
-      const isEmailDup = await ParentModel.checkEmail(schoolId, email, id);
+      const isEmailDup = await ParentModel.checkEmail(schoolId, email, id, finalBranchId);
       if (isEmailDup) {
         const err = new Error('A parent with this email address already exists.');
         err.statusCode = 400;
@@ -353,7 +374,7 @@ class ParentModel {
     }
 
     if (phone && String(phone).trim()) {
-      const isPhoneDup = await ParentModel.checkPhone(schoolId, phone, id);
+      const isPhoneDup = await ParentModel.checkPhone(schoolId, phone, id, finalBranchId);
       if (isPhoneDup) {
         const err = new Error('A parent with this mobile number already exists.');
         err.statusCode = 400;
@@ -399,20 +420,33 @@ class ParentModel {
     sql += ` WHERE id = ? AND (school_id = ? OR ? IS NULL)`;
     params.push(id, schoolId, schoolId);
 
+    if (finalBranchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(finalBranchId));
+    }
+
     const [result] = await pool.query(sql, params);
     return result.affectedRows > 0;
   }
 
-  static async delete(id, schoolId) {
-    const sql = `UPDATE parent_master SET status = 4 WHERE id = ? AND (school_id = ? OR ? IS NULL)`;
-    const [result] = await pool.query(sql, [id, schoolId, schoolId]);
+  static async delete(id, schoolId, branchId = null) {
+    let sql = `UPDATE parent_master SET status = 4 WHERE id = ? AND (school_id = ? OR ? IS NULL)`;
+    const params = [id, schoolId, schoolId];
+    if (branchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    const [result] = await pool.query(sql, params);
 
     // Also soft-delete parent-child associations
     try {
-      await pool.query(
-        `UPDATE student_to_parent SET status = 4 WHERE (father_id = ? OR mother_id = ? OR guardian_id = ?) AND (school_id = ? OR ? IS NULL)`,
-        [id, id, id, schoolId, schoolId]
-      );
+      let stpSql = `UPDATE student_to_parent SET status = 4 WHERE (father_id = ? OR mother_id = ? OR guardian_id = ?) AND (school_id = ? OR ? IS NULL)`;
+      const stpParams = [id, id, id, schoolId, schoolId];
+      if (branchId) {
+        stpSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+        stpParams.push(Number(branchId));
+      }
+      await pool.query(stpSql, stpParams);
     } catch (e) {
       console.error('Error soft-deleting student_to_parent links:', e.message);
     }
@@ -562,8 +596,8 @@ class ParentModel {
     return children || [];
   }
 
-  static async getChildFullProfile(studentId, schoolId) {
-    const sql = `
+  static async getChildFullProfile(studentId, schoolId, branchId = null) {
+    let sql = `
       SELECT 
         s.*,
         CONCAT(s.first_name, ' ', s.last_name) AS full_name,
@@ -584,10 +618,15 @@ class ParentModel {
       LEFT JOIN student_category_master c ON s.category = c.id
       LEFT JOIN school_master sch ON s.school_id = sch.id
       WHERE s.id = ? AND (s.school_id = ? OR ? IS NULL) AND s.status != 0
-      LIMIT 1
     `;
+    const params = [studentId, schoolId, schoolId];
+    if (branchId) {
+      sql += ` AND (s.branch_id = ? OR s.branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    sql += ` LIMIT 1`;
 
-    const [rows] = await pool.query(sql, [studentId, schoolId, schoolId]);
+    const [rows] = await pool.query(sql, params);
     if (!rows || rows.length === 0) return null;
     const student = rows[0];
 

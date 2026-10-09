@@ -52,6 +52,7 @@ class AdminStudentController {
   static async getStudentById(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       let studentId = req.params.id;
 
       if (typeof studentId === 'string' && !/^\d+$/.test(studentId)) {
@@ -63,7 +64,7 @@ class AdminStudentController {
         } catch (e) {}
       }
 
-      const student = await StudentModel.getById(studentId, schoolId);
+      const student = await StudentModel.getById(studentId, schoolId, branchId);
 
       if (!student) {
         return ApiResponse.error(res, 'Student record not found.', null, 404);
@@ -81,6 +82,7 @@ class AdminStudentController {
       if (!schoolId) {
         return ApiResponse.error(res, 'School context required. Please log in again.', null, 401);
       }
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || req.body?.branch_id || null;
       const email = req.query.email || req.body.email;
       const studentId = req.query.studentId || req.query.id || null;
 
@@ -88,7 +90,7 @@ class AdminStudentController {
         return ApiResponse.success(res, 'Email query is empty.', { isDuplicate: false });
       }
 
-      const existing = await StudentModel.checkDuplicateEmail(schoolId, email, studentId);
+      const existing = await StudentModel.checkDuplicateEmail(schoolId, email, studentId, branchId);
       if (existing) {
         return ApiResponse.success(res, 'Email is already registered.', {
           isDuplicate: true,
@@ -109,6 +111,7 @@ class AdminStudentController {
   static async createStudent(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
+      const branchId = req.body.branch_id || req.body.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null;
       const { first_name, class_id, email_address } = req.body || {};
 
       if (!first_name || !class_id) {
@@ -129,9 +132,9 @@ class AdminStudentController {
         );
       }
 
-      // Check duplicate email
+      // Check duplicate email within branch scope
       if (email_address && String(email_address).trim()) {
-        const existingStudent = await StudentModel.checkDuplicateEmail(schoolId, email_address);
+        const existingStudent = await StudentModel.checkDuplicateEmail(schoolId, email_address, null, branchId);
         if (existingStudent) {
           return ApiResponse.error(res, 'A student with this email address already exists.', null, 400);
         }
@@ -149,7 +152,6 @@ class AdminStudentController {
         return ApiResponse.error(res, "Mother's profile picture must not exceed 100 KB.", null, 400);
       }
 
-      const branchId = req.body.branch_id || req.body.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null;
       const newId = await StudentModel.create({
         ...req.body,
         branch_id: branchId,
@@ -166,15 +168,16 @@ class AdminStudentController {
     try {
       const schoolId = req.user.schoolId;
       const studentId = req.params.id;
+      const branchId = req.body.branch_id || req.body.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null;
       const { first_name, class_id, email_address } = req.body || {};
 
       if (!first_name || !class_id) {
         return ApiResponse.error(res, 'First name and Class selection are required.', null, 400);
       }
 
-      // Check duplicate email (excluding current student)
+      // Check duplicate email within branch scope (excluding current student)
       if (email_address && String(email_address).trim()) {
-        const existingStudent = await StudentModel.checkDuplicateEmail(schoolId, email_address, studentId);
+        const existingStudent = await StudentModel.checkDuplicateEmail(schoolId, email_address, studentId, branchId);
         if (existingStudent) {
           return ApiResponse.error(res, 'A student with this email address already exists.', null, 400);
         }
@@ -192,12 +195,11 @@ class AdminStudentController {
         return ApiResponse.error(res, "Mother's profile picture must not exceed 100 KB.", null, 400);
       }
 
-      const branchId = req.body.branch_id || req.body.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null;
       if (branchId) {
         req.body.branch_id = branchId;
       }
 
-      const updated = await StudentModel.update(studentId, schoolId, req.body);
+      const updated = await StudentModel.update(studentId, schoolId, req.body, branchId);
 
       if (!updated) {
         return ApiResponse.error(res, 'Student record update failed or not found.', null, 400);
