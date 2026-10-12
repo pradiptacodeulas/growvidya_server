@@ -267,6 +267,22 @@
       font-weight: 700;
     }
 
+    .qr-code-block {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      width: 13mm;
+    }
+
+    .qr-code-img {
+      width: 11mm;
+      height: 11mm;
+      object-fit: contain;
+      image-rendering: -webkit-optimize-contrast;
+      image-rendering: crisp-edges;
+    }
+
     .signature-block {
       text-align: center;
       width: 18mm;
@@ -361,6 +377,9 @@
         <div class="validity-block">
           <div>Session: <strong>{{academic_year}}</strong></div>
           <div>Valid Until: <strong>{{valid_until}}</strong></div>
+        </div>
+        <div class="qr-code-block">
+          {{qr_code_html}}
         </div>
         <div class="signature-block">
           <div class="signature-line"></div>

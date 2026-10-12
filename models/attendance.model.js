@@ -829,6 +829,151 @@ class AttendanceModel {
     }
     return true;
   }
+
+  /* =========================================================================
+   * 4. QR CODE ATTENDANCE
+   * ========================================================================= */
+
+  /**
+   * Mark Attendance via Student ID Card QR Code (Lookup by Admission Number)
+   * Multi-tenant: strictly scoped to schoolId.
+   */
+  static async markStudentAttendanceByQr(schoolId, { admission_number, teacherId = null, branchId = null, notes = '' }) {
+    const cleanAdmissionNo = String(admission_number || '').trim();
+    if (!cleanAdmissionNo) {
+      const err = new Error('Student admission number is required.');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    // 1. Find active student by admission_number scoped to this school
+    const [students] = await pool.query(
+      `SELECT 
+         s.id,
+         s.id AS student_id,
+         s.school_id,
+         s.branch_id,
+         s.admission_number,
+         s.roll_number,
+         s.first_name,
+         s.last_name,
+         s.picture,
+         s.gender,
+         s.class AS class_id,
+         cm.class_name,
+         s.section AS section_id,
+         sm.section_name,
+         s.academic_year,
+         s.status
+       FROM student_master s
+       LEFT JOIN class_master cm ON s.class = cm.id
+       LEFT JOIN section_master sm ON s.section = sm.id
+       WHERE (s.admission_number = ? OR TRIM(LOWER(s.admission_number)) = TRIM(LOWER(?)))
+         AND s.school_id = ?
+         AND s.status = 1
+       LIMIT 1`,
+      [cleanAdmissionNo, cleanAdmissionNo, schoolId]
+    );
+
+    if (!students || students.length === 0) {
+      const err = new Error(`Student with Admission No "${cleanAdmissionNo}" was not found in this institution.`);
+      err.statusCode = 404;
+      throw err;
+    }
+
+    const student = students[0];
+    const targetBranchId = student.branch_id || branchId || null;
+    const todayStr = AttendanceModel.getTodayDateStr();
+
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
+
+    const scanNote = notes && String(notes).trim()
+      ? String(notes).trim()
+      : `Scanned via QR Code at ${timeStr}`;
+
+    // 2. Check existing attendance record for today
+    const [existing] = await pool.query(
+      `SELECT id, attendance, notes, date 
+       FROM student_attendance 
+       WHERE student_id = ? 
+         AND (date = ? OR DATE(date) = ?) 
+         AND school_id = ? 
+       LIMIT 1`,
+      [student.id, todayStr, todayStr, schoolId]
+    );
+
+    let isAlreadyMarked = false;
+    let action = 'created';
+
+    if (existing && existing.length > 0) {
+      const rec = existing[0];
+      if (Number(rec.attendance) === 1) {
+        isAlreadyMarked = true;
+        action = 'already_marked';
+      } else {
+        // Was Absent, Late, or Half-day -> Update to Present
+        await pool.query(
+          `UPDATE student_attendance 
+           SET attendance = 1, 
+               notes = ?, 
+               branch_id = COALESCE(?, branch_id), 
+               academic_year = COALESCE(?, academic_year)
+           WHERE id = ?`,
+          [scanNote, targetBranchId, student.academic_year, rec.id]
+        );
+        action = 'updated';
+      }
+    } else {
+      // 3. Insert new attendance record
+      await pool.query(
+        `INSERT INTO student_attendance 
+          (school_id, branch_id, student_id, attendance, academic_year, notes, date, status)
+         VALUES (?, ?, ?, 1, ?, ?, ?, 1)`,
+        [
+          schoolId,
+          targetBranchId,
+          student.id,
+          student.academic_year || null,
+          scanNote,
+          todayStr,
+        ]
+      );
+      action = 'created';
+    }
+
+    return {
+      student: {
+        id: student.id,
+        admission_number: student.admission_number,
+        roll_number: student.roll_number,
+        full_name: `${student.first_name || ''} ${student.last_name || ''}`.trim(),
+        first_name: student.first_name,
+        last_name: student.last_name,
+        class_id: student.class_id,
+        class_name: student.class_name || 'N/A',
+        section_id: student.section_id,
+        section_name: student.section_name || 'N/A',
+        picture: student.picture,
+        gender: student.gender,
+        school_id: student.school_id,
+        branch_id: targetBranchId,
+        academic_year: student.academic_year,
+      },
+      attendance: {
+        date: todayStr,
+        time: timeStr,
+        status: 1,
+        status_text: 'Present',
+        action,
+        is_already_marked: isAlreadyMarked,
+      },
+    };
+  }
 }
 
 module.exports = AttendanceModel;

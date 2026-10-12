@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const puppeteer = require('puppeteer');
+const QRCode = require('qrcode');
 const AdminIdCardModel = require('../models/adminIdCard.model');
 
 const TEMPLATES_DIR = path.join(__dirname, '../templates/idcards');
@@ -115,7 +116,7 @@ const formatDisplayDate = (rawDate) => {
 /**
  * Builds HTML for an individual card item according to its type
  */
-const buildSingleCardBodyHtml = (type, item, template, bgMap = {}) => {
+const buildSingleCardBodyHtml = async (type, item, template, bgMap = {}) => {
   const school = item.school || {};
   const schoolTitle = school.school_title || school.school_name || '';
   const schoolSubtitle = school.school_code ? `Code: ${school.school_code}` : '';
@@ -143,6 +144,25 @@ const buildSingleCardBodyHtml = (type, item, template, bgMap = {}) => {
       ? `<img src="${rawPhoto}" alt="Photo" class="photo-img" onerror="this.style.display='none'" />`
       : `<div class="photo-placeholder">STUDENT PHOTO</div>`;
 
+    // Generate high-resolution QR code data URL from student admission number
+    let qrCodeHtml = '';
+    const cleanAdmissionNo = String(student.admission_number || student.admission_no || '').trim();
+    if (cleanAdmissionNo && cleanAdmissionNo !== '—') {
+      try {
+        const qrDataUri = await QRCode.toDataURL(cleanAdmissionNo, {
+          width: 140,
+          margin: 1,
+          color: {
+            dark: '#0c2340',
+            light: '#ffffff',
+          },
+        });
+        qrCodeHtml = `<img src="${qrDataUri}" alt="QR Code" class="qr-code-img" />`;
+      } catch (qrErr) {
+        console.warn('[idCardPdf.service] Failed to generate QR code for admission no:', cleanAdmissionNo, qrErr.message);
+      }
+    }
+
     return template
       .replace(/\{\{school_title\}\}/g, schoolTitle)
       .replace(/\{\{school_subtitle\}\}/g, schoolSubtitle)
@@ -157,7 +177,8 @@ const buildSingleCardBodyHtml = (type, item, template, bgMap = {}) => {
       .replace(/\{\{contact_no\}\}/g, contactNo)
       .replace(/\{\{academic_year\}\}/g, academicYear)
       .replace(/\{\{valid_until\}\}/g, validUntil)
-      .replace(/\{\{photo_html\}\}/g, photoHtml);
+      .replace(/\{\{photo_html\}\}/g, photoHtml)
+      .replace(/\{\{qr_code_html\}\}/g, qrCodeHtml);
   }
 
   if (type === 'teacher') {
@@ -236,9 +257,9 @@ class IdCardPdfService {
 
     // Extract HTML body content template
     // We replace the outer body with multiple idcard-wrapper blocks for multi-page batch rendering
-    const cardsHtml = itemsList.map((item) => {
-      return buildSingleCardBodyHtml(type, item, rawTemplate, bgMap);
-    });
+    const cardsHtml = await Promise.all(
+      itemsList.map((item) => buildSingleCardBodyHtml(type, item, rawTemplate, bgMap))
+    );
 
     // Extract head styles from template
     const headMatch = rawTemplate.match(/<head>([\s\S]*?)<\/head>/i);

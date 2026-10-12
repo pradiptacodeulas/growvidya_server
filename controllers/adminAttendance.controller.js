@@ -153,6 +153,34 @@ class AdminAttendanceController {
     }
   }
 
+  static async scanStudentAttendance(req, res, next) {
+    try {
+      const schoolId = req.user.schoolId;
+      const teacherId = req.user.userId || req.user.id;
+      const branchId = req.branchId || req.body?.branch_id || null;
+      const { admission_number, notes } = req.body;
+
+      if (!admission_number || !String(admission_number).trim()) {
+        return ApiResponse.error(res, 'Student admission number is required from the QR code.', null, 400);
+      }
+
+      const result = await AttendanceModel.markStudentAttendanceByQr(schoolId, {
+        admission_number: String(admission_number).trim(),
+        teacherId,
+        branchId,
+        notes,
+      });
+
+      const message = result.attendance.is_already_marked
+        ? `${result.student.full_name} (${result.student.admission_number}) was already marked Present today.`
+        : `Attendance marked Present for ${result.student.full_name} (${result.student.admission_number}).`;
+
+      return ApiResponse.success(res, message, result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   /* =========================================================================
    * 2. TEACHER ATTENDANCE CONTROLLER ACTIONS
    * ========================================================================= */

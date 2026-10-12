@@ -15,5 +15,7 @@ router.get('/meta', TeacherAttendanceController.getMetaOptions);
 router.get('/student/list', TeacherAttendanceController.getStudentAttendanceList);
 router.get('/student/roster', TeacherAttendanceController.getStudentsForAttendance);
 router.post('/student/save', TeacherAttendanceController.saveStudentAttendance);
+router.post('/qr-scan', TeacherAttendanceController.scanStudentAttendance);
+router.post('/student/qr-scan', TeacherAttendanceController.scanStudentAttendance);
 
 module.exports = router;

@@ -29,6 +29,8 @@ router.get('/meta', AdminAttendanceController.getMetaOptions);
 router.get('/student/list', AdminAttendanceController.getStudentAttendanceList);
 router.get('/student/roster', AdminAttendanceController.getStudentsForAttendance);
 router.post('/student/save', AdminAttendanceController.saveStudentAttendance);
+router.post('/student/qr-scan', AdminAttendanceController.scanStudentAttendance);
+router.post('/qr-scan', AdminAttendanceController.scanStudentAttendance);
 
 // Teacher Attendance
 router.get('/teacher/list', AdminAttendanceController.getTeacherAttendanceList);
