@@ -3,6 +3,7 @@ const router = express.Router();
 const AdminTransportController = require('../controllers/adminTransport.controller');
 const authMiddleware = require('../middlewares/auth.middleware');
 const authorizeRoles = require('../middlewares/rbac.middleware');
+const { busImageMiddleware, driverDocsMiddleware } = require('../middlewares/upload.middleware');
 
 router.use(authMiddleware);
 
@@ -63,15 +64,15 @@ router.delete('/route/:id', AdminTransportController.deleteRoute);
 router.get('/vehicles', AdminTransportController.getAllVehicles);
 router.get('/buses', AdminTransportController.getAllVehicles);
 router.get('/bus', AdminTransportController.getAllVehicles);
-router.post('/vehicles', AdminTransportController.createVehicle);
-router.post('/buses', AdminTransportController.createVehicle);
-router.post('/bus', AdminTransportController.createVehicle);
+router.post('/vehicles', busImageMiddleware, AdminTransportController.createVehicle);
+router.post('/buses', busImageMiddleware, AdminTransportController.createVehicle);
+router.post('/bus', busImageMiddleware, AdminTransportController.createVehicle);
 router.get('/vehicles/:id', AdminTransportController.getVehicleById);
 router.get('/buses/:id', AdminTransportController.getVehicleById);
 router.get('/bus/:id', AdminTransportController.getVehicleById);
-router.put('/vehicles/:id', AdminTransportController.updateVehicle);
-router.put('/buses/:id', AdminTransportController.updateVehicle);
-router.put('/bus/:id', AdminTransportController.updateVehicle);
+router.put('/vehicles/:id', busImageMiddleware, AdminTransportController.updateVehicle);
+router.put('/buses/:id', busImageMiddleware, AdminTransportController.updateVehicle);
+router.put('/bus/:id', busImageMiddleware, AdminTransportController.updateVehicle);
 router.delete('/vehicles/:id', AdminTransportController.deleteVehicle);
 router.delete('/buses/:id', AdminTransportController.deleteVehicle);
 router.delete('/bus/:id', AdminTransportController.deleteVehicle);
@@ -81,12 +82,12 @@ router.get('/drivers/check-duplicate', AdminTransportController.checkDriverDupli
 router.get('/driver/check-duplicate', AdminTransportController.checkDriverDuplicate);
 router.get('/drivers', AdminTransportController.getAllDrivers);
 router.get('/driver', AdminTransportController.getAllDrivers);
-router.post('/drivers', AdminTransportController.createDriver);
-router.post('/driver', AdminTransportController.createDriver);
+router.post('/drivers', driverDocsMiddleware, AdminTransportController.createDriver);
+router.post('/driver', driverDocsMiddleware, AdminTransportController.createDriver);
 router.get('/drivers/:id', AdminTransportController.getDriverById);
 router.get('/driver/:id', AdminTransportController.getDriverById);
-router.put('/drivers/:id', AdminTransportController.updateDriver);
-router.put('/driver/:id', AdminTransportController.updateDriver);
+router.put('/drivers/:id', driverDocsMiddleware, AdminTransportController.updateDriver);
+router.put('/driver/:id', driverDocsMiddleware, AdminTransportController.updateDriver);
 router.delete('/drivers/:id', AdminTransportController.deleteDriver);
 router.delete('/driver/:id', AdminTransportController.deleteDriver);
 
@@ -95,12 +96,12 @@ router.get('/helpers/check-duplicate', AdminTransportController.checkHelperDupli
 router.get('/helper/check-duplicate', AdminTransportController.checkHelperDuplicate);
 router.get('/helpers', AdminTransportController.getAllHelpers);
 router.get('/helper', AdminTransportController.getAllHelpers);
-router.post('/helpers', AdminTransportController.createHelper);
-router.post('/helper', AdminTransportController.createHelper);
+router.post('/helpers', driverDocsMiddleware, AdminTransportController.createHelper);
+router.post('/helper', driverDocsMiddleware, AdminTransportController.createHelper);
 router.get('/helpers/:id', AdminTransportController.getHelperById);
 router.get('/helper/:id', AdminTransportController.getHelperById);
-router.put('/helpers/:id', AdminTransportController.updateHelper);
-router.put('/helper/:id', AdminTransportController.updateHelper);
+router.put('/helpers/:id', driverDocsMiddleware, AdminTransportController.updateHelper);
+router.put('/helper/:id', driverDocsMiddleware, AdminTransportController.updateHelper);
 router.delete('/helpers/:id', AdminTransportController.deleteHelper);
 router.delete('/helper/:id', AdminTransportController.deleteHelper);
 

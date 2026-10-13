@@ -36,6 +36,7 @@ class TeacherLeaveController {
           l.staff_id,
           l.leave_id,
           lm.leave_name,
+          COALESCE(lm.is_paid, 1) AS is_paid,
           l.duration,
           CASE 
             WHEN l.duration = 1 THEN 'Full Day'
@@ -192,7 +193,7 @@ class TeacherLeaveController {
       const teacherId = TeacherLeaveController.getTeacherId(req);
       const rawBranch = req.branchId || req.user?.branch_id || req.user?.branchId || null;
       const branchId = (rawBranch && rawBranch !== 'all') ? Number(rawBranch) : null;
-      let typesSql = `SELECT id, leave_name, need_document, no_leave, sort_order, status 
+      let typesSql = `SELECT id, leave_name, need_document, COALESCE(is_paid, 1) AS is_paid, no_leave, sort_order, status 
          FROM leave_master 
          WHERE school_id = ? 
            AND role = 1 

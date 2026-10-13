@@ -154,6 +154,8 @@ class AdminTransportController {
         return ApiResponse.error(res, 'Vehicle name is required.', null, 400);
       }
 
+      const imagePath = req.file ? `upload/buses/${req.file.filename}` : (req.body.image || null);
+
       const id = await TransportModel.createVehicle(schoolId, {
         branch_id: branchId,
         name,
@@ -162,6 +164,7 @@ class AdminTransportController {
         color,
         driver_id,
         status,
+        image: imagePath,
       });
       return ApiResponse.success(res, 'Vehicle created successfully.', { id }, 201);
     } catch (error) {
@@ -174,10 +177,20 @@ class AdminTransportController {
       const schoolId = getSchoolId(req);
       const branchId = req.branchId || req.body?.branch_id || null;
       const { id } = req.params;
-      const { name, number_plate, seat, color, driver_id, status, branch_id } = req.body;
+      const { name, number_plate, seat, color, driver_id, status, branch_id, remove_image } = req.body;
 
       if (!name) {
         return ApiResponse.error(res, 'Vehicle name is required.', null, 400);
+      }
+
+      let imagePath = undefined;
+      const isRemoveImage = remove_image === 'true' || remove_image === true || remove_image === '1';
+      if (req.file) {
+        imagePath = `upload/buses/${req.file.filename}`;
+      } else if (isRemoveImage) {
+        imagePath = null;
+      } else if (req.body.image !== undefined) {
+        imagePath = req.body.image;
       }
 
       await TransportModel.updateVehicle(schoolId, id, {
@@ -187,6 +200,7 @@ class AdminTransportController {
         color,
         driver_id,
         status,
+        image: imagePath,
         branch_id: branch_id !== undefined ? branch_id : branchId,
       }, branchId);
       return ApiResponse.success(res, 'Vehicle updated successfully.');
@@ -272,7 +286,20 @@ class AdminTransportController {
   static async createDriver(req, res, next) {
     try {
       const schoolId = getSchoolId(req);
-      const { first_name, last_name, email, phone, license_number, lisence_number, gender, picture, status, branch_id } = req.body || {};
+      const {
+        first_name,
+        last_name,
+        email,
+        phone,
+        license_number,
+        lisence_number,
+        gender,
+        picture,
+        status,
+        branch_id,
+        id_proof_type,
+        id_proof_number,
+      } = req.body || {};
       const branchId = branch_id !== undefined ? branch_id : (req.branchId || null);
 
       if (!first_name || !first_name.trim()) {
@@ -311,14 +338,44 @@ class AdminTransportController {
         return ApiResponse.error(res, 'A driver with this phone number already exists.', null, 400);
       }
 
-      // License number duplicate check
+      // License number duplicate check (Required)
       const targetLicense = (license_number || lisence_number || '').trim();
-      if (targetLicense) {
-        const isLicenseDup = await TransportModel.checkDriverLicense(schoolId, targetLicense);
-        if (isLicenseDup) {
-          return ApiResponse.error(res, 'A driver with this license number already exists.', null, 400);
-        }
+      if (!targetLicense) {
+        return ApiResponse.error(res, 'Driving license number is required.', null, 400);
       }
+      const isLicenseDup = await TransportModel.checkDriverLicense(schoolId, targetLicense);
+      if (isLicenseDup) {
+        return ApiResponse.error(res, 'A driver with this license number already exists.', null, 400);
+      }
+
+      // Document files
+      const licenseFile = req.files?.['license_doc']?.[0] || req.files?.['lisence_doc']?.[0] || null;
+      const idProofFile = req.files?.['id_proof_doc']?.[0] || req.files?.['id_proof_file']?.[0] || null;
+
+      // Driving License Document validation (Required)
+      if (!licenseFile) {
+        return ApiResponse.error(res, 'Driving license document is required.', null, 400);
+      }
+
+      // Government ID Proof Type validation (Required)
+      const idProofType = (id_proof_type || req.body?.id_proof_type || '').trim();
+      if (!idProofType) {
+        return ApiResponse.error(res, 'Government ID proof type is required.', null, 400);
+      }
+
+      // Government ID Proof Number validation (Required)
+      const idProofNumber = (id_proof_number || req.body?.id_proof_number || '').trim();
+      if (!idProofNumber) {
+        return ApiResponse.error(res, 'Government ID proof number is required.', null, 400);
+      }
+
+      // Government ID Proof Document validation (Required)
+      if (!idProofFile) {
+        return ApiResponse.error(res, 'Government ID proof document is required.', null, 400);
+      }
+
+      const licenseDocPath = `upload/drivers/documents/${licenseFile.filename}`;
+      const idProofDocPath = `upload/drivers/documents/${idProofFile.filename}`;
 
       const id = await TransportModel.createDriver(schoolId, {
         branch_id: branchId,
@@ -327,6 +384,10 @@ class AdminTransportController {
         email,
         phone,
         license_number: targetLicense,
+        license_doc: licenseDocPath,
+        id_proof_type: idProofType,
+        id_proof_number: idProofNumber,
+        id_proof_doc: idProofDocPath,
         gender,
         picture,
         status,
@@ -347,7 +408,22 @@ class AdminTransportController {
     try {
       const schoolId = getSchoolId(req);
       const { id } = req.params;
-      const { first_name, last_name, email, phone, license_number, lisence_number, gender, picture, status, branch_id } = req.body || {};
+      const {
+        first_name,
+        last_name,
+        email,
+        phone,
+        license_number,
+        lisence_number,
+        gender,
+        picture,
+        status,
+        branch_id,
+        id_proof_type,
+        id_proof_number,
+        remove_license_doc,
+        remove_id_proof_doc,
+      } = req.body || {};
       const branchId = branch_id !== undefined ? branch_id : undefined;
 
       if (!first_name || !first_name.trim()) {
@@ -386,14 +462,50 @@ class AdminTransportController {
         return ApiResponse.error(res, 'A driver with this phone number already exists.', null, 400);
       }
 
-      // License number duplicate check
+      // License number duplicate check (Required)
       const targetLicense = (license_number || lisence_number || '').trim();
-      if (targetLicense) {
-        const isLicenseDup = await TransportModel.checkDriverLicense(schoolId, targetLicense, id);
-        if (isLicenseDup) {
-          return ApiResponse.error(res, 'A driver with this license number already exists.', null, 400);
-        }
+      if (!targetLicense) {
+        return ApiResponse.error(res, 'Driving license number is required.', null, 400);
       }
+      const isLicenseDup = await TransportModel.checkDriverLicense(schoolId, targetLicense, id);
+      if (isLicenseDup) {
+        return ApiResponse.error(res, 'A driver with this license number already exists.', null, 400);
+      }
+
+      // Government ID Proof Type validation (Required)
+      const idProofType = (id_proof_type || '').trim();
+      if (!idProofType) {
+        return ApiResponse.error(res, 'Government ID proof type is required.', null, 400);
+      }
+
+      // Government ID Proof Number validation (Required)
+      const idProofNumber = (id_proof_number || '').trim();
+      if (!idProofNumber) {
+        return ApiResponse.error(res, 'Government ID proof number is required.', null, 400);
+      }
+
+      // Existing driver documents check (Required)
+      const existingDriver = await TransportModel.getDriverById(schoolId, id);
+      if (!existingDriver) {
+        return ApiResponse.error(res, 'Driver not found.', null, 404);
+      }
+
+      // Document files & removal flags
+      const licenseFile = req.files?.['license_doc']?.[0] || req.files?.['lisence_doc']?.[0] || null;
+      const idProofFile = req.files?.['id_proof_doc']?.[0] || req.files?.['id_proof_file']?.[0] || null;
+
+      const hasLicenseDoc = (existingDriver.lisence_doc && remove_license_doc !== 'true' && remove_license_doc !== true) || licenseFile;
+      if (!hasLicenseDoc) {
+        return ApiResponse.error(res, 'Driving license document is required.', null, 400);
+      }
+
+      const hasIdProofDoc = (existingDriver.id_proof_doc && remove_id_proof_doc !== 'true' && remove_id_proof_doc !== true) || idProofFile;
+      if (!hasIdProofDoc) {
+        return ApiResponse.error(res, 'Government ID proof document is required.', null, 400);
+      }
+
+      const licenseDocPath = licenseFile ? `upload/drivers/documents/${licenseFile.filename}` : undefined;
+      const idProofDocPath = idProofFile ? `upload/drivers/documents/${idProofFile.filename}` : undefined;
 
       await TransportModel.updateDriver(schoolId, id, {
         branch_id: branchId,
@@ -402,6 +514,12 @@ class AdminTransportController {
         email,
         phone,
         license_number: targetLicense,
+        license_doc: licenseDocPath,
+        id_proof_type: idProofType,
+        id_proof_number: idProofNumber,
+        id_proof_doc: idProofDocPath,
+        remove_license_doc,
+        remove_id_proof_doc,
         gender,
         picture,
         status,
@@ -492,7 +610,18 @@ class AdminTransportController {
   static async createHelper(req, res, next) {
     try {
       const schoolId = getSchoolId(req);
-      const { first_name, last_name, email, phone, gender, picture, status, branch_id } = req.body || {};
+      const {
+        first_name,
+        last_name,
+        email,
+        phone,
+        gender,
+        picture,
+        status,
+        branch_id,
+        id_proof_type,
+        id_proof_number,
+      } = req.body || {};
       const branchId = branch_id !== undefined ? branch_id : (req.branchId || req.query.branch_id || null);
 
       if (!first_name || !first_name.trim()) {
@@ -531,12 +660,32 @@ class AdminTransportController {
         return ApiResponse.error(res, 'A helper or operator with this phone number already exists.', null, 400);
       }
 
+      // Government ID Proof validation (Required)
+      const idProofType = (req.body?.id_proof_type || '').trim();
+      if (!idProofType) {
+        return ApiResponse.error(res, 'Government ID proof type is required.', null, 400);
+      }
+
+      const idProofNumber = (req.body?.id_proof_number || '').trim();
+      if (!idProofNumber) {
+        return ApiResponse.error(res, 'Government ID proof number is required.', null, 400);
+      }
+
+      const idProofFile = req.files?.['id_proof_doc']?.[0] || req.files?.['id_proof_file']?.[0] || null;
+      if (!idProofFile) {
+        return ApiResponse.error(res, 'Government ID proof document is required.', null, 400);
+      }
+      const idProofDocPath = `upload/drivers/documents/${idProofFile.filename}`;
+
       const id = await TransportModel.createHelper(schoolId, {
         branch_id: branchId,
         first_name,
         last_name,
         email,
         phone,
+        id_proof_type: idProofType,
+        id_proof_number: idProofNumber,
+        id_proof_doc: idProofDocPath,
         gender,
         picture,
         status,
@@ -551,7 +700,19 @@ class AdminTransportController {
     try {
       const schoolId = getSchoolId(req);
       const { id } = req.params;
-      const { first_name, last_name, email, phone, gender, picture, status, branch_id } = req.body || {};
+      const {
+        first_name,
+        last_name,
+        email,
+        phone,
+        gender,
+        picture,
+        status,
+        branch_id,
+        id_proof_type,
+        id_proof_number,
+        remove_id_proof_doc,
+      } = req.body || {};
       const branchId = branch_id !== undefined ? branch_id : undefined;
 
       if (!first_name || !first_name.trim()) {
@@ -590,12 +751,40 @@ class AdminTransportController {
         return ApiResponse.error(res, 'A helper or operator with this phone number already exists.', null, 400);
       }
 
+      // Government ID Proof validation (Required)
+      const idProofTypeVal = (id_proof_type || '').trim();
+      if (!idProofTypeVal) {
+        return ApiResponse.error(res, 'Government ID proof type is required.', null, 400);
+      }
+
+      const idProofNumberVal = (id_proof_number || '').trim();
+      if (!idProofNumberVal) {
+        return ApiResponse.error(res, 'Government ID proof number is required.', null, 400);
+      }
+
+      const existingHelper = await TransportModel.getHelperById(schoolId, id);
+      if (!existingHelper) {
+        return ApiResponse.error(res, 'Helper not found.', null, 404);
+      }
+
+      const idProofFile = req.files?.['id_proof_doc']?.[0] || req.files?.['id_proof_file']?.[0] || null;
+      const hasIdProofDoc = (existingHelper.id_proof_doc && remove_id_proof_doc !== 'true' && remove_id_proof_doc !== true) || idProofFile;
+      if (!hasIdProofDoc) {
+        return ApiResponse.error(res, 'Government ID proof document is required.', null, 400);
+      }
+
+      const idProofDocPath = idProofFile ? `upload/drivers/documents/${idProofFile.filename}` : undefined;
+
       await TransportModel.updateHelper(schoolId, id, {
         branch_id: branchId,
         first_name,
         last_name,
         email,
         phone,
+        id_proof_type: idProofTypeVal,
+        id_proof_number: idProofNumberVal,
+        id_proof_doc: idProofDocPath,
+        remove_id_proof_doc,
         gender,
         picture,
         status,

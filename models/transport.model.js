@@ -1,4 +1,5 @@
 const { pool } = require('../config/db.config');
+const { hardDeleteFile } = require('../utils/file.util');
 
 /**
  * Normalizes input status for database storage.
@@ -309,6 +310,7 @@ class TransportModel {
         b.number_plate,
         b.seat,
         b.color,
+        b.image,
         b.status,
         MAX(IF(op.type = 1, op.id, NULL)) AS driver_id,
         NULLIF(TRIM(MAX(IF(op.type = 1, CONCAT(IFNULL(op.first_name, ''), ' ', IFNULL(op.last_name, '')), NULL))), '') AS driver_name,
@@ -341,7 +343,7 @@ class TransportModel {
       params.push(`%${search.trim()}%`, `%${search.trim()}%`, `%${search.trim()}%`);
     }
 
-    sql += ` GROUP BY b.id, b.school_id, b.name, b.number_plate, b.seat, b.color, b.status ORDER BY b.id DESC`;
+    sql += ` GROUP BY b.id, b.school_id, b.name, b.number_plate, b.seat, b.color, b.image, b.status ORDER BY b.id DESC`;
     const [rows] = await pool.query(sql, params);
     return rows || [];
   }
@@ -355,6 +357,7 @@ class TransportModel {
         b.number_plate,
         b.seat,
         b.color,
+        b.image,
         b.status,
         MAX(IF(op.type = 1, op.id, NULL)) AS driver_id,
         NULLIF(TRIM(MAX(IF(op.type = 1, CONCAT(IFNULL(op.first_name, ''), ' ', IFNULL(op.last_name, '')), NULL))), '') AS driver_name,
@@ -368,18 +371,18 @@ class TransportModel {
       sql += ` AND (b.branch_id = ? OR b.branch_id IS NULL)`;
       params.push(Number(branchId));
     }
-    sql += ` GROUP BY b.id, b.school_id, b.branch_id, b.name, b.number_plate, b.seat, b.color, b.status`;
+    sql += ` GROUP BY b.id, b.school_id, b.branch_id, b.name, b.number_plate, b.seat, b.color, b.image, b.status`;
 
     const [rows] = await pool.query(sql, params);
     return rows && rows.length > 0 ? rows[0] : null;
   }
 
-  static async createVehicle(schoolId, { branch_id = null, name, number_plate, seat, color, driver_id, status }) {
+  static async createVehicle(schoolId, { branch_id = null, name, number_plate, seat, color, driver_id, status, image = null }) {
     const resolvedBranchId = branch_id ? Number(branch_id) : null;
     const normalizedStatus = normalizeStatusForSave(status, 1);
     const [res] = await pool.query(
-      `INSERT INTO bus_master (school_id, branch_id, name, number_plate, seat, color, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO bus_master (school_id, branch_id, name, number_plate, seat, color, image, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         schoolId,
         resolvedBranchId,
@@ -387,6 +390,7 @@ class TransportModel {
         number_plate ? number_plate.trim() : '',
         Number(seat || 0),
         color ? color.trim() : '',
+        image || null,
         normalizedStatus,
       ]
     );
@@ -402,8 +406,21 @@ class TransportModel {
     return busId;
   }
 
-  static async updateVehicle(schoolId, id, { name, number_plate, seat, color, driver_id, status, branch_id }, branchId = null) {
+  static async updateVehicle(schoolId, id, { name, number_plate, seat, color, driver_id, status, branch_id, image }, branchId = null) {
     const normalizedStatus = normalizeStatusForSave(status, 1);
+
+    if (image !== undefined) {
+      try {
+        const [oldRows] = await pool.query('SELECT image FROM bus_master WHERE id = ? AND school_id = ? LIMIT 1', [id, schoolId]);
+        const oldImage = oldRows[0]?.image;
+        if (oldImage && oldImage !== image) {
+          await hardDeleteFile(oldImage);
+        }
+      } catch (e) {
+        console.error('Error removing old bus image on update:', e);
+      }
+    }
+
     let sql = `UPDATE bus_master 
        SET name = ?, number_plate = ?, seat = ?, color = ?, status = ?`;
     const params = [
@@ -413,6 +430,10 @@ class TransportModel {
       color ? color.trim() : '',
       normalizedStatus,
     ];
+    if (image !== undefined) {
+      sql += `, image = ?`;
+      params.push(image || null);
+    }
     if (branch_id !== undefined) {
       sql += `, branch_id = ?`;
       params.push(branch_id ? Number(branch_id) : null);
@@ -452,7 +473,16 @@ class TransportModel {
   }
 
   static async deleteVehicle(schoolId, id, branchId = null) {
-    let sql = `UPDATE bus_master SET status = 4 WHERE id = ? AND school_id = ?`;
+    try {
+      const [oldRows] = await pool.query('SELECT image FROM bus_master WHERE id = ? AND school_id = ? LIMIT 1', [id, schoolId]);
+      if (oldRows[0]?.image) {
+        await hardDeleteFile(oldRows[0].image);
+      }
+    } catch (e) {
+      console.error('Error removing bus image on delete:', e);
+    }
+
+    let sql = `UPDATE bus_master SET status = 4, image = NULL WHERE id = ? AND school_id = ?`;
     const params = [id, schoolId];
     if (branchId) {
       sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
@@ -485,6 +515,10 @@ class TransportModel {
         op.email,
         op.phone,
         op.lisence_number AS license_number,
+        op.lisence_doc,
+        op.id_proof_type,
+        op.id_proof_number,
+        op.id_proof_doc,
         op.picture,
         op.status,
         MAX(b.name) AS assigned_bus,
@@ -518,7 +552,7 @@ class TransportModel {
       params.push(`%${search.trim()}%`, `%${search.trim()}%`, `%${search.trim()}%`, `%${search.trim()}%`);
     }
 
-    sql += ` GROUP BY op.id, op.school_id, op.branch_id, bm.branch_name, op.first_name, op.last_name, op.email, op.phone, op.lisence_number, op.picture, op.status ORDER BY op.id DESC`;
+    sql += ` GROUP BY op.id, op.school_id, op.branch_id, bm.branch_name, op.first_name, op.last_name, op.email, op.phone, op.lisence_number, op.lisence_doc, op.id_proof_type, op.id_proof_number, op.id_proof_doc, op.picture, op.status ORDER BY op.id DESC`;
     const [rows] = await pool.query(sql, params);
     return rows || [];
   }
@@ -535,6 +569,10 @@ class TransportModel {
         op.email,
         op.phone,
         op.lisence_number AS license_number,
+        op.lisence_doc,
+        op.id_proof_type,
+        op.id_proof_number,
+        op.id_proof_doc,
         op.picture,
         op.status
        FROM operator_master op
@@ -594,15 +632,37 @@ class TransportModel {
     return { isEmailDuplicate, isPhoneDuplicate, isLicenseDuplicate };
   }
 
-  static async createDriver(schoolId, { branch_id = null, first_name, last_name, email, phone, license_number, lisence_number, picture, status }) {
+  static async createDriver(schoolId, {
+    branch_id = null,
+    first_name,
+    last_name,
+    email,
+    phone,
+    license_number,
+    lisence_number,
+    license_doc,
+    lisence_doc,
+    id_proof_type,
+    id_proof_number,
+    id_proof_doc,
+    picture,
+    status
+  }) {
     const cleanEmail = email && String(email).trim() ? String(email).trim() : null;
     const cleanPhone = phone ? String(phone).trim() : '';
     const cleanLicense = (license_number || lisence_number || '').trim() || null;
+    const resolvedLicenseDoc = license_doc || lisence_doc || null;
+    const resolvedIdProofType = id_proof_type ? String(id_proof_type).trim() : null;
+    const resolvedIdProofNumber = id_proof_number ? String(id_proof_number).trim() : null;
+    const resolvedIdProofDoc = id_proof_doc || null;
     const resolvedBranchId = branch_id ? Number(branch_id) : null;
     const normalizedStatus = normalizeStatusForSave(status, 1);
     const [res] = await pool.query(
-      `INSERT INTO operator_master (school_id, branch_id, first_name, last_name, email, phone, lisence_number, picture, type, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+      `INSERT INTO operator_master (
+        school_id, branch_id, first_name, last_name, email, phone, 
+        lisence_number, lisence_doc, id_proof_type, id_proof_number, id_proof_doc, 
+        picture, type, status
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
       [
         schoolId,
         resolvedBranchId,
@@ -611,6 +671,10 @@ class TransportModel {
         cleanEmail,
         cleanPhone,
         cleanLicense,
+        resolvedLicenseDoc,
+        resolvedIdProofType,
+        resolvedIdProofNumber,
+        resolvedIdProofDoc,
         picture || '',
         normalizedStatus,
       ]
@@ -618,34 +682,111 @@ class TransportModel {
     return res.insertId;
   }
 
-  static async updateDriver(schoolId, id, { branch_id, first_name, last_name, email, phone, license_number, lisence_number, picture, status }) {
+  static async updateDriver(schoolId, id, {
+    branch_id,
+    first_name,
+    last_name,
+    email,
+    phone,
+    license_number,
+    lisence_number,
+    license_doc,
+    lisence_doc,
+    id_proof_type,
+    id_proof_number,
+    id_proof_doc,
+    remove_license_doc,
+    remove_id_proof_doc,
+    picture,
+    status
+  }) {
     const cleanEmail = email && String(email).trim() ? String(email).trim() : null;
     const cleanPhone = phone ? String(phone).trim() : '';
     const cleanLicense = (license_number || lisence_number || '').trim() || null;
     const resolvedBranchId = branch_id !== undefined ? (branch_id ? Number(branch_id) : null) : null;
     const normalizedStatus = normalizeStatusForSave(status, 1);
-    await pool.query(
-      `UPDATE operator_master 
-       SET first_name = ?, last_name = ?, email = ?, phone = ?, lisence_number = ?, picture = IFNULL(NULLIF(?, ''), picture), status = ?, branch_id = COALESCE(?, branch_id)
-       WHERE id = ? AND school_id = ? AND type = 1 AND status != 4`,
-      [
-        first_name.trim(),
-        last_name ? last_name.trim() : '',
-        cleanEmail,
-        cleanPhone,
-        cleanLicense,
-        picture || '',
-        normalizedStatus,
-        resolvedBranchId,
-        id,
-        schoolId,
-      ]
+
+    // Fetch existing driver to handle file replacement/deletion
+    const [existing] = await pool.query(
+      `SELECT lisence_doc, id_proof_doc FROM operator_master WHERE id = ? AND school_id = ? AND type = 1`,
+      [id, schoolId]
     );
+    const currentDoc = existing?.[0] || {};
+
+    let finalLicenseDoc = currentDoc.lisence_doc || null;
+    const newLicenseDoc = license_doc !== undefined ? license_doc : lisence_doc;
+    if (newLicenseDoc) {
+      if (currentDoc.lisence_doc && currentDoc.lisence_doc !== newLicenseDoc) {
+        hardDeleteFile(currentDoc.lisence_doc);
+      }
+      finalLicenseDoc = newLicenseDoc;
+    } else if (remove_license_doc === true || remove_license_doc === 'true') {
+      if (currentDoc.lisence_doc) {
+        hardDeleteFile(currentDoc.lisence_doc);
+      }
+      finalLicenseDoc = null;
+    }
+
+    let finalIdProofDoc = currentDoc.id_proof_doc || null;
+    if (id_proof_doc) {
+      if (currentDoc.id_proof_doc && currentDoc.id_proof_doc !== id_proof_doc) {
+        hardDeleteFile(currentDoc.id_proof_doc);
+      }
+      finalIdProofDoc = id_proof_doc;
+    } else if (remove_id_proof_doc === true || remove_id_proof_doc === 'true') {
+      if (currentDoc.id_proof_doc) {
+        hardDeleteFile(currentDoc.id_proof_doc);
+      }
+      finalIdProofDoc = null;
+    }
+
+    const resolvedIdProofType = id_proof_type !== undefined ? (id_proof_type ? String(id_proof_type).trim() : null) : undefined;
+    const resolvedIdProofNumber = id_proof_number !== undefined ? (id_proof_number ? String(id_proof_number).trim() : null) : undefined;
+
+    let updateSql = `UPDATE operator_master 
+       SET first_name = ?, last_name = ?, email = ?, phone = ?, lisence_number = ?, 
+           lisence_doc = ?, id_proof_doc = ?,
+           picture = IFNULL(NULLIF(?, ''), picture), status = ?, branch_id = COALESCE(?, branch_id)`;
+    const updateParams = [
+      first_name.trim(),
+      last_name ? last_name.trim() : '',
+      cleanEmail,
+      cleanPhone,
+      cleanLicense,
+      finalLicenseDoc,
+      finalIdProofDoc,
+      picture || '',
+      normalizedStatus,
+      resolvedBranchId,
+    ];
+
+    if (resolvedIdProofType !== undefined) {
+      updateSql += `, id_proof_type = ?`;
+      updateParams.push(resolvedIdProofType);
+    }
+    if (resolvedIdProofNumber !== undefined) {
+      updateSql += `, id_proof_number = ?`;
+      updateParams.push(resolvedIdProofNumber);
+    }
+
+    updateSql += ` WHERE id = ? AND school_id = ? AND type = 1 AND status != 4`;
+    updateParams.push(id, schoolId);
+
+    await pool.query(updateSql, updateParams);
     return true;
   }
 
   static async deleteDriver(schoolId, id, branchId = null) {
-    let sql = `UPDATE operator_master SET status = 4 WHERE id = ? AND school_id = ? AND type = 1`;
+    const [existing] = await pool.query(
+      `SELECT lisence_doc, id_proof_doc FROM operator_master WHERE id = ? AND school_id = ? AND type = 1`,
+      [id, schoolId]
+    );
+    if (existing && existing.length > 0) {
+      if (existing[0].lisence_doc) hardDeleteFile(existing[0].lisence_doc);
+      if (existing[0].id_proof_doc) hardDeleteFile(existing[0].id_proof_doc);
+    }
+
+    let sql = `UPDATE operator_master SET status = 4, lisence_doc = NULL, id_proof_doc = NULL WHERE id = ? AND school_id = ? AND type = 1`;
     const params = [id, schoolId];
     if (branchId) {
       sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
@@ -678,6 +819,9 @@ class TransportModel {
         op.email,
         op.phone,
         op.lisence_number AS license_number,
+        op.id_proof_type,
+        op.id_proof_number,
+        op.id_proof_doc,
         op.picture,
         op.status,
         MAX(b.name) AS assigned_bus,
@@ -711,7 +855,7 @@ class TransportModel {
       params.push(`%${search.trim()}%`, `%${search.trim()}%`, `%${search.trim()}%`);
     }
 
-    sql += ` GROUP BY op.id, op.school_id, op.branch_id, bm.branch_name, op.first_name, op.last_name, op.email, op.phone, op.lisence_number, op.picture, op.status ORDER BY op.id DESC`;
+    sql += ` GROUP BY op.id, op.school_id, op.branch_id, bm.branch_name, op.first_name, op.last_name, op.email, op.phone, op.lisence_number, op.id_proof_type, op.id_proof_number, op.id_proof_doc, op.picture, op.status ORDER BY op.id DESC`;
     const [rows] = await pool.query(sql, params);
     return rows || [];
   }
@@ -728,6 +872,9 @@ class TransportModel {
         op.email,
         op.phone,
         op.lisence_number AS license_number,
+        op.id_proof_type,
+        op.id_proof_number,
+        op.id_proof_doc,
         op.picture,
         op.status
        FROM operator_master op
@@ -773,15 +920,34 @@ class TransportModel {
     return { isEmailDuplicate, isPhoneDuplicate };
   }
 
-  static async createHelper(schoolId, { branch_id = null, first_name, last_name, email, phone, license_number, lisence_number, picture, status }) {
+  static async createHelper(schoolId, {
+    branch_id = null,
+    first_name,
+    last_name,
+    email,
+    phone,
+    license_number,
+    lisence_number,
+    id_proof_type,
+    id_proof_number,
+    id_proof_doc,
+    picture,
+    status
+  }) {
     const cleanEmail = email && String(email).trim() ? String(email).trim() : null;
     const cleanPhone = phone ? String(phone).trim() : '';
     const cleanLicense = (license_number || lisence_number || '').trim() || null;
+    const resolvedIdProofType = id_proof_type ? String(id_proof_type).trim() : null;
+    const resolvedIdProofNumber = id_proof_number ? String(id_proof_number).trim() : null;
+    const resolvedIdProofDoc = id_proof_doc || null;
     const resolvedBranchId = branch_id ? Number(branch_id) : null;
     const normalizedStatus = normalizeStatusForSave(status, 1);
     const [res] = await pool.query(
-      `INSERT INTO operator_master (school_id, branch_id, first_name, last_name, email, phone, lisence_number, picture, type, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 2, ?)`,
+      `INSERT INTO operator_master (
+        school_id, branch_id, first_name, last_name, email, phone, 
+        lisence_number, id_proof_type, id_proof_number, id_proof_doc, 
+        picture, type, status
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2, ?)`,
       [
         schoolId,
         resolvedBranchId,
@@ -790,6 +956,9 @@ class TransportModel {
         cleanEmail,
         cleanPhone,
         cleanLicense,
+        resolvedIdProofType,
+        resolvedIdProofNumber,
+        resolvedIdProofDoc,
         picture || '',
         normalizedStatus,
       ]
@@ -797,22 +966,72 @@ class TransportModel {
     return res.insertId;
   }
 
-  static async updateHelper(schoolId, id, { branch_id, first_name, last_name, email, phone, license_number, lisence_number, picture, status }) {
+  static async updateHelper(schoolId, id, {
+    branch_id,
+    first_name,
+    last_name,
+    email,
+    phone,
+    license_number,
+    lisence_number,
+    id_proof_type,
+    id_proof_number,
+    id_proof_doc,
+    remove_id_proof_doc,
+    picture,
+    status
+  }) {
     const cleanEmail = email && String(email).trim() ? String(email).trim() : null;
     const cleanPhone = phone ? String(phone).trim() : '';
     const cleanLicense = (license_number || lisence_number || '').trim() || null;
     const normalizedStatus = normalizeStatusForSave(status, 1);
+
+    // Fetch existing helper to handle file replacement/deletion
+    const [existing] = await pool.query(
+      `SELECT id_proof_doc FROM operator_master WHERE id = ? AND school_id = ? AND type = 2`,
+      [id, schoolId]
+    );
+    const currentDoc = existing?.[0] || {};
+
+    let finalIdProofDoc = currentDoc.id_proof_doc || null;
+    if (id_proof_doc) {
+      if (currentDoc.id_proof_doc && currentDoc.id_proof_doc !== id_proof_doc) {
+        hardDeleteFile(currentDoc.id_proof_doc);
+      }
+      finalIdProofDoc = id_proof_doc;
+    } else if (remove_id_proof_doc === true || remove_id_proof_doc === 'true') {
+      if (currentDoc.id_proof_doc) {
+        hardDeleteFile(currentDoc.id_proof_doc);
+      }
+      finalIdProofDoc = null;
+    }
+
+    const resolvedIdProofType = id_proof_type !== undefined ? (id_proof_type ? String(id_proof_type).trim() : null) : undefined;
+    const resolvedIdProofNumber = id_proof_number !== undefined ? (id_proof_number ? String(id_proof_number).trim() : null) : undefined;
+
     let sql = `UPDATE operator_master 
-       SET first_name = ?, last_name = ?, email = ?, phone = ?, lisence_number = ?, picture = IFNULL(NULLIF(?, ''), picture), status = ?`;
+       SET first_name = ?, last_name = ?, email = ?, phone = ?, lisence_number = ?, 
+           id_proof_doc = ?,
+           picture = IFNULL(NULLIF(?, ''), picture), status = ?`;
     const params = [
       first_name.trim(),
       last_name ? last_name.trim() : '',
       cleanEmail,
       cleanPhone,
       cleanLicense,
+      finalIdProofDoc,
       picture || '',
       normalizedStatus,
     ];
+
+    if (resolvedIdProofType !== undefined) {
+      sql += `, id_proof_type = ?`;
+      params.push(resolvedIdProofType);
+    }
+    if (resolvedIdProofNumber !== undefined) {
+      sql += `, id_proof_number = ?`;
+      params.push(resolvedIdProofNumber);
+    }
     if (branch_id !== undefined) {
       sql += `, branch_id = ?`;
       params.push(branch_id ? Number(branch_id) : null);
@@ -825,7 +1044,15 @@ class TransportModel {
   }
 
   static async deleteHelper(schoolId, id, branchId = null) {
-    let sql = `UPDATE operator_master SET status = 4 WHERE id = ? AND school_id = ? AND type = 2`;
+    const [existing] = await pool.query(
+      `SELECT id_proof_doc FROM operator_master WHERE id = ? AND school_id = ? AND type = 2`,
+      [id, schoolId]
+    );
+    if (existing && existing.length > 0 && existing[0].id_proof_doc) {
+      hardDeleteFile(existing[0].id_proof_doc);
+    }
+
+    let sql = `UPDATE operator_master SET status = 4, id_proof_doc = NULL WHERE id = ? AND school_id = ? AND type = 2`;
     const params = [id, schoolId];
     if (branchId) {
       sql += ` AND (branch_id = ? OR branch_id IS NULL)`;

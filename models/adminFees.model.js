@@ -160,6 +160,7 @@ class AdminFeesModel {
         fs.section_id,
         fs.academic_year_id,
         fs.frequency,
+        fs.start_month,
         fs.due_day,
         fs.grace_period_days,
         fs.late_fee_type,
@@ -326,6 +327,7 @@ class AdminFeesModel {
     sectionId,
     academicYearId,
     frequency,
+    start_month,
     dueDay,
     gracePeriodDays,
     lateFeeType,
@@ -364,6 +366,7 @@ class AdminFeesModel {
             section_id = ?,
             academic_year_id = ?,
             frequency = ?,
+            start_month = ?,
             due_day = ?,
             grace_period_days = ?,
             late_fee_type = ?,
@@ -381,7 +384,8 @@ class AdminFeesModel {
           classIdStr,
           sectionId || null,
           academicYearId || null,
-          frequency || 'Monthly',
+          frequency,
+          parseInt(start_month, 10) || 1,
           parseInt(dueDay, 10) || 10,
           parseInt(gracePeriodDays, 10) || 5,
           lateFeeType || '0',
@@ -401,10 +405,10 @@ class AdminFeesModel {
         // Insert
         const insertQuery = `
           INSERT INTO fee_structures (
-            school_id, branch_id, name, class_id, section_id, academic_year_id, frequency,
+            school_id, branch_id, name, class_id, section_id, academic_year_id, frequency, start_month,
             due_day, grace_period_days, late_fee_type, late_fee_amount,
             allow_partial_payment, is_published, generate_on_day, description, status, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
         `;
         const [result] = await connection.query(insertQuery, [
           schoolId,
@@ -413,7 +417,8 @@ class AdminFeesModel {
           classIdStr,
           sectionId || null,
           academicYearId || null,
-          frequency || 'Monthly',
+          frequency,
+          parseInt(start_month, 10) || 1,
           parseInt(dueDay, 10) || 10,
           parseInt(gracePeriodDays, 10) || 5,
           lateFeeType || '0',
@@ -540,7 +545,7 @@ class AdminFeesModel {
   }
 
   static async deleteStructure(id, schoolId, branchId = null) {
-    let query = `UPDATE fee_structures SET status = 4 WHERE id = ? AND school_id = ?`;
+    let query = `UPDATE fee_structures SET status = 4 WHERE id = ? AND school_id = ? AND (is_published = 0 OR is_published IS NULL)`;
     const params = [id, schoolId];
     if (branchId) {
       query += ` AND (branch_id = ? OR branch_id IS NULL)`;
@@ -674,6 +679,17 @@ class AdminFeesModel {
       is_published: newStatus,
       allocatedCount,
     };
+  }
+
+  static async updateStructureStatus(id, schoolId, status, branchId = null) {
+    let query = `UPDATE fee_structures SET status = ? WHERE id = ? AND school_id = ? AND status != 4`;
+    const params = [Number(status), id, schoolId];
+    if (branchId) {
+      query += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(Number(branchId));
+    }
+    const [result] = await pool.query(query, params);
+    return result.affectedRows > 0;
   }
 
   // =========================================================
@@ -1044,7 +1060,17 @@ class AdminFeesModel {
     return invoice;
   }
 
-  static async checkDuplicateInvoice({ schoolId, branchId, feeStructureId, issueDate }) {
+  static async checkDuplicateInvoice({
+    schoolId,
+    branchId,
+    feeStructureId,
+    academicYearId,
+    classId,
+    sectionId,
+    studentId,
+    studentIds,
+    issueDate,
+  }) {
     if (!feeStructureId || !issueDate) {
       return { exists: false };
     }
@@ -1052,33 +1078,154 @@ class AdminFeesModel {
       ? String(issueDate).split('T')[0]
       : String(issueDate).trim();
 
+    // 1. Fetch fee structure info
+    let structQuery = `SELECT id, name, frequency, due_day, grace_period_days, academic_year_id FROM fee_structures WHERE id = ? AND school_id = ?`;
+    const structParams = [feeStructureId, schoolId];
+    if (branchId) {
+      structQuery += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      structParams.push(Number(branchId));
+    }
+    const [structRows] = await pool.query(structQuery, structParams);
+    if (structRows.length === 0) {
+      return { exists: false };
+    }
+    const structure = structRows[0];
+    const frequency = String(structure.frequency || '').toLowerCase().trim();
+    const targetAcademicYear = academicYearId || structure.academic_year_id;
+
+    // 2. Identify target students
+    let targetStudentIds = [];
+    if (studentIds && Array.isArray(studentIds) && studentIds.length > 0) {
+      targetStudentIds = studentIds.map((id) => Number(id)).filter(Boolean);
+    } else if (studentIds && typeof studentIds === 'string' && studentIds.trim()) {
+      targetStudentIds = studentIds.split(',').map((id) => Number(id.trim())).filter(Boolean);
+    } else if (studentId) {
+      targetStudentIds = [Number(studentId)];
+    } else if (classId) {
+      let stSql = `
+        SELECT id FROM student_master 
+        WHERE school_id = ? AND status = 1 AND (status != 4 OR status IS NULL)
+          AND (class = ? OR class = (SELECT class_name FROM class_master WHERE id = ? LIMIT 1))
+      `;
+      const stParams = [schoolId, classId, classId];
+      if (branchId) {
+        stSql += ` AND branch_id = ?`;
+        stParams.push(Number(branchId));
+      }
+      if (sectionId) {
+        stSql += ` AND (section = ? OR section = (SELECT section_name FROM section_master WHERE id = ? LIMIT 1))`;
+        stParams.push(sectionId, sectionId);
+      }
+      const [stRows] = await pool.query(stSql, stParams);
+      targetStudentIds = stRows.map((r) => r.id);
+    }
+
+    if (targetStudentIds.length === 0) {
+      return { exists: false, totalStudents: 0, alreadyInvoicedCount: 0, alreadyInvoicedStudentIds: [] };
+    }
+
+    // 3. Check for existing fee invoices for these students matching structure and frequency period
     let checkQuery = `
-       SELECT fi.id, fi.invoice_no, fs.name AS structure_name, fi.issue_date, COUNT(*) AS count
-       FROM fee_invoices fi
-       JOIN fee_structures fs ON fs.id = fi.fee_structure_id
-       WHERE fi.school_id = ?
-         AND fi.fee_structure_id = ?
-         AND DATE(fi.issue_date) = DATE(?)
-         AND fi.status != '4'`;
-    const checkParams = [schoolId, feeStructureId, effectiveIssueDate];
+      SELECT fi.id, fi.invoice_no, fi.student_id, fi.issue_date, fi.due_date, fi.total_amount,
+             CONCAT(TRIM(IFNULL(sm.first_name, '')), ' ', TRIM(IFNULL(sm.last_name, ''))) AS student_name,
+             sm.admission_number, sm.roll_number
+      FROM fee_invoices fi
+      LEFT JOIN student_master sm ON sm.id = fi.student_id
+      WHERE fi.school_id = ?
+        AND fi.fee_structure_id = ?
+        AND fi.status != '4'
+        AND fi.student_id IN (?)
+    `;
+    const checkParams = [schoolId, feeStructureId, targetStudentIds];
+
     if (branchId) {
       checkQuery += ` AND (fi.branch_id = ? OR fi.branch_id IS NULL)`;
       checkParams.push(Number(branchId));
     }
-    checkQuery += ` GROUP BY fi.id, fi.invoice_no, fs.name, fi.issue_date LIMIT 1`;
-    const [existing] = await pool.query(checkQuery, checkParams);
 
-    if (existing.length > 0) {
-      const structName = existing[0].structure_name || 'this Fee Structure';
+    if (frequency === 'annually' || frequency === 'one-time' || frequency === 'onetime') {
+      const yearToMatch = academicYearId || structure.academic_year_id;
+      const structYear = structure.academic_year_id;
+      if (yearToMatch || structYear) {
+        checkQuery += ` AND (fi.academic_year_id = ? OR fi.academic_year_id = ? OR YEAR(fi.issue_date) = YEAR(?))`;
+        checkParams.push(yearToMatch || structYear, structYear || yearToMatch, effectiveIssueDate);
+      } else {
+        checkQuery += ` AND YEAR(fi.issue_date) = YEAR(?)`;
+        checkParams.push(effectiveIssueDate);
+      }
+    } else if (frequency === 'monthly') {
+      checkQuery += ` AND MONTH(fi.issue_date) = MONTH(?) AND YEAR(fi.issue_date) = YEAR(?)`;
+      checkParams.push(effectiveIssueDate, effectiveIssueDate);
+    } else if (frequency === 'quarterly') {
+      checkQuery += ` AND QUARTER(fi.issue_date) = QUARTER(?) AND YEAR(fi.issue_date) = YEAR(?)`;
+      checkParams.push(effectiveIssueDate, effectiveIssueDate);
+    } else if (frequency === 'bi-annually' || frequency === 'biannually') {
+      checkQuery += ` AND (CASE WHEN MONTH(fi.issue_date) <= 6 THEN 1 ELSE 2 END) = (CASE WHEN MONTH(?) <= 6 THEN 1 ELSE 2 END) AND YEAR(fi.issue_date) = YEAR(?)`;
+      checkParams.push(effectiveIssueDate, effectiveIssueDate);
+    } else {
+      checkQuery += ` AND DATE(fi.issue_date) = DATE(?)`;
+      checkParams.push(effectiveIssueDate);
+    }
+
+    const [existingRows] = await pool.query(checkQuery, checkParams);
+
+    const alreadyInvoicedStudentIds = Array.from(new Set(existingRows.map((r) => r.student_id)));
+    const alreadyInvoicedCount = alreadyInvoicedStudentIds.length;
+    const totalStudents = targetStudentIds.length;
+    const allAlreadyInvoiced = totalStudents > 0 && alreadyInvoicedCount >= totalStudents;
+
+    if (alreadyInvoicedCount > 0) {
+      const sample = existingRows[0];
+      const sampleDateStr = sample.issue_date ? new Date(sample.issue_date).toLocaleDateString('en-GB') : effectiveIssueDate;
+      const issueYear = new Date(effectiveIssueDate).getFullYear();
+
+      let periodLabel = `academic year ${issueYear}`;
+      if (frequency === 'monthly') {
+        const monthName = new Date(effectiveIssueDate).toLocaleString('default', { month: 'long' });
+        periodLabel = `the month of ${monthName} ${issueYear}`;
+      } else if (frequency === 'quarterly') {
+        const qNum = Math.floor(new Date(effectiveIssueDate).getMonth() / 3) + 1;
+        periodLabel = `Quarter ${qNum} (${issueYear})`;
+      } else if (frequency === 'annually') {
+        periodLabel = `the year ${issueYear}`;
+      }
+
+      let message = '';
+      if (allAlreadyInvoiced) {
+        message = `An ${structure.frequency} invoice for "${structure.name}" has already been generated for all selected student(s) within ${periodLabel} (first generated on ${sampleDateStr}). Duplicate generation is prevented.`;
+      } else {
+        message = `${alreadyInvoicedCount} of ${totalStudents} student(s) already have an invoice for "${structure.name}" within ${periodLabel}.`;
+      }
+
       return {
-        exists: true,
-        structureName: structName,
-        issueDate: effectiveIssueDate,
-        message: `A fee has already been created for Fee Structure "${structName}" and Issue Date ${effectiveIssueDate}. Duplicate fee entries are not allowed.`,
+        exists: allAlreadyInvoiced,
+        alreadyInvoicedCount,
+        totalStudents,
+        alreadyInvoicedStudentIds,
+        structureName: structure.name,
+        frequency: structure.frequency,
+        sampleDate: sampleDateStr,
+        message,
+        invoicedStudents: existingRows.map((r) => ({
+          student_id: r.student_id,
+          student_name: r.student_name,
+          admission_number: r.admission_number,
+          roll_number: r.roll_number,
+          invoice_no: r.invoice_no,
+          issue_date: r.issue_date,
+        })),
       };
     }
 
-    return { exists: false };
+    return {
+      exists: false,
+      alreadyInvoicedCount: 0,
+      totalStudents,
+      alreadyInvoicedStudentIds: [],
+      structureName: structure.name,
+      frequency: structure.frequency,
+      message: '',
+    };
   }
 
   static async generateInvoices({
@@ -1088,6 +1235,7 @@ class AdminFeesModel {
     classId,
     sectionId,
     studentId,
+    studentIds,
     feeStructureId,
     title,
     issueDate,
@@ -1124,30 +1272,6 @@ class AdminFeesModel {
         ? (String(issueDate).includes('T') ? String(issueDate).split('T')[0] : String(issueDate).trim())
         : new Date().toISOString().split('T')[0];
 
-      // Prevent duplicate fee entries: check if a fee has already been created for the same Fee Structure and Issue Date
-      let dupQuery = `
-         SELECT fi.id, fi.invoice_no, fs.name AS structure_name, fi.issue_date
-         FROM fee_invoices fi
-         JOIN fee_structures fs ON fs.id = fi.fee_structure_id
-         WHERE fi.school_id = ? 
-           AND fi.fee_structure_id = ? 
-           AND DATE(fi.issue_date) = DATE(?)
-           AND fi.status != '4'`;
-      const dupParams = [schoolId, feeStructureId, effectiveIssueDate];
-      if (branchId) {
-        dupQuery += ` AND (fi.branch_id = ? OR fi.branch_id IS NULL)`;
-        dupParams.push(Number(branchId));
-      }
-      dupQuery += ` LIMIT 1`;
-      const [existingInvoices] = await connection.query(dupQuery, dupParams);
-
-      if (existingInvoices.length > 0) {
-        const sName = existingInvoices[0].structure_name || structure.name || 'this Fee Structure';
-        throw new Error(
-          `A fee has already been created for Fee Structure "${sName}" and Issue Date ${effectiveIssueDate}. Duplicate fee entries are not allowed.`
-        );
-      }
-
       const [components] = await connection.query(
         `SELECT fsc.*, fc.name AS component_name 
          FROM fee_structure_components fsc 
@@ -1159,19 +1283,37 @@ class AdminFeesModel {
       const subtotal = components.reduce((sum, c) => sum + (parseFloat(c.amount) || 0), 0);
       const totalAmount = subtotal;
 
-      // Calculate due date if not provided
-      let finalDueDate = dueDate;
-      if (!finalDueDate) {
-        const issue = new Date(effectiveIssueDate);
-        issue.setDate(issue.getDate() + (structure.grace_period_days || 10));
-        finalDueDate = issue.toISOString().split('T')[0];
+      // Calculate due date on server using issue_date and fee structure rules
+      let finalDueDate = null;
+      const issue = new Date(effectiveIssueDate);
+      const issueYear = issue.getFullYear();
+      const issueMonth = issue.getMonth();
+      const graceDays = Number(structure.grace_period_days) || 0;
+
+      if (structure.due_day) {
+        const dueDay = Math.min(Math.max(Number(structure.due_day), 1), 28);
+        const targetDue = new Date(issueYear, issueMonth, dueDay);
+        if (graceDays > 0) {
+          targetDue.setDate(targetDue.getDate() + graceDays);
+        }
+        if (targetDue > issue) {
+          finalDueDate = targetDue.toISOString().split('T')[0];
+        } else {
+          const fallbackDue = new Date(issue);
+          fallbackDue.setDate(fallbackDue.getDate() + (graceDays > 0 ? graceDays : dueDay));
+          finalDueDate = fallbackDue.toISOString().split('T')[0];
+        }
+      } else {
+        const fallbackDue = new Date(issue);
+        fallbackDue.setDate(fallbackDue.getDate() + (graceDays > 0 ? graceDays : 10));
+        finalDueDate = fallbackDue.toISOString().split('T')[0];
       }
 
       // 2. Identify target students
       let studentQuery = `
         SELECT id, class, section, branch_id 
         FROM student_master 
-        WHERE school_id = ? AND status = 1
+        WHERE school_id = ? AND status = 1 AND (status != 4 OR status IS NULL)
       `;
       const studentParams = [schoolId];
 
@@ -1180,17 +1322,26 @@ class AdminFeesModel {
         studentParams.push(Number(branchId));
       }
 
-      if (studentId) {
+      if (studentIds && Array.isArray(studentIds) && studentIds.length > 0) {
+        studentQuery += ` AND id IN (?)`;
+        studentParams.push(studentIds.map(Number));
+      } else if (studentIds && typeof studentIds === 'string' && studentIds.trim()) {
+        const parsedIds = studentIds.split(',').map((s) => Number(s.trim())).filter(Boolean);
+        if (parsedIds.length > 0) {
+          studentQuery += ` AND id IN (?)`;
+          studentParams.push(parsedIds);
+        }
+      } else if (studentId) {
         studentQuery += ` AND id = ?`;
-        studentParams.push(studentId);
+        studentParams.push(Number(studentId));
       } else {
         if (classId) {
-          studentQuery += ` AND class = ?`;
-          studentParams.push(classId);
+          studentQuery += ` AND (class = ? OR class = (SELECT class_name FROM class_master WHERE id = ? LIMIT 1))`;
+          studentParams.push(classId, classId);
         }
         if (sectionId) {
-          studentQuery += ` AND section = ?`;
-          studentParams.push(sectionId);
+          studentQuery += ` AND (section = ? OR section = (SELECT section_name FROM section_master WHERE id = ? LIMIT 1))`;
+          studentParams.push(sectionId, sectionId);
         }
       }
 
@@ -1200,20 +1351,48 @@ class AdminFeesModel {
       }
 
       let generatedCount = 0;
+      const frequency = String(structure.frequency || '').toLowerCase().trim();
+      const targetYear = structure.academic_year_id || academicYearId || null;
+
       for (const st of targetStudents) {
-        // Prevent duplicate fee entries per student
-        const [studentExisting] = await connection.query(
-          `SELECT id FROM fee_invoices 
-           WHERE school_id = ? 
-             AND student_id = ? 
-             AND fee_structure_id = ? 
-             AND DATE(issue_date) = DATE(?)
-             AND status != '4'
-           LIMIT 1`,
-          [schoolId, st.id, feeStructureId, effectiveIssueDate]
-        );
+        // Prevent duplicate fee entries per student according to frequency rules
+        let studentDupSql = `
+          SELECT id FROM fee_invoices 
+          WHERE school_id = ? 
+            AND student_id = ? 
+            AND fee_structure_id = ? 
+            AND status != '4'
+        `;
+        const studentDupParams = [schoolId, st.id, feeStructureId];
+
+        if (frequency === 'annually' || frequency === 'one-time' || frequency === 'onetime') {
+          const yearToMatch = academicYearId || structure.academic_year_id;
+          const structYear = structure.academic_year_id;
+          if (yearToMatch || structYear) {
+            studentDupSql += ` AND (academic_year_id = ? OR academic_year_id = ? OR YEAR(issue_date) = YEAR(?))`;
+            studentDupParams.push(yearToMatch || structYear, structYear || yearToMatch, effectiveIssueDate);
+          } else {
+            studentDupSql += ` AND YEAR(issue_date) = YEAR(?)`;
+            studentDupParams.push(effectiveIssueDate);
+          }
+        } else if (frequency === 'monthly') {
+          studentDupSql += ` AND MONTH(issue_date) = MONTH(?) AND YEAR(issue_date) = YEAR(?)`;
+          studentDupParams.push(effectiveIssueDate, effectiveIssueDate);
+        } else if (frequency === 'quarterly') {
+          studentDupSql += ` AND QUARTER(issue_date) = QUARTER(?) AND YEAR(issue_date) = YEAR(?)`;
+          studentDupParams.push(effectiveIssueDate, effectiveIssueDate);
+        } else if (frequency === 'bi-annually' || frequency === 'biannually') {
+          studentDupSql += ` AND (CASE WHEN MONTH(issue_date) <= 6 THEN 1 ELSE 2 END) = (CASE WHEN MONTH(?) <= 6 THEN 1 ELSE 2 END) AND YEAR(issue_date) = YEAR(?)`;
+          studentDupParams.push(effectiveIssueDate, effectiveIssueDate);
+        } else {
+          studentDupSql += ` AND DATE(issue_date) = DATE(?)`;
+          studentDupParams.push(effectiveIssueDate);
+        }
+
+        studentDupSql += ` LIMIT 1`;
+        const [studentExisting] = await connection.query(studentDupSql, studentDupParams);
         if (studentExisting.length > 0) {
-          continue;
+          continue; // Skip student: already invoiced for this period
         }
 
         // Generate unique invoice number: INV-YYYYMMDD-RAND
@@ -1236,7 +1415,7 @@ class AdminFeesModel {
             st.id,
             st.class,
             st.section || null,
-            academicYearId || structure.academic_year_id || null,
+            targetYear || null,
             feeStructureId,
             title || `${structure.name} - ${structure.frequency}`,
             subtotal,
@@ -1264,7 +1443,7 @@ class AdminFeesModel {
 
       if (generatedCount === 0) {
         throw new Error(
-          `Fee entries already exist for all selected students with Fee Structure "${structure.name}" and Issue Date ${effectiveIssueDate}. Duplicate fee entries are not allowed.`
+          `Invoices for Fee Structure "${structure.name}" have already been generated for the selected student(s) within this year/period. Duplicate invoices cannot be created.`
         );
       }
 

@@ -18,6 +18,7 @@ class LeaveModel {
         l.staff_id,
         l.leave_id,
         lm.leave_name,
+        COALESCE(lm.is_paid, 1) AS is_paid,
         l.duration,
         CASE 
           WHEN l.duration = 1 THEN 'Full Day'
@@ -113,6 +114,7 @@ class LeaveModel {
         l.staff_id,
         l.leave_id,
         lm.leave_name,
+        COALESCE(lm.is_paid, 1) AS is_paid,
         l.duration,
         l.document,
         l.leave_reason,
@@ -190,12 +192,13 @@ class LeaveModel {
   static async getStaffLeaveQuota(schoolId, role, staffId, leaveId) {
     // 1. Get quota from leave_master
     const [typeRows] = await pool.query(
-      `SELECT id, leave_name, no_leave FROM leave_master WHERE id = ? AND (school_id = ? OR ? IS NULL)`,
+      `SELECT id, leave_name, COALESCE(is_paid, 1) AS is_paid, no_leave FROM leave_master WHERE id = ? AND (school_id = ? OR ? IS NULL)`,
       [leaveId, schoolId, schoolId]
     );
 
     const leaveMaster = typeRows && typeRows.length > 0 ? typeRows[0] : null;
     const leaveName = leaveMaster?.leave_name || 'Leave';
+    const isPaid = Number(leaveMaster?.is_paid !== undefined ? leaveMaster.is_paid : 1);
     const maxQuota = Number(leaveMaster?.no_leave || 0);
 
     // 2. Calculate approved days
@@ -234,6 +237,7 @@ class LeaveModel {
 
     return {
       leave_name: leaveName,
+      is_paid: isPaid,
       max_quota: maxQuota,
       approved_days: approvedDays,
       remaining_days: remainingDays,
@@ -519,6 +523,7 @@ class LeaveModel {
         CASE WHEN lm.role = 1 THEN 'Teacher' ELSE 'User' END AS role_label,
         lm.leave_name, 
         lm.need_document, 
+        COALESCE(lm.is_paid, 1) AS is_paid,
         lm.no_leave, 
         lm.sort_order, 
         lm.status 
@@ -590,6 +595,7 @@ class LeaveModel {
         lm.role, 
         lm.leave_name, 
         lm.need_document, 
+        COALESCE(lm.is_paid, 1) AS is_paid,
         lm.no_leave, 
         lm.sort_order, 
         lm.status 
@@ -654,14 +660,15 @@ class LeaveModel {
       for (const row of data.leaveRows) {
         if (row.leave_name && row.leave_name.trim()) {
           const [res] = await pool.query(
-            `INSERT INTO leave_master (school_id, branch_id, role, leave_name, need_document, no_leave, sort_order, status)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO leave_master (school_id, branch_id, role, leave_name, need_document, is_paid, no_leave, sort_order, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               schoolId,
               finalBranchId,
               role,
               row.leave_name.trim(),
               Number(row.need_document || 0),
+              row.is_paid !== undefined ? Number(row.is_paid) : 1,
               Number(row.no_leave || 1),
               Number(row.sort_order || 1),
               row.status !== undefined ? Number(row.status) : 1,
@@ -672,18 +679,19 @@ class LeaveModel {
       }
       return ids;
     } else {
-      const { role, leave_name, need_document, no_leave, sort_order, status } = data;
+      const { role, leave_name, need_document, is_paid, no_leave, sort_order, status } = data;
       await checkDuplicate(leave_name, Number(role || 1));
 
       const [res] = await pool.query(
-        `INSERT INTO leave_master (school_id, branch_id, role, leave_name, need_document, no_leave, sort_order, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO leave_master (school_id, branch_id, role, leave_name, need_document, is_paid, no_leave, sort_order, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           schoolId,
           finalBranchId,
           Number(role || 1),
           leave_name ? String(leave_name).trim() : '',
           Number(need_document || 0),
+          is_paid !== undefined ? Number(is_paid) : 1,
           Number(no_leave || 0),
           Number(sort_order || 1),
           status !== undefined ? Number(status) : 1,
@@ -696,7 +704,7 @@ class LeaveModel {
   /**
    * Update Leave Type Master
    */
-  static async updateLeaveType(schoolId, id, { role, leave_name, need_document, no_leave, sort_order, status, branch_id = null }, branchId = null) {
+  static async updateLeaveType(schoolId, id, { role, leave_name, need_document, is_paid, no_leave, sort_order, status, branch_id = null }, branchId = null) {
     let targetBranchId = (branch_id && branch_id !== 'all')
       ? Number(branch_id)
       : ((branchId && branchId !== 'all') ? Number(branchId) : null);
@@ -718,11 +726,12 @@ class LeaveModel {
       }
     }
 
-    let sql = `UPDATE leave_master SET role = ?, leave_name = ?, need_document = ?, no_leave = ?, sort_order = ?, status = ?`;
+    let sql = `UPDATE leave_master SET role = ?, leave_name = ?, need_document = ?, is_paid = ?, no_leave = ?, sort_order = ?, status = ?`;
     const params = [
       Number(role || 1),
       leave_name ? String(leave_name).trim() : '',
       Number(need_document || 0),
+      is_paid !== undefined ? Number(is_paid) : 1,
       Number(no_leave || 0),
       Number(sort_order || 1),
       status !== undefined ? Number(status) : 1,

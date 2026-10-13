@@ -7,39 +7,51 @@ class PayrollModel {
         bm.id,
         bm.school_id,
         bm.user_type,
-        CASE WHEN bm.user_type = 2 THEN 'Teacher' ELSE 'User' END AS type_name,
+        CASE 
+          WHEN bm.user_type = 2 THEN 'Teacher'
+          WHEN bm.user_type = 3 THEN 'Driver'
+          ELSE 'Staff'
+        END AS type_name,
         bm.employee_id,
         CASE 
           WHEN bm.user_type = 2 THEN CONCAT(IFNULL(t.first_name, ''), ' ', IFNULL(t.last_name, ''))
+          WHEN bm.user_type = 3 THEN CONCAT(IFNULL(op.first_name, ''), ' ', IFNULL(op.last_name, ''))
           ELSE CONCAT(IFNULL(u.first_name, ''), ' ', IFNULL(u.last_name, ''))
         END AS name,
         bm.basic_salary AS amount,
         CASE 
           WHEN bm.user_type = 2 THEN tb.bank_name
+          WHEN bm.user_type = 3 THEN ob.bank_name
           ELSE ub.bank_name
         END AS bank_name,
         CASE 
           WHEN bm.user_type = 2 THEN tb.account_name
+          WHEN bm.user_type = 3 THEN ob.account_name
           ELSE ub.account_name
         END AS account_holder_name,
         CASE 
           WHEN bm.user_type = 2 THEN tb.account_number
+          WHEN bm.user_type = 3 THEN ob.account_number
           ELSE ub.account_number
         END AS account_number,
         CASE 
           WHEN bm.user_type = 2 THEN tb.ifsc_code
+          WHEN bm.user_type = 3 THEN ob.ifsc_code
           ELSE ub.ifsc_code
         END AS ifsc_code,
         CASE 
           WHEN bm.user_type = 2 THEN tb.branch_name
+          WHEN bm.user_type = 3 THEN ob.branch_name
           ELSE ub.branch_name
         END AS branch_name,
         bm.status
       FROM beneficiary_master bm
       LEFT JOIN teacher_master t ON bm.user_type = 2 AND bm.employee_id = t.id
       LEFT JOIN teacher_bank tb ON bm.user_type = 2 AND bm.employee_id = tb.teacher_id AND tb.status != 4
-      LEFT JOIN user_master u ON bm.user_type != 2 AND bm.employee_id = u.id
-      LEFT JOIN user_bank ub ON bm.user_type != 2 AND bm.employee_id = ub.user_id AND ub.status != 4
+      LEFT JOIN operator_master op ON bm.user_type = 3 AND bm.employee_id = op.id AND op.type = 1
+      LEFT JOIN operator_bank ob ON bm.user_type = 3 AND bm.employee_id = ob.operator_id AND ob.status != 4
+      LEFT JOIN user_master u ON bm.user_type = 1 AND bm.employee_id = u.id
+      LEFT JOIN user_bank ub ON bm.user_type = 1 AND bm.employee_id = ub.user_id AND ub.status != 4
       WHERE bm.status != 4 AND bm.school_id = ?
     `;
     const params = [schoolId];
@@ -49,20 +61,22 @@ class PayrollModel {
         (bm.branch_id = ?) OR 
         (bm.branch_id IS NULL AND (
           (bm.user_type = 2 AND (t.branch_id = ? OR t.branch_id IS NULL)) OR 
-          (bm.user_type != 2 AND (u.branch_id = ? OR u.branch_id IS NULL))
+          (bm.user_type = 3 AND (op.branch_id = ? OR op.branch_id IS NULL)) OR 
+          (bm.user_type != 2 AND bm.user_type != 3 AND (u.branch_id = ? OR u.branch_id IS NULL))
         ))
       )`;
-      params.push(Number(branchId), Number(branchId), Number(branchId));
+      params.push(Number(branchId), Number(branchId), Number(branchId), Number(branchId));
     }
 
     if (search && search.trim() !== '') {
       sql += ` AND (
         t.first_name LIKE ? OR t.last_name LIKE ? OR 
+        op.first_name LIKE ? OR op.last_name LIKE ? OR 
         u.first_name LIKE ? OR u.last_name LIKE ? OR 
-        tb.bank_name LIKE ? OR ub.bank_name LIKE ?
+        tb.bank_name LIKE ? OR ob.bank_name LIKE ? OR ub.bank_name LIKE ?
       )`;
       const q = `%${search.trim()}%`;
-      params.push(q, q, q, q, q, q);
+      params.push(q, q, q, q, q, q, q, q, q);
     }
 
     sql += ` ORDER BY bm.id ASC`;
@@ -76,39 +90,51 @@ class PayrollModel {
         bm.id,
         bm.school_id,
         bm.user_type,
-        CASE WHEN bm.user_type = 2 THEN 'Teacher' ELSE 'User' END AS type_name,
+        CASE 
+          WHEN bm.user_type = 2 THEN 'Teacher'
+          WHEN bm.user_type = 3 THEN 'Driver'
+          ELSE 'Staff'
+        END AS type_name,
         bm.employee_id,
         CASE 
           WHEN bm.user_type = 2 THEN CONCAT(IFNULL(t.first_name, ''), ' ', IFNULL(t.last_name, ''))
+          WHEN bm.user_type = 3 THEN CONCAT(IFNULL(op.first_name, ''), ' ', IFNULL(op.last_name, ''))
           ELSE CONCAT(IFNULL(u.first_name, ''), ' ', IFNULL(u.last_name, ''))
         END AS name,
         bm.basic_salary AS amount,
         CASE 
           WHEN bm.user_type = 2 THEN tb.bank_name
+          WHEN bm.user_type = 3 THEN ob.bank_name
           ELSE ub.bank_name
         END AS bank_name,
         CASE 
           WHEN bm.user_type = 2 THEN tb.account_name
+          WHEN bm.user_type = 3 THEN ob.account_name
           ELSE ub.account_name
         END AS account_holder_name,
         CASE 
           WHEN bm.user_type = 2 THEN tb.account_number
+          WHEN bm.user_type = 3 THEN ob.account_number
           ELSE ub.account_number
         END AS account_number,
         CASE 
           WHEN bm.user_type = 2 THEN tb.ifsc_code
+          WHEN bm.user_type = 3 THEN ob.ifsc_code
           ELSE ub.ifsc_code
         END AS ifsc_code,
         CASE 
           WHEN bm.user_type = 2 THEN tb.branch_name
+          WHEN bm.user_type = 3 THEN ob.branch_name
           ELSE ub.branch_name
         END AS branch_name,
         bm.status
       FROM beneficiary_master bm
       LEFT JOIN teacher_master t ON bm.user_type = 2 AND bm.employee_id = t.id
       LEFT JOIN teacher_bank tb ON bm.user_type = 2 AND bm.employee_id = tb.teacher_id AND tb.status != 0
-      LEFT JOIN user_master u ON bm.user_type != 2 AND bm.employee_id = u.id
-      LEFT JOIN user_bank ub ON bm.user_type != 2 AND bm.employee_id = ub.user_id AND ub.status != 0
+      LEFT JOIN operator_master op ON bm.user_type = 3 AND bm.employee_id = op.id AND op.type = 1
+      LEFT JOIN operator_bank ob ON bm.user_type = 3 AND bm.employee_id = ob.operator_id AND ob.status != 0
+      LEFT JOIN user_master u ON bm.user_type = 1 AND bm.employee_id = u.id
+      LEFT JOIN user_bank ub ON bm.user_type = 1 AND bm.employee_id = ub.user_id AND ub.status != 0
       WHERE bm.id = ? AND bm.status != 0 AND bm.school_id = ?
     `;
     const params = [id, schoolId];
@@ -117,10 +143,11 @@ class PayrollModel {
         (bm.branch_id = ?) OR 
         (bm.branch_id IS NULL AND (
           (bm.user_type = 2 AND (t.branch_id = ? OR t.branch_id IS NULL)) OR 
-          (bm.user_type != 2 AND (u.branch_id = ? OR u.branch_id IS NULL))
+          (bm.user_type = 3 AND (op.branch_id = ? OR op.branch_id IS NULL)) OR 
+          (bm.user_type != 2 AND bm.user_type != 3 AND (u.branch_id = ? OR u.branch_id IS NULL))
         ))
       )`;
-      params.push(Number(branchId), Number(branchId), Number(branchId));
+      params.push(Number(branchId), Number(branchId), Number(branchId), Number(branchId));
     }
     const [rows] = await pool.query(sql, params);
     return rows && rows.length > 0 ? rows[0] : null;
@@ -148,6 +175,9 @@ class PayrollModel {
       if (uType === 2) {
         const [tm] = await pool.query('SELECT branch_id FROM teacher_master WHERE id = ? AND school_id = ?', [empId, sId]);
         if (tm.length && tm[0].branch_id) resolvedBranchId = tm[0].branch_id;
+      } else if (uType === 3) {
+        const [opm] = await pool.query('SELECT branch_id FROM operator_master WHERE id = ? AND school_id = ?', [empId, sId]);
+        if (opm.length && opm[0].branch_id) resolvedBranchId = opm[0].branch_id;
       } else {
         const [um] = await pool.query('SELECT branch_id FROM user_master WHERE id = ? AND school_id = ?', [empId, sId]);
         if (um.length && um[0].branch_id) resolvedBranchId = um[0].branch_id;
@@ -178,6 +208,25 @@ class PayrollModel {
         } else {
           await pool.query(
             `INSERT INTO teacher_bank (school_id, branch_id, teacher_id, bank_name, account_name, account_number, ifsc_code, branch_name, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+            [sId, resolvedBranchId, empId, bank_name || '', account_name || '', account_no || '', ifsc_code || '', branch_name || '']
+          );
+        }
+      } else if (uType === 3) {
+        const [existing] = await pool.query(
+          `SELECT id FROM operator_bank WHERE operator_id = ? AND school_id = ? LIMIT 1`,
+          [empId, sId]
+        );
+        if (existing && existing.length > 0) {
+          await pool.query(
+            `UPDATE operator_bank 
+             SET bank_name = ?, account_name = ?, account_number = ?, ifsc_code = ?, branch_name = ?
+             WHERE id = ?`,
+            [bank_name || '', account_name || '', account_no || '', ifsc_code || '', branch_name || '', existing[0].id]
+          );
+        } else {
+          await pool.query(
+            `INSERT INTO operator_bank (school_id, branch_id, operator_id, bank_name, account_name, account_number, ifsc_code, branch_name, status)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
             [sId, resolvedBranchId, empId, bank_name || '', account_name || '', account_no || '', ifsc_code || '', branch_name || '']
           );
@@ -234,6 +283,9 @@ class PayrollModel {
       if (uType === 2) {
         const [tm] = await pool.query('SELECT branch_id FROM teacher_master WHERE id = ? AND school_id = ?', [empId, sId]);
         if (tm.length && tm[0].branch_id) resolvedBranchId = tm[0].branch_id;
+      } else if (uType === 3) {
+        const [opm] = await pool.query('SELECT branch_id FROM operator_master WHERE id = ? AND school_id = ?', [empId, sId]);
+        if (opm.length && opm[0].branch_id) resolvedBranchId = opm[0].branch_id;
       } else {
         const [um] = await pool.query('SELECT branch_id FROM user_master WHERE id = ? AND school_id = ?', [empId, sId]);
         if (um.length && um[0].branch_id) resolvedBranchId = um[0].branch_id;
@@ -257,6 +309,25 @@ class PayrollModel {
         } else {
           await pool.query(
             `INSERT INTO teacher_bank (school_id, branch_id, teacher_id, bank_name, account_name, account_number, ifsc_code, branch_name, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+            [sId, resolvedBranchId, empId, bank_name || '', account_name || '', account_no || '', ifsc_code || '', branch_name || '']
+          );
+        }
+      } else if (uType === 3) {
+        const [existing] = await pool.query(
+          `SELECT id FROM operator_bank WHERE operator_id = ? AND school_id = ? LIMIT 1`,
+          [empId, sId]
+        );
+        if (existing && existing.length > 0) {
+          await pool.query(
+            `UPDATE operator_bank 
+             SET bank_name = ?, account_name = ?, account_number = ?, ifsc_code = ?, branch_name = ?
+             WHERE id = ?`,
+            [bank_name || '', account_name || '', account_no || '', ifsc_code || '', branch_name || '', existing[0].id]
+          );
+        } else {
+          await pool.query(
+            `INSERT INTO operator_bank (school_id, branch_id, operator_id, bank_name, account_name, account_number, ifsc_code, branch_name, status)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
             [sId, resolvedBranchId, empId, bank_name || '', account_name || '', account_no || '', ifsc_code || '', branch_name || '']
           );
@@ -295,7 +366,7 @@ class PayrollModel {
         SELECT 
            t.id,
            CONCAT(IFNULL(t.first_name, ''), ' ', IFNULL(t.last_name, '')) AS name,
-           IFNULL(bm.basic_salary, 0) AS basic_salary,
+           COALESCE(NULLIF(bm.basic_salary, 0), tp.basic_salary, 0) AS basic_salary,
            tb.bank_name,
            tb.account_name,
            tb.account_number AS account_no,
@@ -303,6 +374,11 @@ class PayrollModel {
            tb.branch_name
          FROM teacher_master t
          LEFT JOIN beneficiary_master bm ON bm.user_type = 2 AND bm.employee_id = t.id AND bm.status != 0
+         LEFT JOIN (
+           SELECT teacher_id, basic_salary 
+           FROM teacher_payroll 
+           WHERE id IN (SELECT MAX(id) FROM teacher_payroll WHERE status != 0 GROUP BY teacher_id)
+         ) tp ON tp.teacher_id = t.id
          LEFT JOIN teacher_bank tb ON t.id = tb.teacher_id AND tb.status != 0
          WHERE t.status != 0 AND t.school_id = ?
       `;
@@ -312,6 +388,31 @@ class PayrollModel {
         params.push(Number(branchId));
       }
       sql += ` ORDER BY t.first_name ASC`;
+      const [rows] = await pool.query(sql, params);
+      return rows || [];
+    } else if (uType === 3) {
+      // Drivers from operator_master (type = 1)
+      let sql = `
+        SELECT 
+           op.id,
+           CONCAT(IFNULL(op.first_name, ''), ' ', IFNULL(op.last_name, '')) AS name,
+           IFNULL(bm.basic_salary, 0) AS basic_salary,
+           ob.bank_name,
+           ob.account_name,
+           ob.account_number AS account_no,
+           ob.ifsc_code,
+           ob.branch_name
+         FROM operator_master op
+         LEFT JOIN beneficiary_master bm ON bm.user_type = 3 AND bm.employee_id = op.id AND bm.status != 0
+         LEFT JOIN operator_bank ob ON op.id = ob.operator_id AND ob.status != 0
+         WHERE op.type = 1 AND op.status != 0 AND op.status != 4 AND op.school_id = ?
+      `;
+      const params = [sId];
+      if (branchId) {
+        sql += ` AND (op.branch_id = ? OR op.branch_id IS NULL)`;
+        params.push(Number(branchId));
+      }
+      sql += ` ORDER BY op.first_name ASC`;
       const [rows] = await pool.query(sql, params);
       return rows || [];
     } else {
@@ -352,6 +453,9 @@ class PayrollModel {
       if (uType === 2) {
         const [tm] = await pool.query('SELECT branch_id FROM teacher_master WHERE id = ? AND school_id = ?', [empId, sId]);
         if (tm.length && tm[0].branch_id) resolvedBranchId = tm[0].branch_id;
+      } else if (uType === 3) {
+        const [opm] = await pool.query('SELECT branch_id FROM operator_master WHERE id = ? AND school_id = ?', [empId, sId]);
+        if (opm.length && opm[0].branch_id) resolvedBranchId = opm[0].branch_id;
       } else {
         const [um] = await pool.query('SELECT branch_id FROM user_master WHERE id = ? AND school_id = ?', [empId, sId]);
         if (um.length && um[0].branch_id) resolvedBranchId = um[0].branch_id;
@@ -402,10 +506,15 @@ class PayrollModel {
         es.id,
         es.school_id,
         es.user_type,
-        CASE WHEN es.user_type = 2 THEN 'Teacher' ELSE 'User' END AS type_name,
+        CASE 
+          WHEN es.user_type = 2 THEN 'Teacher'
+          WHEN es.user_type = 3 THEN 'Driver'
+          ELSE 'Staff'
+        END AS type_name,
         es.employee_id,
         CASE 
           WHEN es.user_type = 2 THEN CONCAT(IFNULL(t.first_name, ''), ' ', IFNULL(t.last_name, ''))
+          WHEN es.user_type = 3 THEN CONCAT(IFNULL(op.first_name, ''), ' ', IFNULL(op.last_name, ''))
           ELSE CONCAT(IFNULL(u.first_name, ''), ' ', IFNULL(u.last_name, ''))
         END AS employee_name,
         es.basic_salary,
@@ -418,7 +527,8 @@ class PayrollModel {
         es.created_on
       FROM employee_salary es
       LEFT JOIN teacher_master t ON es.user_type = 2 AND es.employee_id = t.id
-      LEFT JOIN user_master u ON es.user_type != 2 AND es.employee_id = u.id
+      LEFT JOIN operator_master op ON es.user_type = 3 AND es.employee_id = op.id AND op.type = 1
+      LEFT JOIN user_master u ON es.user_type = 1 AND es.employee_id = u.id
       WHERE es.school_id = ?
     `;
     const params = [schoolId];
@@ -428,10 +538,11 @@ class PayrollModel {
         (es.branch_id = ?) OR
         (es.branch_id IS NULL AND (
           (es.user_type = 2 AND (t.branch_id = ? OR t.branch_id IS NULL)) OR
-          (es.user_type != 2 AND (u.branch_id = ? OR u.branch_id IS NULL))
+          (es.user_type = 3 AND (op.branch_id = ? OR op.branch_id IS NULL)) OR
+          (es.user_type != 2 AND es.user_type != 3 AND (u.branch_id = ? OR u.branch_id IS NULL))
         ))
       )`;
-      params.push(Number(branchId), Number(branchId), Number(branchId));
+      params.push(Number(branchId), Number(branchId), Number(branchId), Number(branchId));
     }
 
     if (user_type !== undefined && user_type !== null) {
@@ -446,11 +557,12 @@ class PayrollModel {
     if (search && search.trim() !== '') {
       sql += ` AND (
         t.first_name LIKE ? OR t.last_name LIKE ? OR 
+        op.first_name LIKE ? OR op.last_name LIKE ? OR 
         u.first_name LIKE ? OR u.last_name LIKE ? OR 
         es.transaction_id LIKE ?
       )`;
       const q = `%${search.trim()}%`;
-      params.push(q, q, q, q, q);
+      params.push(q, q, q, q, q, q, q);
     }
 
     sql += ` ORDER BY es.payment_date DESC, es.id DESC`;

@@ -55,7 +55,7 @@ router.get('/structures/:id', AdminFeesController.getStructureById);
 router.post('/structures', AdminFeesController.saveStructure);
 router.put('/structures/:id', AdminFeesController.saveStructure);
 router.patch('/structures/:id/publish', AdminFeesController.togglePublishStructure);
-router.patch('/structures/:id/status', AdminFeesController.togglePublishStructure);
+router.patch('/structures/:id/status', AdminFeesController.updateStructureStatus);
 router.delete('/structures/:id', AdminFeesController.deleteStructure);
 
 // =========================================================

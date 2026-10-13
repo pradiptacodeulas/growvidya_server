@@ -143,7 +143,28 @@ class AdminFeesController {
   static async saveStructure(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
-      const branchId = req.body?.branch_id || req.body?.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || req.query.branch_id || null;
+      const adminType = Number(req.user?.adminType ?? req.user?.admin_type);
+      const roleStr = String(req.user?.roleName || req.user?.role_name || req.user?.role || '').toLowerCase();
+      const isSuperAdmin = Boolean(
+        req.user?.isSuperAdmin ||
+        adminType === 1 ||
+        roleStr === 'super admin' ||
+        roleStr === 'superadmin'
+      );
+
+      let branchId = null;
+      if (isSuperAdmin) {
+        const rawBranch = req.body?.branch_id !== undefined ? req.body?.branch_id : req.body?.branchId;
+        if (rawBranch !== undefined && rawBranch !== null && rawBranch !== '' && rawBranch !== '0' && rawBranch !== 0) {
+          branchId = Number(rawBranch) || null;
+        } else {
+          branchId = null;
+        }
+      } else {
+        // Non-superadmin branch admin: strictly locked to assigned branch
+        branchId = req.branchId || req.user?.branchId || req.user?.branch_id || null;
+      }
+
       const {
         id,
         name,
@@ -154,6 +175,7 @@ class AdminFeesController {
         academic_year_id,
         academicYearId,
         frequency,
+        start_month,
         due_day,
         dueDay,
         grace_period_days,
@@ -179,21 +201,30 @@ class AdminFeesController {
         return ApiResponse.error(res, 'Structure Name is required.', null, 400);
       }
 
+      if (!frequency || !String(frequency).trim()) {
+        return ApiResponse.error(res, 'Billing Frequency is required.', null, 400);
+      }
+
       const targetStructureId = id || req.params?.id;
       if (targetStructureId) {
-        const existingStructure = await AdminFeesModel.getStructureById(targetStructureId, schoolId, branchId);
-        if (existingStructure && Number(existingStructure.is_published) === 1) {
-          const reqPublished = is_published !== undefined ? is_published : isPublished;
-          if (
-            reqPublished !== undefined &&
-            (reqPublished === 0 || reqPublished === '0' || reqPublished === false)
-          ) {
-            return ApiResponse.error(
-              res,
-              'A published fee structure cannot be reverted to Draft. A published Fee Structure must remain published.',
-              null,
-              400
-            );
+        const existingStructure = await AdminFeesModel.getStructureById(targetStructureId, schoolId, isSuperAdmin ? null : branchId);
+        if (!existingStructure) {
+          return ApiResponse.error(res, 'Fee structure not found.', null, 404);
+        }
+        if (Number(existingStructure.is_published) === 1) {
+          return ApiResponse.error(
+            res,
+            'A published fee structure cannot be edited.',
+            null,
+            400
+          );
+        }
+        if (!isSuperAdmin) {
+          if (!existingStructure.branch_id) {
+            return ApiResponse.error(res, 'Only Super Admins can modify school-wide fee structures.', null, 403);
+          }
+          if (branchId && Number(existingStructure.branch_id) !== Number(branchId)) {
+            return ApiResponse.error(res, 'You do not have permission to modify a fee structure from another branch.', null, 403);
           }
         }
       }
@@ -213,6 +244,7 @@ class AdminFeesController {
         sectionId: section_id !== undefined ? section_id : sectionId,
         academicYearId: academic_year_id !== undefined ? academic_year_id : academicYearId,
         frequency,
+        start_month: start_month !== undefined ? start_month : 1,
         dueDay: due_day !== undefined ? due_day : dueDay,
         gracePeriodDays: grace_period_days !== undefined ? grace_period_days : gracePeriodDays,
         lateFeeType: late_fee_type !== undefined ? late_fee_type : lateFeeType,
@@ -243,8 +275,40 @@ class AdminFeesController {
   static async deleteStructure(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
-      const branchId = req.branchId || req.query.branch_id || null;
+      const adminType = Number(req.user?.adminType ?? req.user?.admin_type);
+      const roleStr = String(req.user?.roleName || req.user?.role_name || req.user?.role || '').toLowerCase();
+      const isSuperAdmin = Boolean(
+        req.user?.isSuperAdmin ||
+        adminType === 1 ||
+        roleStr === 'super admin' ||
+        roleStr === 'superadmin'
+      );
+      const branchId = isSuperAdmin ? null : (req.branchId || req.user?.branchId || req.user?.branch_id || null);
       const { id } = req.params;
+
+      const existingStructure = await AdminFeesModel.getStructureById(id, schoolId, branchId);
+      if (!existingStructure) {
+        return ApiResponse.error(res, 'Fee structure not found.', null, 404);
+      }
+
+      if (Number(existingStructure.is_published) === 1) {
+        return ApiResponse.error(
+          res,
+          'A published fee structure cannot be deleted by anyone, including Super Admin.',
+          null,
+          400
+        );
+      }
+
+      if (!isSuperAdmin) {
+        if (!existingStructure.branch_id) {
+          return ApiResponse.error(res, 'Only Super Admins can delete school-wide fee structures.', null, 403);
+        }
+        if (branchId && Number(existingStructure.branch_id) !== Number(branchId)) {
+          return ApiResponse.error(res, 'You do not have permission to delete fee structures of another branch.', null, 403);
+        }
+      }
+
       const success = await AdminFeesModel.deleteStructure(id, schoolId, branchId);
       if (!success) {
         return ApiResponse.error(res, 'Fee structure not found.', null, 404);
@@ -258,7 +322,15 @@ class AdminFeesController {
   static async togglePublishStructure(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
-      const branchId = req.branchId || req.query.branch_id || null;
+      const adminType = Number(req.user?.adminType ?? req.user?.admin_type);
+      const roleStr = String(req.user?.roleName || req.user?.role_name || req.user?.role || '').toLowerCase();
+      const isSuperAdmin = Boolean(
+        req.user?.isSuperAdmin ||
+        adminType === 1 ||
+        roleStr === 'super admin' ||
+        roleStr === 'superadmin'
+      );
+      const branchId = isSuperAdmin ? null : (req.branchId || req.user?.branchId || req.user?.branch_id || null);
       const { id } = req.params;
       const { is_published } = req.body;
 
@@ -288,6 +360,15 @@ class AdminFeesController {
         }
       }
 
+      if (!isSuperAdmin) {
+        if (!existingStructure.branch_id) {
+          return ApiResponse.error(res, 'Only Super Admins can publish or unpublish school-wide fee structures.', null, 403);
+        }
+        if (branchId && Number(existingStructure.branch_id) !== Number(branchId)) {
+          return ApiResponse.error(res, 'You do not have permission to modify fee structures of another branch.', null, 403);
+        }
+      }
+
       const updated = await AdminFeesModel.togglePublishStructure(id, schoolId, is_published, branchId);
       if (!updated) {
         return ApiResponse.error(res, 'Fee structure not found.', null, 404);
@@ -300,6 +381,59 @@ class AdminFeesController {
       }
 
       return ApiResponse.success(res, message, updated);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async updateStructureStatus(req, res, next) {
+    try {
+      const schoolId = req.user.schoolId;
+      const adminType = Number(req.user?.adminType ?? req.user?.admin_type);
+      const roleStr = String(req.user?.roleName || req.user?.role_name || req.user?.role || '').toLowerCase();
+      const isSuperAdmin = Boolean(
+        req.user?.isSuperAdmin ||
+        adminType === 1 ||
+        roleStr === 'super admin' ||
+        roleStr === 'superadmin'
+      );
+      const branchId = isSuperAdmin ? null : (req.branchId || req.user?.branchId || req.user?.branch_id || null);
+      const { id } = req.params;
+      const { status } = req.body;
+
+      if (!id) {
+        return ApiResponse.error(res, 'Structure ID is required.', null, 400);
+      }
+
+      const numStatus = Number(status);
+      if (numStatus !== 1 && numStatus !== 2) {
+        return ApiResponse.error(res, 'Status must be 1 (Active) or 2 (Inactive).', null, 400);
+      }
+
+      const existingStructure = await AdminFeesModel.getStructureById(id, schoolId, branchId);
+      if (!existingStructure) {
+        return ApiResponse.error(res, 'Fee structure not found.', null, 404);
+      }
+
+      if (!isSuperAdmin) {
+        if (!existingStructure.branch_id) {
+          return ApiResponse.error(res, 'Only Super Admins can update status of school-wide fee structures.', null, 403);
+        }
+        if (branchId && Number(existingStructure.branch_id) !== Number(branchId)) {
+          return ApiResponse.error(res, 'You do not have permission to modify fee structures of another branch.', null, 403);
+        }
+      }
+
+      const updated = await AdminFeesModel.updateStructureStatus(id, schoolId, numStatus, branchId);
+      if (!updated) {
+        return ApiResponse.error(res, 'Failed to update fee structure status.', null, 400);
+      }
+
+      const label = numStatus === 1 ? 'Active' : 'Inactive';
+      return ApiResponse.success(res, `Fee structure "${existingStructure.name}" is now ${label}.`, {
+        id: Number(id),
+        status: numStatus,
+      });
     } catch (error) {
       next(error);
     }
@@ -472,7 +606,24 @@ class AdminFeesController {
     try {
       const schoolId = req.user.schoolId;
       const branchId = req.branchId || req.query.branch_id || null;
-      const { fee_structure_id, feeStructureId, issue_date, issueDate } = req.query;
+      const paramsSrc = { ...req.query, ...req.body };
+      const {
+        fee_structure_id,
+        feeStructureId,
+        academic_year_id,
+        academicYearId,
+        class_id,
+        classId,
+        section_id,
+        sectionId,
+        student_id,
+        studentId,
+        student_ids,
+        studentIds,
+        issue_date,
+        issueDate,
+      } = paramsSrc;
+
       const targetStructureId = fee_structure_id || feeStructureId;
       const targetIssueDate = issue_date || issueDate;
 
@@ -484,6 +635,11 @@ class AdminFeesController {
         schoolId,
         branchId,
         feeStructureId: targetStructureId,
+        academicYearId: academic_year_id || academicYearId,
+        classId: class_id || classId,
+        sectionId: section_id || sectionId,
+        studentId: student_id || studentId,
+        studentIds: student_ids || studentIds,
         issueDate: targetIssueDate,
       });
 
@@ -496,7 +652,18 @@ class AdminFeesController {
   static async generateInvoices(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
-      const branchId = req.body?.branch_id || req.branchId || req.query.branch_id || null;
+      const adminType = Number(req.user?.adminType ?? req.user?.admin_type);
+      const roleStr = String(req.user?.roleName || req.user?.role_name || req.user?.role || '').toLowerCase();
+      const isSuperAdmin = Boolean(
+        req.user?.isSuperAdmin ||
+        adminType === 1 ||
+        roleStr === 'super admin' ||
+        roleStr === 'superadmin'
+      );
+      const branchId = isSuperAdmin
+        ? (req.body?.branch_id || req.branchId || req.query.branch_id || null)
+        : (req.branchId || req.user?.branchId || req.user?.branch_id || null);
+
       const {
         academic_year_id,
         academicYearId,
@@ -506,13 +673,13 @@ class AdminFeesController {
         sectionId,
         student_id,
         studentId,
+        student_ids,
+        studentIds,
         fee_structure_id,
         feeStructureId,
         title,
         issue_date,
         issueDate,
-        due_date,
-        dueDate,
       } = req.body;
 
       const targetStructureId = fee_structure_id || feeStructureId;
@@ -527,10 +694,10 @@ class AdminFeesController {
         classId: class_id || classId,
         sectionId: section_id || sectionId,
         studentId: student_id || studentId,
+        studentIds: student_ids || studentIds,
         feeStructureId: targetStructureId,
         title,
         issueDate: issue_date || issueDate,
-        dueDate: due_date || dueDate,
       });
 
       return ApiResponse.success(res, `Successfully generated ${count} invoice(s).`, { count }, 201);

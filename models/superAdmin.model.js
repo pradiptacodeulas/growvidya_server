@@ -157,6 +157,45 @@ class SuperAdminModel {
       }
     });
 
+    // 7. Transport / Bus Images
+    const [busImages] = await pool.query(
+      `SELECT image, branch_id FROM bus_master WHERE school_id = ? AND image IS NOT NULL AND status != 4`,
+      [parsedSchoolId]
+    );
+    busImages.forEach((b) => {
+      const size = SuperAdminModel.getFileSizeOnDisk(b.image);
+      totalBytes += size;
+      const bId = b.branch_id || (branches[0] ? branches[0].id : null);
+      if (bId && branchBytesMap[bId]) {
+        branchBytesMap[bId].bytes += size;
+      }
+    });
+
+    // 8. Operator Documents - Driver & Helper (License & ID Proof)
+    const [operatorDocs] = await pool.query(
+      `SELECT lisence_doc, id_proof_doc, branch_id FROM operator_master WHERE school_id = ? AND (type = 1 OR type = 2) AND status != 4`,
+      [parsedSchoolId]
+    );
+    operatorDocs.forEach((d) => {
+      const bId = d.branch_id || (branches[0] ? branches[0].id : null);
+      if (d.lisence_doc) {
+        const size = SuperAdminModel.getFileSizeOnDisk(d.lisence_doc);
+        totalBytes += size;
+        if (bId && branchBytesMap[bId]) {
+          branchBytesMap[bId].bytes += size;
+          branchBytesMap[bId].documents_count += 1;
+        }
+      }
+      if (d.id_proof_doc) {
+        const size = SuperAdminModel.getFileSizeOnDisk(d.id_proof_doc);
+        totalBytes += size;
+        if (bId && branchBytesMap[bId]) {
+          branchBytesMap[bId].bytes += size;
+          branchBytesMap[bId].documents_count += 1;
+        }
+      }
+    });
+
     // If specific branch requested, return branch's storage
     if (branchId) {
       const bInfo = branchBytesMap[Number(branchId)] || { bytes: 0, materials_count: 0, documents_count: 0 };

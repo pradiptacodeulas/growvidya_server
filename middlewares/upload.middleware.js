@@ -275,6 +275,141 @@ const bankImageMiddleware = (req, res, next) => {
   });
 };
 
+// Dedicated storage for Bus/Vehicle images (1MB limit)
+const BUS_UPLOAD_ROOT = path.join(UPLOAD_ROOT, 'buses');
+if (!fs.existsSync(BUS_UPLOAD_ROOT)) {
+  fs.mkdirSync(BUS_UPLOAD_ROOT, { recursive: true });
+}
+
+const busImageStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, BUS_UPLOAD_ROOT);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    const baseName = path
+      .basename(file.originalname, ext)
+      .replace(/[^a-zA-Z0-9_\-]/g, '_')
+      .substring(0, 50);
+
+    const timestamp = Date.now();
+    const randomSuffix = Math.round(Math.random() * 1e4);
+    cb(null, `bus_${baseName}_${timestamp}_${randomSuffix}${ext}`);
+  },
+});
+
+const uploadBusImage = multer({
+  storage: busImageStorage,
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase().replace('.', '');
+    const isImage = /jpeg|jpg|png|webp|svg/i.test(ext);
+    if (isImage) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Invalid image type: .${ext}. Only JPG, PNG, WEBP, and SVG are allowed for bus images.`));
+    }
+  },
+  limits: {
+    fileSize: 1 * 1024 * 1024, // 1MB limit
+  },
+});
+
+const busImageMiddleware = (req, res, next) => {
+  uploadBusImage.fields([
+    { name: 'bus_image', maxCount: 1 },
+    { name: 'image', maxCount: 1 },
+    { name: 'file', maxCount: 1 },
+  ])(req, res, (err) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({
+          status: false,
+          message: 'File size exceeds the 1 MB limit. Please upload an image under 1 MB.',
+          data: null,
+        });
+      }
+      return res.status(400).json({
+        status: false,
+        message: err.message,
+        data: null,
+      });
+    }
+    if (req.files) {
+      req.file =
+        req.files['bus_image']?.[0] ||
+        req.files['image']?.[0] ||
+        req.files['file']?.[0] ||
+        null;
+    }
+    next();
+  });
+};
+
+// Dedicated storage for Driver documents (100KB limit per document)
+const DRIVER_DOCS_UPLOAD_ROOT = path.join(UPLOAD_ROOT, 'drivers', 'documents');
+if (!fs.existsSync(DRIVER_DOCS_UPLOAD_ROOT)) {
+  fs.mkdirSync(DRIVER_DOCS_UPLOAD_ROOT, { recursive: true });
+}
+
+const driverDocsStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, DRIVER_DOCS_UPLOAD_ROOT);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    const baseName = path
+      .basename(file.originalname, ext)
+      .replace(/[^a-zA-Z0-9_\-]/g, '_')
+      .substring(0, 40);
+
+    const timestamp = Date.now();
+    const randomSuffix = Math.round(Math.random() * 1e4);
+    const prefix = file.fieldname === 'license_doc' || file.fieldname === 'lisence_doc' ? 'license' : 'idproof';
+    cb(null, `${prefix}_${baseName}_${timestamp}_${randomSuffix}${ext}`);
+  },
+});
+
+const uploadDriverDocs = multer({
+  storage: driverDocsStorage,
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase().replace('.', '');
+    const isAllowed = /jpeg|jpg|png|webp|pdf/i.test(ext);
+    if (isAllowed) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Invalid document type: .${ext}. Only JPG, PNG, WEBP, and PDF files are allowed.`));
+    }
+  },
+  limits: {
+    fileSize: 100 * 1024, // 100 KB limit
+  },
+});
+
+const driverDocsMiddleware = (req, res, next) => {
+  uploadDriverDocs.fields([
+    { name: 'license_doc', maxCount: 1 },
+    { name: 'lisence_doc', maxCount: 1 },
+    { name: 'id_proof_doc', maxCount: 1 },
+    { name: 'id_proof_file', maxCount: 1 },
+  ])(req, res, (err) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({
+          status: false,
+          message: 'Document size exceeds the 100 KB limit. Please upload a file under 100 KB.',
+          data: null,
+        });
+      }
+      return res.status(400).json({
+        status: false,
+        message: err.message,
+        data: null,
+      });
+    }
+    next();
+  });
+};
+
 module.exports = {
   upload,
   uploadJpgOnly,
@@ -284,8 +419,15 @@ module.exports = {
   rfidImageMiddleware,
   uploadBankImage,
   bankImageMiddleware,
+  uploadBusImage,
+  busImageMiddleware,
+  uploadDriverDocs,
+  driverDocsMiddleware,
   UPLOAD_ROOT,
   MACHINE_UPLOAD_ROOT,
   RFID_UPLOAD_ROOT,
   BANK_UPLOAD_ROOT,
+  BUS_UPLOAD_ROOT,
+  DRIVER_DOCS_UPLOAD_ROOT,
 };
+

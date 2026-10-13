@@ -228,7 +228,7 @@ class AdminLeaveController {
       const schoolId = req.user.schoolId;
       const rawBranch = req.body?.branch_id || req.body?.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null;
       const branchId = (rawBranch && rawBranch !== 'all') ? Number(rawBranch) : null;
-      const { role, leave_name, need_document, no_leave, sort_order, status, leaveRows } = req.body;
+      const { role, leave_name, need_document, is_paid, no_leave, sort_order, status, leaveRows } = req.body;
 
       if (!role) {
         return ApiResponse.error(res, 'Role is required.', null, 400);
@@ -248,6 +248,7 @@ class AdminLeaveController {
         role,
         leave_name,
         need_document,
+        is_paid,
         no_leave,
         sort_order,
         status,
@@ -267,12 +268,13 @@ class AdminLeaveController {
       const rawBranch = req.body?.branch_id || req.body?.branchId || req.branchId || req.user?.branch_id || null;
       const branchId = (rawBranch && rawBranch !== 'all') ? Number(rawBranch) : null;
       const { id } = req.params;
-      const { role, leave_name, need_document, no_leave, sort_order, status } = req.body;
+      const { role, leave_name, need_document, is_paid, no_leave, sort_order, status } = req.body;
 
       const updated = await LeaveModel.updateLeaveType(schoolId, id, {
         role,
         leave_name,
         need_document,
+        is_paid,
         no_leave,
         sort_order,
         status,
