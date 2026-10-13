@@ -62,12 +62,15 @@ exports.createNotice = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Notice title is required' });
     }
 
+    const formattedPublishOn = publish_on ? String(publish_on).replace('T', ' ').substring(0, 19) : null;
+    const formattedNoticeDate = notice_date || (formattedPublishOn ? formattedPublishOn.split(' ')[0] : null);
+
     const insertId = await AnnouncementModel.createNotice({
       school_id: schoolId,
       branch_id: branchId,
       title: title.trim(),
-      notice_date,
-      publish_on,
+      notice_date: formattedNoticeDate,
+      publish_on: formattedPublishOn,
       message,
       message_to: Array.isArray(message_to) ? message_to : (message_to ? [message_to] : []),
       status: status !== undefined ? status : 1,
@@ -188,19 +191,28 @@ exports.createNotice = async (req, res) => {
           : (Array.isArray(message_to) ? message_to : ['all']);
 
         let targetRoles = rawRoles.map((r) => {
-          if (String(r) === '1' || String(r).toLowerCase() === 'student') return 'student';
-          if (String(r) === '2' || String(r).toLowerCase() === 'parent') return 'parent';
-          if (String(r) === '3' || String(r).toLowerCase() === 'teacher') return 'teacher';
-          if (String(r) === '4' || String(r).toLowerCase() === 'admin') return 'admin';
-          return String(r).toLowerCase();
+          const str = String(r).toLowerCase().trim();
+          if (str === '1' || str === 'student') return 'student';
+          if (str === '2' || str === 'parent') return 'parent';
+          if (str === '3' || str === 'teacher') return 'teacher';
+          if (str === '4' || str === 'admin') return 'admin';
+          if (str === '5' || str === 'super admin' || str === 'super_admin') return 'super admin';
+          if (str === '6' || str === 'staff') return 'staff';
+          return str;
         });
 
         if (targetRoles.includes('all')) {
-          targetRoles = ['student', 'parent', 'teacher', 'admin'];
+          targetRoles = ['student', 'parent', 'teacher', 'admin', 'staff'];
+        }
+
+        const rolesToNotify = new Set(targetRoles);
+        // In user_device_tokens, staff and admin users register as 'admin'
+        if (rolesToNotify.has('staff') || rolesToNotify.has('admin') || rolesToNotify.has('super admin')) {
+          rolesToNotify.add('admin');
         }
 
         PushNotificationService.sendToRoles({
-          roles: Array.from(new Set(targetRoles)),
+          roles: Array.from(rolesToNotify),
           school_id: schoolId,
           title: noticeTitle,
           body: noticeBody,
@@ -274,11 +286,14 @@ exports.updateNotice = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Notice title is required' });
     }
 
+    const formattedPublishOn = publish_on ? String(publish_on).replace('T', ' ').substring(0, 19) : null;
+    const formattedNoticeDate = notice_date || (formattedPublishOn ? formattedPublishOn.split(' ')[0] : null);
+
     await AnnouncementModel.updateNotice(id, schoolId, {
       branch_id: branchId,
       title: title.trim(),
-      notice_date,
-      publish_on,
+      notice_date: formattedNoticeDate,
+      publish_on: formattedPublishOn,
       message,
       message_to: Array.isArray(message_to) ? message_to : (message_to ? [message_to] : []),
       status: status !== undefined ? status : 1,

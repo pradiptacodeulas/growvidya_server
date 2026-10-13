@@ -52,6 +52,7 @@ router.delete('/templates/:id', adminCertificateController.deleteTemplate);
 
 // --- Borders (Strictly JPG/JPEG only) ---
 router.get('/borders', adminCertificateController.getAllBorders);
+router.get('/borders/:id/preview', adminCertificateController.getBorderPreview);
 router.get('/borders/:id', adminCertificateController.getBorderById);
 router.post('/borders', uploadJpgOnly.single('border_image'), adminCertificateController.createBorder);
 router.put('/borders/:id', uploadJpgOnly.single('border_image'), adminCertificateController.updateBorder);

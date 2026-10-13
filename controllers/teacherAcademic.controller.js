@@ -336,6 +336,7 @@ class TeacherAcademicController {
     try {
       const schoolId = TeacherAcademicController.getSchoolId(req);
       const teacherId = TeacherAcademicController.getTeacherId(req);
+      const branchId = req.branchId || req.user?.branch_id || req.user?.branchId || null;
       const {
         academic_year_id,
         class_id,
@@ -371,6 +372,7 @@ class TeacherAcademicController {
         uploader_type: isOnlyMine ? 'teacher' : undefined,
         page,
         limit,
+        branchId,
       });
       return ApiResponse.success(res, 'Study materials fetched successfully', data);
     } catch (error) {
@@ -381,8 +383,9 @@ class TeacherAcademicController {
   static async getStudyMaterialById(req, res, next) {
     try {
       const schoolId = TeacherAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.user?.branch_id || req.user?.branchId || null;
       const { id } = req.params;
-      const data = await AcademicModel.getStudyMaterialById(id, schoolId);
+      const data = await AcademicModel.getStudyMaterialById(id, schoolId, branchId);
       if (!data) return ApiResponse.error(res, 'Study material not found', null, 404);
       return ApiResponse.success(res, 'Study material fetched successfully', data);
     } catch (error) {
@@ -394,10 +397,12 @@ class TeacherAcademicController {
     try {
       const schoolId = TeacherAcademicController.getSchoolId(req);
       const teacherId = TeacherAcademicController.getTeacherId(req);
+      const branchId = req.branchId || req.user?.branch_id || req.user?.branchId || null;
       const insertId = await AcademicModel.createStudyMaterial(
         schoolId,
         {
           ...req.body,
+          branch_id: branchId,
           uploader_type: 'teacher',
         },
         teacherId
@@ -412,9 +417,10 @@ class TeacherAcademicController {
     try {
       const schoolId = TeacherAcademicController.getSchoolId(req);
       const teacherId = TeacherAcademicController.getTeacherId(req);
+      const branchId = req.branchId || req.user?.branch_id || req.user?.branchId || null;
       const { id } = req.params;
 
-      const existing = await AcademicModel.getStudyMaterialById(id, schoolId);
+      const existing = await AcademicModel.getStudyMaterialById(id, schoolId, branchId);
       if (!existing) return ApiResponse.error(res, 'Study material not found', null, 404);
 
       if (
@@ -429,7 +435,7 @@ class TeacherAcademicController {
         );
       }
 
-      const success = await AcademicModel.updateStudyMaterial(id, schoolId, req.body);
+      const success = await AcademicModel.updateStudyMaterial(id, schoolId, req.body, branchId);
       if (!success) return ApiResponse.error(res, 'Study material not found or update failed', null, 400);
       return ApiResponse.success(res, 'Study material updated successfully');
     } catch (error) {
@@ -441,9 +447,10 @@ class TeacherAcademicController {
     try {
       const schoolId = TeacherAcademicController.getSchoolId(req);
       const teacherId = TeacherAcademicController.getTeacherId(req);
+      const branchId = req.branchId || req.user?.branch_id || req.user?.branchId || null;
       const { id } = req.params;
 
-      const existing = await AcademicModel.getStudyMaterialById(id, schoolId);
+      const existing = await AcademicModel.getStudyMaterialById(id, schoolId, branchId);
       if (!existing) return ApiResponse.error(res, 'Study material not found', null, 404);
 
       if (
@@ -458,7 +465,7 @@ class TeacherAcademicController {
         );
       }
 
-      const success = await AcademicModel.deleteStudyMaterial(id, schoolId);
+      const success = await AcademicModel.deleteStudyMaterial(id, schoolId, branchId);
       if (!success) return ApiResponse.error(res, 'Study material not found or delete failed', null, 400);
       return ApiResponse.success(res, 'Study material deleted successfully');
     } catch (error) {
@@ -470,9 +477,10 @@ class TeacherAcademicController {
     try {
       const schoolId = TeacherAcademicController.getSchoolId(req);
       const teacherId = TeacherAcademicController.getTeacherId(req);
+      const branchId = req.branchId || req.user?.branch_id || req.user?.branchId || null;
       const { id } = req.params;
 
-      const existing = await AcademicModel.getStudyMaterialById(id, schoolId);
+      const existing = await AcademicModel.getStudyMaterialById(id, schoolId, branchId);
       if (!existing) return ApiResponse.error(res, 'Study material not found', null, 404);
 
       if (
@@ -487,7 +495,7 @@ class TeacherAcademicController {
         );
       }
 
-      const newStatus = await AcademicModel.toggleStudyMaterialStatus(id, schoolId);
+      const newStatus = await AcademicModel.toggleStudyMaterialStatus(id, schoolId, branchId);
       return ApiResponse.success(res, 'Status updated successfully', { status: newStatus });
     } catch (error) {
       next(error);
@@ -542,7 +550,9 @@ class TeacherAcademicController {
   static async getAcademicYears(req, res, next) {
     try {
       const schoolId = TeacherAcademicController.getSchoolId(req);
-      const years = await AcademicModel.getAcademicYears(schoolId, true);
+      const rawBranch = req.branchId || req.user?.branch_id || req.query?.branch_id || req.query?.branchId || null;
+      const branchId = (rawBranch && rawBranch !== 'all' && !isNaN(Number(rawBranch))) ? Number(rawBranch) : null;
+      const years = await AcademicModel.getAcademicYears(schoolId, branchId);
       return ApiResponse.success(res, 'Academic years fetched successfully', years);
     } catch (error) {
       next(error);

@@ -315,11 +315,14 @@ class CertificateModel {
     return rows;
   }
 
-  static async getBorderById(id, schoolId) {
-    const [rows] = await pool.query(
-      `SELECT * FROM certificate_border_master WHERE id = ? AND school_id = ? AND status != 4`,
-      [id, schoolId]
-    );
+  static async getBorderById(id, schoolId, isSuperAdmin = false) {
+    let sql = `SELECT * FROM certificate_border_master WHERE id = ?`;
+    const params = [id];
+    if (!isSuperAdmin && schoolId && Number(schoolId) !== 0) {
+      sql += ` AND school_id = ?`;
+      params.push(schoolId);
+    }
+    const [rows] = await pool.query(sql, params);
     return rows[0] || null;
   }
 
@@ -346,7 +349,7 @@ class CertificateModel {
 
   static async deleteBorder(id, schoolId) {
     const [result] = await pool.query(
-      `UPDATE certificate_border_master SET status = 4 WHERE id = ? AND school_id = ?`,
+      `DELETE FROM certificate_border_master WHERE id = ? AND school_id = ?`,
       [id, schoolId]
     );
     return result.affectedRows > 0;

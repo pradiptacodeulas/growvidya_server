@@ -20,7 +20,8 @@ class TeacherAttendanceController {
     try {
       const schoolId = TeacherAttendanceController.getSchoolId(req);
       const teacherId = TeacherAttendanceController.getTeacherId(req);
-      const branchId = req.branchId || req.user?.branch_id || null;
+      const rawBranch = req.branchId || req.user?.branch_id || req.query?.branch_id || req.query?.branchId || null;
+      const branchId = (rawBranch && rawBranch !== 'all' && !isNaN(Number(rawBranch))) ? Number(rawBranch) : null;
       const options = await AttendanceModel.getMetaOptions(schoolId, teacherId, branchId);
       return ApiResponse.success(res, 'Teacher attendance options fetched successfully.', options);
     } catch (error) {
@@ -32,7 +33,8 @@ class TeacherAttendanceController {
     try {
       const schoolId = TeacherAttendanceController.getSchoolId(req);
       const { class_id, section_id, academic_year, date, page = 1, limit = 10, search = '' } = req.query;
-      const branchId = req.branchId || req.user?.branch_id || null;
+      const rawBranch = req.branchId || req.user?.branch_id || req.query?.branch_id || req.query?.branchId || null;
+      const branchId = (rawBranch && rawBranch !== 'all' && !isNaN(Number(rawBranch))) ? Number(rawBranch) : null;
 
       const targetDate = date || new Date().toISOString().split('T')[0];
       const { students, total, page: curPage, limit: curLimit, totalPages } =
@@ -66,6 +68,8 @@ class TeacherAttendanceController {
     try {
       const schoolId = TeacherAttendanceController.getSchoolId(req);
       const { class_id, section_id, academic_year, date, page = 1, limit = 10, search = '' } = req.query;
+      const rawBranch = req.branchId || req.user?.branch_id || req.query?.branch_id || req.query?.branchId || null;
+      const branchId = (rawBranch && rawBranch !== 'all' && !isNaN(Number(rawBranch))) ? Number(rawBranch) : null;
 
       const targetDate = date || new Date().toISOString().split('T')[0];
       const { students, total, page: curPage, limit: curLimit, totalPages } =
@@ -74,6 +78,7 @@ class TeacherAttendanceController {
           section_id,
           academic_year,
           date: targetDate,
+          branch_id: branchId,
           page: Number(page) || 1,
           limit: Number(limit) || 10,
           search: String(search || '').trim(),
@@ -130,10 +135,14 @@ class TeacherAttendanceController {
         return ApiResponse.error(res, 'No student attendance records provided.', null, 400);
       }
 
+      const rawBranch = req.branchId || req.user?.branch_id || req.body?.branch_id || null;
+      const branchId = (rawBranch && rawBranch !== 'all' && !isNaN(Number(rawBranch))) ? Number(rawBranch) : null;
+
       await AttendanceModel.saveStudentAttendance(schoolId, {
         attendanceDate: formattedAttendanceDate,
         academic_year,
         attendanceRecords,
+        branch_id: branchId,
       });
 
       return ApiResponse.success(res, 'Student attendance saved successfully.');
@@ -149,7 +158,8 @@ class TeacherAttendanceController {
     try {
       const schoolId = TeacherAttendanceController.getSchoolId(req);
       const teacherId = TeacherAttendanceController.getTeacherId(req);
-      const branchId = req.branchId || req.user?.branch_id || null;
+      const rawBranch = req.branchId || req.user?.branch_id || req.body?.branch_id || null;
+      const branchId = (rawBranch && rawBranch !== 'all' && !isNaN(Number(rawBranch))) ? Number(rawBranch) : null;
       const { admission_number, notes } = req.body;
 
       if (!admission_number || !String(admission_number).trim()) {

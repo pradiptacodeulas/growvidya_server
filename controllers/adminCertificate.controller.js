@@ -360,13 +360,74 @@ exports.deleteTemplate = async (req, res) => {
   }
 };
 
+// Helper to sanitize border object so internal server disk paths are NEVER exposed to clients
+const formatBorderResponse = (border) => {
+  if (!border) return null;
+  return {
+    id: border.id,
+    school_id: border.school_id,
+    branch_id: border.branch_id,
+    title: `Border #${border.id}`,
+    image_url: `/api/v1/admin/certificates/borders/${border.id}/preview`,
+    image: `/api/v1/admin/certificates/borders/${border.id}/preview`,
+    status: border.status,
+    created_on: border.created_on,
+  };
+};
+
 // ================= BORDERS =================
+exports.getBorderPreview = async (req, res) => {
+  try {
+    const schoolId = getSchoolId(req);
+    const { id } = req.params;
+    const adminType = Number(req.user?.adminType ?? req.user?.admin_type);
+    const roleStr = String(req.user?.roleName || req.user?.role || '').toLowerCase();
+    const isSuperAdmin =
+      Boolean(req.user?.isSuperAdmin) ||
+      adminType === 1 ||
+      roleStr === 'super admin' ||
+      roleStr === 'superadmin' ||
+      Number(schoolId) === 0;
+
+    const border = await CertificateModel.getBorderById(id, schoolId, isSuperAdmin);
+    if (!border || !border.image) {
+      return ApiResponse.error(res, 'Certificate border not found.', null, 404);
+    }
+
+    const cleanPath = String(border.image).replace(/^[\\/]+/, '');
+    const filePath = path.resolve(__dirname, '../public', cleanPath);
+
+    if (!fs.existsSync(filePath)) {
+      return ApiResponse.error(res, 'Border image file not found on disk.', null, 404);
+    }
+
+    res.setHeader('Cache-Control', 'private, no-transform, max-age=86400');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    return res.sendFile(filePath);
+  } catch (err) {
+    console.error('Error in getBorderPreview:', err);
+    return ApiResponse.error(res, err.message || 'Internal server error', null, err.statusCode || 500);
+  }
+};
+
 exports.getAllBorders = async (req, res) => {
   try {
     const schoolId = getSchoolId(req);
     const { search, status, page, limit } = req.query;
-    const borders = await CertificateModel.getAllBorders(schoolId, { search, status, page, limit });
-    return ApiResponse.success(res, 'Certificate borders retrieved successfully', borders);
+    const result = await CertificateModel.getAllBorders(schoolId, { search, status, page, limit });
+
+    if (result && Array.isArray(result.borders)) {
+      return ApiResponse.success(res, 'Certificate borders retrieved successfully', {
+        ...result,
+        borders: result.borders.map(formatBorderResponse),
+      });
+    }
+
+    if (Array.isArray(result)) {
+      return ApiResponse.success(res, 'Certificate borders retrieved successfully', result.map(formatBorderResponse));
+    }
+
+    return ApiResponse.success(res, 'Certificate borders retrieved successfully', result);
   } catch (err) {
     console.error('Error in getAllBorders:', err);
     return ApiResponse.error(res, err.message || 'Internal server error', null, err.statusCode || 500);
@@ -377,11 +438,20 @@ exports.getBorderById = async (req, res) => {
   try {
     const schoolId = getSchoolId(req);
     const { id } = req.params;
-    const border = await CertificateModel.getBorderById(id, schoolId);
+    const adminType = Number(req.user?.adminType ?? req.user?.admin_type);
+    const roleStr = String(req.user?.roleName || req.user?.role || '').toLowerCase();
+    const isSuperAdmin =
+      Boolean(req.user?.isSuperAdmin) ||
+      adminType === 1 ||
+      roleStr === 'super admin' ||
+      roleStr === 'superadmin' ||
+      Number(schoolId) === 0;
+
+    const border = await CertificateModel.getBorderById(id, schoolId, isSuperAdmin);
     if (!border) {
       return ApiResponse.error(res, 'Certificate border not found', null, 404);
     }
-    return ApiResponse.success(res, 'Certificate border retrieved successfully', border);
+    return ApiResponse.success(res, 'Certificate border retrieved successfully', formatBorderResponse(border));
   } catch (err) {
     console.error('Error in getBorderById:', err);
     return ApiResponse.error(res, err.message || 'Internal server error', null, err.statusCode || 500);
@@ -462,7 +532,7 @@ exports.createBorder = async (req, res) => {
 
     const newBorder = await CertificateModel.getBorderById(insertId, schoolId);
 
-    return ApiResponse.success(res, 'A4 Portrait Certificate border uploaded successfully', newBorder, 201);
+    return ApiResponse.success(res, 'A4 Portrait Certificate border uploaded successfully', formatBorderResponse(newBorder), 201);
   } catch (err) {
     console.error('Error in createBorder:', err);
     return ApiResponse.error(res, err.message || 'Internal server error', null, err.statusCode || 500);
@@ -475,6 +545,12 @@ exports.updateBorder = async (req, res) => {
     const { id } = req.params;
     let imagePath = undefined;
     let status = req.body.status !== undefined && req.body.status !== null ? Number(req.body.status) : undefined;
+
+    const existing = await CertificateModel.getBorderById(id, schoolId);
+    if (!existing) {
+      if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+      return ApiResponse.error(res, 'Border not found', null, 404);
+    }
 
     if (req.file) {
       // Strict A4 Portrait Dimension Validation on Server
@@ -526,6 +602,19 @@ exports.updateBorder = async (req, res) => {
       }
       const cleanFolder = folderRel && folderRel !== '.' ? `${folderRel}/` : 'template/';
       imagePath = `upload/${cleanFolder}${req.file.filename}`;
+
+      // Hard delete replaced old file from disk
+      if (existing.image && existing.image !== imagePath) {
+        const oldClean = String(existing.image).replace(/^[\\/]+/, '');
+        const oldFilePath = path.join(__dirname, '../public', oldClean);
+        if (fs.existsSync(oldFilePath)) {
+          try {
+            fs.unlinkSync(oldFilePath);
+          } catch (err) {
+            console.error('Failed to unlink old border image:', err.message);
+          }
+        }
+      }
     } else if (req.body.image) {
       imagePath = req.body.image.trim();
     }
@@ -536,7 +625,7 @@ exports.updateBorder = async (req, res) => {
     }
 
     const updated = await CertificateModel.getBorderById(id, schoolId);
-    return ApiResponse.success(res, 'Certificate border updated successfully', updated);
+    return ApiResponse.success(res, 'Certificate border updated successfully', formatBorderResponse(updated));
   } catch (err) {
     console.error('Error in updateBorder:', err);
     return ApiResponse.error(res, err.message || 'Internal server error', null, err.statusCode || 500);
@@ -547,10 +636,32 @@ exports.deleteBorder = async (req, res) => {
   try {
     const schoolId = getSchoolId(req);
     const { id } = req.params;
-    const success = await CertificateModel.deleteBorder(id, schoolId);
-    if (!success) {
+
+    // 1. Fetch border details first to get image file path
+    const border = await CertificateModel.getBorderById(id, schoolId);
+    if (!border) {
       return ApiResponse.error(res, 'Border not found', null, 404);
     }
+
+    // 2. Hard delete database record (no soft delete for files and images)
+    const success = await CertificateModel.deleteBorder(id, schoolId);
+    if (!success) {
+      return ApiResponse.error(res, 'Border not found or delete failed', null, 404);
+    }
+
+    // 3. Hard delete physical image file from server disk
+    if (border.image) {
+      const cleanPath = String(border.image).replace(/^[\\/]+/, '');
+      const filePath = path.join(__dirname, '../public', cleanPath);
+      if (fs.existsSync(filePath)) {
+        try {
+          fs.unlinkSync(filePath);
+        } catch (fileErr) {
+          console.error('Failed to unlink border file from disk:', fileErr.message);
+        }
+      }
+    }
+
     return ApiResponse.success(res, 'Certificate border deleted successfully');
   } catch (err) {
     console.error('Error in deleteBorder:', err);

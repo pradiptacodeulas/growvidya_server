@@ -63,13 +63,25 @@ class AcademicModel {
   // ==================== ACADEMIC YEARS ====================
   static async getAcademicYears(schoolId, branchId = null) {
     try {
+      const cleanBranchId =
+        branchId !== null &&
+        branchId !== undefined &&
+        branchId !== '' &&
+        branchId !== 'all' &&
+        branchId !== '0' &&
+        branchId !== 0 &&
+        !isNaN(Number(branchId)) &&
+        Number(branchId) > 0
+          ? Number(branchId)
+          : null;
+
       let sql = `SELECT id, school_id, branch_id, academic_year, start_date, end_date, is_current, status 
          FROM academic_year_master 
          WHERE school_id = ? AND (status != 4 OR status IS NULL)`;
       const params = [schoolId];
-      if (branchId) {
+      if (cleanBranchId) {
         sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
-        params.push(Number(branchId));
+        params.push(cleanBranchId);
       }
       sql += ` ORDER BY id ASC`;
       const [rows] = await pool.query(sql, params);
@@ -98,13 +110,25 @@ class AcademicModel {
 
   static async getAcademicYearById(id, schoolId, branchId = null) {
     try {
+      const cleanBranchId =
+        branchId !== null &&
+        branchId !== undefined &&
+        branchId !== '' &&
+        branchId !== 'all' &&
+        branchId !== '0' &&
+        branchId !== 0 &&
+        !isNaN(Number(branchId)) &&
+        Number(branchId) > 0
+          ? Number(branchId)
+          : null;
+
       let sql = `SELECT id, school_id, branch_id, academic_year, start_date, end_date, is_current, status 
          FROM academic_year_master 
          WHERE id = ? AND school_id = ? AND (status != 4 OR status IS NULL)`;
       const params = [id, schoolId];
-      if (branchId) {
+      if (cleanBranchId) {
         sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
-        params.push(Number(branchId));
+        params.push(cleanBranchId);
       }
       sql += ` LIMIT 1`;
       const [rows] = await pool.query(sql, params);
@@ -2539,9 +2563,10 @@ class AcademicModel {
       ];
       const params = [schoolId];
 
-      if (branchId) {
-        whereClauses.push('(sm.branch_id = ? OR cm.branch_id = ?)');
-        params.push(Number(branchId), Number(branchId));
+      const effectiveBranchId = (branchId && branchId !== 'all' && !isNaN(Number(branchId))) ? Number(branchId) : null;
+      if (effectiveBranchId) {
+        whereClauses.push('(COALESCE(sm.branch_id, cm.branch_id) = ?)');
+        params.push(effectiveBranchId);
       }
 
       const isValidVal = (v) => v !== undefined && v !== null && String(v).trim() !== '' && String(v).trim() !== 'undefined' && String(v).trim() !== 'null';
@@ -2629,7 +2654,8 @@ class AcademicModel {
         LEFT JOIN subject_master sub ON sub.id = sm.subject_id
         LEFT JOIN material_types mt ON mt.id = sm.material_type_id
         LEFT JOIN academic_year_master aym ON aym.id = sm.academic_year_id
-        LEFT JOIN user_master um ON um.id = sm.uploaded_by AND (sm.uploader_type = 'admin' OR sm.uploader_type IS NULL)
+        LEFT JOIN branch_master bm ON bm.id = COALESCE(sm.branch_id, cm.branch_id)
+        LEFT JOIN user_master um ON um.id = sm.uploaded_by AND (sm.uploader_type = 'admin' OR sm.uploader_type = 'super_admin')
         LEFT JOIN teacher_master tm ON tm.id = sm.uploaded_by AND sm.uploader_type = 'teacher'
         ${whereString}
       `;
@@ -2650,12 +2676,13 @@ class AcademicModel {
           sub.subject_name,
           mt.material_type_name,
           aym.academic_year AS academic_year_code,
+          bm.branch_name,
           CASE
-            WHEN sm.uploader_type = 'admin'
-            THEN CONCAT(IFNULL(um.first_name, ''), ' ', IFNULL(um.last_name, ''))
+            WHEN sm.uploader_type = 'admin' OR sm.uploader_type = 'super_admin'
+            THEN NULLIF(TRIM(CONCAT(IFNULL(um.first_name, ''), ' ', IFNULL(um.last_name, ''))), '')
             WHEN sm.uploader_type = 'teacher'
-            THEN CONCAT(IFNULL(tm.first_name, ''), ' ', IFNULL(tm.last_name, ''))
-            ELSE IFNULL(um.first_name, 'Admin')
+            THEN NULLIF(TRIM(CONCAT(IFNULL(tm.first_name, ''), ' ', IFNULL(tm.last_name, ''))), '')
+            ELSE NULL
           END AS uploaded_by_name
         ${baseFrom}
         ORDER BY sm.id DESC
@@ -2684,18 +2711,29 @@ class AcademicModel {
 
   static async getStudyMaterialById(id, schoolId, branchId = null) {
     try {
-      let sql = `SELECT sm.*, cm.class_name, sec.section_name, sub.subject_name, mt.material_type_name, aym.academic_year AS academic_year_code
+      const effectiveBranchId = (branchId && branchId !== 'all' && !isNaN(Number(branchId))) ? Number(branchId) : null;
+      let sql = `SELECT sm.*, cm.class_name, sec.section_name, sub.subject_name, mt.material_type_name, aym.academic_year AS academic_year_code, bm.branch_name,
+         CASE
+           WHEN sm.uploader_type = 'admin' OR sm.uploader_type = 'super_admin'
+           THEN NULLIF(TRIM(CONCAT(IFNULL(um.first_name, ''), ' ', IFNULL(um.last_name, ''))), '')
+           WHEN sm.uploader_type = 'teacher'
+           THEN NULLIF(TRIM(CONCAT(IFNULL(tm.first_name, ''), ' ', IFNULL(tm.last_name, ''))), '')
+           ELSE NULL
+         END AS uploaded_by_name
          FROM study_materials sm
          LEFT JOIN class_master cm ON cm.id = sm.class_id
          LEFT JOIN section_master sec ON sec.id = sm.section_id
          LEFT JOIN subject_master sub ON sub.id = sm.subject_id
          LEFT JOIN material_types mt ON mt.id = sm.material_type_id
          LEFT JOIN academic_year_master aym ON aym.id = sm.academic_year_id
+         LEFT JOIN branch_master bm ON bm.id = COALESCE(sm.branch_id, cm.branch_id)
+         LEFT JOIN user_master um ON um.id = sm.uploaded_by AND (sm.uploader_type = 'admin' OR sm.uploader_type = 'super_admin')
+         LEFT JOIN teacher_master tm ON tm.id = sm.uploaded_by AND sm.uploader_type = 'teacher'
          WHERE sm.id = ? AND sm.school_id = ?`;
       const params = [id, schoolId];
-      if (branchId) {
-        sql += ` AND (sm.branch_id = ? OR sm.branch_id IS NULL)`;
-        params.push(Number(branchId));
+      if (effectiveBranchId) {
+        sql += ` AND (COALESCE(sm.branch_id, cm.branch_id) = ? OR (sm.branch_id IS NULL AND cm.branch_id IS NULL))`;
+        params.push(effectiveBranchId);
       }
       sql += ` LIMIT 1`;
       const [rows] = await pool.query(sql, params);
@@ -2710,6 +2748,7 @@ class AcademicModel {
     const {
       branch_id,
       branchId,
+      uploader_type,
       academic_year_id,
       class_id,
       section_id,
@@ -2729,14 +2768,15 @@ class AcademicModel {
       status = 1
     } = data;
 
-    let resolvedBranchId = branch_id || branchId || null;
+    let resolvedBranchId = (branch_id !== undefined && branch_id !== null && branch_id !== '')
+      ? Number(branch_id)
+      : (branchId !== undefined && branchId !== null && branchId !== '')
+      ? Number(branchId)
+      : null;
+
     if (!resolvedBranchId && class_id) {
       const [cm] = await pool.query(`SELECT branch_id FROM class_master WHERE id = ?`, [class_id]);
       if (cm.length && cm[0].branch_id) resolvedBranchId = cm[0].branch_id;
-    }
-    if (!resolvedBranchId) {
-      const [mb] = await pool.query(`SELECT id FROM branch_master WHERE school_id = ? AND (is_main_branch = 1 OR id > 0) ORDER BY is_main_branch DESC LIMIT 1`, [schoolId]);
-      if (mb.length) resolvedBranchId = mb[0].id;
     }
 
     const formattedPublishDate = publish_date || new Date().toISOString().slice(0, 10);
@@ -2747,7 +2787,7 @@ class AcademicModel {
         title, chapter, description, attachment, attachment_original_name, attachment_size,
         attachment_extension, publish_date, expiry_date, allow_download, display_order, status,
         uploaded_by, uploader_type, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'admin', NOW())`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
       [
         schoolId,
         resolvedBranchId,
@@ -2768,7 +2808,8 @@ class AcademicModel {
         allow_download !== undefined ? allow_download : 1,
         display_order || 0,
         status !== undefined ? Number(status) : 1,
-        userId || null
+        userId || null,
+        uploader_type || null
       ]
     );
     return result.insertId;

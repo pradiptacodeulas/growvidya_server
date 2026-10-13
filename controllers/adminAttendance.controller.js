@@ -11,7 +11,8 @@ class AdminAttendanceController {
         (String(req.user?.roleName || '').toLowerCase().includes('teacher')
           ? req.user.teacherId || req.user.userId
           : null);
-      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const rawBranch = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const branchId = (rawBranch && rawBranch !== 'all' && !isNaN(Number(rawBranch))) ? Number(rawBranch) : null;
       const options = await AttendanceModel.getMetaOptions(schoolId, teacherId, branchId);
       return ApiResponse.success(res, 'Attendance options fetched successfully.', options);
     } catch (error) {
@@ -27,7 +28,8 @@ class AdminAttendanceController {
     try {
       const schoolId = req.user.schoolId;
       const { class_id, section_id, academic_year, date, page = 1, limit = 10, search = '' } = req.query;
-      const branchId = req.branchId || req.query.branch_id || null;
+      const rawBranch = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const branchId = (rawBranch && rawBranch !== 'all' && !isNaN(Number(rawBranch))) ? Number(rawBranch) : null;
 
       const targetDate = date || new Date().toISOString().split('T')[0];
       const { students, total, page: curPage, limit: curLimit, totalPages } =
@@ -61,7 +63,8 @@ class AdminAttendanceController {
     try {
       const schoolId = req.user.schoolId;
       const { class_id, section_id, academic_year, date, page = 1, limit = 10, search = '' } = req.query;
-      const branchId = req.branchId || req.query.branch_id || null;
+      const rawBranch = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const branchId = (rawBranch && rawBranch !== 'all' && !isNaN(Number(rawBranch))) ? Number(rawBranch) : null;
 
       const targetDate = date || new Date().toISOString().split('T')[0];
       const { students, total, page: curPage, limit: curLimit, totalPages } =

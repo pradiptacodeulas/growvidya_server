@@ -15,6 +15,7 @@ const BranchModel = require('./models/branch.model');
 // Middleware & Router Imports
 const errorMiddleware = require('./middlewares/error.middleware');
 const paramsDecoderMiddleware = require('./middlewares/paramsDecoder.middleware');
+const { protectCertificateFiles } = require('./middlewares/certificateAccess.middleware');
 const apiRoutes = require('./routes');
 const couponRoutes = require('./routes/coupon.routes');
 const ApiResponse = require('./utils/api.response');
@@ -82,6 +83,9 @@ app.use((req, res, next) => {
 
 app.use(cookieParser(config.cookie.secret));
 app.use(paramsDecoderMiddleware);
+
+// Intercept & restrict public access to certificate templates & border images
+app.use(protectCertificateFiles);
 
 // ==========================================
 // 2. Static Assets & Uploads

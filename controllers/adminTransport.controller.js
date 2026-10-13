@@ -627,13 +627,14 @@ class AdminTransportController {
     try {
       const schoolId = getSchoolId(req);
       const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
-      const { search, route_id, class_id, section_id } = req.query;
+      const { search, route_id, class_id, section_id, status } = req.query;
 
       const allocations = await TransportModel.getAllAllocations(schoolId, {
         search,
         route_id,
         class_id,
         section_id,
+        status,
         branchId,
       });
       return ApiResponse.success(res, 'Transport allocations fetched successfully.', { allocations });

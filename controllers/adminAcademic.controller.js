@@ -1289,8 +1289,18 @@ class AdminAcademicController {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
       const userId = req.user?.id || req.user?.userId || null;
-      const branchId = req.branchId || req.body?.branch_id || req.body?.branchId || null;
-      const insertId = await AcademicModel.createStudyMaterial(schoolId, { ...req.body, branch_id: branchId }, userId);
+      const branchId = req.branchId || req.body?.branch_id || req.body?.branchId || req.user?.branch_id || null;
+      const isSuperAdmin = Boolean(req.user?.isSuperAdmin) || Number(req.user?.adminType) === 1;
+      const uploaderType = isSuperAdmin ? 'super_admin' : 'admin';
+      const insertId = await AcademicModel.createStudyMaterial(
+        schoolId,
+        {
+          ...req.body,
+          branch_id: branchId,
+          uploader_type: uploaderType,
+        },
+        userId
+      );
       return ApiResponse.success(res, 'Study material created successfully', { id: insertId }, 201);
     } catch (error) {
       next(error);

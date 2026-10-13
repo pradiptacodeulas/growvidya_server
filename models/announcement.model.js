@@ -10,7 +10,7 @@ const initAnnouncementTables = async () => {
         school_id INT NOT NULL,
         title VARCHAR(255) NOT NULL,
         notice_date DATE DEFAULT NULL,
-        publish_on DATE DEFAULT NULL,
+        publish_on DATETIME DEFAULT NULL,
         message TEXT,
         status TINYINT DEFAULT 1,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

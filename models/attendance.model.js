@@ -30,14 +30,27 @@ class AttendanceModel {
   }
 
   /**
+   * Helper to safely sanitize and convert branch_id to a valid positive integer or null
+   */
+  static cleanBranchId(branchId) {
+    if (branchId === null || branchId === undefined || branchId === '' || branchId === 'all' || branchId === 0 || branchId === '0') {
+      return null;
+    }
+    const num = Number(branchId);
+    return !isNaN(num) && num > 0 ? num : null;
+  }
+
+  /**
    * Fetch meta options for Attendance (Classes, Sections, Academic Years)
    */
   static async getMetaOptions(schoolId, teacherId = null, branchId = null) {
+    const cleanBranch = AttendanceModel.cleanBranchId(branchId);
+
     let classSql = `SELECT id, class_name FROM class_master c WHERE c.school_id = ? AND c.status = 1`;
     const classParams = [schoolId];
-    if (branchId) {
+    if (cleanBranch) {
       classSql += ` AND (c.branch_id = ? OR c.branch_id IS NULL)`;
-      classParams.push(Number(branchId));
+      classParams.push(cleanBranch);
     }
     if (teacherId) {
       classSql += ` AND EXISTS (SELECT 1 FROM teacher_class_assign tca WHERE tca.teacher_id = ? AND tca.class_id = c.id AND tca.status = 1)`;
@@ -49,24 +62,36 @@ class AttendanceModel {
 
     let secSql = `SELECT id, class_id, section_name FROM section_master WHERE school_id = ? AND status = 1`;
     const secParams = [schoolId];
-    if (branchId) {
+    if (cleanBranch) {
       secSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
-      secParams.push(Number(branchId));
+      secParams.push(cleanBranch);
     }
     secSql += ` ORDER BY sort_order ASC, id ASC`;
     const [sections] = await pool.query(secSql, secParams);
 
-    const [academicYears] = await pool.query(
-      `SELECT id, academic_year, start_date, end_date, is_current FROM academic_year_master WHERE school_id = ? AND status = 1 ORDER BY id ASC`,
-      [schoolId]
-    );
+    let yearSql = `SELECT id, academic_year, start_date, end_date, is_current FROM academic_year_master WHERE school_id = ? AND (status = 1 OR status IS NULL)`;
+    const yearParams = [schoolId];
+    if (cleanBranch) {
+      yearSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      yearParams.push(cleanBranch);
+    }
+    yearSql += ` ORDER BY id ASC`;
+    const [academicYears] = await pool.query(yearSql, yearParams);
 
-    const formattedYears = (academicYears || []).map((ay) => ({
-      ...ay,
-      academic_year: AttendanceModel.formatAcademicYearRange(ay),
-      raw_academic_year: ay.academic_year,
-      name: AttendanceModel.formatAcademicYearRange(ay),
-    }));
+    const formattedYears = (academicYears || []).map((ay) => {
+      const isCurrent = Number(ay.is_current) === 1;
+      const formattedRange = AttendanceModel.formatAcademicYearRange(ay);
+      const displayName = isCurrent ? `${formattedRange} (current)` : formattedRange;
+      return {
+        ...ay,
+        academic_year: formattedRange,
+        raw_academic_year: ay.academic_year,
+        name: displayName,
+        title: displayName,
+        is_current: isCurrent ? 1 : 0,
+        isCurrent: isCurrent,
+      };
+    });
 
     return {
       classes: classes || [],
@@ -98,9 +123,10 @@ class AttendanceModel {
     ];
     const whereParams = [schoolId];
 
-    if (branch_id) {
+    const cleanBranch = AttendanceModel.cleanBranchId(branch_id);
+    if (cleanBranch) {
       whereConditions.push(`s.branch_id = ?`);
-      whereParams.push(Number(branch_id));
+      whereParams.push(cleanBranch);
     }
 
     if (class_id) {
@@ -143,6 +169,7 @@ class AttendanceModel {
 
     let sql = `
       SELECT 
+        s.id,
         s.id AS student_id,
         s.admission_number,
         s.roll_number,
@@ -212,9 +239,10 @@ class AttendanceModel {
     ];
     const whereParams = [schoolId];
 
-    if (branch_id) {
+    const cleanBranch = AttendanceModel.cleanBranchId(branch_id);
+    if (cleanBranch) {
       whereConditions.push(`s.branch_id = ?`);
-      whereParams.push(Number(branch_id));
+      whereParams.push(cleanBranch);
     }
 
     if (class_id) {
@@ -344,7 +372,7 @@ class AttendanceModel {
       const notes = record.notes || '';
 
       // Resolve branch_id from student if not provided
-      let recBranchId = branch_id ? Number(branch_id) : null;
+      let recBranchId = AttendanceModel.cleanBranchId(branch_id);
       if (!recBranchId) {
         try {
           const [stRow] = await pool.query(`SELECT branch_id FROM student_master WHERE id = ? LIMIT 1`, [studentId]);
@@ -397,9 +425,10 @@ class AttendanceModel {
     ];
     const whereParams = [schoolId];
 
-    if (branch_id) {
+    const cleanBranch = AttendanceModel.cleanBranchId(branch_id);
+    if (cleanBranch) {
       whereConditions.push(`t.branch_id = ?`);
-      whereParams.push(Number(branch_id));
+      whereParams.push(cleanBranch);
     }
 
     if (search) {
@@ -490,9 +519,10 @@ class AttendanceModel {
     ];
     const whereParams = [schoolId];
 
-    if (branch_id) {
+    const cleanBranch = AttendanceModel.cleanBranchId(branch_id);
+    if (cleanBranch) {
       whereConditions.push(`t.branch_id = ?`);
-      whereParams.push(Number(branch_id));
+      whereParams.push(cleanBranch);
     }
 
     if (search) {
@@ -571,7 +601,7 @@ class AttendanceModel {
       const attendance = record.attendance !== undefined ? Number(record.attendance) : 1;
       const notes = record.notes || '';
 
-      let recBranchId = branch_id ? Number(branch_id) : null;
+      let recBranchId = AttendanceModel.cleanBranchId(branch_id);
       if (!recBranchId) {
         try {
           const [tm] = await pool.query(`SELECT branch_id FROM teacher_master WHERE id = ? LIMIT 1`, [teacherId]);
@@ -623,9 +653,10 @@ class AttendanceModel {
     ];
     const whereParams = [schoolId];
 
-    if (branch_id) {
+    const cleanBranch = AttendanceModel.cleanBranchId(branch_id);
+    if (cleanBranch) {
       whereConditions.push(`u.branch_id = ?`);
-      whereParams.push(Number(branch_id));
+      whereParams.push(cleanBranch);
     }
 
     if (search) {
@@ -720,9 +751,10 @@ class AttendanceModel {
     ];
     const whereParams = [schoolId];
 
-    if (branch_id) {
+    const cleanBranch = AttendanceModel.cleanBranchId(branch_id);
+    if (cleanBranch) {
       whereConditions.push(`u.branch_id = ?`);
-      whereParams.push(Number(branch_id));
+      whereParams.push(cleanBranch);
     }
 
     if (search) {
@@ -801,7 +833,7 @@ class AttendanceModel {
       const attendance = record.attendance !== undefined ? Number(record.attendance) : 1;
       const notes = record.notes || '';
 
-      let recBranchId = branch_id ? Number(branch_id) : null;
+      let recBranchId = AttendanceModel.cleanBranchId(branch_id);
       if (!recBranchId) {
         try {
           const [um] = await pool.query(`SELECT branch_id FROM user_master WHERE id = ? LIMIT 1`, [userId]);
@@ -882,7 +914,7 @@ class AttendanceModel {
     }
 
     const student = students[0];
-    const targetBranchId = student.branch_id || branchId || null;
+    const targetBranchId = student.branch_id || AttendanceModel.cleanBranchId(branchId);
     const todayStr = AttendanceModel.getTodayDateStr();
 
     const now = new Date();

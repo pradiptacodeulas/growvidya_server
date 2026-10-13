@@ -1,17 +1,49 @@
 const { pool } = require('../config/db.config');
 
-const parseStatus = (status) => {
+/**
+ * Normalizes input status for database storage.
+ * Active: 1
+ * Inactive: 2 (if input is 2, '2', 0, '0', 'inactive', 'deactive', or 4/'4' on create/update)
+ * Soft-deleted: 4 (handled via delete methods)
+ */
+const normalizeStatusForSave = (status, defaultStatus = 1) => {
+  if (status === undefined || status === null || status === '') {
+    return defaultStatus;
+  }
+  if (typeof status === 'string') {
+    const s = status.trim().toLowerCase();
+    if (s === 'active' || s === '1') return 1;
+    if (s === 'inactive' || s === '2' || s === '0' || s === 'deactive' || s === '4') return 2;
+  }
+  const n = Number(status);
+  if (n === 1) return 1;
+  if (n === 2 || n === 0 || n === 4) return 2;
+  return defaultStatus;
+};
+
+/**
+ * Normalizes status filter query parameter.
+ * Returns:
+ *  1: filter for Active (status = 1)
+ *  2: filter for Inactive (status = 2)
+ *  4: explicitly requested deleted (should return empty)
+ *  null: default (exclude soft-deleted status = 4 and 0)
+ */
+const parseStatusForFilter = (status) => {
   if (status === undefined || status === null || status === '' || status === 'null' || status === 'undefined' || status === 'all') {
     return null;
   }
   if (typeof status === 'string') {
     const s = status.trim().toLowerCase();
     if (s === 'active' || s === '1') return 1;
-    if (s === 'inactive' || s === '2') return 2;
+    if (s === 'inactive' || s === '2' || s === '0' || s === 'deactive') return 2;
     if (s === 'deleted' || s === '4') return 4;
   }
   const n = Number(status);
-  return isNaN(n) ? null : n;
+  if (n === 1) return 1;
+  if (n === 2 || n === 0) return 2;
+  if (n === 4) return 4;
+  return null;
 };
 
 class TransportModel {
@@ -34,7 +66,7 @@ class TransportModel {
         b.number_plate,
         b.seat AS vehicle_capacity
       FROM trans_route_master r
-      LEFT JOIN bus_master b ON (r.bus_id = b.id AND b.status != 0)
+      LEFT JOIN bus_master b ON (r.bus_id = b.id AND b.status != 4 AND b.status != 0)
       WHERE r.school_id = ?
     `;
     const params = [schoolId];
@@ -44,16 +76,15 @@ class TransportModel {
       params.push(Number(branchId));
     }
 
-    const parsedStatus = parseStatus(status);
-    if (parsedStatus !== null) {
-      if (parsedStatus === 4) {
-        sql += ` AND (r.status = 4 OR r.status = 2)`;
-      } else {
-        sql += ` AND r.status = ?`;
-        params.push(parsedStatus);
-      }
+    const parsedStatus = parseStatusForFilter(status);
+    if (parsedStatus === 1) {
+      sql += ` AND r.status = 1`;
+    } else if (parsedStatus === 2) {
+      sql += ` AND (r.status = 2 OR r.status = 0)`;
+    } else if (parsedStatus === 4) {
+      sql += ` AND 1 = 0`; // Never send soft-deleted items
     } else {
-      sql += ` AND (r.status != 0 AND r.status IS NOT NULL)`;
+      sql += ` AND (r.status = 1 OR r.status = 2)`;
     }
 
     if (search && search.trim() !== '') {
@@ -84,8 +115,8 @@ class TransportModel {
         b.seat AS bus_seat,
         b.color AS bus_color
        FROM trans_route_master r
-       LEFT JOIN bus_master b ON r.bus_id = b.id
-       WHERE r.id = ? AND r.school_id = ? AND r.status != 0`;
+       LEFT JOIN bus_master b ON (r.bus_id = b.id AND b.status != 4 AND b.status != 0)
+       WHERE r.id = ? AND r.school_id = ? AND r.status != 4 AND r.status != 0`;
     const params = [id, schoolId];
     if (branchId) {
       sql += ` AND (r.branch_id = ? OR r.branch_id IS NULL)`;
@@ -106,7 +137,7 @@ class TransportModel {
            op.lisence_number
          FROM bus_to_operator bo
          JOIN operator_master op ON bo.operator_id = op.id
-         WHERE bo.bus_id = ? AND bo.school_id = ? AND bo.status != 0 AND op.status != 0`,
+         WHERE bo.bus_id = ? AND bo.school_id = ? AND bo.status != 4 AND bo.status != 0 AND op.status != 4 AND op.status != 0`,
         [route.bus_id, schoolId]
       );
       const driver = ops.find((o) => o.type === 1);
@@ -139,6 +170,7 @@ class TransportModel {
         if (bRow.length && bRow[0].branch_id) resolvedBranchId = bRow[0].branch_id;
       } catch (e) {}
     }
+    const normalizedStatus = normalizeStatusForSave(status, 1);
     const [res] = await pool.query(
       `INSERT INTO trans_route_master (school_id, branch_id, transport_route, bus_id, fare, sort_order, status)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -149,7 +181,7 @@ class TransportModel {
         selectedBusId ? Number(selectedBusId) : null,
         Number(fare || 0),
         Number(sort_order || 1),
-        status !== undefined ? Number(status) : 1,
+        normalizedStatus,
       ]
     );
     const routeId = res.insertId;
@@ -185,6 +217,7 @@ class TransportModel {
 
   static async updateRoute(schoolId, id, { transport_route, bus_id, bus, driver_id, driver, helpers, helper, fare, sort_order, status, branch_id }, branchId = null) {
     const selectedBusId = bus_id || bus;
+    const normalizedStatus = normalizeStatusForSave(status, 1);
     let sql = `UPDATE trans_route_master 
        SET transport_route = ?, bus_id = ?, fare = ?, sort_order = ?, status = ?`;
     const params = [
@@ -192,13 +225,13 @@ class TransportModel {
       selectedBusId ? Number(selectedBusId) : null,
       Number(fare || 0),
       Number(sort_order || 1),
-      status !== undefined ? Number(status) : 1,
+      normalizedStatus,
     ];
     if (branch_id !== undefined) {
       sql += `, branch_id = ?`;
       params.push(branch_id ? Number(branch_id) : null);
     }
-    sql += ` WHERE id = ? AND school_id = ?`;
+    sql += ` WHERE id = ? AND school_id = ? AND status != 4`;
     params.push(id, schoolId);
 
     const effectiveBranchId = branchId || (branch_id !== undefined ? branch_id : null);
@@ -281,8 +314,8 @@ class TransportModel {
         NULLIF(TRIM(MAX(IF(op.type = 1, CONCAT(IFNULL(op.first_name, ''), ' ', IFNULL(op.last_name, '')), NULL))), '') AS driver_name,
         MAX(IF(op.type = 1, op.phone, NULL)) AS driver_phone
       FROM bus_master b
-      LEFT JOIN bus_to_operator bo ON (b.id = bo.bus_id AND bo.school_id = ? AND bo.status != 0)
-      LEFT JOIN operator_master op ON (bo.operator_id = op.id AND op.type = 1 AND op.status != 0)
+      LEFT JOIN bus_to_operator bo ON (b.id = bo.bus_id AND bo.school_id = ? AND bo.status != 4 AND bo.status != 0)
+      LEFT JOIN operator_master op ON (bo.operator_id = op.id AND op.type = 1 AND op.status != 4 AND op.status != 0)
       WHERE b.school_id = ?
     `;
     const params = [schoolId, schoolId];
@@ -292,16 +325,15 @@ class TransportModel {
       params.push(Number(branchId));
     }
 
-    const parsedStatus = parseStatus(status);
-    if (parsedStatus !== null) {
-      if (parsedStatus === 4) {
-        sql += ` AND (b.status = 4 OR b.status = 2)`;
-      } else {
-        sql += ` AND b.status = ?`;
-        params.push(parsedStatus);
-      }
+    const parsedStatus = parseStatusForFilter(status);
+    if (parsedStatus === 1) {
+      sql += ` AND b.status = 1`;
+    } else if (parsedStatus === 2) {
+      sql += ` AND (b.status = 2 OR b.status = 0)`;
+    } else if (parsedStatus === 4) {
+      sql += ` AND 1 = 0`; // Never send soft-deleted items
     } else {
-      sql += ` AND (b.status != 0 AND b.status IS NOT NULL)`;
+      sql += ` AND (b.status = 1 OR b.status = 2)`;
     }
 
     if (search && search.trim() !== '') {
@@ -328,9 +360,9 @@ class TransportModel {
         NULLIF(TRIM(MAX(IF(op.type = 1, CONCAT(IFNULL(op.first_name, ''), ' ', IFNULL(op.last_name, '')), NULL))), '') AS driver_name,
         MAX(IF(op.type = 1, op.phone, NULL)) AS driver_phone
        FROM bus_master b
-       LEFT JOIN bus_to_operator bo ON (b.id = bo.bus_id AND bo.school_id = ? AND bo.status != 0)
-       LEFT JOIN operator_master op ON (bo.operator_id = op.id AND op.type = 1 AND op.status != 0)
-       WHERE b.id = ? AND b.school_id = ? AND b.status != 0`;
+       LEFT JOIN bus_to_operator bo ON (b.id = bo.bus_id AND bo.school_id = ? AND bo.status != 4 AND bo.status != 0)
+       LEFT JOIN operator_master op ON (bo.operator_id = op.id AND op.type = 1 AND op.status != 4 AND op.status != 0)
+       WHERE b.id = ? AND b.school_id = ? AND b.status != 4 AND b.status != 0`;
     const params = [schoolId, id, schoolId];
     if (branchId) {
       sql += ` AND (b.branch_id = ? OR b.branch_id IS NULL)`;
@@ -344,6 +376,7 @@ class TransportModel {
 
   static async createVehicle(schoolId, { branch_id = null, name, number_plate, seat, color, driver_id, status }) {
     const resolvedBranchId = branch_id ? Number(branch_id) : null;
+    const normalizedStatus = normalizeStatusForSave(status, 1);
     const [res] = await pool.query(
       `INSERT INTO bus_master (school_id, branch_id, name, number_plate, seat, color, status)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -354,7 +387,7 @@ class TransportModel {
         number_plate ? number_plate.trim() : '',
         Number(seat || 0),
         color ? color.trim() : '',
-        status !== undefined ? Number(status) : 1,
+        normalizedStatus,
       ]
     );
     const busId = res.insertId;
@@ -370,6 +403,7 @@ class TransportModel {
   }
 
   static async updateVehicle(schoolId, id, { name, number_plate, seat, color, driver_id, status, branch_id }, branchId = null) {
+    const normalizedStatus = normalizeStatusForSave(status, 1);
     let sql = `UPDATE bus_master 
        SET name = ?, number_plate = ?, seat = ?, color = ?, status = ?`;
     const params = [
@@ -377,13 +411,13 @@ class TransportModel {
       number_plate ? number_plate.trim() : '',
       Number(seat || 0),
       color ? color.trim() : '',
-      status !== undefined ? Number(status) : 1,
+      normalizedStatus,
     ];
     if (branch_id !== undefined) {
       sql += `, branch_id = ?`;
       params.push(branch_id ? Number(branch_id) : null);
     }
-    sql += ` WHERE id = ? AND school_id = ?`;
+    sql += ` WHERE id = ? AND school_id = ? AND status != 4`;
     params.push(id, schoolId);
 
     const effectiveBranchId = branchId || (branch_id !== undefined ? branch_id : null);
@@ -425,6 +459,12 @@ class TransportModel {
       params.push(Number(branchId));
     }
     await pool.query(sql, params);
+
+    // Also soft-delete operator mapping
+    await pool.query(
+      `UPDATE bus_to_operator SET status = 4 WHERE bus_id = ? AND school_id = ?`,
+      [id, schoolId]
+    );
     return true;
   }
 
@@ -451,8 +491,8 @@ class TransportModel {
         MAX(b.number_plate) AS assigned_number_plate
       FROM operator_master op
       LEFT JOIN branch_master bm ON op.branch_id = bm.id
-      LEFT JOIN bus_to_operator bo ON (op.id = bo.operator_id AND bo.status != 0)
-      LEFT JOIN bus_master b ON (bo.bus_id = b.id AND b.status != 0)
+      LEFT JOIN bus_to_operator bo ON (op.id = bo.operator_id AND bo.status != 4 AND bo.status != 0)
+      LEFT JOIN bus_master b ON (bo.bus_id = b.id AND b.status != 4 AND b.status != 0)
       WHERE op.school_id = ? AND op.type = 1
     `;
     const params = [schoolId];
@@ -462,16 +502,15 @@ class TransportModel {
       params.push(Number(branchId), Number(branchId));
     }
 
-    const parsedStatus = parseStatus(status);
-    if (parsedStatus !== null) {
-      if (parsedStatus === 4) {
-        sql += ` AND (op.status = 4 OR op.status = 2)`;
-      } else {
-        sql += ` AND op.status = ?`;
-        params.push(parsedStatus);
-      }
+    const parsedStatus = parseStatusForFilter(status);
+    if (parsedStatus === 1) {
+      sql += ` AND op.status = 1`;
+    } else if (parsedStatus === 2) {
+      sql += ` AND (op.status = 2 OR op.status = 0)`;
+    } else if (parsedStatus === 4) {
+      sql += ` AND 1 = 0`; // Never send soft-deleted items
     } else {
-      sql += ` AND (op.status != 0 AND op.status IS NOT NULL)`;
+      sql += ` AND (op.status = 1 OR op.status = 2)`;
     }
 
     if (search && search.trim() !== '') {
@@ -500,7 +539,7 @@ class TransportModel {
         op.status
        FROM operator_master op
        LEFT JOIN branch_master bm ON op.branch_id = bm.id
-       WHERE op.id = ? AND op.school_id = ? AND op.type = 1 AND op.status != 0`;
+       WHERE op.id = ? AND op.school_id = ? AND op.type = 1 AND op.status != 4 AND op.status != 0`;
     const params = [id, schoolId];
     if (branchId) {
       sql += ` AND (op.branch_id = ? OR op.branch_id IS NULL)`;
@@ -560,6 +599,7 @@ class TransportModel {
     const cleanPhone = phone ? String(phone).trim() : '';
     const cleanLicense = (license_number || lisence_number || '').trim() || null;
     const resolvedBranchId = branch_id ? Number(branch_id) : null;
+    const normalizedStatus = normalizeStatusForSave(status, 1);
     const [res] = await pool.query(
       `INSERT INTO operator_master (school_id, branch_id, first_name, last_name, email, phone, lisence_number, picture, type, status)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
@@ -572,7 +612,7 @@ class TransportModel {
         cleanPhone,
         cleanLicense,
         picture || '',
-        status !== undefined ? Number(status) : 1,
+        normalizedStatus,
       ]
     );
     return res.insertId;
@@ -583,10 +623,11 @@ class TransportModel {
     const cleanPhone = phone ? String(phone).trim() : '';
     const cleanLicense = (license_number || lisence_number || '').trim() || null;
     const resolvedBranchId = branch_id !== undefined ? (branch_id ? Number(branch_id) : null) : null;
+    const normalizedStatus = normalizeStatusForSave(status, 1);
     await pool.query(
       `UPDATE operator_master 
        SET first_name = ?, last_name = ?, email = ?, phone = ?, lisence_number = ?, picture = IFNULL(NULLIF(?, ''), picture), status = ?, branch_id = COALESCE(?, branch_id)
-       WHERE id = ? AND school_id = ? AND type = 1`,
+       WHERE id = ? AND school_id = ? AND type = 1 AND status != 4`,
       [
         first_name.trim(),
         last_name ? last_name.trim() : '',
@@ -594,7 +635,7 @@ class TransportModel {
         cleanPhone,
         cleanLicense,
         picture || '',
-        status !== undefined ? Number(status) : 1,
+        normalizedStatus,
         resolvedBranchId,
         id,
         schoolId,
@@ -611,6 +652,12 @@ class TransportModel {
       params.push(Number(branchId));
     }
     await pool.query(sql, params);
+
+    // Also soft-delete operator mapping
+    await pool.query(
+      `UPDATE bus_to_operator SET status = 4 WHERE operator_id = ? AND school_id = ?`,
+      [id, schoolId]
+    );
     return true;
   }
 
@@ -637,8 +684,8 @@ class TransportModel {
         MAX(b.number_plate) AS assigned_number_plate
       FROM operator_master op
       LEFT JOIN branch_master bm ON op.branch_id = bm.id
-      LEFT JOIN bus_to_operator bo ON (op.id = bo.operator_id AND bo.status != 0)
-      LEFT JOIN bus_master b ON (bo.bus_id = b.id AND b.status != 0)
+      LEFT JOIN bus_to_operator bo ON (op.id = bo.operator_id AND bo.status != 4 AND bo.status != 0)
+      LEFT JOIN bus_master b ON (bo.bus_id = b.id AND b.status != 4 AND b.status != 0)
       WHERE op.school_id = ? AND op.type = 2
     `;
     const params = [schoolId];
@@ -648,16 +695,15 @@ class TransportModel {
       params.push(Number(branchId), Number(branchId));
     }
 
-    const parsedStatus = parseStatus(status);
-    if (parsedStatus !== null) {
-      if (parsedStatus === 4) {
-        sql += ` AND (op.status = 4 OR op.status = 2)`;
-      } else {
-        sql += ` AND op.status = ?`;
-        params.push(parsedStatus);
-      }
+    const parsedStatus = parseStatusForFilter(status);
+    if (parsedStatus === 1) {
+      sql += ` AND op.status = 1`;
+    } else if (parsedStatus === 2) {
+      sql += ` AND (op.status = 2 OR op.status = 0)`;
+    } else if (parsedStatus === 4) {
+      sql += ` AND 1 = 0`; // Never send soft-deleted items
     } else {
-      sql += ` AND (op.status != 0 AND op.status IS NOT NULL)`;
+      sql += ` AND (op.status = 1 OR op.status = 2)`;
     }
 
     if (search && search.trim() !== '') {
@@ -686,7 +732,7 @@ class TransportModel {
         op.status
        FROM operator_master op
        LEFT JOIN branch_master bm ON op.branch_id = bm.id
-       WHERE op.id = ? AND op.school_id = ? AND op.type = 2 AND op.status != 0`;
+       WHERE op.id = ? AND op.school_id = ? AND op.type = 2 AND op.status != 4 AND op.status != 0`;
     const params = [id, schoolId];
     if (branchId) {
       sql += ` AND (op.branch_id = ? OR op.branch_id IS NULL)`;
@@ -732,6 +778,7 @@ class TransportModel {
     const cleanPhone = phone ? String(phone).trim() : '';
     const cleanLicense = (license_number || lisence_number || '').trim() || null;
     const resolvedBranchId = branch_id ? Number(branch_id) : null;
+    const normalizedStatus = normalizeStatusForSave(status, 1);
     const [res] = await pool.query(
       `INSERT INTO operator_master (school_id, branch_id, first_name, last_name, email, phone, lisence_number, picture, type, status)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 2, ?)`,
@@ -744,7 +791,7 @@ class TransportModel {
         cleanPhone,
         cleanLicense,
         picture || '',
-        status !== undefined ? Number(status) : 1,
+        normalizedStatus,
       ]
     );
     return res.insertId;
@@ -754,6 +801,7 @@ class TransportModel {
     const cleanEmail = email && String(email).trim() ? String(email).trim() : null;
     const cleanPhone = phone ? String(phone).trim() : '';
     const cleanLicense = (license_number || lisence_number || '').trim() || null;
+    const normalizedStatus = normalizeStatusForSave(status, 1);
     let sql = `UPDATE operator_master 
        SET first_name = ?, last_name = ?, email = ?, phone = ?, lisence_number = ?, picture = IFNULL(NULLIF(?, ''), picture), status = ?`;
     const params = [
@@ -763,13 +811,13 @@ class TransportModel {
       cleanPhone,
       cleanLicense,
       picture || '',
-      status !== undefined ? Number(status) : 1,
+      normalizedStatus,
     ];
     if (branch_id !== undefined) {
       sql += `, branch_id = ?`;
       params.push(branch_id ? Number(branch_id) : null);
     }
-    sql += ` WHERE id = ? AND school_id = ? AND type = 2`;
+    sql += ` WHERE id = ? AND school_id = ? AND type = 2 AND status != 4`;
     params.push(id, schoolId);
 
     await pool.query(sql, params);
@@ -784,6 +832,12 @@ class TransportModel {
       params.push(Number(branchId));
     }
     await pool.query(sql, params);
+
+    // Also soft-delete operator mapping
+    await pool.query(
+      `UPDATE bus_to_operator SET status = 4 WHERE operator_id = ? AND school_id = ?`,
+      [id, schoolId]
+    );
     return true;
   }
 
@@ -791,7 +845,7 @@ class TransportModel {
   // 5. ASSIGN TRANSPORT (student_transport)
   // ==========================================
 
-  static async getAllAllocations(schoolId, { search, route_id, class_id, section_id, branchId = null } = {}) {
+  static async getAllAllocations(schoolId, { search, route_id, class_id, section_id, status, branchId = null } = {}) {
     let sql = `
       SELECT 
         st.id,
@@ -815,18 +869,29 @@ class TransportModel {
         b.name AS vehicle_name,
         b.number_plate
       FROM student_transport st
-      LEFT JOIN student_master s ON st.student_id = s.id
+      LEFT JOIN student_master s ON (st.student_id = s.id AND (s.status != 4 OR s.status IS NULL))
       LEFT JOIN class_master c ON s.class = c.id
       LEFT JOIN section_master sec ON s.section = sec.id
-      LEFT JOIN trans_route_master r ON st.route = r.id
-      LEFT JOIN bus_master b ON st.vehicle_number = b.id
-      WHERE st.school_id = ? AND st.status != 0
+      LEFT JOIN trans_route_master r ON (st.route = r.id AND (r.status != 4 OR r.status IS NULL))
+      LEFT JOIN bus_master b ON (st.vehicle_number = b.id AND (b.status != 4 OR b.status IS NULL))
+      WHERE st.school_id = ?
     `;
     const params = [schoolId];
 
     if (branchId) {
       sql += ` AND (s.branch_id = ? OR r.branch_id = ?)`;
       params.push(Number(branchId), Number(branchId));
+    }
+
+    const parsedStatus = parseStatusForFilter(status);
+    if (parsedStatus === 1) {
+      sql += ` AND st.status = 1`;
+    } else if (parsedStatus === 2) {
+      sql += ` AND (st.status = 2 OR st.status = 0)`;
+    } else if (parsedStatus === 4) {
+      sql += ` AND 1 = 0`; // Never send soft-deleted items
+    } else {
+      sql += ` AND (st.status = 1 OR st.status = 2)`;
     }
 
     if (search) {
@@ -870,7 +935,7 @@ class TransportModel {
        LEFT JOIN student_master s ON st.student_id = s.id
        LEFT JOIN trans_route_master r ON st.route = r.id
        LEFT JOIN bus_master b ON st.vehicle_number = b.id
-       WHERE st.id = ? AND st.school_id = ? AND st.status != 0`;
+       WHERE st.id = ? AND st.school_id = ? AND st.status != 4 AND st.status != 0`;
     const params = [id, schoolId];
     if (branchId) {
       sql += ` AND (st.branch_id = ? OR s.branch_id = ? OR r.branch_id = ? OR st.branch_id IS NULL)`;
@@ -886,6 +951,7 @@ class TransportModel {
       const [sm] = await pool.query('SELECT branch_id FROM student_master WHERE id = ? AND school_id = ?', [student_id, schoolId]);
       if (sm.length && sm[0].branch_id) resolvedBranchId = sm[0].branch_id;
     }
+    const normalizedStatus = normalizeStatusForSave(status, 1);
     const [res] = await pool.query(
       `INSERT INTO student_transport (school_id, branch_id, student_id, route, vehicle_number, pickup_point, drop_point, status, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
@@ -897,13 +963,14 @@ class TransportModel {
         vehicle_number ? Number(vehicle_number) : null,
         pickup_point ? pickup_point.trim() : '',
         drop_point ? drop_point.trim() : '',
-        status !== undefined ? Number(status) : 1,
+        normalizedStatus,
       ]
     );
     return res.insertId;
   }
 
   static async updateAllocation(schoolId, id, { branch_id, student_id, route, vehicle_number, pickup_point, drop_point, status }, branchId = null) {
+    const normalizedStatus = normalizeStatusForSave(status, 1);
     let sql = `UPDATE student_transport 
        SET student_id = ?, route = ?, vehicle_number = ?, pickup_point = ?, drop_point = ?, status = ?`;
     const params = [
@@ -912,13 +979,13 @@ class TransportModel {
       vehicle_number ? Number(vehicle_number) : null,
       pickup_point ? pickup_point.trim() : '',
       drop_point ? drop_point.trim() : '',
-      status !== undefined ? Number(status) : 1,
+      normalizedStatus,
     ];
     if (branch_id !== undefined) {
       sql += `, branch_id = ?`;
       params.push(branch_id ? Number(branch_id) : null);
     }
-    sql += ` WHERE id = ? AND school_id = ?`;
+    sql += ` WHERE id = ? AND school_id = ? AND status != 4`;
     params.push(id, schoolId);
 
     const effectiveBranchId = branchId || (branch_id !== undefined ? branch_id : null);
