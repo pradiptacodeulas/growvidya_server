@@ -1654,6 +1654,7 @@ class TeacherModel {
       )
       WHERE (t.email_address = ? OR t.teacher_id = ? OR t.primary_contact_number = ?)
         AND t.status != 4
+      ORDER BY (t.status = 1) DESC, t.id DESC
       LIMIT 1
     `;
 

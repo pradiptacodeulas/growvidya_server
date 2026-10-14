@@ -51,6 +51,18 @@ class TeacherAuthController {
   }
 
   /**
+   * Check whether a teacher record has active status (status = 1 or 'active')
+   */
+  static _isTeacherActive(teacher) {
+    if (!teacher) return false;
+    const status = teacher.status;
+    if (typeof status === 'string' && status.trim().toLowerCase() === 'active') {
+      return true;
+    }
+    return Number(status) === 1;
+  }
+
+  /**
    * Teacher Login Controller (Password-based fallback)
    */
   static async login(req, res, next) {
@@ -64,8 +76,17 @@ class TeacherAuthController {
 
       const teacher = await TeacherModel.findByLoginIdentifier(emailOrIdentifier);
 
-      if (!teacher || teacher.status === 4 || teacher.status === 0) {
-        return ApiResponse.error(res, 'Invalid credentials. Teacher account not found or inactive.', null, 401);
+      if (!teacher || Number(teacher.status) === 4) {
+        return ApiResponse.error(res, 'Invalid credentials. Teacher account not found.', null, 401);
+      }
+
+      if (!TeacherAuthController._isTeacherActive(teacher)) {
+        return ApiResponse.error(
+          res,
+          'Your account is currently inactive. Please contact the school administrator.',
+          null,
+          403
+        );
       }
 
       // Verify password against teacher.password (MD5/bcrypt/plain) or teacher.passcode (bcrypt)
@@ -100,8 +121,17 @@ class TeacherAuthController {
 
       const teacher = await TeacherModel.findByLoginIdentifier(emailOrIdentifier);
 
-      if (!teacher || teacher.status === 4 || teacher.status === 0) {
-        return ApiResponse.error(res, 'Teacher account not found with this identifier or is inactive.', null, 404);
+      if (!teacher || Number(teacher.status) === 4) {
+        return ApiResponse.error(res, 'Teacher account not found with this identifier.', null, 404);
+      }
+
+      if (!TeacherAuthController._isTeacherActive(teacher)) {
+        return ApiResponse.error(
+          res,
+          'Your account is currently inactive. Please contact the school administrator.',
+          null,
+          403
+        );
       }
 
       const passcode = PasscodeService.generatePasscode();
@@ -139,8 +169,17 @@ class TeacherAuthController {
 
       const teacher = await TeacherModel.findByLoginIdentifier(emailOrIdentifier);
 
-      if (!teacher || teacher.status === 4 || teacher.status === 0) {
-        return ApiResponse.error(res, 'Teacher account not found or is inactive.', null, 401);
+      if (!teacher || Number(teacher.status) === 4) {
+        return ApiResponse.error(res, 'Teacher account not found.', null, 401);
+      }
+
+      if (!TeacherAuthController._isTeacherActive(teacher)) {
+        return ApiResponse.error(
+          res,
+          'Your account is currently inactive. Please contact the school administrator.',
+          null,
+          403
+        );
       }
 
       const verifyResult = await PasscodeService.verifyPasscode('teacher_master', teacher.id, passcode);
@@ -302,8 +341,17 @@ class TeacherAuthController {
       const teacherId = req.user.teacherId || req.user.userId;
       const teacher = await TeacherModel.findAuthProfileById(teacherId);
 
-      if (!teacher) {
+      if (!teacher || Number(teacher.status) === 4) {
         return ApiResponse.error(res, 'Teacher profile not found.', null, 404);
+      }
+
+      if (!TeacherAuthController._isTeacherActive(teacher)) {
+        return ApiResponse.error(
+          res,
+          'Your account is currently inactive. Please contact the school administrator.',
+          null,
+          403
+        );
       }
 
       const { password: _, passcode: __, otp: ___, ...safeTeacher } = teacher;
@@ -356,8 +404,17 @@ class TeacherAuthController {
       const new_password = req.body.new_password;
 
       const existingTeacher = await TeacherModel.findAuthProfileById(teacherId);
-      if (!existingTeacher) {
+      if (!existingTeacher || Number(existingTeacher.status) === 4) {
         return ApiResponse.error(res, 'Teacher profile not found.', null, 404);
+      }
+
+      if (!TeacherAuthController._isTeacherActive(existingTeacher)) {
+        return ApiResponse.error(
+          res,
+          'Your account is currently inactive. Please contact the school administrator.',
+          null,
+          403
+        );
       }
 
       const updates = [];

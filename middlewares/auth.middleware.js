@@ -104,34 +104,47 @@ async function authMiddleware(req, res, next) {
         Boolean(req.user.teacherId);
       let userAssignedBranch = Number(req.user.branchId ?? req.user.branch_id) || null;
 
-      // For teachers, always ensure school_id and branch_id are synchronized with teacher_master
+      // For teachers, always ensure teacher account is active and school_id/branch_id are synchronized with teacher_master
       if (isTeacherUser && (req.user.teacherId || req.user.id)) {
         try {
           const { pool } = require('../config/db.config');
           const tId = req.user.teacherId || req.user.id;
           const [tRows] = await pool.query(
-            'SELECT school_id, branch_id FROM teacher_master WHERE id = ? AND status != 4 LIMIT 1',
+            'SELECT school_id, branch_id, status FROM teacher_master WHERE id = ? AND status != 4 LIMIT 1',
             [tId]
           );
-          if (tRows && tRows.length > 0) {
-            if (tRows[0].school_id) {
-              req.user.schoolId = tRows[0].school_id;
-              req.user.school_id = tRows[0].school_id;
-            }
-            if (tRows[0].branch_id) {
-              userAssignedBranch = Number(tRows[0].branch_id);
-            } else if (!userAssignedBranch && req.user.schoolId) {
-              const [defBranch] = await pool.query(
-                'SELECT id FROM branch_master WHERE school_id = ? AND status != 4 ORDER BY is_main_branch DESC, id ASC LIMIT 1',
-                [req.user.schoolId]
-              );
-              if (defBranch && defBranch.length > 0) {
-                userAssignedBranch = Number(defBranch[0].id);
-              }
+          if (!tRows || tRows.length === 0) {
+            return ApiResponse.error(res, 'Teacher account not found or has been removed.', null, 401);
+          }
+          const tStatus = tRows[0].status;
+          const isTeacherActive =
+            (typeof tStatus === 'string' && tStatus.trim().toLowerCase() === 'active') ||
+            Number(tStatus) === 1;
+          if (!isTeacherActive) {
+            return ApiResponse.error(
+              res,
+              'Your account is currently inactive. Please contact the school administrator.',
+              null,
+              403
+            );
+          }
+          if (tRows[0].school_id) {
+            req.user.schoolId = tRows[0].school_id;
+            req.user.school_id = tRows[0].school_id;
+          }
+          if (tRows[0].branch_id) {
+            userAssignedBranch = Number(tRows[0].branch_id);
+          } else if (!userAssignedBranch && req.user.schoolId) {
+            const [defBranch] = await pool.query(
+              'SELECT id FROM branch_master WHERE school_id = ? AND status != 4 ORDER BY is_main_branch DESC, id ASC LIMIT 1',
+              [req.user.schoolId]
+            );
+            if (defBranch && defBranch.length > 0) {
+              userAssignedBranch = Number(defBranch[0].id);
             }
           }
         } catch (e) {
-          // fallback to token payload
+          // fallback to token payload on transient DB error
         }
       }
 
