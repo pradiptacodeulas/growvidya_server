@@ -142,9 +142,37 @@ class AdminPayrollController {
     try {
       const schoolId = AdminPayrollController.getSchoolId(req);
       const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
-      const { user_type } = req.query;
-      const employees = await PayrollModel.getEmployeesByType(schoolId, user_type, branchId);
+      const { user_type, salary_month, payment_date } = req.query;
+      const targetMonth = salary_month || (payment_date ? String(payment_date).slice(0, 7) : null);
+      const employees = await PayrollModel.getEmployeesByType(schoolId, user_type, branchId, targetMonth);
       return ApiResponse.success(res, 'Employees retrieved successfully.', { employees });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async getBulkSalaryCandidates(req, res, next) {
+    try {
+      const isTeacher = req.user?.roleName === 'Teacher' || req.user?.portalType === 'TeacherPortal' || req.user?.role === 'Teacher' || Boolean(req.user?.teacherId);
+      if (isTeacher) {
+        return ApiResponse.forbidden(res, 'Teachers do not have permission to process bulk salary.');
+      }
+      const schoolId = AdminPayrollController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const { salary_month, payment_date, user_type, search } = req.query;
+      const targetMonth = salary_month || (payment_date ? String(payment_date).slice(0, 7) : new Date().toISOString().slice(0, 7));
+
+      const candidates = await PayrollModel.getBulkSalaryCandidates(schoolId, {
+        salary_month: targetMonth,
+        user_type: user_type || null,
+        branchId,
+        search: search || '',
+      });
+
+      return ApiResponse.success(res, 'Bulk salary candidates retrieved successfully.', {
+        salary_month: targetMonth,
+        candidates,
+      });
     } catch (err) {
       next(err);
     }
@@ -154,12 +182,12 @@ class AdminPayrollController {
     try {
       const schoolId = AdminPayrollController.getSchoolId(req);
       const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
-      const { search } = req.query;
+      const { search, payment_status, salary_month, user_type } = req.query;
 
       const isTeacher = req.user?.roleName === 'Teacher' || req.user?.portalType === 'TeacherPortal' || req.user?.role === 'Teacher' || Boolean(req.user?.teacherId);
       const teacherId = req.user?.teacherId || req.user?.userId;
 
-      let filters = { search, branchId };
+      let filters = { search, payment_status, salary_month, user_type, branchId };
       if (isTeacher && teacherId) {
         filters.user_type = 2; // Teacher
         filters.employee_id = teacherId;
@@ -182,6 +210,54 @@ class AdminPayrollController {
       const branchId = req.branchId || req.body?.branch_id || null;
       const insertId = await PayrollModel.createSalary(schoolId, { ...req.body, branch_id: branchId });
       return ApiResponse.created(res, 'Salary record created successfully.', { id: insertId });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async processBulkSalary(req, res, next) {
+    try {
+      const isTeacher = req.user?.roleName === 'Teacher' || req.user?.portalType === 'TeacherPortal' || req.user?.role === 'Teacher' || Boolean(req.user?.teacherId);
+      if (isTeacher) {
+        return ApiResponse.forbidden(res, 'Teachers do not have permission to process bulk salary payments.');
+      }
+      const schoolId = AdminPayrollController.getSchoolId(req);
+      const branchId = req.branchId || req.body?.branch_id || null;
+      const result = await PayrollModel.processBulkSalary(schoolId, {
+        ...req.body,
+        branch_id: branchId,
+      });
+
+      const { summary } = result;
+      const msg = `Bulk salary processed: ${summary.successful} paid, ${summary.pending} pending, ${summary.failed} failed${
+        summary.skipped_already_paid > 0 ? `, ${summary.skipped_already_paid} skipped (already paid)` : ''
+      }.`;
+      return ApiResponse.success(res, msg, result);
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async retryFailedSalaries(req, res, next) {
+    try {
+      const isTeacher = req.user?.roleName === 'Teacher' || req.user?.portalType === 'TeacherPortal' || req.user?.role === 'Teacher' || Boolean(req.user?.teacherId);
+      if (isTeacher) {
+        return ApiResponse.forbidden(res, 'Teachers do not have permission to retry salary payments.');
+      }
+      const schoolId = AdminPayrollController.getSchoolId(req);
+      const branchId = req.branchId || req.body?.branch_id || req.query.branch_id || req.query.branchId || null;
+      const result = await PayrollModel.retryFailedSalaries(schoolId, {
+        salary_ids: req.body?.salary_ids || req.body?.id || [],
+        payment_date: req.body?.payment_date || null,
+        branchId,
+      });
+
+      const { summary } = result;
+      const msg =
+        summary.successful > 0
+          ? `Retry complete: ${summary.successful} payment(s) succeeded${summary.failed > 0 ? `, ${summary.failed} still failed` : ''}.`
+          : `Retry could not complete (${summary.failed} failed, ${summary.skipped_already_paid} already paid).`;
+      return ApiResponse.success(res, msg, result);
     } catch (err) {
       next(err);
     }

@@ -35,6 +35,9 @@ router.put('/beneficiaries/:id', AdminPayrollController.updateBeneficiary);
 router.delete('/beneficiaries/:id', AdminPayrollController.deleteBeneficiary);
 
 // Salary
+router.get('/salary/bulk-candidates', AdminPayrollController.getBulkSalaryCandidates);
+router.post('/salary/bulk', AdminPayrollController.processBulkSalary);
+router.post('/salary/retry', AdminPayrollController.retryFailedSalaries);
 router.get('/salary', AdminPayrollController.getSalaries);
 router.post('/salary', AdminPayrollController.createSalary);
 router.put('/salary/:id/status', AdminPayrollController.updateSalaryStatus);
