@@ -52,15 +52,20 @@ router.get('/assignment-types', TeacherAcademicController.getAssignmentTypes);
 
 // Study Materials
 router.get('/study-materials', TeacherAcademicController.getStudyMaterials);
+router.get('/study-materials/download/:id', TeacherAcademicController.downloadStudyMaterial);
+router.get('/study-materials/:id/download', TeacherAcademicController.downloadStudyMaterial);
 router.get('/study-materials/:id', TeacherAcademicController.getStudyMaterialById);
 router.post('/study-materials', TeacherAcademicController.createStudyMaterial);
 router.put('/study-materials/:id', TeacherAcademicController.updateStudyMaterial);
+router.post('/study-materials/updateMaterial/:id', TeacherAcademicController.updateStudyMaterial);
 router.post('/study-materials/toggle_status/:id', TeacherAcademicController.toggleStudyMaterialStatus);
+router.post('/study-materials/toggle-status/:id', TeacherAcademicController.toggleStudyMaterialStatus);
 router.put('/study-materials/toggle_status/:id', TeacherAcademicController.toggleStudyMaterialStatus);
 router.delete('/study-materials/:id', TeacherAcademicController.deleteStudyMaterial);
 
 // Material Types
 router.get('/material-types', TeacherAcademicController.getMaterialTypes);
+router.get('/material-types/:id', TeacherAcademicController.getMaterialTypeById);
 router.post('/material-types', TeacherAcademicController.createMaterialType);
 router.put('/material-types/:id', TeacherAcademicController.updateMaterialType);
 router.delete('/material-types/:id', TeacherAcademicController.deleteMaterialType);

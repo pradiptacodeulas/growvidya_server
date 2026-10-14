@@ -98,7 +98,42 @@ async function authMiddleware(req, res, next) {
         adminType === 1 ||
         roleStr === 'super admin' ||
         roleStr === 'superadmin';
-      const userAssignedBranch = Number(req.user.branchId ?? req.user.branch_id) || null;
+      const isTeacherUser =
+        roleStr === 'teacher' ||
+        req.user.portalType === 'TeacherPortal' ||
+        Boolean(req.user.teacherId);
+      let userAssignedBranch = Number(req.user.branchId ?? req.user.branch_id) || null;
+
+      // For teachers, always ensure school_id and branch_id are synchronized with teacher_master
+      if (isTeacherUser && (req.user.teacherId || req.user.id)) {
+        try {
+          const { pool } = require('../config/db.config');
+          const tId = req.user.teacherId || req.user.id;
+          const [tRows] = await pool.query(
+            'SELECT school_id, branch_id FROM teacher_master WHERE id = ? AND status != 4 LIMIT 1',
+            [tId]
+          );
+          if (tRows && tRows.length > 0) {
+            if (tRows[0].school_id) {
+              req.user.schoolId = tRows[0].school_id;
+              req.user.school_id = tRows[0].school_id;
+            }
+            if (tRows[0].branch_id) {
+              userAssignedBranch = Number(tRows[0].branch_id);
+            } else if (!userAssignedBranch && req.user.schoolId) {
+              const [defBranch] = await pool.query(
+                'SELECT id FROM branch_master WHERE school_id = ? AND status != 4 ORDER BY is_main_branch DESC, id ASC LIMIT 1',
+                [req.user.schoolId]
+              );
+              if (defBranch && defBranch.length > 0) {
+                userAssignedBranch = Number(defBranch[0].id);
+              }
+            }
+          }
+        } catch (e) {
+          // fallback to token payload
+        }
+      }
 
       let activeBranchId = null;
       if (isSuperAdmin) {
@@ -157,12 +192,12 @@ async function authMiddleware(req, res, next) {
       // Ensure non-superadmins cannot manipulate branch_id in query or request body
       if (!isSuperAdmin && activeBranchId) {
         if (req.query) {
-          if (req.query.branch_id !== undefined) req.query.branch_id = activeBranchId;
-          if (req.query.branchId !== undefined) req.query.branchId = activeBranchId;
+          req.query.branch_id = activeBranchId;
+          req.query.branchId = activeBranchId;
         }
         if (req.body && typeof req.body === 'object' && !Array.isArray(req.body)) {
-          if (req.body.branch_id !== undefined) req.body.branch_id = activeBranchId;
-          if (req.body.branchId !== undefined) req.body.branchId = activeBranchId;
+          req.body.branch_id = activeBranchId;
+          req.body.branchId = activeBranchId;
         }
       }
     }

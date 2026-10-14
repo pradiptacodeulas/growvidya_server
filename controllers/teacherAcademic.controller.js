@@ -1,5 +1,8 @@
+const path = require('path');
+const fs = require('fs');
 const AcademicModel = require('../models/academic.model');
 const ApiResponse = require('../utils/api.response');
+const { pool } = require('../config/db.config');
 
 class TeacherAcademicController {
   static getTeacherId(req) {
@@ -16,12 +19,40 @@ class TeacherAcademicController {
     return Number(schoolId);
   }
 
+  static async resolveTeacherBranchId(req, schoolId = null) {
+    const effectiveSchoolId = schoolId || TeacherAcademicController.getSchoolId(req);
+    const teacherId = TeacherAcademicController.getTeacherId(req);
+
+    // 1. Check request context populated by authMiddleware
+    let branchId = AcademicModel.parseBranchId(req.branchId || req.user?.branch_id || req.user?.branchId);
+
+    // 2. Verify/fetch from teacher_master if teacherId is present
+    if (!branchId && teacherId) {
+      try {
+        const [rows] = await pool.query(
+          'SELECT branch_id FROM teacher_master WHERE id = ? AND school_id = ? AND status != 4 LIMIT 1',
+          [teacherId, effectiveSchoolId]
+        );
+        if (rows && rows.length > 0 && rows[0].branch_id) {
+          branchId = Number(rows[0].branch_id);
+        }
+      } catch (e) {}
+    }
+
+    // 3. Fallback to school's default/main branch for single-branch compatibility
+    if (!branchId && effectiveSchoolId) {
+      branchId = await AcademicModel.resolveDefaultBranchId(effectiveSchoolId);
+    }
+
+    return branchId;
+  }
+
   // ==================== CLASSES (Strict Teacher Assignment) ====================
   static async getClasses(req, res, next) {
     try {
       const schoolId = TeacherAcademicController.getSchoolId(req);
       const teacherId = TeacherAcademicController.getTeacherId(req);
-      const branchId = req.branchId || req.user?.branch_id || null;
+      const branchId = await TeacherAcademicController.resolveTeacherBranchId(req, schoolId);
       const classes = await AcademicModel.getClasses(schoolId, true, teacherId, branchId);
       return ApiResponse.success(res, 'Teacher classes fetched successfully', classes);
     } catch (error) {
@@ -32,8 +63,9 @@ class TeacherAcademicController {
   static async getClassById(req, res, next) {
     try {
       const schoolId = TeacherAcademicController.getSchoolId(req);
+      const branchId = await TeacherAcademicController.resolveTeacherBranchId(req, schoolId);
       const { id } = req.params;
-      const classItem = await AcademicModel.getClassById(id, schoolId);
+      const classItem = await AcademicModel.getClassById(id, schoolId, branchId);
       if (!classItem) return ApiResponse.error(res, 'Class not found', null, 404);
       return ApiResponse.success(res, 'Class details fetched successfully', classItem);
     } catch (error) {
@@ -45,9 +77,10 @@ class TeacherAcademicController {
   static async getSections(req, res, next) {
     try {
       const schoolId = TeacherAcademicController.getSchoolId(req);
+      const teacherId = TeacherAcademicController.getTeacherId(req);
       const classId = req.params.classId || req.query.classId || req.query.class_id;
-      const branchId = req.branchId || req.user?.branch_id || null;
-      const sections = await AcademicModel.getSections(schoolId, classId, true, null, branchId);
+      const branchId = await TeacherAcademicController.resolveTeacherBranchId(req, schoolId);
+      const sections = await AcademicModel.getSections(schoolId, classId, true, null, branchId, teacherId);
       return ApiResponse.success(res, 'Sections fetched successfully', sections);
     } catch (error) {
       next(error);
@@ -57,8 +90,9 @@ class TeacherAcademicController {
   static async getSectionById(req, res, next) {
     try {
       const schoolId = TeacherAcademicController.getSchoolId(req);
+      const branchId = await TeacherAcademicController.resolveTeacherBranchId(req, schoolId);
       const { id } = req.params;
-      const section = await AcademicModel.getSectionById(id, schoolId);
+      const section = await AcademicModel.getSectionById(id, schoolId, branchId);
       if (!section) return ApiResponse.error(res, 'Section not found', null, 404);
       return ApiResponse.success(res, 'Section details fetched successfully', section);
     } catch (error) {
@@ -71,7 +105,7 @@ class TeacherAcademicController {
     try {
       const schoolId = TeacherAcademicController.getSchoolId(req);
       const activeOnly = req.query.status === '1' || req.query.activeOnly === 'true';
-      const branchId = req.branchId || req.user?.branch_id || req.user?.branchId || null;
+      const branchId = await TeacherAcademicController.resolveTeacherBranchId(req, schoolId);
       const shifts = await AcademicModel.getShifts(schoolId, activeOnly, branchId);
       return ApiResponse.success(res, 'Teacher shifts fetched successfully', shifts);
     } catch (error) {
@@ -85,7 +119,7 @@ class TeacherAcademicController {
       const schoolId = TeacherAcademicController.getSchoolId(req);
       const teacherId = TeacherAcademicController.getTeacherId(req);
       const classId = req.params.classId || req.query.classId || req.query.class_id;
-      const branchId = req.branchId || req.user?.branch_id || null;
+      const branchId = await TeacherAcademicController.resolveTeacherBranchId(req, schoolId);
       const subjects = await AcademicModel.getSubjects(schoolId, classId, true, teacherId, branchId);
       return ApiResponse.success(res, 'Teacher subjects fetched successfully', subjects);
     } catch (error) {
@@ -96,8 +130,9 @@ class TeacherAcademicController {
   static async getSubjectById(req, res, next) {
     try {
       const schoolId = TeacherAcademicController.getSchoolId(req);
+      const branchId = await TeacherAcademicController.resolveTeacherBranchId(req, schoolId);
       const { id } = req.params;
-      const subject = await AcademicModel.getSubjectById(id, schoolId);
+      const subject = await AcademicModel.getSubjectById(id, schoolId, branchId);
       if (!subject) return ApiResponse.error(res, 'Subject not found', null, 404);
       return ApiResponse.success(res, 'Subject details fetched successfully', subject);
     } catch (error) {
@@ -336,7 +371,7 @@ class TeacherAcademicController {
     try {
       const schoolId = TeacherAcademicController.getSchoolId(req);
       const teacherId = TeacherAcademicController.getTeacherId(req);
-      const branchId = req.branchId || req.user?.branch_id || req.user?.branchId || null;
+      const branchId = await TeacherAcademicController.resolveTeacherBranchId(req, schoolId);
       const {
         academic_year_id,
         class_id,
@@ -370,6 +405,7 @@ class TeacherAcademicController {
         search,
         uploaded_by: isOnlyMine ? teacherId : undefined,
         uploader_type: isOnlyMine ? 'teacher' : undefined,
+        teacherId,
         page,
         limit,
         branchId,
@@ -383,7 +419,7 @@ class TeacherAcademicController {
   static async getStudyMaterialById(req, res, next) {
     try {
       const schoolId = TeacherAcademicController.getSchoolId(req);
-      const branchId = req.branchId || req.user?.branch_id || req.user?.branchId || null;
+      const branchId = await TeacherAcademicController.resolveTeacherBranchId(req, schoolId);
       const { id } = req.params;
       const data = await AcademicModel.getStudyMaterialById(id, schoolId, branchId);
       if (!data) return ApiResponse.error(res, 'Study material not found', null, 404);
@@ -397,7 +433,7 @@ class TeacherAcademicController {
     try {
       const schoolId = TeacherAcademicController.getSchoolId(req);
       const teacherId = TeacherAcademicController.getTeacherId(req);
-      const branchId = req.branchId || req.user?.branch_id || req.user?.branchId || null;
+      const branchId = await TeacherAcademicController.resolveTeacherBranchId(req, schoolId);
       const insertId = await AcademicModel.createStudyMaterial(
         schoolId,
         {
@@ -417,7 +453,7 @@ class TeacherAcademicController {
     try {
       const schoolId = TeacherAcademicController.getSchoolId(req);
       const teacherId = TeacherAcademicController.getTeacherId(req);
-      const branchId = req.branchId || req.user?.branch_id || req.user?.branchId || null;
+      const branchId = await TeacherAcademicController.resolveTeacherBranchId(req, schoolId);
       const { id } = req.params;
 
       const existing = await AcademicModel.getStudyMaterialById(id, schoolId, branchId);
@@ -435,7 +471,7 @@ class TeacherAcademicController {
         );
       }
 
-      const success = await AcademicModel.updateStudyMaterial(id, schoolId, req.body, branchId);
+      const success = await AcademicModel.updateStudyMaterial(id, schoolId, req.body, branchId, teacherId);
       if (!success) return ApiResponse.error(res, 'Study material not found or update failed', null, 400);
       return ApiResponse.success(res, 'Study material updated successfully');
     } catch (error) {
@@ -447,7 +483,7 @@ class TeacherAcademicController {
     try {
       const schoolId = TeacherAcademicController.getSchoolId(req);
       const teacherId = TeacherAcademicController.getTeacherId(req);
-      const branchId = req.branchId || req.user?.branch_id || req.user?.branchId || null;
+      const branchId = await TeacherAcademicController.resolveTeacherBranchId(req, schoolId);
       const { id } = req.params;
 
       const existing = await AcademicModel.getStudyMaterialById(id, schoolId, branchId);
@@ -465,7 +501,7 @@ class TeacherAcademicController {
         );
       }
 
-      const success = await AcademicModel.deleteStudyMaterial(id, schoolId, branchId);
+      const success = await AcademicModel.deleteStudyMaterial(id, schoolId, branchId, teacherId);
       if (!success) return ApiResponse.error(res, 'Study material not found or delete failed', null, 400);
       return ApiResponse.success(res, 'Study material deleted successfully');
     } catch (error) {
@@ -477,7 +513,7 @@ class TeacherAcademicController {
     try {
       const schoolId = TeacherAcademicController.getSchoolId(req);
       const teacherId = TeacherAcademicController.getTeacherId(req);
-      const branchId = req.branchId || req.user?.branch_id || req.user?.branchId || null;
+      const branchId = await TeacherAcademicController.resolveTeacherBranchId(req, schoolId);
       const { id } = req.params;
 
       const existing = await AcademicModel.getStudyMaterialById(id, schoolId, branchId);
@@ -495,8 +531,51 @@ class TeacherAcademicController {
         );
       }
 
-      const newStatus = await AcademicModel.toggleStudyMaterialStatus(id, schoolId, branchId);
+      const newStatus = await AcademicModel.toggleStudyMaterialStatus(id, schoolId, branchId, teacherId);
       return ApiResponse.success(res, 'Status updated successfully', { status: newStatus });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async downloadStudyMaterial(req, res, next) {
+    try {
+      const schoolId = TeacherAcademicController.getSchoolId(req);
+      const branchId = await TeacherAcademicController.resolveTeacherBranchId(req, schoolId);
+      const { id } = req.params;
+      const data = await AcademicModel.getStudyMaterialById(id, schoolId, branchId);
+      if (!data) return ApiResponse.error(res, 'Study material not found', null, 404);
+      if (!data.attachment) return ApiResponse.error(res, 'No attachment for this study material', null, 404);
+
+      const filename = path.basename(data.attachment);
+      const originalName =
+        data.attachment_original_name ||
+        (data.title
+          ? `${data.title.replace(/[^a-zA-Z0-9_\-\. ]/g, '_')}.${data.attachment_extension || 'pdf'}`
+          : filename);
+
+      const cleanRelPath = data.attachment.replace(/^[/\\]+/, '').replace(/^upload[/\\]+/, '');
+
+      const candidatePaths = [
+        path.join(__dirname, '../public', data.attachment.replace(/^[/\\]+/, '')),
+        path.join(__dirname, '../public/upload', cleanRelPath),
+        path.join(__dirname, '../public/upload/study_material', filename),
+        path.join(__dirname, '../public/upload/study_materials', filename),
+        path.join(__dirname, '../public/upload/general', filename),
+        path.join(__dirname, '../public/upload', filename),
+        path.join('C:/xampp/htdocs/growvidya', data.attachment.replace(/^[/\\]+/, '')),
+        path.join('C:/xampp/htdocs/growvidya/upload', cleanRelPath),
+        path.join('C:/xampp/htdocs/growvidya/upload/study_material', filename),
+        path.join('C:/xampp/htdocs/growvidya/upload', filename),
+      ];
+
+      for (const p of candidatePaths) {
+        if (fs.existsSync(p) && fs.statSync(p).isFile()) {
+          return res.download(p, originalName);
+        }
+      }
+
+      return ApiResponse.error(res, 'Attachment file not found on server.', null, 404);
     } catch (error) {
       next(error);
     }
@@ -505,8 +584,29 @@ class TeacherAcademicController {
   static async getMaterialTypes(req, res, next) {
     try {
       const schoolId = TeacherAcademicController.getSchoolId(req);
-      const types = await AcademicModel.getMaterialTypes(schoolId);
+      const branchId = await TeacherAcademicController.resolveTeacherBranchId(req, schoolId);
+      const { search, status, page, limit } = req.query;
+      const types = await AcademicModel.getMaterialTypes(schoolId, {
+        search,
+        status,
+        page: Number(page) || 1,
+        limit: Number(limit) || 100,
+        branchId,
+      });
       return ApiResponse.success(res, 'Material types fetched successfully', types);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getMaterialTypeById(req, res, next) {
+    try {
+      const schoolId = TeacherAcademicController.getSchoolId(req);
+      const branchId = await TeacherAcademicController.resolveTeacherBranchId(req, schoolId);
+      const { id } = req.params;
+      const data = await AcademicModel.getMaterialTypeById(id, schoolId, branchId);
+      if (!data) return ApiResponse.error(res, 'Material type not found', null, 404);
+      return ApiResponse.success(res, 'Material type fetched successfully', data);
     } catch (error) {
       next(error);
     }
@@ -515,7 +615,11 @@ class TeacherAcademicController {
   static async createMaterialType(req, res, next) {
     try {
       const schoolId = TeacherAcademicController.getSchoolId(req);
-      const insertId = await AcademicModel.createMaterialType(schoolId, req.body);
+      const branchId = await TeacherAcademicController.resolveTeacherBranchId(req, schoolId);
+      const insertId = await AcademicModel.createMaterialType(schoolId, {
+        ...req.body,
+        branch_id: branchId,
+      });
       return ApiResponse.success(res, 'Material type created successfully', { id: insertId }, 201);
     } catch (error) {
       next(error);
@@ -525,9 +629,10 @@ class TeacherAcademicController {
   static async updateMaterialType(req, res, next) {
     try {
       const schoolId = TeacherAcademicController.getSchoolId(req);
+      const branchId = await TeacherAcademicController.resolveTeacherBranchId(req, schoolId);
       const { id } = req.params;
-      const success = await AcademicModel.updateMaterialType(id, schoolId, req.body);
-      if (!success) return ApiResponse.error(res, 'Material type not found or update failed', null, 400);
+      const success = await AcademicModel.updateMaterialType(id, schoolId, { ...req.body, branch_id: branchId }, branchId);
+      if (!success) return ApiResponse.error(res, 'Material type not found or update failed', null, 404);
       return ApiResponse.success(res, 'Material type updated successfully');
     } catch (error) {
       next(error);
@@ -537,9 +642,10 @@ class TeacherAcademicController {
   static async deleteMaterialType(req, res, next) {
     try {
       const schoolId = TeacherAcademicController.getSchoolId(req);
+      const branchId = await TeacherAcademicController.resolveTeacherBranchId(req, schoolId);
       const { id } = req.params;
-      const success = await AcademicModel.deleteMaterialType(id, schoolId);
-      if (!success) return ApiResponse.error(res, 'Material type not found or delete failed', null, 400);
+      const success = await AcademicModel.deleteMaterialType(id, schoolId, branchId);
+      if (!success) return ApiResponse.error(res, 'Material type not found or delete failed', null, 404);
       return ApiResponse.success(res, 'Material type deleted successfully');
     } catch (error) {
       next(error);
@@ -550,8 +656,7 @@ class TeacherAcademicController {
   static async getAcademicYears(req, res, next) {
     try {
       const schoolId = TeacherAcademicController.getSchoolId(req);
-      const rawBranch = req.branchId || req.user?.branch_id || req.query?.branch_id || req.query?.branchId || null;
-      const branchId = (rawBranch && rawBranch !== 'all' && !isNaN(Number(rawBranch))) ? Number(rawBranch) : null;
+      const branchId = await TeacherAcademicController.resolveTeacherBranchId(req, schoolId);
       const years = await AcademicModel.getAcademicYears(schoolId, branchId);
       return ApiResponse.success(res, 'Academic years fetched successfully', years);
     } catch (error) {

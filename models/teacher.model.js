@@ -1614,6 +1614,8 @@ class TeacherModel {
     const sql = `
       SELECT 
         t.*,
+        bm.branch_name,
+        bm.branch_code,
         COALESCE(c.class_name, (
           SELECT cm.class_name FROM teacher_class_assign tca 
           JOIN class_master cm ON tca.class_id = cm.id 
@@ -1635,6 +1637,7 @@ class TeacherModel {
         sch.phone_number AS school_phone,
         sch.email AS school_email
       FROM teacher_master t
+      LEFT JOIN branch_master bm ON t.branch_id = bm.id
       LEFT JOIN class_master c ON t.class = c.id
       LEFT JOIN section_master sec ON t.section = sec.id
       LEFT JOIN subject_master sub ON t.subject = sub.id
@@ -1662,6 +1665,8 @@ class TeacherModel {
     const sql = `
       SELECT 
         t.*,
+        bm.branch_name,
+        bm.branch_code,
         COALESCE(c.class_name, (
           SELECT cm.class_name FROM teacher_class_assign tca 
           JOIN class_master cm ON tca.class_id = cm.id 
@@ -1683,6 +1688,7 @@ class TeacherModel {
         sch.phone_number AS school_phone,
         sch.email AS school_email
       FROM teacher_master t
+      LEFT JOIN branch_master bm ON t.branch_id = bm.id
       LEFT JOIN class_master c ON t.class = c.id
       LEFT JOIN section_master sec ON t.section = sec.id
       LEFT JOIN subject_master sub ON t.subject = sub.id
