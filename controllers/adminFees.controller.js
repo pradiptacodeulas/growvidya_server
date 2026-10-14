@@ -680,6 +680,8 @@ class AdminFeesController {
         title,
         issue_date,
         issueDate,
+        due_date,
+        dueDate,
       } = req.body;
 
       const targetStructureId = fee_structure_id || feeStructureId;
@@ -698,6 +700,7 @@ class AdminFeesController {
         feeStructureId: targetStructureId,
         title,
         issueDate: issue_date || issueDate,
+        dueDate: due_date || dueDate,
       });
 
       return ApiResponse.success(res, `Successfully generated ${count} invoice(s).`, { count }, 201);

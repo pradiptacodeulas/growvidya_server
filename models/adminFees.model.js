@@ -1079,7 +1079,7 @@ class AdminFeesModel {
       : String(issueDate).trim();
 
     // 1. Fetch fee structure info
-    let structQuery = `SELECT id, name, frequency, due_day, grace_period_days, academic_year_id FROM fee_structures WHERE id = ? AND school_id = ?`;
+    let structQuery = `SELECT id, name, frequency, start_month, due_day, grace_period_days, academic_year_id FROM fee_structures WHERE id = ? AND school_id = ?`;
     const structParams = [feeStructureId, schoolId];
     if (branchId) {
       structQuery += ` AND (branch_id = ? OR branch_id IS NULL)`;
@@ -1091,7 +1091,7 @@ class AdminFeesModel {
     }
     const structure = structRows[0];
     const frequency = String(structure.frequency || '').toLowerCase().trim();
-    const targetAcademicYear = academicYearId || structure.academic_year_id;
+    const startMonth = Math.min(Math.max(Number(structure.start_month) || 1, 1), 12);
 
     // 2. Identify target students
     let targetStudentIds = [];
@@ -1124,9 +1124,27 @@ class AdminFeesModel {
       return { exists: false, totalStudents: 0, alreadyInvoicedCount: 0, alreadyInvoicedStudentIds: [] };
     }
 
-    // 3. Check for existing fee invoices for these students matching structure and frequency period
+    // 3. Check for existing fee invoices for these students matching structure and full issue_date interval
+    let intervalExpr = null;
+    if (frequency === 'annually') {
+      intervalExpr = 'INTERVAL 1 YEAR';
+    } else if (frequency === 'bi-annually' || frequency === 'biannually') {
+      intervalExpr = 'INTERVAL 6 MONTH';
+    } else if (frequency === 'quarterly') {
+      intervalExpr = 'INTERVAL 3 MONTH';
+    } else if (frequency === 'monthly') {
+      intervalExpr = 'INTERVAL 1 MONTH';
+    }
+
+    const nextAllowedSelect = intervalExpr
+      ? `DATE_FORMAT(DATE_ADD(DATE_ADD(DATE(fi.issue_date), ${intervalExpr}), INTERVAL 1 DAY), '%d/%m/%Y') AS next_allowed_date_str,
+         DATE_FORMAT(DATE_ADD(DATE(fi.issue_date), ${intervalExpr}), '%d/%m/%Y') AS period_end_date_str,`
+      : `NULL AS next_allowed_date_str, NULL AS period_end_date_str,`;
+
     let checkQuery = `
       SELECT fi.id, fi.invoice_no, fi.student_id, fi.issue_date, fi.due_date, fi.total_amount,
+             DATE_FORMAT(DATE(fi.issue_date), '%d/%m/%Y') AS issue_date_str,
+             ${nextAllowedSelect}
              CONCAT(TRIM(IFNULL(sm.first_name, '')), ' ', TRIM(IFNULL(sm.last_name, ''))) AS student_name,
              sm.admission_number, sm.roll_number
       FROM fee_invoices fi
@@ -1143,29 +1161,17 @@ class AdminFeesModel {
       checkParams.push(Number(branchId));
     }
 
-    if (frequency === 'annually' || frequency === 'one-time' || frequency === 'onetime') {
-      const yearToMatch = academicYearId || structure.academic_year_id;
-      const structYear = structure.academic_year_id;
-      if (yearToMatch || structYear) {
-        checkQuery += ` AND (fi.academic_year_id = ? OR fi.academic_year_id = ? OR YEAR(fi.issue_date) = YEAR(?))`;
-        checkParams.push(yearToMatch || structYear, structYear || yearToMatch, effectiveIssueDate);
-      } else {
-        checkQuery += ` AND YEAR(fi.issue_date) = YEAR(?)`;
-        checkParams.push(effectiveIssueDate);
-      }
-    } else if (frequency === 'monthly') {
-      checkQuery += ` AND MONTH(fi.issue_date) = MONTH(?) AND YEAR(fi.issue_date) = YEAR(?)`;
-      checkParams.push(effectiveIssueDate, effectiveIssueDate);
-    } else if (frequency === 'quarterly') {
-      checkQuery += ` AND QUARTER(fi.issue_date) = QUARTER(?) AND YEAR(fi.issue_date) = YEAR(?)`;
-      checkParams.push(effectiveIssueDate, effectiveIssueDate);
-    } else if (frequency === 'bi-annually' || frequency === 'biannually') {
-      checkQuery += ` AND (CASE WHEN MONTH(fi.issue_date) <= 6 THEN 1 ELSE 2 END) = (CASE WHEN MONTH(?) <= 6 THEN 1 ELSE 2 END) AND YEAR(fi.issue_date) = YEAR(?)`;
-      checkParams.push(effectiveIssueDate, effectiveIssueDate);
+    if (frequency === 'one-time' || frequency === 'onetime') {
+      // One-time fee: any existing active invoice for this structure and student is a duplicate
+    } else if (intervalExpr) {
+      checkQuery += ` AND DATE(?) BETWEEN DATE_SUB(DATE(fi.issue_date), ${intervalExpr}) AND DATE_ADD(DATE(fi.issue_date), ${intervalExpr})`;
+      checkParams.push(effectiveIssueDate);
     } else {
       checkQuery += ` AND DATE(fi.issue_date) = DATE(?)`;
       checkParams.push(effectiveIssueDate);
     }
+
+    checkQuery += ` ORDER BY fi.issue_date DESC, fi.id DESC`;
 
     const [existingRows] = await pool.query(checkQuery, checkParams);
 
@@ -1176,25 +1182,23 @@ class AdminFeesModel {
 
     if (alreadyInvoicedCount > 0) {
       const sample = existingRows[0];
-      const sampleDateStr = sample.issue_date ? new Date(sample.issue_date).toLocaleDateString('en-GB') : effectiveIssueDate;
-      const issueYear = new Date(effectiveIssueDate).getFullYear();
-
-      let periodLabel = `academic year ${issueYear}`;
-      if (frequency === 'monthly') {
-        const monthName = new Date(effectiveIssueDate).toLocaleString('default', { month: 'long' });
-        periodLabel = `the month of ${monthName} ${issueYear}`;
-      } else if (frequency === 'quarterly') {
-        const qNum = Math.floor(new Date(effectiveIssueDate).getMonth() / 3) + 1;
-        periodLabel = `Quarter ${qNum} (${issueYear})`;
-      } else if (frequency === 'annually') {
-        periodLabel = `the year ${issueYear}`;
-      }
+      const sampleDateStr = sample.issue_date_str || (sample.issue_date ? new Date(sample.issue_date).toLocaleDateString('en-GB') : effectiveIssueDate);
+      const nextAllowedStr = sample.next_allowed_date_str;
+      const periodEndStr = sample.period_end_date_str;
 
       let message = '';
       if (allAlreadyInvoiced) {
-        message = `An ${structure.frequency} invoice for "${structure.name}" has already been generated for all selected student(s) within ${periodLabel} (first generated on ${sampleDateStr}). Duplicate generation is prevented.`;
+        if (nextAllowedStr && periodEndStr) {
+          message = `An ${structure.frequency} invoice for "${structure.name}" has already been generated for all selected student(s) on ${sampleDateStr} (valid up to ${periodEndStr}). Next invoice can only be generated from ${nextAllowedStr} onwards.`;
+        } else {
+          message = `An ${structure.frequency} invoice for "${structure.name}" has already been generated for all selected student(s) on ${sampleDateStr}. Duplicate generation is prevented.`;
+        }
       } else {
-        message = `${alreadyInvoicedCount} of ${totalStudents} student(s) already have an invoice for "${structure.name}" within ${periodLabel}.`;
+        if (nextAllowedStr) {
+          message = `${alreadyInvoicedCount} of ${totalStudents} student(s) already have an invoice for "${structure.name}" generated on ${sampleDateStr} (next eligible from ${nextAllowedStr}).`;
+        } else {
+          message = `${alreadyInvoicedCount} of ${totalStudents} student(s) already have an invoice for "${structure.name}" generated on ${sampleDateStr}.`;
+        }
       }
 
       return {
@@ -1205,6 +1209,7 @@ class AdminFeesModel {
         structureName: structure.name,
         frequency: structure.frequency,
         sampleDate: sampleDateStr,
+        nextAllowedDate: nextAllowedStr || null,
         message,
         invoicedStudents: existingRows.map((r) => ({
           student_id: r.student_id,
@@ -1283,30 +1288,32 @@ class AdminFeesModel {
       const subtotal = components.reduce((sum, c) => sum + (parseFloat(c.amount) || 0), 0);
       const totalAmount = subtotal;
 
-      // Calculate due date on server using issue_date and fee structure rules
+      // Calculate due date dynamically using explicit dueDate or issue_date + fee structure rules
       let finalDueDate = null;
-      const issue = new Date(effectiveIssueDate);
-      const issueYear = issue.getFullYear();
-      const issueMonth = issue.getMonth();
-      const graceDays = Number(structure.grace_period_days) || 0;
+      if (dueDate && String(dueDate).trim()) {
+        finalDueDate = String(dueDate).includes('T') ? String(dueDate).split('T')[0] : String(dueDate).trim();
+      } else {
+        const [issueYear, issueMonthOneBased, issueDay] = effectiveIssueDate.split('-').map(Number);
+        const issueMonth = issueMonthOneBased - 1;
+        const issueUtc = new Date(Date.UTC(issueYear, issueMonth, issueDay));
+        const graceDays = Math.max(Number(structure.grace_period_days) || 0, 0);
+        const rawDueDay = Number(structure.due_day) || 0;
 
-      if (structure.due_day) {
-        const dueDay = Math.min(Math.max(Number(structure.due_day), 1), 28);
-        const targetDue = new Date(issueYear, issueMonth, dueDay);
-        if (graceDays > 0) {
-          targetDue.setDate(targetDue.getDate() + graceDays);
-        }
-        if (targetDue > issue) {
-          finalDueDate = targetDue.toISOString().split('T')[0];
+        if (rawDueDay > 0) {
+          const daysInIssueMonth = new Date(Date.UTC(issueYear, issueMonth + 1, 0)).getUTCDate();
+          const dueDay = Math.min(Math.max(rawDueDay, 1), daysInIssueMonth);
+          const targetDue = new Date(Date.UTC(issueYear, issueMonth, dueDay + graceDays));
+
+          if (targetDue > issueUtc) {
+            finalDueDate = targetDue.toISOString().split('T')[0];
+          } else {
+            const fallbackDue = new Date(Date.UTC(issueYear, issueMonth, issueDay + (graceDays > 0 ? graceDays : dueDay)));
+            finalDueDate = fallbackDue.toISOString().split('T')[0];
+          }
         } else {
-          const fallbackDue = new Date(issue);
-          fallbackDue.setDate(fallbackDue.getDate() + (graceDays > 0 ? graceDays : dueDay));
+          const fallbackDue = new Date(Date.UTC(issueYear, issueMonth, issueDay + graceDays));
           finalDueDate = fallbackDue.toISOString().split('T')[0];
         }
-      } else {
-        const fallbackDue = new Date(issue);
-        fallbackDue.setDate(fallbackDue.getDate() + (graceDays > 0 ? graceDays : 10));
-        finalDueDate = fallbackDue.toISOString().split('T')[0];
       }
 
       // 2. Identify target students
@@ -1352,10 +1359,21 @@ class AdminFeesModel {
 
       let generatedCount = 0;
       const frequency = String(structure.frequency || '').toLowerCase().trim();
-      const targetYear = structure.academic_year_id || academicYearId || null;
+      const targetYear = academicYearId || structure.academic_year_id || null;
+
+      let intervalExpr = null;
+      if (frequency === 'annually') {
+        intervalExpr = 'INTERVAL 1 YEAR';
+      } else if (frequency === 'bi-annually' || frequency === 'biannually') {
+        intervalExpr = 'INTERVAL 6 MONTH';
+      } else if (frequency === 'quarterly') {
+        intervalExpr = 'INTERVAL 3 MONTH';
+      } else if (frequency === 'monthly') {
+        intervalExpr = 'INTERVAL 1 MONTH';
+      }
 
       for (const st of targetStudents) {
-        // Prevent duplicate fee entries per student according to frequency rules
+        // Prevent duplicate fee entries per student according to full issue_date interval and frequency rules
         let studentDupSql = `
           SELECT id FROM fee_invoices 
           WHERE school_id = ? 
@@ -1365,25 +1383,11 @@ class AdminFeesModel {
         `;
         const studentDupParams = [schoolId, st.id, feeStructureId];
 
-        if (frequency === 'annually' || frequency === 'one-time' || frequency === 'onetime') {
-          const yearToMatch = academicYearId || structure.academic_year_id;
-          const structYear = structure.academic_year_id;
-          if (yearToMatch || structYear) {
-            studentDupSql += ` AND (academic_year_id = ? OR academic_year_id = ? OR YEAR(issue_date) = YEAR(?))`;
-            studentDupParams.push(yearToMatch || structYear, structYear || yearToMatch, effectiveIssueDate);
-          } else {
-            studentDupSql += ` AND YEAR(issue_date) = YEAR(?)`;
-            studentDupParams.push(effectiveIssueDate);
-          }
-        } else if (frequency === 'monthly') {
-          studentDupSql += ` AND MONTH(issue_date) = MONTH(?) AND YEAR(issue_date) = YEAR(?)`;
-          studentDupParams.push(effectiveIssueDate, effectiveIssueDate);
-        } else if (frequency === 'quarterly') {
-          studentDupSql += ` AND QUARTER(issue_date) = QUARTER(?) AND YEAR(issue_date) = YEAR(?)`;
-          studentDupParams.push(effectiveIssueDate, effectiveIssueDate);
-        } else if (frequency === 'bi-annually' || frequency === 'biannually') {
-          studentDupSql += ` AND (CASE WHEN MONTH(issue_date) <= 6 THEN 1 ELSE 2 END) = (CASE WHEN MONTH(?) <= 6 THEN 1 ELSE 2 END) AND YEAR(issue_date) = YEAR(?)`;
-          studentDupParams.push(effectiveIssueDate, effectiveIssueDate);
+        if (frequency === 'one-time' || frequency === 'onetime') {
+          // One-time fee: any existing active invoice for this student and structure blocks duplicate generation
+        } else if (intervalExpr) {
+          studentDupSql += ` AND DATE(?) BETWEEN DATE_SUB(DATE(issue_date), ${intervalExpr}) AND DATE_ADD(DATE(issue_date), ${intervalExpr})`;
+          studentDupParams.push(effectiveIssueDate);
         } else {
           studentDupSql += ` AND DATE(issue_date) = DATE(?)`;
           studentDupParams.push(effectiveIssueDate);
