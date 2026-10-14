@@ -3,7 +3,7 @@ const { saveBase64File } = require('../utils/file.util');
 const { hashPassword } = require('../utils/password.util');
 
 class ParentModel {
-  static async getAll(schoolId, { search = '', name = '', email = '', classId = '', sectionId = '', branchId = null, limit = 12, offset = 0 } = {}) {
+  static async getAll(schoolId, { search = '', name = '', email = '', classId = '', sectionId = '', status = '', branchId = null, limit = 12, offset = 0 } = {}) {
     let sql = `
       SELECT 
         p.id,
@@ -19,14 +19,20 @@ class ParentModel {
         p.picture,
         p.status,
         p.created_at,
-        COUNT(DISTINCT stp.student_id) AS total_children
+        COUNT(DISTINCT s.id) AS total_children
       FROM parent_master p
-      LEFT JOIN student_to_parent stp ON (p.id = stp.father_id OR p.id = stp.mother_id OR p.id = stp.guardian_id)
-      LEFT JOIN student_master s ON stp.student_id = s.id
+      LEFT JOIN student_to_parent stp ON (p.id = stp.father_id OR p.id = stp.mother_id OR p.id = stp.guardian_id) AND stp.status != 4
+      LEFT JOIN student_master s ON stp.student_id = s.id AND s.status != 4
       WHERE (p.school_id = ? OR ? IS NULL) AND p.status != 4
     `;
 
     const params = [schoolId, schoolId];
+
+    if (String(status) === '1' || String(status).toLowerCase() === 'active') {
+      sql += ` AND p.status = 1`;
+    } else if (String(status) === '2' || String(status).toLowerCase() === 'inactive') {
+      sql += ` AND p.status = 2`;
+    }
 
     if (search) {
       sql += ` AND (p.first_name LIKE ? OR p.last_name LIKE ? OR p.email LIKE ? OR p.phone LIKE ?)`;
@@ -69,11 +75,17 @@ class ParentModel {
     let countSql = `
       SELECT COUNT(DISTINCT p.id) AS total
       FROM parent_master p
-      LEFT JOIN student_to_parent stp ON (p.id = stp.father_id OR p.id = stp.mother_id OR p.id = stp.guardian_id)
-      LEFT JOIN student_master s ON stp.student_id = s.id
+      LEFT JOIN student_to_parent stp ON (p.id = stp.father_id OR p.id = stp.mother_id OR p.id = stp.guardian_id) AND stp.status != 4
+      LEFT JOIN student_master s ON stp.student_id = s.id AND s.status != 4
       WHERE (p.school_id = ? OR ? IS NULL) AND p.status != 4
     `;
     const countParams = [schoolId, schoolId];
+
+    if (String(status) === '1' || String(status).toLowerCase() === 'active') {
+      countSql += ` AND p.status = 1`;
+    } else if (String(status) === '2' || String(status).toLowerCase() === 'inactive') {
+      countSql += ` AND p.status = 2`;
+    }
 
     if (search) {
       countSql += ` AND (p.first_name LIKE ? OR p.last_name LIKE ? OR p.email LIKE ? OR p.phone LIKE ?)`;
@@ -218,6 +230,7 @@ class ParentModel {
         COALESCE(g.gender, IF(s.gender = '1' OR s.gender = 1, 'Male', IF(s.gender = '2' OR s.gender = 2, 'Female', IF(s.gender = '3' OR s.gender = 3, 'Others', 'Male')))) AS gender,
         s.admission_date,
         s.created_at,
+        s.status,
         s.status AS student_status,
         cm.class_name,
         s.class AS class_id,
@@ -231,7 +244,7 @@ class ParentModel {
       LEFT JOIN section_master sec ON s.section = sec.id
       WHERE (stp.father_id = ? OR stp.mother_id = ? OR stp.guardian_id = ?) 
         AND (s.school_id = ? OR ? IS NULL)
-        AND s.status != 4 AND s.status != 0
+        AND stp.status != 4 AND s.status != 4
     `;
     const childrenParams = [id, id, id, schoolId, schoolId];
     if (branchId) {
@@ -343,7 +356,7 @@ class ParentModel {
       relation,
       parent_type,
       savedPic,
-      status,
+      Number(status) === 2 ? 2 : 1,
     ]);
 
     return result.insertId;
@@ -402,7 +415,7 @@ class ParentModel {
       occupation,
       relation,
       parent_type,
-      status,
+      Number(status) === 2 ? 2 : 1,
     ];
 
     if (data.password && String(data.password).trim()) {
@@ -500,7 +513,7 @@ class ParentModel {
       FROM parent_master p
       LEFT JOIN school_master sch ON p.school_id = sch.id
       WHERE (p.email = ? OR p.phone = ? OR CAST(p.id AS CHAR) = ?)
-        AND p.status != 0
+        AND p.status = 1
       LIMIT 1
     `;
 
@@ -519,7 +532,7 @@ class ParentModel {
         sch.email AS school_email
       FROM parent_master p
       LEFT JOIN school_master sch ON p.school_id = sch.id
-      WHERE p.id = ? AND p.status != 0
+      WHERE p.id = ? AND p.status = 1
       LIMIT 1
     `;
 
@@ -566,6 +579,7 @@ class ParentModel {
       SELECT 
         s.id AS student_id,
         s.id,
+        s.branch_id,
         s.admission_number,
         s.roll_number,
         s.first_name,
@@ -575,6 +589,7 @@ class ParentModel {
         s.admission_date,
         s.date_of_birth,
         s.blood_group,
+        s.status,
         s.status AS student_status,
         cm.class_name,
         s.class AS class_id,
@@ -588,7 +603,7 @@ class ParentModel {
       LEFT JOIN section_master sec ON s.section = sec.id
       WHERE (stp.father_id = ? OR stp.mother_id = ? OR stp.guardian_id = ?) 
         AND (s.school_id = ? OR ? IS NULL)
-        AND s.status != 0
+        AND stp.status != 4 AND s.status != 4
       GROUP BY s.id
       ORDER BY s.id ASC
     `;
@@ -600,6 +615,7 @@ class ParentModel {
     let sql = `
       SELECT 
         s.*,
+        s.status AS student_status,
         CONCAT(s.first_name, ' ', s.last_name) AS full_name,
         cm.class_name,
         sec.section_name,
@@ -617,7 +633,7 @@ class ParentModel {
       LEFT JOIN religion_master r ON s.religion = r.id
       LEFT JOIN student_category_master c ON s.category = c.id
       LEFT JOIN school_master sch ON s.school_id = sch.id
-      WHERE s.id = ? AND (s.school_id = ? OR ? IS NULL) AND s.status != 0
+      WHERE s.id = ? AND (s.school_id = ? OR ? IS NULL) AND s.status != 4
     `;
     const params = [studentId, schoolId, schoolId];
     if (branchId) {
@@ -1167,30 +1183,14 @@ class ParentModel {
             WHEN 1 THEN 'Good'
             WHEN 2 THEN 'Bad'
             WHEN 3 THEN 'Other'
-            ELSE 'Good'
           END AS condition_name,
-          CASE smh.medical_condition
-            WHEN 1 THEN 'Good'
-            WHEN 2 THEN 'Bad'
-            WHEN 3 THEN 'Other'
-            ELSE 'Good'
-          END AS \`condition\`,
-          CASE smh.medical_condition
-            WHEN 1 THEN 'General Health (Fit)'
-            WHEN 2 THEN 'Medical Attention / Illness'
-            WHEN 3 THEN 'Other Medical Condition'
-            ELSE 'General Health Checkup'
-          END AS illness,
           smh.description,
-          smh.description AS notes,
-          smh.description AS remarks,
           smh.medical_time,
-          smh.medical_time AS checkup_date,
           DATE_FORMAT(smh.medical_time, '%d-%m-%Y') AS formatted_medical_date,
           smh.is_informed,
           CASE smh.is_informed
             WHEN 1 THEN 'Informed'
-            ELSE 'Not Informed'
+            WHEN 0 THEN 'Not Informed'
           END AS informed_status,
           smh.status,
           smh.created_at,

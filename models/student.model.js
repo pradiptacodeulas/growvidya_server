@@ -738,7 +738,7 @@ class StudentModel {
         first_name, last_name, class, section, gender, date_of_birth,
         password, primary_contact_number, email_address, blood_group, house, religion, category,
         caste, mother_tongue, language_known, status, picture
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
     const savedStudentPic = data.picture ? saveBase64File(data.picture, 'student/student_pic', 'Profile') : null;
 
@@ -765,6 +765,7 @@ class StudentModel {
       data.caste || null,
       data.mother_tongue || null,
       data.language_known || null,
+      Number(data.status) === 2 ? 2 : 1,
       savedStudentPic,
     ]);
 
@@ -968,7 +969,7 @@ class StudentModel {
       data.caste || null,
       data.mother_tongue || null,
       data.language_known || null,
-      data.status ?? 1,
+      Number(data.status) === 2 ? 2 : 1,
       savedStudentPic !== undefined ? savedStudentPic : null,
       id,
       schoolId,
@@ -1515,6 +1516,23 @@ class StudentModel {
   }
 
   static async delete(id, schoolId, branchId = null) {
+    let linkedParentIds = [];
+    try {
+      const [stpRows] = await pool.execute(
+        `SELECT father_id, mother_id, guardian_id FROM student_to_parent WHERE student_id = ? AND school_id = ? AND status != 4`,
+        [id, schoolId]
+      );
+      const idSet = new Set();
+      (stpRows || []).forEach((row) => {
+        if (row.father_id) idSet.add(Number(row.father_id));
+        if (row.mother_id) idSet.add(Number(row.mother_id));
+        if (row.guardian_id) idSet.add(Number(row.guardian_id));
+      });
+      linkedParentIds = Array.from(idSet);
+    } catch (stpErr) {
+      console.error('[StudentModel.delete] Error fetching linked parent IDs:', stpErr.message);
+    }
+
     let sql = `UPDATE student_master SET status = 4 WHERE id = ? AND school_id = ?`;
     const params = [id, schoolId];
     if (branchId) {
@@ -1543,6 +1561,25 @@ class StudentModel {
         `UPDATE student_fee_allocations SET status = 4 WHERE student_id = ? AND school_id = ?${cascadeBranchClause}`,
         cascadeParams
       );
+
+      // Soft delete parent only if they have no other non-deleted children
+      for (const parentId of linkedParentIds) {
+        const [remainingRows] = await pool.execute(
+          `SELECT COUNT(DISTINCT s.id) AS remaining_children
+           FROM student_to_parent stp
+           JOIN student_master s ON stp.student_id = s.id
+           WHERE (stp.father_id = ? OR stp.mother_id = ? OR stp.guardian_id = ?)
+             AND stp.status != 4
+             AND s.status != 4`,
+          [parentId, parentId, parentId]
+        );
+        if (Number(remainingRows[0]?.remaining_children || 0) === 0) {
+          await pool.execute(
+            `UPDATE parent_master SET status = 4 WHERE id = ? AND school_id = ?`,
+            [parentId, schoolId]
+          );
+        }
+      }
     } catch (cascadeErr) {
       console.error('[StudentModel.delete] Error cascading soft delete:', cascadeErr.message);
     }

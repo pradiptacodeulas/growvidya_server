@@ -1,6 +1,8 @@
 const AdminUserModel = require('../models/adminUser.model');
+const StaffModel = require('../models/staff.model');
 const PermissionModel = require('../models/permission.model');
 const SubscriptionModel = require('../models/subscription.model');
+const { pool } = require('../config/db.config');
 const { comparePassword } = require('../utils/password.util');
 const { generateToken } = require('../utils/jwt.util');
 const config = require('../config/app.config');
@@ -198,6 +200,122 @@ class AdminAuthController {
           isExpired: Boolean(sub?.isExpired),
           subscription: sub,
           permissions,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Get Full Admin Profile Details (including address, bank, transport, hostel, documents)
+   */
+  static async getFullProfile(req, res, next) {
+    try {
+      const userId = req.user.userId;
+      const user = await AdminUserModel.findById(userId);
+      if (!user) {
+        return ApiResponse.error(res, 'Admin profile not found.', null, 404);
+      }
+
+      const fullProfile = await StaffModel.getById(userId, user.school_id);
+      if (!fullProfile) {
+        return ApiResponse.error(res, 'Admin profile record not found.', null, 404);
+      }
+
+      return ApiResponse.success(res, 'Admin profile details fetched successfully.', {
+        profile: {
+          ...fullProfile,
+          school_name: user.school_name || '',
+          school_logo: user.school_logo || null,
+          registration_type: user.registration_type || 'single',
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Update Current Admin Profile (Self-Service)
+   */
+  static async updateProfile(req, res, next) {
+    try {
+      const userId = req.user.userId;
+      const user = await AdminUserModel.findById(userId);
+      if (!user) {
+        return ApiResponse.error(res, 'Admin profile not found.', null, 404);
+      }
+
+      const data = req.body || {};
+
+      // Handle password change if current_password or new_password is provided
+      let passwordToUpdate = undefined;
+      if (data.new_password || data.password) {
+        const candidateNewPassword = String(data.new_password || data.password || '').trim();
+        if (candidateNewPassword) {
+          if (data.current_password !== undefined) {
+            const [pwdRows] = await pool.execute('SELECT password FROM user_master WHERE id = ? LIMIT 1', [userId]);
+            const currentHash = pwdRows[0]?.password;
+            if (!currentHash) {
+              return ApiResponse.error(res, 'Unable to verify current password.', null, 400);
+            }
+            const isCurrentValid = await comparePassword(String(data.current_password), currentHash);
+            if (!isCurrentValid) {
+              return ApiResponse.error(res, 'Current password is incorrect.', null, 400);
+            }
+          }
+          passwordToUpdate = candidateNewPassword;
+        }
+      }
+
+      // Prevent self-modification of role or account status
+      const safeUpdatePayload = {
+        ...data,
+        role: user.role_id,
+        status: user.status,
+        branch_id: user.branch_id || null,
+        password: passwordToUpdate,
+      };
+
+      const updatedProfile = await StaffModel.update(userId, user.school_id, safeUpdatePayload);
+      if (!updatedProfile) {
+        return ApiResponse.error(res, 'Failed to update admin profile.', null, 404);
+      }
+
+      const refreshedUser = await AdminUserModel.findById(userId);
+      const adminType = Number(refreshedUser.admin_type);
+      const isSuperAdmin = adminType === 1 || refreshedUser.role_name === 'Super Admin';
+      const roleName = isSuperAdmin ? 'Super Admin' : (refreshedUser.role_name || null);
+
+      return ApiResponse.success(res, 'Profile updated successfully.', {
+        profile: {
+          ...updatedProfile,
+          school_name: refreshedUser.school_name || '',
+          school_logo: refreshedUser.school_logo || null,
+          registration_type: refreshedUser.registration_type || 'single',
+        },
+        user: {
+          id: refreshedUser.id,
+          schoolId: refreshedUser.school_id,
+          schoolName: refreshedUser.school_name || '',
+          schoolLogo: refreshedUser.school_logo || null,
+          registrationType: refreshedUser.registration_type || 'single',
+          schoolFooter: refreshedUser.school_footer || null,
+          branchId: refreshedUser.branch_id || null,
+          branch_id: refreshedUser.branch_id || null,
+          branchName: refreshedUser.branch_name || null,
+          branchCode: refreshedUser.branch_code || null,
+          firstName: refreshedUser.first_name,
+          lastName: refreshedUser.last_name,
+          email: refreshedUser.email,
+          phone: refreshedUser.phone,
+          picture: refreshedUser.picture,
+          roleId: refreshedUser.role_id,
+          roleName,
+          adminType: adminType,
+          admin_type: adminType,
+          isSuperAdmin: Boolean(isSuperAdmin),
         },
       });
     } catch (error) {

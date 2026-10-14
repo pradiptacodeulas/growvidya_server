@@ -1060,6 +1060,39 @@ class AdminFeesModel {
     return invoice;
   }
 
+  static normalizeFrequency(freq) {
+    return String(freq || '').toLowerCase().replace(/[\s_-]/g, '');
+  }
+
+  static getIntervalExpr(freq) {
+    const f = this.normalizeFrequency(freq);
+    if (['annually', 'annual', 'yearly'].includes(f)) return 'INTERVAL 1 YEAR';
+    if (['biannually', 'halfyearly', 'semiannually', 'semiannual'].includes(f)) return 'INTERVAL 6 MONTH';
+    if (f === 'quarterly') return 'INTERVAL 3 MONTH';
+    if (f === 'monthly') return 'INTERVAL 1 MONTH';
+    return null;
+  }
+
+  static isOneTime(freq) {
+    return this.normalizeFrequency(freq) === 'onetime';
+  }
+
+  static toLocalDateStr(dateInput) {
+    if (!dateInput) {
+      const now = new Date();
+      return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    }
+    const str = String(dateInput).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+      return str;
+    }
+    const d = new Date(str);
+    if (!Number.isNaN(d.getTime())) {
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+    return str.includes('T') ? str.split('T')[0] : str;
+  }
+
   static async checkDuplicateInvoice({
     schoolId,
     branchId,
@@ -1074,9 +1107,7 @@ class AdminFeesModel {
     if (!feeStructureId || !issueDate) {
       return { exists: false };
     }
-    const effectiveIssueDate = String(issueDate).includes('T')
-      ? String(issueDate).split('T')[0]
-      : String(issueDate).trim();
+    const effectiveIssueDate = this.toLocalDateStr(issueDate);
 
     // 1. Fetch fee structure info
     let structQuery = `SELECT id, name, frequency, start_month, due_day, grace_period_days, academic_year_id FROM fee_structures WHERE id = ? AND school_id = ?`;
@@ -1090,8 +1121,7 @@ class AdminFeesModel {
       return { exists: false };
     }
     const structure = structRows[0];
-    const frequency = String(structure.frequency || '').toLowerCase().trim();
-    const startMonth = Math.min(Math.max(Number(structure.start_month) || 1, 1), 12);
+    const frequency = structure.frequency;
 
     // 2. Identify target students
     let targetStudentIds = [];
@@ -1124,21 +1154,12 @@ class AdminFeesModel {
       return { exists: false, totalStudents: 0, alreadyInvoicedCount: 0, alreadyInvoicedStudentIds: [] };
     }
 
-    // 3. Check for existing fee invoices for these students matching structure and full issue_date interval
-    let intervalExpr = null;
-    if (frequency === 'annually') {
-      intervalExpr = 'INTERVAL 1 YEAR';
-    } else if (frequency === 'bi-annually' || frequency === 'biannually') {
-      intervalExpr = 'INTERVAL 6 MONTH';
-    } else if (frequency === 'quarterly') {
-      intervalExpr = 'INTERVAL 3 MONTH';
-    } else if (frequency === 'monthly') {
-      intervalExpr = 'INTERVAL 1 MONTH';
-    }
+    // 3. Check for existing fee invoices for these students matching structure and issue_date interval
+    const intervalExpr = this.getIntervalExpr(frequency);
 
     const nextAllowedSelect = intervalExpr
-      ? `DATE_FORMAT(DATE_ADD(DATE_ADD(DATE(fi.issue_date), ${intervalExpr}), INTERVAL 1 DAY), '%d/%m/%Y') AS next_allowed_date_str,
-         DATE_FORMAT(DATE_ADD(DATE(fi.issue_date), ${intervalExpr}), '%d/%m/%Y') AS period_end_date_str,`
+      ? `DATE_FORMAT(DATE_ADD(DATE(fi.issue_date), ${intervalExpr}), '%d/%m/%Y') AS next_allowed_date_str,
+         DATE_FORMAT(DATE_SUB(DATE_ADD(DATE(fi.issue_date), ${intervalExpr}), INTERVAL 1 DAY), '%d/%m/%Y') AS period_end_date_str,`
       : `NULL AS next_allowed_date_str, NULL AS period_end_date_str,`;
 
     let checkQuery = `
@@ -1161,11 +1182,13 @@ class AdminFeesModel {
       checkParams.push(Number(branchId));
     }
 
-    if (frequency === 'one-time' || frequency === 'onetime') {
+    if (this.isOneTime(frequency)) {
       // One-time fee: any existing active invoice for this structure and student is a duplicate
     } else if (intervalExpr) {
-      checkQuery += ` AND DATE(?) BETWEEN DATE_SUB(DATE(fi.issue_date), ${intervalExpr}) AND DATE_ADD(DATE(fi.issue_date), ${intervalExpr})`;
-      checkParams.push(effectiveIssueDate);
+      checkQuery += `
+        AND DATE(?) > DATE_SUB(DATE(fi.issue_date), ${intervalExpr})
+        AND DATE(?) < DATE_ADD(DATE(fi.issue_date), ${intervalExpr})`;
+      checkParams.push(effectiveIssueDate, effectiveIssueDate);
     } else {
       checkQuery += ` AND DATE(fi.issue_date) = DATE(?)`;
       checkParams.push(effectiveIssueDate);
@@ -1273,9 +1296,7 @@ class AdminFeesModel {
         );
       }
 
-      const effectiveIssueDate = issueDate
-        ? (String(issueDate).includes('T') ? String(issueDate).split('T')[0] : String(issueDate).trim())
-        : new Date().toISOString().split('T')[0];
+      const effectiveIssueDate = this.toLocalDateStr(issueDate);
 
       const [components] = await connection.query(
         `SELECT fsc.*, fc.name AS component_name 
@@ -1291,7 +1312,7 @@ class AdminFeesModel {
       // Calculate due date dynamically using explicit dueDate or issue_date + fee structure rules
       let finalDueDate = null;
       if (dueDate && String(dueDate).trim()) {
-        finalDueDate = String(dueDate).includes('T') ? String(dueDate).split('T')[0] : String(dueDate).trim();
+        finalDueDate = this.toLocalDateStr(dueDate);
       } else {
         const [issueYear, issueMonthOneBased, issueDay] = effectiveIssueDate.split('-').map(Number);
         const issueMonth = issueMonthOneBased - 1;
@@ -1358,22 +1379,12 @@ class AdminFeesModel {
       }
 
       let generatedCount = 0;
-      const frequency = String(structure.frequency || '').toLowerCase().trim();
+      const frequency = structure.frequency;
       const targetYear = academicYearId || structure.academic_year_id || null;
-
-      let intervalExpr = null;
-      if (frequency === 'annually') {
-        intervalExpr = 'INTERVAL 1 YEAR';
-      } else if (frequency === 'bi-annually' || frequency === 'biannually') {
-        intervalExpr = 'INTERVAL 6 MONTH';
-      } else if (frequency === 'quarterly') {
-        intervalExpr = 'INTERVAL 3 MONTH';
-      } else if (frequency === 'monthly') {
-        intervalExpr = 'INTERVAL 1 MONTH';
-      }
+      const intervalExpr = this.getIntervalExpr(frequency);
 
       for (const st of targetStudents) {
-        // Prevent duplicate fee entries per student according to full issue_date interval and frequency rules
+        // Prevent duplicate fee entries per student according to issue_date interval and frequency rules
         let studentDupSql = `
           SELECT id FROM fee_invoices 
           WHERE school_id = ? 
@@ -1383,17 +1394,24 @@ class AdminFeesModel {
         `;
         const studentDupParams = [schoolId, st.id, feeStructureId];
 
-        if (frequency === 'one-time' || frequency === 'onetime') {
+        if (branchId) {
+          studentDupSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+          studentDupParams.push(Number(branchId));
+        }
+
+        if (this.isOneTime(frequency)) {
           // One-time fee: any existing active invoice for this student and structure blocks duplicate generation
         } else if (intervalExpr) {
-          studentDupSql += ` AND DATE(?) BETWEEN DATE_SUB(DATE(issue_date), ${intervalExpr}) AND DATE_ADD(DATE(issue_date), ${intervalExpr})`;
-          studentDupParams.push(effectiveIssueDate);
+          studentDupSql += `
+            AND DATE(?) > DATE_SUB(DATE(issue_date), ${intervalExpr})
+            AND DATE(?) < DATE_ADD(DATE(issue_date), ${intervalExpr})`;
+          studentDupParams.push(effectiveIssueDate, effectiveIssueDate);
         } else {
           studentDupSql += ` AND DATE(issue_date) = DATE(?)`;
           studentDupParams.push(effectiveIssueDate);
         }
 
-        studentDupSql += ` LIMIT 1`;
+        studentDupSql += ` LIMIT 1 FOR UPDATE`;
         const [studentExisting] = await connection.query(studentDupSql, studentDupParams);
         if (studentExisting.length > 0) {
           continue; // Skip student: already invoiced for this period

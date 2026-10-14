@@ -87,7 +87,7 @@ class ParentAuthController {
 
       const parent = await ParentModel.findByLoginIdentifier(emailOrIdentifier);
 
-      if (!parent || parent.status === 0 || parent.status === 4) {
+      if (!parent || Number(parent.status) !== 1) {
         return ApiResponse.error(res, 'Invalid credentials. Parent account not found or inactive.', null, 401);
       }
 
@@ -123,7 +123,7 @@ class ParentAuthController {
 
       const parent = await ParentModel.findByLoginIdentifier(emailOrIdentifier);
 
-      if (!parent || parent.status === 0 || parent.status === 4) {
+      if (!parent || Number(parent.status) !== 1) {
         return ApiResponse.error(res, 'Parent account not found with this identifier or is inactive.', null, 404);
       }
 
@@ -162,7 +162,7 @@ class ParentAuthController {
 
       const parent = await ParentModel.findByLoginIdentifier(emailOrIdentifier);
 
-      if (!parent || parent.status === 0 || parent.status === 4) {
+      if (!parent || Number(parent.status) !== 1) {
         return ApiResponse.error(res, 'Parent account not found or is inactive.', null, 401);
       }
 
@@ -193,8 +193,8 @@ class ParentAuthController {
       const parentId = req.user.parentId || req.user.userId;
       const parent = await ParentModel.findAuthProfileById(parentId);
 
-      if (!parent) {
-        return ApiResponse.error(res, 'Parent profile not found.', null, 404);
+      if (!parent || Number(parent.status) !== 1) {
+        return ApiResponse.error(res, 'Parent profile not found or account is inactive.', null, 401);
       }
 
       const requestedStudentId = req.query.student_id ? Number(req.query.student_id) : req.user.studentId;

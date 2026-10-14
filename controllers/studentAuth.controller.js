@@ -206,7 +206,7 @@ class StudentAuthController {
            s.email_address = ? OR 
            s.primary_contact_number = ? OR 
            CAST(s.id AS CHAR) = ?
-         ) AND s.status != 4 AND s.status != 0
+         ) AND s.status = 1
          LIMIT 1`,
         [cleanIdent, cleanIdent, cleanIdent, cleanIdent]
       );
@@ -258,7 +258,7 @@ class StudentAuthController {
            s.email_address = ? OR 
            s.primary_contact_number = ? OR 
            CAST(s.id AS CHAR) = ?
-         ) AND s.status != 4 AND s.status != 0
+         ) AND s.status = 1
          LIMIT 1`,
         [cleanIdent, cleanIdent, cleanIdent, cleanIdent]
       );
@@ -319,7 +319,7 @@ class StudentAuthController {
            s.email_address = ? OR 
            s.primary_contact_number = ? OR 
            CAST(s.id AS CHAR) = ?
-         ) AND s.status != 4 AND s.status != 0
+         ) AND s.status = 1
          LIMIT 1`,
         [cleanIdent, cleanIdent, cleanIdent, cleanIdent]
       );
@@ -357,8 +357,8 @@ class StudentAuthController {
       const StudentModel = require('../models/student.model');
       const student = await StudentModel.getById(studentId, schoolId);
 
-      if (!student) {
-        return ApiResponse.error(res, 'Student profile not found.', null, 404);
+      if (!student || Number(student.status) !== 1) {
+        return ApiResponse.error(res, 'Student account not found or is inactive.', null, 401);
       }
 
       const { password: _, passcode: __, otp: ___, ...safeStudent } = student;

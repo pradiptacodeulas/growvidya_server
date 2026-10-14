@@ -22,6 +22,7 @@ class AdminParentController {
       const email = paramsSrc.email || '';
       const classId = paramsSrc.classId || paramsSrc.class || paramsSrc.class_id || '';
       const sectionId = paramsSrc.sectionId || paramsSrc.section || paramsSrc.section_id || '';
+      const status = paramsSrc.status !== undefined ? paramsSrc.status : '';
       const page = paramsSrc.page || 1;
       const limit = paramsSrc.limit || 12;
       const offset = (Number(page) - 1) * Number(limit);
@@ -34,6 +35,7 @@ class AdminParentController {
         email: String(email).trim(),
         classId,
         sectionId,
+        status,
         branchId,
         limit: Number(limit),
         offset,

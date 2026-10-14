@@ -10,6 +10,7 @@ router.post('/logout', AdminAuthController.logout);
 
 // Protected routes (Super Admin & Admin)
 router.get('/me', authMiddleware, rbacMiddleware(['Super Admin', 'Admin']), AdminAuthController.getProfile);
-
+router.get('/profile', authMiddleware, rbacMiddleware(['Super Admin', 'Admin']), AdminAuthController.getFullProfile);
+router.put('/profile', authMiddleware, rbacMiddleware(['Super Admin', 'Admin']), AdminAuthController.updateProfile);
 
 module.exports = router;
