@@ -536,41 +536,60 @@ class AcademicModel {
     }
   }
 
-  static async createSubject(schoolId, { class_id = null, subject_name, sort_order = 1, status = 1, branch_id = null }) {
-    let resolvedBranchId = branch_id ? Number(branch_id) : null;
-    if (!resolvedBranchId && class_id) {
-      try {
-        const [cls] = await pool.query(`SELECT branch_id FROM class_master WHERE id = ? LIMIT 1`, [class_id]);
-        if (cls && cls[0]?.branch_id) resolvedBranchId = cls[0].branch_id;
-      } catch (e) {}
+  static async createSubject(schoolId, { class_id = null, class_ids = null, subject_name, sort_order = 1, status = 1, branch_id = null }) {
+    const targetClasses = Array.isArray(class_ids) && class_ids.length > 0
+      ? class_ids
+      : Array.isArray(class_id) && class_id.length > 0
+      ? class_id
+      : [class_id];
+
+    const insertedIds = [];
+    let lastError = null;
+
+    for (const cId of targetClasses) {
+      let resolvedBranchId = branch_id ? Number(branch_id) : null;
+      if (!resolvedBranchId && cId) {
+        try {
+          const [cls] = await pool.query(`SELECT branch_id FROM class_master WHERE id = ? LIMIT 1`, [cId]);
+          if (cls && cls[0]?.branch_id) resolvedBranchId = cls[0].branch_id;
+        } catch (e) {}
+      }
+
+      // Branch-aware duplicate check: subject_name within branch and class
+      if (subject_name && String(subject_name).trim()) {
+        let dupSql = `SELECT id FROM subject_master WHERE school_id = ? AND LOWER(TRIM(subject_name)) = LOWER(TRIM(?)) AND (status != 4 OR status IS NULL)`;
+        const dupParams = [schoolId, String(subject_name).trim()];
+        if (cId) {
+          dupSql += ` AND class_id = ?`;
+          dupParams.push(cId);
+        }
+        if (resolvedBranchId) {
+          dupSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+          dupParams.push(resolvedBranchId);
+        }
+        dupSql += ` LIMIT 1`;
+        const [existing] = await pool.query(dupSql, dupParams);
+        if (existing && existing.length > 0) {
+          const err = new Error(`A subject named "${subject_name}" already exists for this class.`);
+          err.statusCode = 400;
+          if (targetClasses.length === 1) throw err;
+          lastError = err;
+          continue;
+        }
+      }
+
+      const [result] = await pool.query(
+        `INSERT INTO subject_master (school_id, branch_id, class_id, subject_name, sort_order, status) VALUES (?, ?, ?, ?, ?, ?)`,
+        [schoolId, resolvedBranchId, cId ? Number(cId) : null, subject_name, Number(sort_order) || 0, Number(status)]
+      );
+      insertedIds.push(result.insertId);
     }
 
-    // Branch-aware duplicate check: subject_name within branch and class
-    if (subject_name && String(subject_name).trim()) {
-      let dupSql = `SELECT id FROM subject_master WHERE school_id = ? AND LOWER(TRIM(subject_name)) = LOWER(TRIM(?)) AND (status != 4 OR status IS NULL)`;
-      const dupParams = [schoolId, String(subject_name).trim()];
-      if (class_id) {
-        dupSql += ` AND class_id = ?`;
-        dupParams.push(class_id);
-      }
-      if (resolvedBranchId) {
-        dupSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
-        dupParams.push(resolvedBranchId);
-      }
-      dupSql += ` LIMIT 1`;
-      const [existing] = await pool.query(dupSql, dupParams);
-      if (existing && existing.length > 0) {
-        const err = new Error(`A subject named "${subject_name}" already exists in this branch.`);
-        err.statusCode = 400;
-        throw err;
-      }
+    if (insertedIds.length === 0 && lastError) {
+      throw lastError;
     }
 
-    const [result] = await pool.query(
-      `INSERT INTO subject_master (school_id, branch_id, class_id, subject_name, sort_order, status) VALUES (?, ?, ?, ?, ?, ?)`,
-      [schoolId, resolvedBranchId, class_id ? Number(class_id) : null, subject_name, Number(sort_order) || 0, Number(status)]
-    );
-    return result.insertId;
+    return insertedIds[0] || null;
   }
 
   static async updateSubject(id, schoolId, { class_id, subject_name, sort_order = 1, status = 1, branch_id = null }, branchId = null) {

@@ -8,7 +8,37 @@ const parsePostalCode = (val) => {
 };
 
 class TeacherModel {
+  static parseBranchId(branchId) {
+    if (
+      branchId !== null &&
+      branchId !== undefined &&
+      branchId !== '' &&
+      branchId !== 'all' &&
+      branchId !== '0' &&
+      branchId !== 0 &&
+      !isNaN(Number(branchId)) &&
+      Number(branchId) > 0
+    ) {
+      return Number(branchId);
+    }
+    return null;
+  }
+
+  static async resolveDefaultBranchId(schoolId, branchId = null) {
+    const parsed = TeacherModel.parseBranchId(branchId);
+    if (parsed) return parsed;
+    try {
+      const [rows] = await pool.query(
+        `SELECT id FROM branch_master WHERE school_id = ? AND status != 4 ORDER BY is_main_branch DESC, id ASC LIMIT 1`,
+        [schoolId]
+      );
+      if (rows && rows.length > 0) return Number(rows[0].id);
+    } catch (e) {}
+    return null;
+  }
+
   static async getAllTeachers(schoolId, { search = '', email = '', status = '', branchId = null, limit = 12, offset = 0 } = {}) {
+    const cleanBranchId = TeacherModel.parseBranchId(branchId);
     let sql = `
       SELECT t.*, 
         bm.branch_name, bm.branch_code,
@@ -18,18 +48,18 @@ class TeacherModel {
           SELECT GROUP_CONCAT(DISTINCT cm.class_name ORDER BY cm.id ASC SEPARATOR ', ')
           FROM teacher_class_assign tca
           JOIN class_master cm ON tca.class_id = cm.id
-          WHERE tca.teacher_id = t.id AND (tca.status = 1 OR tca.status = '1') AND cm.status != 4
+          WHERE tca.teacher_id = t.id AND tca.school_id = t.school_id AND (tca.status = 1 OR tca.status = '1') AND cm.status != 4
         ) AS assigned_classes,
         (
           SELECT GROUP_CONCAT(DISTINCT sm.subject_name ORDER BY sm.id ASC SEPARATOR ', ')
           FROM teacher_class_assign tca
           JOIN subject_master sm ON tca.subject_id = sm.id
-          WHERE tca.teacher_id = t.id AND (tca.status = 1 OR tca.status = '1') AND sm.status != 4
+          WHERE tca.teacher_id = t.id AND tca.school_id = t.school_id AND (tca.status = 1 OR tca.status = '1') AND sm.status != 4
         ) AS assigned_subjects,
         COALESCE(sub.subject_name, (
           SELECT sm.subject_name FROM teacher_class_assign tca 
           JOIN subject_master sm ON tca.subject_id = sm.id 
-          WHERE tca.teacher_id = t.id AND tca.status != 4 AND sm.status != 4
+          WHERE tca.teacher_id = t.id AND tca.school_id = t.school_id AND tca.status != 4 AND sm.status != 4
           ORDER BY tca.id ASC LIMIT 1
         )) AS subject_name 
       FROM teacher_master t
@@ -47,9 +77,9 @@ class TeacherModel {
 
     const params = [schoolId];
 
-    if (branchId) {
+    if (cleanBranchId) {
       sql += ` AND t.branch_id = ?`;
-      params.push(Number(branchId));
+      params.push(cleanBranchId);
     }
 
     if (String(status) === '1') {
@@ -137,6 +167,11 @@ class TeacherModel {
       WHERE t.school_id = ? AND t.status != 4
     `;
     const countParams = [schoolId];
+
+    if (cleanBranchId) {
+      countSql += ` AND t.branch_id = ?`;
+      countParams.push(cleanBranchId);
+    }
 
     if (String(status) === '1') {
       countSql += ` AND t.status = 1`;
@@ -228,9 +263,9 @@ class TeacherModel {
            FROM teacher_class_assign tca
            LEFT JOIN class_master cm ON tca.class_id = cm.id
            LEFT JOIN subject_master sm ON tca.subject_id = sm.id
-           WHERE tca.teacher_id IN (?) AND (tca.status = 1 OR tca.status = '1') AND (cm.status IS NULL OR cm.status != 4)
+           WHERE tca.teacher_id IN (?) AND tca.school_id = ? AND (tca.status = 1 OR tca.status = '1') AND (cm.status IS NULL OR cm.status != 4)
            ORDER BY tca.id ASC`,
-          [teacherIds]
+          [teacherIds, schoolId]
         );
         for (const a of assignRows) {
           if (!classAssignMap[a.teacher_id]) {
@@ -272,6 +307,7 @@ class TeacherModel {
   }
 
   static async getTeacherById(id, schoolId, branchId = null) {
+    const cleanBranchId = TeacherModel.parseBranchId(branchId);
     const [rows] = await pool.query(
       `SELECT 
         t.*,
@@ -282,7 +318,7 @@ class TeacherModel {
         COALESCE(sub.subject_name, (
           SELECT sm.subject_name FROM teacher_class_assign tca 
           JOIN subject_master sm ON tca.subject_id = sm.id 
-          WHERE tca.teacher_id = t.id AND tca.status != 4 AND sm.status != 4
+          WHERE tca.teacher_id = t.id AND tca.school_id = t.school_id AND tca.status != 4 AND sm.status != 4
           ORDER BY tca.id ASC LIMIT 1
         )) AS subject_name,
         COALESCE(g.gender, IF(t.gender = '2' OR t.gender = 2, 'Female', IF(t.gender = '3' OR t.gender = 3, 'Others', 'Male'))) AS gender_name,
@@ -308,9 +344,9 @@ class TeacherModel {
           CAST(t.marital_status AS CHAR) = CAST(mm.id AS CHAR) OR
           (t.marital_status NOT IN ('0', 0, '') AND CAST(t.marital_status AS CHAR) COLLATE utf8mb4_unicode_ci = mm.marital_status)
         )
-       WHERE t.id = ? AND t.school_id = ? AND t.status != 4 ${branchId ? ' AND (t.branch_id = ? OR t.branch_id IS NULL)' : ''}
+       WHERE t.id = ? AND t.school_id = ? AND t.status != 4 ${cleanBranchId ? ' AND t.branch_id = ?' : ''}
        LIMIT 1`,
-      branchId ? [id, schoolId, Number(branchId)] : [id, schoolId]
+      cleanBranchId ? [id, schoolId, cleanBranchId] : [id, schoolId]
     );
     const teacher = rows[0] || null;
     if (!teacher) return null;
@@ -419,8 +455,8 @@ class TeacherModel {
         `SELECT td.*, dtm.document_type_name
          FROM teacher_document td
          LEFT JOIN document_type_master dtm ON td.document_type = dtm.id
-         WHERE td.teacher_id = ? AND td.status != 0`,
-        [id]
+         WHERE td.teacher_id = ? AND td.school_id = ? AND td.status != 0`,
+        [id, schoolId]
       );
       teacher.documents = (docRows || []).map((doc) => {
         let attachment = (doc.attachments || '').trim();
@@ -528,9 +564,9 @@ class TeacherModel {
         `SELECT l.*, lm.leave_name
          FROM leaves l
          LEFT JOIN leave_master lm ON l.leave_id = lm.id
-         WHERE (l.staff_id = ? OR l.staff_id = ?) AND l.role = 1
+         WHERE (l.staff_id = ? OR l.staff_id = ?) AND (l.school_id = ? OR l.school_id IS NULL) AND l.role = 1
          ORDER BY l.id DESC LIMIT 50`,
-        [id, teacher.teacher_id || '']
+        [id, teacher.teacher_id || '', schoolId]
       );
 
       const formattedLeaves = [];
@@ -563,9 +599,9 @@ class TeacherModel {
     try {
       const [attRows] = await pool.query(
         `SELECT * FROM teacher_attendance 
-         WHERE (teacher_id = ? OR teacher_id = ?) 
+         WHERE (teacher_id = ? OR teacher_id = ?) AND (school_id = ? OR school_id IS NULL)
          ORDER BY date DESC`,
-        [id, teacher.teacher_id || '']
+        [id, teacher.teacher_id || '', schoolId]
       );
 
       let totalPresent = 0;
@@ -629,17 +665,22 @@ class TeacherModel {
         [teacher.school_id, teacher.branch_id || null]
       );
 
-      const [routineRows] = await pool.query(
-        `SELECT r.*, cm.class_name, sm.section_name, pm.period_name, pm.start_time, pm.end_time, subm.subject_name
-         FROM routine r
-         LEFT JOIN class_master cm ON cm.id = r.class_id
-         LEFT JOIN section_master sm ON sm.id = r.section_id
-         LEFT JOIN period_master pm ON pm.id = r.period_id
-         LEFT JOIN subject_master subm ON subm.id = r.subject_id
-         WHERE (r.teacher_id = ? OR r.teacher_id = ?) AND (r.status != 0)
-         ORDER BY r.day ASC, pm.id ASC`,
-        [id, teacher.teacher_id || '']
-      );
+      let routineSql = `
+        SELECT r.*, cm.class_name, sm.section_name, pm.period_name, pm.start_time, pm.end_time, subm.subject_name
+        FROM routine r
+        LEFT JOIN class_master cm ON cm.id = r.class_id
+        LEFT JOIN section_master sm ON sm.id = r.section_id
+        LEFT JOIN period_master pm ON pm.id = r.period_id
+        LEFT JOIN subject_master subm ON subm.id = r.subject_id
+        WHERE (r.teacher_id = ? OR r.teacher_id = ?) AND r.school_id = ? AND (r.status != 0 AND r.status != 4)
+      `;
+      const routineParams = [id, teacher.teacher_id || '', schoolId];
+      if (teacher.branch_id) {
+        routineSql += ` AND (r.branch_id = ? OR r.branch_id IS NULL)`;
+        routineParams.push(teacher.branch_id);
+      }
+      routineSql += ` ORDER BY r.day ASC, pm.id ASC`;
+      const [routineRows] = await pool.query(routineSql, routineParams);
 
       const formatTime12 = (timeStr) => {
         if (!timeStr) return '';
@@ -685,17 +726,24 @@ class TeacherModel {
 
   static async getTeacherOptions(schoolId, branchId = null) {
     try {
-      const [academicYears] = await pool.query(
-        `SELECT id, start_date, end_date, is_current FROM academic_year_master WHERE status = 1 AND school_id = ? ORDER BY id DESC`,
-        [schoolId]
-      );
-      let classSql = `SELECT id, class_name FROM class_master WHERE status = 1 AND school_id = ?`;
-      const classParams = [schoolId];
-      if (branchId) {
-        classSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
-        classParams.push(Number(branchId));
+      const cleanBranchId = TeacherModel.parseBranchId(branchId);
+
+      let aySql = `SELECT id, start_date, end_date, is_current, branch_id FROM academic_year_master WHERE status = 1 AND school_id = ?`;
+      const ayParams = [schoolId];
+      if (cleanBranchId) {
+        aySql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+        ayParams.push(cleanBranchId);
       }
-      classSql += ` ORDER BY id ASC`;
+      aySql += ` ORDER BY id DESC`;
+      const [academicYears] = await pool.query(aySql, ayParams);
+
+      let classSql = `SELECT id, class_name, branch_id FROM class_master WHERE status = 1 AND school_id = ?`;
+      const classParams = [schoolId];
+      if (cleanBranchId) {
+        classSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+        classParams.push(cleanBranchId);
+      }
+      classSql += ` ORDER BY sort_order ASC, id ASC`;
       const [classes] = await pool.query(classSql, classParams);
 
       const [genders] = await pool.query(`SELECT id, gender FROM gender_master`);
@@ -703,33 +751,37 @@ class TeacherModel {
       const [maritalStatuses] = await pool.query(`SELECT id, marital_status FROM marital_master WHERE status = 1`);
       const [contractTypes] = await pool.query(`SELECT id, contract_type FROM contract_type_master`);
 
-      let shiftSql = `SELECT id, shift_name FROM shift_master WHERE status = 1 AND school_id = ?`;
+      let shiftSql = `SELECT id, shift_name, branch_id FROM shift_master WHERE status = 1 AND school_id = ?`;
       const shiftParams = [schoolId];
-      if (branchId) {
+      if (cleanBranchId) {
         shiftSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
-        shiftParams.push(Number(branchId));
+        shiftParams.push(cleanBranchId);
       }
       const [workShifts] = await pool.query(shiftSql, shiftParams);
 
-      let routeSql = `SELECT id, transport_route FROM trans_route_master WHERE status = 1 AND school_id = ?`;
+      let routeSql = `SELECT id, transport_route, branch_id FROM trans_route_master WHERE status = 1 AND school_id = ?`;
       const routeParams = [schoolId];
-      if (branchId) {
+      if (cleanBranchId) {
         routeSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
-        routeParams.push(Number(branchId));
+        routeParams.push(cleanBranchId);
       }
       const [transportRoutes] = await pool.query(routeSql, routeParams);
 
-      let hostelSql = `SELECT id, hostel_name FROM hostel_name_master WHERE status = 1 AND school_id = ?`;
+      let hostelSql = `SELECT id, hostel_name, branch_id FROM hostel_name_master WHERE status = 1 AND school_id = ?`;
       const hostelParams = [schoolId];
-      if (branchId) {
+      if (cleanBranchId) {
         hostelSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
-        hostelParams.push(Number(branchId));
+        hostelParams.push(cleanBranchId);
       }
       const [hostels] = await pool.query(hostelSql, hostelParams);
-      const [documentTypes] = await pool.query(
-        `SELECT id, document_type_name FROM document_type_master WHERE school_id = ?`,
-        [schoolId]
-      );
+
+      let docTypeSql = `SELECT id, document_type_name, branch_id FROM document_type_master WHERE school_id = ? AND (status = 1 OR status IS NULL)`;
+      const docTypeParams = [schoolId];
+      if (cleanBranchId) {
+        docTypeSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+        docTypeParams.push(cleanBranchId);
+      }
+      const [documentTypes] = await pool.query(docTypeSql, docTypeParams);
       const [countries] = await pool.query(`SELECT id, name, name AS country, name AS country_name, shortname, phonecode FROM countries WHERE status = 1 OR status IS NULL ORDER BY name ASC`);
 
       return {
@@ -753,11 +805,12 @@ class TeacherModel {
 
   static async checkEmail(schoolId, email, excludeId = null, branchId = null) {
     if (!email || !String(email).trim()) return false;
+    const targetBranchId = await TeacherModel.resolveDefaultBranchId(schoolId, branchId);
     let sql = `SELECT id FROM teacher_master WHERE email_address = ? AND school_id = ? AND status != 4`;
     const params = [String(email).trim(), schoolId];
-    if (branchId) {
-      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
-      params.push(Number(branchId));
+    if (targetBranchId) {
+      sql += ` AND branch_id = ?`;
+      params.push(targetBranchId);
     }
     if (excludeId) {
       sql += ` AND id != ?`;
@@ -769,11 +822,12 @@ class TeacherModel {
 
   static async checkPhone(schoolId, phone, excludeId = null, branchId = null) {
     if (!phone || !String(phone).trim()) return false;
+    const targetBranchId = await TeacherModel.resolveDefaultBranchId(schoolId, branchId);
     let sql = `SELECT id FROM teacher_master WHERE primary_contact_number = ? AND school_id = ? AND status != 4`;
     const params = [String(phone).trim(), schoolId];
-    if (branchId) {
-      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
-      params.push(Number(branchId));
+    if (targetBranchId) {
+      sql += ` AND branch_id = ?`;
+      params.push(targetBranchId);
     }
     if (excludeId) {
       sql += ` AND id != ?`;
@@ -790,8 +844,8 @@ class TeacherModel {
   }
 
   static async createTeacher(schoolId, data) {
-    // Resolve branch_id strictly if provided
-    let branchId = data.branch_id ? Number(data.branch_id) : (data.branchId ? Number(data.branchId) : null);
+    // Resolve branch_id strictly (or fallback to school's main branch)
+    const branchId = await TeacherModel.resolveDefaultBranchId(schoolId, data.branch_id || data.branchId);
 
     const {
       picture,
@@ -848,7 +902,7 @@ class TeacherModel {
     if (email_address && String(email_address).trim()) {
       const isEmailDup = await TeacherModel.checkEmail(schoolId, email_address, null, branchId);
       if (isEmailDup) {
-        const err = new Error('A teacher with this email address already exists.');
+        const err = new Error('A teacher with this email address already exists in this branch.');
         err.statusCode = 400;
         throw err;
       }
@@ -857,7 +911,7 @@ class TeacherModel {
     if (primary_contact_number && String(primary_contact_number).trim()) {
       const isPhoneDup = await TeacherModel.checkPhone(schoolId, primary_contact_number, null, branchId);
       if (isPhoneDup) {
-        const err = new Error('A teacher with this mobile number already exists.');
+        const err = new Error('A teacher with this mobile number already exists in this branch.');
         err.statusCode = 400;
         throw err;
       }
@@ -1124,18 +1178,25 @@ class TeacherModel {
     return newId;
   }
 
-  static async updateTeacher(id, schoolId, data, branchId = null) {
-    const resolvedBranchId = branchId || (data.branch_id ? Number(data.branch_id) : (data.branchId ? Number(data.branchId) : null));
-    let selectSql = `SELECT * FROM teacher_master WHERE id = ? AND school_id = ?`;
+  static async updateTeacher(id, schoolId, data, filterBranchId = null) {
+    const cleanFilterBranchId = TeacherModel.parseBranchId(filterBranchId);
+    let selectSql = `SELECT * FROM teacher_master WHERE id = ? AND school_id = ? AND status != 4`;
     const selectParams = [id, schoolId];
-    if (resolvedBranchId) {
-      selectSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
-      selectParams.push(Number(resolvedBranchId));
+    if (cleanFilterBranchId) {
+      selectSql += ` AND branch_id = ?`;
+      selectParams.push(cleanFilterBranchId);
     }
     selectSql += ` LIMIT 1`;
     const [existingRows] = await pool.query(selectSql, selectParams);
     if (!existingRows || existingRows.length === 0) return false;
     const existing = existingRows[0];
+
+    const requestedBranchId = TeacherModel.parseBranchId(data.branch_id ?? data.branchId);
+    const teacherBranchId =
+      cleanFilterBranchId ||
+      requestedBranchId ||
+      TeacherModel.parseBranchId(existing.branch_id) ||
+      (await TeacherModel.resolveDefaultBranchId(schoolId, null));
 
     const newStatus = data.status !== undefined ? Number(data.status) : existing.status;
     const isInactive = newStatus === 2 || newStatus === 0;
@@ -1179,18 +1240,18 @@ class TeacherModel {
     const primarySubject = subject || existing.subject || (data.class_assignments && data.class_assignments[0]?.subject_id ? data.class_assignments[0].subject_id : null);
 
     if (email_address && String(email_address).trim()) {
-      const isEmailDup = await TeacherModel.checkEmail(schoolId, email_address, id, resolvedBranchId);
+      const isEmailDup = await TeacherModel.checkEmail(schoolId, email_address, id, teacherBranchId);
       if (isEmailDup) {
-        const err = new Error('A teacher with this email address already exists.');
+        const err = new Error('A teacher with this email address already exists in this branch.');
         err.statusCode = 400;
         throw err;
       }
     }
 
     if (primary_contact_number && String(primary_contact_number).trim()) {
-      const isPhoneDup = await TeacherModel.checkPhone(schoolId, primary_contact_number, id, resolvedBranchId);
+      const isPhoneDup = await TeacherModel.checkPhone(schoolId, primary_contact_number, id, teacherBranchId);
       if (isPhoneDup) {
-        const err = new Error('A teacher with this mobile number already exists.');
+        const err = new Error('A teacher with this mobile number already exists in this branch.');
         err.statusCode = 400;
         throw err;
       }
@@ -1207,7 +1268,7 @@ class TeacherModel {
         take_attendance = ?`;
 
     const params = [
-      data.branch_id || null,
+      teacherBranchId,
       academic_year || null,
       teacher_id,
       first_name,
@@ -1248,25 +1309,17 @@ class TeacherModel {
     updateSql += ` WHERE id = ? AND school_id = ?`;
     params.push(id, schoolId);
 
-    if (resolvedBranchId) {
-      updateSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
-      params.push(Number(resolvedBranchId));
+    if (cleanFilterBranchId) {
+      updateSql += ` AND branch_id = ?`;
+      params.push(cleanFilterBranchId);
     }
 
     await pool.query(updateSql, params);
 
-    let teacherBranchId = data.branch_id ? Number(data.branch_id) : (data.branchId ? Number(data.branchId) : null);
-    if (!teacherBranchId) {
-      try {
-        const [tRow] = await pool.query('SELECT branch_id FROM teacher_master WHERE id = ? LIMIT 1', [id]);
-        if (tRow.length && tRow[0].branch_id) teacherBranchId = tRow[0].branch_id;
-      } catch (e) {}
-    }
-
     // 1. Update Address (only if current_address is provided)
     if (data.current_address) {
       try {
-        await pool.query(`DELETE FROM teacher_address WHERE teacher_id = ?`, [id]);
+        await pool.query(`DELETE FROM teacher_address WHERE teacher_id = ? AND school_id = ?`, [id, schoolId]);
 
         await pool.query(
           `INSERT INTO teacher_address 
@@ -1307,6 +1360,10 @@ class TeacherModel {
       } catch (addrErr) {
         console.error('[TeacherModel.updateTeacher] Error saving teacher_address:', addrErr.message);
       }
+    } else if (teacherBranchId && teacherBranchId !== existing.branch_id) {
+      try {
+        await pool.query(`UPDATE teacher_address SET branch_id = ? WHERE teacher_id = ? AND school_id = ?`, [teacherBranchId, id, schoolId]);
+      } catch {}
     }
 
     // 2. Class Assignments Update Handling
@@ -1392,7 +1449,7 @@ class TeacherModel {
     // 3. Update Payroll (only if payroll provided)
     if (data.payroll) {
       try {
-        await pool.query(`DELETE FROM teacher_payroll WHERE teacher_id = ?`, [id]);
+        await pool.query(`DELETE FROM teacher_payroll WHERE teacher_id = ? AND school_id = ?`, [id, schoolId]);
         if (data.payroll.epf_no || data.payroll.basic_salary || data.payroll.contract_type) {
           await pool.query(
             `INSERT INTO teacher_payroll 
@@ -1421,7 +1478,7 @@ class TeacherModel {
     const bankPayload = data.bank || data.bank_account;
     if (bankPayload) {
       try {
-        await pool.query(`DELETE FROM teacher_bank WHERE teacher_id = ?`, [id]);
+        await pool.query(`DELETE FROM teacher_bank WHERE teacher_id = ? AND school_id = ?`, [id, schoolId]);
         if (bankPayload.account_name || bankPayload.account_number || bankPayload.bank_name) {
           await pool.query(
             `INSERT INTO teacher_bank 
@@ -1448,7 +1505,7 @@ class TeacherModel {
     // 5. Update Transport (only if transport provided)
     if (data.transport) {
       try {
-        await pool.query(`DELETE FROM teacher_transport WHERE teacher_id = ?`, [id]);
+        await pool.query(`DELETE FROM teacher_transport WHERE teacher_id = ? AND school_id = ?`, [id, schoolId]);
         if (data.transport.route) {
           await pool.query(
             `INSERT INTO teacher_transport 
@@ -1474,12 +1531,12 @@ class TeacherModel {
     // 6. Update Hostel (only if hostel provided)
     if (data.hostel) {
       try {
-        await pool.query(`DELETE FROM teacher_hostel WHERE teacher_id = ?`, [id]);
+        await pool.query(`DELETE FROM teacher_hostel WHERE teacher_id = ? AND school_id = ?`, [id, schoolId]);
         if (data.hostel.hostel_name) {
           await pool.query(
             `INSERT INTO teacher_hostel 
              (school_id, branch_id, teacher_id, academic_year, hostel_name, room_number, status)
-             VALUES (?, ?, ?, ?, ?, 1)`,
+             VALUES (?, ?, ?, ?, ?, ?, 1)`,
             [
               schoolId,
               teacherBranchId,
@@ -1498,7 +1555,7 @@ class TeacherModel {
     // 7. Update Social Links (only if social provided)
     if (data.social) {
       try {
-        await pool.query(`DELETE FROM teacher_social_link WHERE teacher_id = ?`, [id]);
+        await pool.query(`DELETE FROM teacher_social_link WHERE teacher_id = ? AND school_id = ?`, [id, schoolId]);
         await pool.query(
           `INSERT INTO teacher_social_link 
            (school_id, branch_id, teacher_id, academic_year, facebook_link, instagram_link, linkedin_link, youtube_link, twitter_link, staus)
@@ -1523,7 +1580,7 @@ class TeacherModel {
     // 8. Update Documents (only if documents provided)
     if (data.documents !== undefined && Array.isArray(data.documents)) {
       try {
-        await pool.query(`DELETE FROM teacher_document WHERE teacher_id = ?`, [id]);
+        await pool.query(`DELETE FROM teacher_document WHERE teacher_id = ? AND school_id = ?`, [id, schoolId]);
         for (const doc of data.documents) {
           if (doc.document_type || doc.attachments) {
             await pool.query(
@@ -1736,13 +1793,17 @@ class TeacherModel {
   }
 
   static async deleteTeacher(id, schoolId, branchId = null) {
+    const cleanBranchId = TeacherModel.parseBranchId(branchId);
     let sql = `UPDATE teacher_master SET status = 4 WHERE id = ? AND school_id = ?`;
     const params = [id, schoolId];
-    if (branchId) {
+    if (cleanBranchId) {
       sql += ` AND branch_id = ?`;
-      params.push(Number(branchId));
+      params.push(cleanBranchId);
     }
     const [result] = await pool.query(sql, params);
+    if (!result || result.affectedRows === 0) {
+      return false;
+    }
 
     // Also soft-delete teacher class assignments
     try {
@@ -1764,7 +1825,7 @@ class TeacherModel {
       console.error('Error unassigning teacher from routines:', e.message);
     }
 
-    return result.affectedRows > 0;
+    return true;
   }
 }
 

@@ -48,7 +48,7 @@ class AdminTeacherController {
   static async getTeacherOptions(req, res, next) {
     try {
       const schoolId = AdminTeacherController.getSchoolId(req);
-      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const branchId = req.query.branch_id || req.query.branchId || req.branchId || null;
       const options = await TeacherModel.getTeacherOptions(schoolId, branchId);
       return ApiResponse.success(res, 'Teacher options retrieved successfully.', options);
     } catch (error) {
@@ -59,7 +59,7 @@ class AdminTeacherController {
   static async checkEmail(req, res, next) {
     try {
       const schoolId = AdminTeacherController.getSchoolId(req);
-      const branchId = req.branchId || req.query.branch_id || req.query.branchId || req.body?.branch_id || null;
+      const branchId = req.body?.branch_id || req.body?.branchId || req.query?.branch_id || req.query?.branchId || req.branchId || null;
       const email = req.body?.email || req.query?.email || '';
       const excludeId = req.body?.exclude_id || req.query?.exclude_id || null;
       if (!email) {
@@ -78,7 +78,7 @@ class AdminTeacherController {
   static async checkPhone(req, res, next) {
     try {
       const schoolId = AdminTeacherController.getSchoolId(req);
-      const branchId = req.branchId || req.query.branch_id || req.query.branchId || req.body?.branch_id || null;
+      const branchId = req.body?.branch_id || req.body?.branchId || req.query?.branch_id || req.query?.branchId || req.branchId || null;
       const phone = req.body?.phone || req.query?.phone || '';
       const excludeId = req.body?.exclude_id || req.query?.exclude_id || null;
       if (!phone) {
@@ -97,7 +97,7 @@ class AdminTeacherController {
   static async checkDuplicate(req, res, next) {
     try {
       const schoolId = AdminTeacherController.getSchoolId(req);
-      const branchId = req.branchId || req.query.branch_id || req.query.branchId || req.body?.branch_id || null;
+      const branchId = req.body?.branch_id || req.body?.branchId || req.query?.branch_id || req.query?.branchId || req.branchId || null;
       const email = req.body?.email || req.query?.email || '';
       const phone = req.body?.phone || req.query?.phone || '';
       const excludeId = req.body?.exclude_id || req.query?.exclude_id || null;
@@ -167,11 +167,27 @@ class AdminTeacherController {
   static async updateTeacher(req, res, next) {
     try {
       const schoolId = AdminTeacherController.getSchoolId(req);
-      const branchId = req.body.branch_id || req.body.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || undefined;
-      const updated = await TeacherModel.updateTeacher(req.params.id, schoolId, {
-        ...req.body,
-        ...(branchId !== undefined ? { branch_id: branchId } : {}),
-      }, branchId);
+      const adminType = Number(req.user?.adminType ?? req.user?.admin_type);
+      const roleStr = String(req.user?.roleName || req.user?.role_name || req.user?.role || '').toLowerCase();
+      const isSuperAdmin =
+        Boolean(req.user?.isSuperAdmin) ||
+        adminType === 1 ||
+        roleStr === 'super admin' ||
+        roleStr === 'superadmin';
+
+      const headerBranch = req.headers['x-branch-id'] || req.headers['x-branch'] || req.query?.branch_id || req.query?.branchId || null;
+      const filterBranchId = isSuperAdmin ? headerBranch : (req.branchId || req.user?.branch_id || req.user?.branchId || null);
+      const targetBranchId = req.body.branch_id || req.body.branchId || filterBranchId || undefined;
+
+      const updated = await TeacherModel.updateTeacher(
+        req.params.id,
+        schoolId,
+        {
+          ...req.body,
+          ...(targetBranchId !== undefined ? { branch_id: targetBranchId } : {}),
+        },
+        filterBranchId
+      );
       if (!updated) return ApiResponse.error(res, 'Teacher record not found.', null, 404);
       return ApiResponse.success(res, 'Teacher updated successfully.', null);
     } catch (error) {
@@ -182,7 +198,7 @@ class AdminTeacherController {
   static async deleteTeacher(req, res, next) {
     try {
       const schoolId = AdminTeacherController.getSchoolId(req);
-      const branchId = req.branchId || req.query.branch_id || null;
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const deleted = await TeacherModel.deleteTeacher(req.params.id, schoolId, branchId);
       if (!deleted) return ApiResponse.error(res, 'Teacher record not found.', null, 404);
       return ApiResponse.success(res, 'Teacher deleted successfully.', null);
