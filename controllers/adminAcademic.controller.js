@@ -84,11 +84,18 @@ class AdminAcademicController {
   static async updateAcademicYear(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
+      const rawReqBranch = req.branchId !== undefined ? req.branchId : (req.query.branch_id || req.query.branchId || null);
+      const reqBranchId = rawReqBranch && rawReqBranch !== 'all' ? Number(rawReqBranch) : null;
       const branchId = req.body.branch_id !== undefined ? (req.body.branch_id || null) : (req.body.branchId !== undefined ? (req.body.branchId || null) : undefined);
-      const updated = await AcademicModel.updateAcademicYear(req.params.id, schoolId, {
-        ...req.body,
-        ...(branchId !== undefined ? { branch_id: branchId } : {}),
-      });
+      const updated = await AcademicModel.updateAcademicYear(
+        req.params.id,
+        schoolId,
+        {
+          ...req.body,
+          ...(branchId !== undefined ? { branch_id: branchId } : {}),
+        },
+        reqBranchId
+      );
       if (!updated) return ApiResponse.error(res, 'Academic year not found', null, 404);
       return ApiResponse.success(res, 'Academic year updated successfully.', null);
     } catch (error) {
