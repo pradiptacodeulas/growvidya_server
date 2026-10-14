@@ -45,47 +45,37 @@ const toBase64DataUri = (imgUrlOrPath) => {
  * Computes grade code given percentage and grades scale
  */
 const computeGradeFromPct = (pct, grades = []) => {
-  const val = Number(pct);
-  if (!grades || grades.length === 0) {
-    if (val >= 90) return 'A+';
-    if (val >= 80) return 'A';
-    if (val >= 70) return 'B+';
-    if (val >= 60) return 'B';
-    if (val >= 50) return 'C';
-    if (val >= 33) return 'D';
-    return 'E';
+  if (pct === null || pct === undefined || isNaN(pct) || !Array.isArray(grades) || grades.length === 0) {
+    return '';
   }
+  const val = Number(pct);
   for (const g of grades) {
-    const min = Number(g.min_percentage ?? 0);
-    const max = Number(g.max_percentage ?? 100);
+    const min = Number(g.min_percentage ?? g.min_mark ?? 0);
+    const max = Number(g.max_percentage ?? g.max_mark ?? 100);
     if (val >= min && val <= max) {
-      return g.grade_name || g.grade || 'A';
+      return g.grade_name || g.grade || '';
     }
   }
-  return 'A';
+  return '';
 };
 
 /**
  * Generates the HTML tables for terms shown one after another sequentially (not in the same row)
  */
 const buildSubjectsTableHtml = (terms = [], subjects = [], grades = []) => {
-  if (!subjects || subjects.length === 0) {
+  if (!subjects || subjects.length === 0 || !terms || terms.length === 0) {
     return '<div style="text-align:center; padding: 20px; color: #64748b;">No subject marks recorded for this student.</div>';
   }
 
-  const termsList = (!terms || terms.length === 0)
-    ? [{ name: 'Evaluation', exam_types: ['Marks'] }]
-    : terms;
-
-  return termsList.map((term) => {
-    const examTypes = (term.exam_types && term.exam_types.length > 0) ? term.exam_types : ['Marks'];
-    const isSingleDefaultMarks = examTypes.length === 1 && examTypes[0] === 'Marks';
-    const isSingleNamedType = examTypes.length === 1 && !isSingleDefaultMarks;
+  return terms.map((term) => {
+    const examTypes = Array.isArray(term.exam_types) ? term.exam_types : [];
+    const isSingleNoType = examTypes.length === 0;
+    const isSingleNamedType = examTypes.length === 1;
 
     let colSpan = 4;
     let colHeadersHtml = '';
 
-    if (isSingleDefaultMarks) {
+    if (isSingleNoType) {
       colSpan = 4;
       colHeadersHtml = `
         <th class="subject-col" style="width: 40%;">Subject</th>
@@ -117,32 +107,48 @@ const buildSubjectsTableHtml = (terms = [], subjects = [], grades = []) => {
     let termTotalSum = 0;
     let termFullMarksSum = 0;
 
+    const formatMarkDisplay = (m, fm, isAbsent) => {
+      if ((fm === null || fm === undefined) && (m === null || m === undefined)) {
+        return 'NA';
+      }
+      if (m === null || m === undefined) {
+        return 'NA';
+      }
+      const scoreHtml = (Number(m) === 0 && isAbsent)
+        ? '<span style="color: #dc2626; font-weight: 700;">A</span>'
+        : String(m);
+      return fm !== null && fm !== undefined ? `${scoreHtml} / ${fm}` : scoreHtml;
+    };
+
     subjects.forEach((sub) => {
       const tData = sub.terms ? sub.terms[term.name] : null;
       if (!tData) return;
-      const termTotal = tData && tData.termTotal !== null && tData.termTotal !== undefined ? tData.termTotal : 0;
-      const termFullMarks = tData && tData.termFullMarks ? tData.termFullMarks : 100;
-      const termGrade = tData && tData.termGrade ? tData.termGrade : '-';
+      const termTotal = tData.termTotal !== null && tData.termTotal !== undefined ? tData.termTotal : 0;
+      const termFullMarks = tData.termFullMarks !== null && tData.termFullMarks !== undefined ? tData.termFullMarks : 0;
+      const termGrade = tData.termGrade || '';
+      const isAbsent = Boolean(tData.isAbsent);
 
       termTotalSum += termTotal;
       termFullMarksSum += termFullMarks;
 
-      if (isSingleDefaultMarks) {
-        const m = tData && tData.marks ? tData.marks[0] : (tData ? tData.termTotal : null);
+      if (isSingleNoType) {
+        const m = tData.marks ? tData.marks[0] : tData.termTotal;
+        const fm = tData.fullMarks ? tData.fullMarks[0] : null;
         tbodyHtml += `
           <tr>
             <td class="subject-col">${sub.subject_name}</td>
-            <td class="bold-col">${m !== null && m !== undefined ? m : '-'}</td>
+            <td class="bold-col">${formatMarkDisplay(m, fm, isAbsent)}</td>
             <td>${termFullMarks}</td>
             <td class="bold-col">${termGrade}</td>
           </tr>
         `;
       } else if (isSingleNamedType) {
-        const m = tData && tData.marks ? tData.marks[0] : null;
+        const m = tData.marks ? tData.marks[0] : null;
+        const fm = tData.fullMarks ? tData.fullMarks[0] : null;
         tbodyHtml += `
           <tr>
             <td class="subject-col">${sub.subject_name}</td>
-            <td>${m !== null && m !== undefined ? m : '-'}</td>
+            <td>${formatMarkDisplay(m, fm, isAbsent)}</td>
             <td class="bold-col">${termTotal}</td>
             <td>${termFullMarks}</td>
             <td class="bold-col">${termGrade}</td>
@@ -151,8 +157,9 @@ const buildSubjectsTableHtml = (terms = [], subjects = [], grades = []) => {
       } else {
         let typeTds = '';
         examTypes.forEach((_, idx) => {
-          const m = tData && tData.marks ? tData.marks[idx] : null;
-          typeTds += `<td>${m !== null && m !== undefined ? m : '-'}</td>`;
+          const m = tData.marks ? tData.marks[idx] : null;
+          const fm = tData.fullMarks ? tData.fullMarks[idx] : null;
+          typeTds += `<td>${formatMarkDisplay(m, fm, isAbsent)}</td>`;
         });
         tbodyHtml += `
           <tr>
@@ -172,7 +179,7 @@ const buildSubjectsTableHtml = (terms = [], subjects = [], grades = []) => {
     const termOverallGrade = computeGradeFromPct(termPct, grades);
 
     let tfootHtml = '';
-    if (isSingleDefaultMarks) {
+    if (isSingleNoType) {
       tfootHtml = `
         <tfoot>
           <tr>
@@ -188,7 +195,7 @@ const buildSubjectsTableHtml = (terms = [], subjects = [], grades = []) => {
         <tfoot>
           <tr>
             <td class="subject-col" style="font-weight: 800;">TOTAL</td>
-            <td>-</td>
+            <td></td>
             <td class="bold-col">${termTotalSum}</td>
             <td class="bold-col">${termFullMarksSum}</td>
             <td class="bold-col">${termOverallGrade}</td>
@@ -196,7 +203,7 @@ const buildSubjectsTableHtml = (terms = [], subjects = [], grades = []) => {
         </tfoot>
       `;
     } else {
-      const emptyTypeTds = examTypes.map(() => '<td>-</td>').join('');
+      const emptyTypeTds = examTypes.map(() => '<td></td>').join('');
       tfootHtml = `
         <tfoot>
           <tr>
@@ -238,14 +245,14 @@ const buildSubjectsTableHtml = (terms = [], subjects = [], grades = []) => {
  */
 const buildGradingScaleHtml = (grades = []) => {
   if (!grades || grades.length === 0) {
-    return '<div style="text-align:center; font-size:7pt; color:#64748b;">Standard Grade Scale: A+ (90-100%), A (80-89%), B (70-79%), C (60-69%), D (40-59%), E (&lt;40%)</div>';
+    return '';
   }
 
   let ths = '';
   let tds = '';
   grades.forEach((g) => {
-    const min = g.min_percentage !== undefined ? g.min_percentage : g.min_mark || 0;
-    const max = g.max_percentage !== undefined ? g.max_percentage : g.max_mark || 100;
+    const min = g.min_percentage !== undefined ? g.min_percentage : g.min_mark ?? 0;
+    const max = g.max_percentage !== undefined ? g.max_percentage : g.max_mark ?? 100;
     ths += `<th>${g.grade_name || g.grade}</th>`;
     tds += `<td>${min}-${max}%</td>`;
   });
@@ -262,11 +269,7 @@ const buildGradingScaleHtml = (grades = []) => {
  * Ensures the academic session is formatted as a full year range (e.g. 2025-2026) rather than a single year
  */
 const formatAcademicSessionRange = (rawSession) => {
-  if (!rawSession) {
-    const now = new Date();
-    const curYear = now.getFullYear();
-    return now.getMonth() < 3 ? `${curYear - 1}-${curYear}` : `${curYear}-${curYear + 1}`;
-  }
+  if (!rawSession) return '';
 
   const str = String(rawSession).trim();
 
@@ -302,17 +305,19 @@ const buildSingleMarksheetHtml = (item, baseTemplate) => {
   const subjects = item.subjects || [];
   const grades = item.grades || [];
 
-  const studentName = `${student.first_name || ''} ${student.last_name || ''}`.trim() || 'Student';
-  const admissionNo = student.admission_no || (student.id ? `AD${student.id}` : '—');
-  const rollNo = student.roll_no || '—';
-  const className = student.class_name || '—';
-  const sectionName = student.section_name || '—';
-  const fatherName = student.father_name || '—';
-  const dob = student.dob ? new Date(student.dob).toLocaleDateString('en-GB') : '—';
-  const gender = student.gender === 2 || student.gender === '2' || student.gender === 'Female' ? 'Female' : 'Male';
+  const studentName = `${student.first_name || ''} ${student.last_name || ''}`.trim();
+  const admissionNo = student.admission_no || '';
+  const rollNo = student.roll_no || '';
+  const className = student.class_name || '';
+  const sectionName = student.section_name || '';
+  const fatherName = (student.father_name || '').trim();
+  const dob = student.dob ? new Date(student.dob).toLocaleDateString('en-GB') : '';
+  const gender = student.gender === 2 || student.gender === '2' || student.gender === 'Female'
+    ? 'Female'
+    : (student.gender === 1 || student.gender === '1' || student.gender === 'Male' ? 'Male' : '');
   const sessionLabel = formatAcademicSessionRange(exam.academic_year);
 
-  const schoolTitle = school.school_title || school.school_name || 'Growvidya Academy';
+  const schoolTitle = school.school_title || school.school_name || '';
   const affiliation = school.affiliation_board ? `Affiliated to ${school.affiliation_board}` : '';
   const schoolAddress = [school.address, school.city, school.state, school.postal_code].filter(Boolean).join(', ');
   const schoolCode = school.school_code ? `Code: ${school.school_code}` : '';
@@ -331,15 +336,15 @@ const buildSingleMarksheetHtml = (item, baseTemplate) => {
 
   // Format Board Name for the diagonal repeating security watermark
   const rawBoard = (school.affiliation_board || '').trim();
-  let boardWatermark = rawBoard;
-  if (!boardWatermark) {
-    boardWatermark = 'CENTRAL BOARD OF SECONDARY EDUCATION';
-  } else if (/^cbse$/i.test(boardWatermark) || /^cbsc$/i.test(boardWatermark)) {
-    boardWatermark = 'CENTRAL BOARD OF SECONDARY EDUCATION • CBSE';
-  } else if (/^icse$/i.test(boardWatermark)) {
-    boardWatermark = 'COUNCIL FOR THE INDIAN SCHOOL CERTIFICATE EXAMINATIONS • ICSE';
-  } else {
-    boardWatermark = `${boardWatermark.toUpperCase()} BOARD`;
+  let boardWatermark = '';
+  if (rawBoard) {
+    if (/^cbse$/i.test(rawBoard) || /^cbsc$/i.test(rawBoard)) {
+      boardWatermark = 'CENTRAL BOARD OF SECONDARY EDUCATION • CBSE';
+    } else if (/^icse$/i.test(rawBoard)) {
+      boardWatermark = 'COUNCIL FOR THE INDIAN SCHOOL CERTIFICATE EXAMINATIONS • ICSE';
+    } else {
+      boardWatermark = `${rawBoard.toUpperCase()} BOARD`;
+    }
   }
 
   const subjectsTableHtml = buildSubjectsTableHtml(terms, subjects, grades);
@@ -357,19 +362,7 @@ const buildSingleMarksheetHtml = (item, baseTemplate) => {
     ? (Math.round((totalMarksObtained / grandFullMarks) * 1000) / 10).toFixed(1)
     : '0.0';
 
-  // Compute overall grade from grade scale
-  let overallGrade = 'A';
-  if (grades && grades.length > 0) {
-    const val = Number(overallPercentage);
-    for (const g of grades) {
-      const min = Number(g.min_percentage ?? 0);
-      const max = Number(g.max_percentage ?? 100);
-      if (val >= min && val <= max) {
-        overallGrade = g.grade_name || g.grade || 'A';
-        break;
-      }
-    }
-  }
+  const overallGrade = computeGradeFromPct(overallPercentage, grades);
 
   const resultStatus = Number(overallPercentage) >= 33 ? 'PASSED' : 'NEEDS IMPROVEMENT';
   const issueDate = item.issueDate

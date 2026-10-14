@@ -2215,7 +2215,7 @@ class AdminExaminationModel {
     }
     gradeMarksheetSql += ` ORDER BY min_percentage DESC`;
     const [gradeRows] = await pool.query(gradeMarksheetSql, gradeMarksheetParams);
-    const grades = gradeRows.length > 0 ? gradeRows : undefined;
+    const grades = gradeRows;
 
     // 5. Fetch Students with Father's Name
     let studentList = [];
@@ -2295,10 +2295,14 @@ class AdminExaminationModel {
       if (!studentClassId) continue;
 
       // Fetch subjects for this class
-      const [classSubs] = await pool.query(
-        `SELECT id, subject_name FROM subject_master WHERE class_id = ? AND school_id = ? AND status = 1 ORDER BY sort_order ASC, id ASC`,
-        [studentClassId, schoolId]
-      );
+      let subSql = `SELECT id, subject_name FROM subject_master WHERE class_id = ? AND school_id = ? AND status = 1`;
+      const subParams = [studentClassId, schoolId];
+      if (branchId) {
+        subSql += ` AND branch_id = ?`;
+        subParams.push(Number(branchId));
+      }
+      subSql += ` ORDER BY sort_order ASC, id ASC`;
+      const [classSubs] = await pool.query(subSql, subParams);
 
       // Fetch all exam marks for this student
       let resultQuery = `
@@ -2308,11 +2312,19 @@ class AdminExaminationModel {
           ers.exam_type_id,
           ers.marks,
           sub.subject_name,
-          et.exam_type
+          et.exam_type,
+          ea.attendance_status
         FROM exam_result er
         JOIN exam_result_subject ers ON ers.exam_result_id = er.id
         JOIN subject_master sub ON sub.id = ers.subject_id
         LEFT JOIN exam_type_master et ON et.id = ers.exam_type_id
+        LEFT JOIN exam_attendance ea 
+          ON ea.student_id = er.student_id 
+         AND ea.exam_id = er.exam_id 
+         AND ea.subject_id = ers.subject_id 
+         AND ea.school_id = er.school_id
+         AND (ea.branch_id = er.branch_id OR er.branch_id IS NULL OR ea.branch_id IS NULL)
+         AND ea.status != 4
         WHERE er.student_id = ? 
           AND (er.status != 4 OR er.status IS NULL) 
           AND (ers.status != 4 OR ers.status IS NULL)
@@ -2321,6 +2333,10 @@ class AdminExaminationModel {
       if (schoolId) {
         resultQuery += ` AND er.school_id = ?`;
         rParams.push(schoolId);
+      }
+      if (branchId) {
+        resultQuery += ` AND er.branch_id = ?`;
+        rParams.push(Number(branchId));
       }
       if (academicYearId) {
         resultQuery += ` AND er.academic_year_id = ?`;
@@ -2342,25 +2358,24 @@ class AdminExaminationModel {
       });
 
       // Fetch configured Full Marks for this class
-      const [fmRows] = await pool.query(
-        `SELECT esm.exam_id, es.subject_id, es.exam_type_id, et.exam_type, es.mark
+      let fmSql = `SELECT esm.exam_id, es.subject_id, es.exam_type_id, et.exam_type, es.mark
          FROM exam_subject_master esm
          JOIN exam_subject_marks es ON es.exam_subject_id = esm.id
          LEFT JOIN exam_type_master et ON et.id = es.exam_type_id
          WHERE esm.class_id = ? AND esm.school_id = ? 
            AND (esm.status != 4 OR esm.status IS NULL)
            AND (es.status != 4 OR es.status IS NULL)
-           AND (es.is_check = 1 OR es.is_check IS NULL)`,
-        [studentClassId, schoolId]
-      );
+           AND (es.is_check = 1 OR es.is_check IS NULL)`;
+      const fmParams = [studentClassId, schoolId];
+      if (branchId) {
+        fmSql += ` AND esm.branch_id = ?`;
+        fmParams.push(Number(branchId));
+      }
+      const [fmRows] = await pool.query(fmSql, fmParams);
 
       // Filter to ONLY terms where data is available for this student
       const availableTermIds = [...new Set(resultRows.map((r) => r.exam_id))];
-      let availableTerms = termDefinitions.filter((t) => availableTermIds.includes(t.id));
-      if (availableTerms.length === 0 && termDefinitions.length > 0) {
-        // Fallback to first term if no marks yet for batch
-        availableTerms = [termDefinitions[0]];
-      }
+      const availableTerms = termDefinitions.filter((t) => availableTermIds.includes(t.id));
 
       const subMap = {};
       classSubs.forEach((cs) => {
@@ -2386,30 +2401,19 @@ class AdminExaminationModel {
             return;
           }
 
-          let fullMarksBreakdown;
-          let termFullMarks = 0;
-
-          if (subjectFm.length > 0) {
-            termFullMarks = subjectFm.reduce((sum, f) => sum + (Number(f.mark) || 0), 0);
-            fullMarksBreakdown = (term.exam_types || []).map((type) => {
-              const foundFm = subjectFm.find((f) => f.exam_type === type);
-              return foundFm && foundFm.mark != null ? Number(foundFm.mark) : null;
-            });
-          } else {
-            termFullMarks = 100;
-            fullMarksBreakdown = (term.exam_types || []).map(() => null);
-          }
-
-          if (!termFullMarks || termFullMarks <= 0) {
-            termFullMarks = 100;
-          }
+          const termFullMarks = subjectFm.reduce((sum, f) => sum + (Number(f.mark) || 0), 0);
+          const fullMarksBreakdown = (term.exam_types || []).map((type) => {
+            const foundFm = subjectFm.find((f) => f.exam_type === type);
+            return foundFm && foundFm.mark != null ? Number(foundFm.mark) : null;
+          });
 
           subMap[cs.id].terms[term.name] = {
             marks: (term.exam_types || []).map(() => null),
             fullMarks: fullMarksBreakdown,
             termFullMarks: termFullMarks,
             termTotal: 0,
-            termGrade: '-',
+            termGrade: '',
+            isAbsent: false,
           };
         });
       });
@@ -2418,6 +2422,13 @@ class AdminExaminationModel {
         const sId = r.subject_id;
         const termObj = availableTerms.find((t) => t.id === r.exam_id);
         if (termObj && subMap[sId] && subMap[sId].terms[termObj.name]) {
+          const attStatus = r.attendance_status !== null && r.attendance_status !== undefined
+            ? Number(r.attendance_status)
+            : null;
+          if (attStatus === 2 || attStatus === 0) {
+            subMap[sId].terms[termObj.name].isAbsent = true;
+          }
+
           const typeIdx = (termObj.exam_types || []).indexOf(r.exam_type);
           if (typeIdx !== -1) {
             subMap[sId].terms[termObj.name].marks[typeIdx] = Number(r.marks);
@@ -2440,7 +2451,7 @@ class AdminExaminationModel {
             const sum = validMarks.reduce((a, b) => a + Number(b), 0);
             tData.termTotal = sum;
             const pct = tData.termFullMarks > 0 ? (sum / tData.termFullMarks) * 100 : 0;
-            tData.termGrade = validMarks.length > 0 ? AdminExaminationModel.computeGrade(pct, grades) : '-';
+            tData.termGrade = validMarks.length > 0 ? AdminExaminationModel.computeGrade(pct, grades) : '';
 
             sub.grandTotal += sum;
             sub.grandFullMarks += tData.termFullMarks;
@@ -2665,23 +2676,16 @@ class AdminExaminationModel {
   }
 
   static computeGrade(pct, grades = []) {
-    if (pct === null || pct === undefined || isNaN(pct)) return '-';
+    if (pct === null || pct === undefined || isNaN(pct) || !Array.isArray(grades) || grades.length === 0) return '';
     const val = Math.round(Number(pct) * 10) / 10;
     for (const g of grades) {
       const min = Number(g.min_percentage ?? g.min_mark ?? 0);
       const max = Number(g.max_percentage ?? g.max_mark ?? 100);
       if (val >= min && val <= max) {
-        return g.grade_name || g.grade || 'A';
+        return g.grade_name || g.grade || '';
       }
     }
-    if (val >= 90) return 'A+';
-    if (val >= 80) return 'A';
-    if (val >= 70) return 'B+';
-    if (val >= 60) return 'B';
-    if (val >= 50) return 'C+';
-    if (val >= 40) return 'C';
-    if (val >= 33) return 'D';
-    return 'E';
+    return '';
   }
 }
 
