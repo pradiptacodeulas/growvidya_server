@@ -265,6 +265,8 @@ class TeacherAcademicController {
   static async getAssignments(req, res, next) {
     try {
       const schoolId = TeacherAcademicController.getSchoolId(req);
+      const teacherId = TeacherAcademicController.getTeacherId(req);
+      const branchId = await TeacherAcademicController.resolveTeacherBranchId(req, schoolId);
       const { class_id, classId, section_id, sectionId, subject_id, subjectId, assignment_type_id, assignmentTypeId, status, search, page, limit } = req.query;
       const data = await AcademicModel.getAssignments(schoolId, {
         classId: classId || class_id,
@@ -275,6 +277,8 @@ class TeacherAcademicController {
         search,
         page,
         limit,
+        branchId,
+        teacherId,
       });
       return ApiResponse.success(res, 'Teacher assignments fetched successfully', data);
     } catch (error) {
@@ -285,8 +289,10 @@ class TeacherAcademicController {
   static async getAssignmentById(req, res, next) {
     try {
       const schoolId = TeacherAcademicController.getSchoolId(req);
+      const teacherId = TeacherAcademicController.getTeacherId(req);
+      const branchId = await TeacherAcademicController.resolveTeacherBranchId(req, schoolId);
       const { id } = req.params;
-      const data = await AcademicModel.getAssignmentById(id, schoolId);
+      const data = await AcademicModel.getAssignmentById(id, schoolId, branchId, teacherId);
       if (!data) return ApiResponse.error(res, 'Assignment not found', null, 404);
       return ApiResponse.success(res, 'Assignment details fetched successfully', data);
     } catch (error) {
@@ -298,11 +304,18 @@ class TeacherAcademicController {
     try {
       const schoolId = TeacherAcademicController.getSchoolId(req);
       const teacherId = TeacherAcademicController.getTeacherId(req);
-      const insertId = await AcademicModel.createAssignment(schoolId, {
-        ...req.body,
-        created_by: teacherId,
-        creator_type: 'teacher',
-      });
+      const branchId = await TeacherAcademicController.resolveTeacherBranchId(req, schoolId);
+      const insertId = await AcademicModel.createAssignment(
+        schoolId,
+        {
+          ...req.body,
+          branch_id: branchId,
+          created_by: teacherId,
+          creator_type: 'teacher',
+        },
+        branchId,
+        teacherId
+      );
       return ApiResponse.success(res, 'Assignment created successfully', { id: insertId }, 201);
     } catch (error) {
       next(error);
@@ -312,9 +325,11 @@ class TeacherAcademicController {
   static async updateAssignment(req, res, next) {
     try {
       const schoolId = TeacherAcademicController.getSchoolId(req);
+      const teacherId = TeacherAcademicController.getTeacherId(req);
+      const branchId = await TeacherAcademicController.resolveTeacherBranchId(req, schoolId);
       const { id } = req.params;
-      const success = await AcademicModel.updateAssignment(id, schoolId, req.body);
-      if (!success) return ApiResponse.error(res, 'Assignment not found or update failed', null, 400);
+      const success = await AcademicModel.updateAssignment(id, schoolId, req.body, branchId, teacherId);
+      if (!success) return ApiResponse.error(res, 'Assignment not found or update failed', null, 404);
       return ApiResponse.success(res, 'Assignment updated successfully');
     } catch (error) {
       next(error);
@@ -324,9 +339,10 @@ class TeacherAcademicController {
   static async deleteAssignment(req, res, next) {
     try {
       const schoolId = TeacherAcademicController.getSchoolId(req);
+      const branchId = await TeacherAcademicController.resolveTeacherBranchId(req, schoolId);
       const { id } = req.params;
-      const success = await AcademicModel.deleteAssignment(id, schoolId);
-      if (!success) return ApiResponse.error(res, 'Assignment not found or delete failed', null, 400);
+      const success = await AcademicModel.deleteAssignment(id, schoolId, branchId);
+      if (!success) return ApiResponse.error(res, 'Assignment not found or delete failed', null, 404);
       return ApiResponse.success(res, 'Assignment deleted successfully');
     } catch (error) {
       next(error);
@@ -336,9 +352,10 @@ class TeacherAcademicController {
   static async publishAssignment(req, res, next) {
     try {
       const schoolId = TeacherAcademicController.getSchoolId(req);
+      const branchId = await TeacherAcademicController.resolveTeacherBranchId(req, schoolId);
       const { id } = req.params;
-      const success = await AcademicModel.publishAssignment(id, schoolId);
-      if (!success) return ApiResponse.error(res, 'Assignment not found or publish failed', null, 400);
+      const success = await AcademicModel.publishAssignment(id, schoolId, branchId);
+      if (!success) return ApiResponse.error(res, 'Assignment not found or publish failed', null, 404);
       return ApiResponse.success(res, 'Assignment published successfully');
     } catch (error) {
       next(error);
@@ -348,8 +365,9 @@ class TeacherAcademicController {
   static async getAssignmentQuestions(req, res, next) {
     try {
       const schoolId = TeacherAcademicController.getSchoolId(req);
+      const branchId = await TeacherAcademicController.resolveTeacherBranchId(req, schoolId);
       const { id } = req.params;
-      const questions = await AcademicModel.getAssignmentQuestions(id, schoolId);
+      const questions = await AcademicModel.getAssignmentQuestions(id, schoolId, branchId);
       return ApiResponse.success(res, 'Assignment questions fetched successfully', questions);
     } catch (error) {
       next(error);
@@ -359,7 +377,15 @@ class TeacherAcademicController {
   static async getAssignmentTypes(req, res, next) {
     try {
       const schoolId = TeacherAcademicController.getSchoolId(req);
-      const types = await AcademicModel.getAssignmentTypes(schoolId, true);
+      const branchId = await TeacherAcademicController.resolveTeacherBranchId(req, schoolId);
+      const { search, status, page, limit } = req.query;
+      const types = await AcademicModel.getAssignmentTypes(schoolId, {
+        search,
+        status: status !== undefined ? status : 1,
+        page: Number(page) || 1,
+        limit: Number(limit) || 100,
+        branchId,
+      });
       return ApiResponse.success(res, 'Assignment types fetched successfully', types);
     } catch (error) {
       next(error);

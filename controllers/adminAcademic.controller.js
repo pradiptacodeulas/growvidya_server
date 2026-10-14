@@ -1156,8 +1156,8 @@ class AdminAcademicController {
   static async createAssignment(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const branchId = req.branchId || req.body?.branch_id || req.body?.branchId || null;
-      const insertId = await AcademicModel.createAssignment(schoolId, { ...req.body, branch_id: branchId });
+      const branchId = req.branchId || req.body?.branch_id || req.body?.branchId || req.user?.branch_id || null;
+      const insertId = await AcademicModel.createAssignment(schoolId, { ...req.body, branch_id: branchId }, branchId);
       return ApiResponse.success(res, 'Assignment created successfully', { id: insertId }, 201);
     } catch (error) {
       next(error);
@@ -1167,9 +1167,10 @@ class AdminAcademicController {
   static async updateAssignment(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const branchId = req.branchId || req.body?.branch_id || null;
+      const branchId = req.branchId || req.body?.branch_id || req.user?.branch_id || null;
       const { id } = req.params;
-      await AcademicModel.updateAssignment(id, schoolId, req.body, branchId);
+      const updated = await AcademicModel.updateAssignment(id, schoolId, req.body, branchId);
+      if (!updated) return ApiResponse.error(res, 'Assignment not found', null, 404);
       return ApiResponse.success(res, 'Assignment updated successfully');
     } catch (error) {
       next(error);
@@ -1179,9 +1180,10 @@ class AdminAcademicController {
   static async deleteAssignment(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const branchId = req.branchId || req.query.branch_id || null;
+      const branchId = req.branchId || req.query.branch_id || req.user?.branch_id || null;
       const { id } = req.params;
-      await AcademicModel.deleteAssignment(id, schoolId, branchId);
+      const deleted = await AcademicModel.deleteAssignment(id, schoolId, branchId);
+      if (!deleted) return ApiResponse.error(res, 'Assignment not found', null, 404);
       return ApiResponse.success(res, 'Assignment deleted successfully');
     } catch (error) {
       next(error);

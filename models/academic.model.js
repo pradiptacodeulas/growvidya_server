@@ -2122,26 +2122,36 @@ class AcademicModel {
   }
 
   // ==================== ASSIGNMENTS ====================
-  static async getAssignmentTypes(schoolId, { search, status, page = 1, limit = 10, branchId = null } = {}) {
+  static async getAssignmentTypes(schoolId, options = {}) {
     try {
+      const normalizedOpts =
+        typeof options === 'boolean'
+          ? { status: options ? 1 : undefined, limit: 100 }
+          : options || {};
+      const { search, status, page = 1, limit = 10, branchId = null, branch_id = null } = normalizedOpts;
+      const cleanBranchId = AcademicModel.parseBranchId(branchId ?? branch_id);
+
       let baseSql = `
-        FROM assignment_types
-        WHERE school_id = ?
+        FROM assignment_types at
+        LEFT JOIN branch_master bm ON at.branch_id = bm.id
+        WHERE at.school_id = ?
       `;
       const params = [schoolId];
 
-      if (branchId) {
-        baseSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
-        params.push(Number(branchId));
+      if (cleanBranchId) {
+        baseSql += ` AND at.branch_id = ?`;
+        params.push(cleanBranchId);
       }
 
-      if (status) {
-        baseSql += ` AND status = ?`;
-        params.push(status);
+      if (status !== undefined && status !== null && String(status).trim() !== '') {
+        baseSql += ` AND at.status = ?`;
+        params.push(Number(status));
+      } else {
+        baseSql += ` AND (at.status != 4 OR at.status IS NULL)`;
       }
 
       if (search && String(search).trim()) {
-        baseSql += ` AND type_name LIKE ?`;
+        baseSql += ` AND at.type_name LIKE ?`;
         params.push(`%${String(search).trim()}%`);
       }
 
@@ -2156,8 +2166,8 @@ class AcademicModel {
       const offset = (numPage - 1) * numLimit;
 
       const dataSql = `
-        SELECT * ${baseSql}
-        ORDER BY id ASC
+        SELECT at.*, bm.branch_name, bm.branch_code ${baseSql}
+        ORDER BY at.id ASC
         LIMIT ? OFFSET ?
       `;
       const dataParams = [...params, numLimit, offset];
@@ -2186,11 +2196,15 @@ class AcademicModel {
 
   static async getAssignmentTypeById(id, schoolId, branchId = null) {
     try {
-      let sql = `SELECT * FROM assignment_types WHERE id = ? AND school_id = ?`;
+      const cleanBranchId = AcademicModel.parseBranchId(branchId);
+      let sql = `SELECT at.*, bm.branch_name, bm.branch_code
+        FROM assignment_types at
+        LEFT JOIN branch_master bm ON at.branch_id = bm.id
+        WHERE at.id = ? AND at.school_id = ? AND (at.status != 4 OR at.status IS NULL)`;
       const params = [id, schoolId];
-      if (branchId) {
-        sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
-        params.push(Number(branchId));
+      if (cleanBranchId) {
+        sql += ` AND at.branch_id = ?`;
+        params.push(cleanBranchId);
       }
       sql += ` LIMIT 1`;
       const [rows] = await pool.query(sql, params);
@@ -2201,46 +2215,70 @@ class AcademicModel {
     }
   }
 
-  static async createAssignmentType(schoolId, { type_name, status = 1, branch_id = null }) {
-    const resolvedBranchId = branch_id ? Number(branch_id) : null;
+  static async createAssignmentType(schoolId, { type_name, status = 1, branch_id = null, branchId = null }) {
+    const cleanName = String(type_name || '').trim();
+    if (!cleanName) {
+      const err = new Error('Assignment type name is required.');
+      err.statusCode = 400;
+      throw err;
+    }
 
-    if (type_name && String(type_name).trim()) {
-      let dupSql = `SELECT id FROM assignment_types WHERE school_id = ? AND LOWER(TRIM(type_name)) = LOWER(TRIM(?)) AND (status != 4 OR status IS NULL)`;
-      const dupParams = [schoolId, String(type_name).trim()];
-      if (resolvedBranchId) {
-        dupSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
-        dupParams.push(resolvedBranchId);
-      }
-      dupSql += ` LIMIT 1`;
-      const [existing] = await pool.query(dupSql, dupParams);
-      if (existing && existing.length > 0) {
-        const err = new Error(`An assignment type named "${type_name}" already exists in this branch.`);
-        err.statusCode = 400;
-        throw err;
-      }
+    const resolvedBranchId = await AcademicModel.resolveDefaultBranchId(schoolId, branch_id ?? branchId);
+
+    let dupSql = `SELECT id FROM assignment_types WHERE school_id = ? AND LOWER(TRIM(type_name)) = LOWER(TRIM(?)) AND (status != 4 OR status IS NULL)`;
+    const dupParams = [schoolId, cleanName];
+    if (resolvedBranchId) {
+      dupSql += ` AND branch_id = ?`;
+      dupParams.push(resolvedBranchId);
+    } else {
+      dupSql += ` AND branch_id IS NULL`;
+    }
+    dupSql += ` LIMIT 1`;
+    const [existing] = await pool.query(dupSql, dupParams);
+    if (existing && existing.length > 0) {
+      const err = new Error(`An assignment type named "${cleanName}" already exists in this branch.`);
+      err.statusCode = 400;
+      throw err;
     }
 
     const [result] = await pool.query(
       `INSERT INTO assignment_types (school_id, branch_id, type_name, status, created_on) VALUES (?, ?, ?, ?, NOW())`,
-      [schoolId, resolvedBranchId, type_name, status || 1]
+      [schoolId, resolvedBranchId, cleanName, status || 1]
     );
     return result.insertId;
   }
 
   static async updateAssignmentType(id, schoolId, { type_name, status, branch_id = null }, branchId = null) {
-    const resolvedBranchId = branch_id ? Number(branch_id) : (branchId ? Number(branchId) : null);
+    const filterBranch = AcademicModel.parseBranchId(branchId);
+
+    let checkSql = `SELECT id, branch_id, type_name FROM assignment_types WHERE id = ? AND school_id = ? AND (status != 4 OR status IS NULL)`;
+    const checkParams = [id, schoolId];
+    if (filterBranch) {
+      checkSql += ` AND branch_id = ?`;
+      checkParams.push(filterBranch);
+    }
+    checkSql += ` LIMIT 1`;
+    const [existingRows] = await pool.query(checkSql, checkParams);
+    if (!existingRows || existingRows.length === 0) {
+      return false;
+    }
+
+    const targetBranchId = AcademicModel.parseBranchId(branch_id) || filterBranch || AcademicModel.parseBranchId(existingRows[0].branch_id);
 
     if (type_name && String(type_name).trim()) {
+      const cleanName = String(type_name).trim();
       let dupSql = `SELECT id FROM assignment_types WHERE school_id = ? AND LOWER(TRIM(type_name)) = LOWER(TRIM(?)) AND id != ? AND (status != 4 OR status IS NULL)`;
-      const dupParams = [schoolId, String(type_name).trim(), id];
-      if (resolvedBranchId) {
-        dupSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
-        dupParams.push(resolvedBranchId);
+      const dupParams = [schoolId, cleanName, id];
+      if (targetBranchId) {
+        dupSql += ` AND branch_id = ?`;
+        dupParams.push(targetBranchId);
+      } else {
+        dupSql += ` AND branch_id IS NULL`;
       }
       dupSql += ` LIMIT 1`;
       const [existing] = await pool.query(dupSql, dupParams);
       if (existing && existing.length > 0) {
-        const err = new Error(`Another assignment type named "${type_name}" already exists in this branch.`);
+        const err = new Error(`Another assignment type named "${cleanName}" already exists in this branch.`);
         err.statusCode = 400;
         throw err;
       }
@@ -2250,32 +2288,225 @@ class AcademicModel {
        SET type_name = COALESCE(?, type_name),
            status = COALESCE(?, status)
        WHERE id = ? AND school_id = ?`;
-    const params = [type_name || null, status !== undefined ? status : null, id, schoolId];
-    if (branchId) {
-      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
-      params.push(Number(branchId));
+    const params = [type_name ? String(type_name).trim() : null, status !== undefined ? status : null, id, schoolId];
+    if (filterBranch) {
+      sql += ` AND branch_id = ?`;
+      params.push(filterBranch);
     }
     const [result] = await pool.query(sql, params);
     return result.affectedRows > 0;
   }
 
   static async deleteAssignmentType(id, schoolId, branchId = null) {
-    let sql = `UPDATE assignment_types SET status = 4 WHERE id = ? AND school_id = ?`;
+    const cleanBranchId = AcademicModel.parseBranchId(branchId);
+    let sql = `UPDATE assignment_types SET status = 4 WHERE id = ? AND school_id = ? AND (status != 4 OR status IS NULL)`;
     const params = [id, schoolId];
-    if (branchId) {
-      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
-      params.push(Number(branchId));
+    if (cleanBranchId) {
+      sql += ` AND branch_id = ?`;
+      params.push(cleanBranchId);
     }
     const [result] = await pool.query(sql, params);
     return result.affectedRows > 0;
   }
 
-  static async getAssignments(schoolId, { classId, class_id, sectionId, section_id, subjectId, subject_id, assignmentTypeId, assignment_type_id, search, status, page, limit, branchId = null } = {}) {
+  /**
+   * Validates that class_id, section_id, subject_id, and assignment_type_id
+   * belong to the specified school_id and branch_id (and teacher assignments if teacherId is provided),
+   * and enforces branch-scoped duplicate validation on assignments.
+   */
+  static async validateAssignmentRelations(schoolId, branchId, data, teacherId = null, excludeAssignmentId = null) {
+    const cleanBranchId = AcademicModel.parseBranchId(branchId);
+    const {
+      assignment_type_id,
+      title,
+      class_id,
+      section_id,
+      subject_id,
+    } = data;
+
+    if (!title || !String(title).trim()) {
+      const err = new Error('Assignment title is required.');
+      err.statusCode = 400;
+      throw err;
+    }
+    if (!class_id) {
+      const err = new Error('Class is required.');
+      err.statusCode = 400;
+      throw err;
+    }
+    if (!subject_id) {
+      const err = new Error('Subject is required.');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    // 1. Validate Class belongs to school and branch
+    let clsSql = `SELECT id, branch_id, class_name FROM class_master WHERE id = ? AND school_id = ? AND (status != 4 OR status IS NULL)`;
+    const clsParams = [class_id, schoolId];
+    if (cleanBranchId) {
+      clsSql += ` AND branch_id = ?`;
+      clsParams.push(cleanBranchId);
+    }
+    clsSql += ` LIMIT 1`;
+    const [clsRows] = await pool.query(clsSql, clsParams);
+    if (!clsRows || clsRows.length === 0) {
+      const err = new Error('Selected class does not belong to the authorized school and branch.');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const effectiveBranchId = cleanBranchId || AcademicModel.parseBranchId(clsRows[0].branch_id);
+
+    // If teacherId is provided, verify teacher belongs to this school/branch and is assigned to this class
+    if (teacherId) {
+      let tSql = `SELECT id, branch_id, class, subject FROM teacher_master WHERE id = ? AND school_id = ? AND status != 4`;
+      const tParams = [teacherId, schoolId];
+      if (effectiveBranchId) {
+        tSql += ` AND branch_id = ?`;
+        tParams.push(effectiveBranchId);
+      }
+      tSql += ` LIMIT 1`;
+      const [tRows] = await pool.query(tSql, tParams);
+      if (!tRows || tRows.length === 0) {
+        const err = new Error('Teacher does not belong to the authorized school and branch.');
+        err.statusCode = 403;
+        throw err;
+      }
+
+      const [tcaCountRows] = await pool.query(
+        `SELECT COUNT(*) AS cnt FROM teacher_class_assign WHERE teacher_id = ? AND school_id = ? AND status = 1`,
+        [teacherId, schoolId]
+      );
+      const hasClassAssignments = (tcaCountRows?.[0]?.cnt || 0) > 0;
+      if (hasClassAssignments) {
+        const [assignedCls] = await pool.query(
+          `SELECT id FROM teacher_class_assign WHERE teacher_id = ? AND school_id = ? AND class_id = ? AND status = 1 LIMIT 1`,
+          [teacherId, schoolId, class_id]
+        );
+        const isPrimaryClass = Number(tRows[0].class) === Number(class_id);
+        if ((!assignedCls || assignedCls.length === 0) && !isPrimaryClass) {
+          const err = new Error('You are not assigned to the selected class in your branch.');
+          err.statusCode = 403;
+          throw err;
+        }
+      }
+    }
+
+    // 2. Validate Section (if provided) belongs to school, branch, and class
+    if (section_id !== undefined && section_id !== null && String(section_id).trim() !== '' && Number(section_id) > 0) {
+      let secSql = `SELECT sec.id FROM section_master sec
+        LEFT JOIN class_master cm ON sec.class_id = cm.id
+        WHERE sec.id = ? AND sec.school_id = ? AND sec.class_id = ? AND (sec.status != 4 OR sec.status IS NULL)`;
+      const secParams = [section_id, schoolId, class_id];
+      if (effectiveBranchId) {
+        secSql += ` AND COALESCE(sec.branch_id, cm.branch_id) = ?`;
+        secParams.push(effectiveBranchId);
+      }
+      secSql += ` LIMIT 1`;
+      const [secRows] = await pool.query(secSql, secParams);
+      if (!secRows || secRows.length === 0) {
+        const err = new Error('Selected section does not belong to the selected class and branch.');
+        err.statusCode = 400;
+        throw err;
+      }
+    }
+
+    // 3. Validate Subject belongs to school, branch, and class
+    let subSql = `SELECT sm.id FROM subject_master sm
+      LEFT JOIN class_master cm ON sm.class_id = cm.id
+      WHERE sm.id = ? AND sm.school_id = ? AND (sm.class_id = ? OR sm.class_id IS NULL) AND (sm.status != 4 OR sm.status IS NULL)`;
+    const subParams = [subject_id, schoolId, class_id];
+    if (effectiveBranchId) {
+      subSql += ` AND COALESCE(sm.branch_id, cm.branch_id) = ?`;
+      subParams.push(effectiveBranchId);
+    }
+    subSql += ` LIMIT 1`;
+    const [subRows] = await pool.query(subSql, subParams);
+    if (!subRows || subRows.length === 0) {
+      const err = new Error('Selected subject does not belong to the selected class and branch.');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    // If teacherId is provided and teacher has subject assignments for this class, verify subject assignment
+    if (teacherId) {
+      const [tcaSubCount] = await pool.query(
+        `SELECT COUNT(*) AS cnt FROM teacher_class_assign WHERE teacher_id = ? AND school_id = ? AND class_id = ? AND subject_id > 0 AND status = 1`,
+        [teacherId, schoolId, class_id]
+      );
+      if ((tcaSubCount?.[0]?.cnt || 0) > 0) {
+        const [assignedSub] = await pool.query(
+          `SELECT id FROM teacher_class_assign WHERE teacher_id = ? AND school_id = ? AND class_id = ? AND subject_id = ? AND status = 1 LIMIT 1`,
+          [teacherId, schoolId, class_id, subject_id]
+        );
+        if (!assignedSub || assignedSub.length === 0) {
+          const err = new Error('You are not assigned to teach the selected subject for this class.');
+          err.statusCode = 403;
+          throw err;
+        }
+      }
+    }
+
+    // 4. Validate Assignment Type (if provided) belongs to school and branch
+    if (assignment_type_id !== undefined && assignment_type_id !== null && String(assignment_type_id).trim() !== '' && Number(assignment_type_id) > 0) {
+      let atSql = `SELECT id FROM assignment_types WHERE id = ? AND school_id = ? AND (status != 4 OR status IS NULL)`;
+      const atParams = [assignment_type_id, schoolId];
+      if (effectiveBranchId) {
+        atSql += ` AND branch_id = ?`;
+        atParams.push(effectiveBranchId);
+      }
+      atSql += ` LIMIT 1`;
+      const [atRows] = await pool.query(atSql, atParams);
+      if (!atRows || atRows.length === 0) {
+        const err = new Error('Selected assignment type does not belong to the authorized school and branch.');
+        err.statusCode = 400;
+        throw err;
+      }
+    }
+
+    // 5. Branch-scoped duplicate check (same title + class + section + subject within the same school and branch)
+    let dupSql = `SELECT id FROM assignments
+      WHERE school_id = ?
+        AND class_id = ?
+        AND subject_id = ?
+        AND COALESCE(section_id, 0) = COALESCE(?, 0)
+        AND LOWER(TRIM(title)) = LOWER(TRIM(?))
+        AND (status != 4 OR status IS NULL)`;
+    const dupParams = [
+      schoolId,
+      class_id,
+      subject_id,
+      section_id && Number(section_id) > 0 ? Number(section_id) : 0,
+      String(title).trim(),
+    ];
+    if (effectiveBranchId) {
+      dupSql += ` AND branch_id = ?`;
+      dupParams.push(effectiveBranchId);
+    } else {
+      dupSql += ` AND branch_id IS NULL`;
+    }
+    if (excludeAssignmentId) {
+      dupSql += ` AND id != ?`;
+      dupParams.push(excludeAssignmentId);
+    }
+    dupSql += ` LIMIT 1`;
+    const [dupRows] = await pool.query(dupSql, dupParams);
+    if (dupRows && dupRows.length > 0) {
+      const err = new Error(`An assignment titled "${String(title).trim()}" already exists for this class, section, and subject in this branch.`);
+      err.statusCode = 400;
+      throw err;
+    }
+
+    return effectiveBranchId;
+  }
+
+  static async getAssignments(schoolId, { classId, class_id, sectionId, section_id, subjectId, subject_id, assignmentTypeId, assignment_type_id, search, status, page, limit, branchId = null, branch_id = null, teacherId = null } = {}) {
     try {
       const cId = classId || class_id;
       const sId = sectionId || section_id;
       const subId = subjectId || subject_id;
       const atId = assignmentTypeId || assignment_type_id;
+      const cleanBranchId = AcademicModel.parseBranchId(branchId ?? branch_id);
 
       let baseSql = `
         FROM assignments a
@@ -2288,9 +2519,23 @@ class AcademicModel {
       `;
       const params = [schoolId];
 
-      if (branchId) {
-        baseSql += ` AND (a.branch_id = ? OR cm.branch_id = ?)`;
-        params.push(Number(branchId), Number(branchId));
+      if (cleanBranchId) {
+        baseSql += ` AND COALESCE(a.branch_id, cm.branch_id) = ?`;
+        params.push(cleanBranchId);
+      }
+
+      if (teacherId) {
+        baseSql += ` AND (
+          EXISTS (
+            SELECT 1 FROM teacher_class_assign tca
+            WHERE tca.teacher_id = ? AND tca.school_id = a.school_id AND tca.class_id = a.class_id AND tca.status = 1
+          )
+          OR EXISTS (
+            SELECT 1 FROM teacher_master tm
+            WHERE tm.id = ? AND tm.school_id = a.school_id AND tm.class = a.class_id AND tm.status != 4
+          )
+        )`;
+        params.push(Number(teacherId), Number(teacherId));
       }
 
       if (cId) {
@@ -2330,7 +2575,7 @@ class AcademicModel {
 
         const dataSql = `
           SELECT a.*, at.type_name, cm.class_name, sec.section_name, sm.subject_name,
-                 (SELECT COUNT(*) FROM assignment_questions aq WHERE aq.assignment_id = a.id AND (aq.status != 4 OR aq.status IS NULL)) AS question_count
+                 (SELECT COUNT(*) FROM assignment_questions aq WHERE aq.assignment_id = a.id AND aq.school_id = a.school_id AND (aq.status != 4 OR aq.status IS NULL)) AS question_count
           ${baseSql}
           ORDER BY a.id DESC
           LIMIT ? OFFSET ?
@@ -2350,7 +2595,7 @@ class AcademicModel {
 
       const sql = `
         SELECT a.*, at.type_name, cm.class_name, sec.section_name, sm.subject_name,
-               (SELECT COUNT(*) FROM assignment_questions aq WHERE aq.assignment_id = a.id AND (aq.status != 4 OR aq.status IS NULL)) AS question_count
+               (SELECT COUNT(*) FROM assignment_questions aq WHERE aq.assignment_id = a.id AND aq.school_id = a.school_id AND (aq.status != 4 OR aq.status IS NULL)) AS question_count
         ${baseSql}
         ORDER BY a.id DESC
       `;
@@ -2362,20 +2607,34 @@ class AcademicModel {
     }
   }
 
-  static async getAssignmentById(id, schoolId, branchId = null) {
+  static async getAssignmentById(id, schoolId, branchId = null, teacherId = null) {
     try {
+      const cleanBranchId = AcademicModel.parseBranchId(branchId);
       let sql = `SELECT a.*, at.type_name, cm.class_name, sec.section_name, sm.subject_name,
-                (SELECT COUNT(*) FROM assignment_questions aq WHERE aq.assignment_id = a.id AND (aq.status != 4 OR aq.status IS NULL)) AS question_count
+                (SELECT COUNT(*) FROM assignment_questions aq WHERE aq.assignment_id = a.id AND aq.school_id = a.school_id AND (aq.status != 4 OR aq.status IS NULL)) AS question_count
          FROM assignments a
          LEFT JOIN assignment_types at ON at.id = a.assignment_type_id
          LEFT JOIN class_master cm ON cm.id = a.class_id
          LEFT JOIN section_master sec ON sec.id = a.section_id
          LEFT JOIN subject_master sm ON sm.id = a.subject_id
-         WHERE a.id = ? AND a.school_id = ?`;
+         WHERE a.id = ? AND a.school_id = ? AND (a.status != 4 OR a.status IS NULL)`;
       const params = [id, schoolId];
-      if (branchId) {
-        sql += ` AND (a.branch_id = ? OR a.branch_id IS NULL)`;
-        params.push(Number(branchId));
+      if (cleanBranchId) {
+        sql += ` AND COALESCE(a.branch_id, cm.branch_id) = ?`;
+        params.push(cleanBranchId);
+      }
+      if (teacherId) {
+        sql += ` AND (
+          EXISTS (
+            SELECT 1 FROM teacher_class_assign tca
+            WHERE tca.teacher_id = ? AND tca.school_id = a.school_id AND tca.class_id = a.class_id AND tca.status = 1
+          )
+          OR EXISTS (
+            SELECT 1 FROM teacher_master tm
+            WHERE tm.id = ? AND tm.school_id = a.school_id AND tm.class = a.class_id AND tm.status != 4
+          )
+        )`;
+        params.push(Number(teacherId), Number(teacherId));
       }
       sql += ` LIMIT 1`;
       const [rows] = await pool.query(sql, params);
@@ -2388,12 +2647,30 @@ class AcademicModel {
 
   static async getAssignmentQuestions(assignmentId, schoolId, branchId = null) {
     try {
+      const cleanBranchId = AcademicModel.parseBranchId(branchId);
+
+      // Verify parent assignment belongs to school and branch
+      let asgSql = `SELECT a.id, COALESCE(a.branch_id, cm.branch_id) AS branch_id
+        FROM assignments a
+        LEFT JOIN class_master cm ON cm.id = a.class_id
+        WHERE a.id = ? AND a.school_id = ? AND (a.status != 4 OR a.status IS NULL)`;
+      const asgParams = [assignmentId, schoolId];
+      if (cleanBranchId) {
+        asgSql += ` AND COALESCE(a.branch_id, cm.branch_id) = ?`;
+        asgParams.push(cleanBranchId);
+      }
+      asgSql += ` LIMIT 1`;
+      const [asgRows] = await pool.query(asgSql, asgParams);
+      if (!asgRows || asgRows.length === 0) {
+        return [];
+      }
+
       let sql = `SELECT * FROM assignment_questions 
          WHERE assignment_id = ? AND school_id = ? AND (status != 4 OR status IS NULL)`;
       const params = [assignmentId, schoolId];
-      if (branchId) {
-        sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
-        params.push(Number(branchId));
+      if (cleanBranchId) {
+        sql += ` AND branch_id = ?`;
+        params.push(cleanBranchId);
       }
       sql += ` ORDER BY id ASC`;
       const [questions] = await pool.query(sql, params);
@@ -2404,9 +2681,9 @@ class AcademicModel {
       let ansSql = `SELECT * FROM assignment_answers 
          WHERE question_id IN (?) AND school_id = ? AND (status != 4 OR status IS NULL)`;
       const ansParams = [questionIds, schoolId];
-      if (branchId) {
-        ansSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
-        ansParams.push(Number(branchId));
+      if (cleanBranchId) {
+        ansSql += ` AND branch_id = ?`;
+        ansParams.push(cleanBranchId);
       }
       ansSql += ` ORDER BY id ASC`;
       const [answers] = await pool.query(ansSql, ansParams);
@@ -2422,35 +2699,60 @@ class AcademicModel {
   }
 
   static async publishAssignment(id, schoolId, branchId = null) {
-    let sql = `UPDATE assignments SET is_published = 1 WHERE id = ? AND school_id = ?`;
+    const cleanBranchId = AcademicModel.parseBranchId(branchId);
+    let sql = `UPDATE assignments SET is_published = 1 WHERE id = ? AND school_id = ? AND (status != 4 OR status IS NULL)`;
     const params = [id, schoolId];
-    if (branchId) {
-      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
-      params.push(Number(branchId));
+    if (cleanBranchId) {
+      sql += ` AND branch_id = ?`;
+      params.push(cleanBranchId);
     }
     const [result] = await pool.query(sql, params);
     return result.affectedRows > 0;
   }
 
-  static async createAssignment(schoolId, { branch_id = null, assignment_type_id, title, class_id, section_id, subject_id, assigned_date, due_date, is_published = 0, questions = [] }) {
+  static async createAssignment(schoolId, data, branchId = null, teacherId = null) {
+    const {
+      branch_id = null,
+      assignment_type_id,
+      title,
+      class_id,
+      section_id,
+      subject_id,
+      assigned_date,
+      due_date,
+      is_published = 0,
+      questions = [],
+    } = data || {};
+
+    const requestedBranchId = AcademicModel.parseBranchId(branch_id ?? branchId);
+    const validatedBranchId = await AcademicModel.validateAssignmentRelations(
+      schoolId,
+      requestedBranchId,
+      { assignment_type_id, title, class_id, section_id, subject_id },
+      teacherId,
+      null
+    );
+    const resolvedBranchId = await AcademicModel.resolveDefaultBranchId(schoolId, validatedBranchId || requestedBranchId);
+
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
 
-      let resolvedBranchId = branch_id;
-      if (!resolvedBranchId && class_id) {
-        const [cm] = await connection.query(`SELECT branch_id FROM class_master WHERE id = ?`, [class_id]);
-        if (cm.length && cm[0].branch_id) resolvedBranchId = cm[0].branch_id;
-      }
-      if (!resolvedBranchId) {
-        const [mb] = await connection.query(`SELECT id FROM branch_master WHERE school_id = ? AND (is_main_branch = 1 OR id > 0) ORDER BY is_main_branch DESC LIMIT 1`, [schoolId]);
-        if (mb.length) resolvedBranchId = mb[0].id;
-      }
-
       const [result] = await connection.query(
         `INSERT INTO assignments (school_id, branch_id, assignment_type_id, title, class_id, section_id, subject_id, assigned_date, due_date, status, is_published, created_on)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, NOW())`,
-        [schoolId, resolvedBranchId, assignment_type_id || null, title, class_id, section_id || null, subject_id, assigned_date || new Date().toISOString().split('T')[0], due_date, is_published]
+        [
+          schoolId,
+          resolvedBranchId,
+          assignment_type_id || null,
+          String(title).trim(),
+          class_id,
+          section_id || null,
+          subject_id,
+          assigned_date || new Date().toISOString().split('T')[0],
+          due_date,
+          is_published,
+        ]
       );
       const assignmentId = result.insertId;
 
@@ -2462,7 +2764,7 @@ class AcademicModel {
           const [qResult] = await connection.query(
             `INSERT INTO assignment_questions (school_id, branch_id, assignment_id, question, status, created_at)
              VALUES (?, ?, ?, ?, 1, NOW())`,
-            [schoolId, resolvedBranchId, assignmentId, qText]
+            [schoolId, resolvedBranchId, assignmentId, qText.trim()]
           );
           const questionId = qResult.insertId;
 
@@ -2476,7 +2778,7 @@ class AcademicModel {
             await connection.query(
               `INSERT INTO assignment_answers (school_id, branch_id, question_id, answer, is_correct, status, created_at)
                VALUES (?, ?, ?, ?, ?, 1, NOW())`,
-              [schoolId, resolvedBranchId, questionId, ansText, isCorrect]
+              [schoolId, resolvedBranchId, questionId, ansText.trim(), isCorrect]
             );
           }
         }
@@ -2492,7 +2794,55 @@ class AcademicModel {
     }
   }
 
-  static async updateAssignment(id, schoolId, { assignment_type_id, title, class_id, section_id, subject_id, assigned_date, due_date, is_published = 0, questions }, branchId = null) {
+  static async updateAssignment(id, schoolId, data, branchId = null, teacherId = null) {
+    const {
+      assignment_type_id,
+      title,
+      class_id,
+      section_id,
+      subject_id,
+      assigned_date,
+      due_date,
+      is_published,
+      questions,
+    } = data || {};
+    const filterBranch = AcademicModel.parseBranchId(branchId);
+
+    // 1. Verify existing assignment belongs to school and branch
+    let checkSql = `SELECT a.*, COALESCE(a.branch_id, cm.branch_id) AS resolved_branch_id
+      FROM assignments a
+      LEFT JOIN class_master cm ON cm.id = a.class_id
+      WHERE a.id = ? AND a.school_id = ? AND (a.status != 4 OR a.status IS NULL)`;
+    const checkParams = [id, schoolId];
+    if (filterBranch) {
+      checkSql += ` AND COALESCE(a.branch_id, cm.branch_id) = ?`;
+      checkParams.push(filterBranch);
+    }
+    checkSql += ` LIMIT 1`;
+    const [existingRows] = await pool.query(checkSql, checkParams);
+    if (!existingRows || existingRows.length === 0) {
+      return false;
+    }
+    const existing = existingRows[0];
+    const targetBranchId = filterBranch || AcademicModel.parseBranchId(existing.resolved_branch_id);
+
+    // 2. Validate relations and branch-scoped duplicate check
+    const mergedData = {
+      assignment_type_id: assignment_type_id !== undefined ? assignment_type_id : existing.assignment_type_id,
+      title: title !== undefined ? title : existing.title,
+      class_id: class_id !== undefined ? class_id : existing.class_id,
+      section_id: section_id !== undefined ? section_id : existing.section_id,
+      subject_id: subject_id !== undefined ? subject_id : existing.subject_id,
+    };
+    const validatedBranchId = await AcademicModel.validateAssignmentRelations(
+      schoolId,
+      targetBranchId,
+      mergedData,
+      teacherId,
+      id
+    );
+    const resolvedBranchId = validatedBranchId || targetBranchId;
+
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
@@ -2500,39 +2850,55 @@ class AcademicModel {
       let sql = `UPDATE assignments 
          SET assignment_type_id = COALESCE(?, assignment_type_id),
              title = COALESCE(?, title),
+             class_id = COALESCE(?, class_id),
+             section_id = COALESCE(?, section_id),
+             subject_id = COALESCE(?, subject_id),
              assigned_date = COALESCE(?, assigned_date),
              due_date = COALESCE(?, due_date),
-             is_published = COALESCE(?, is_published)
+             is_published = COALESCE(?, is_published),
+             branch_id = COALESCE(?, branch_id)
          WHERE id = ? AND school_id = ?`;
-      const params = [assignment_type_id, title, assigned_date, due_date, is_published, id, schoolId];
-      if (branchId) {
-        sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
-        params.push(Number(branchId));
+      const params = [
+        assignment_type_id || null,
+        title ? String(title).trim() : null,
+        class_id || null,
+        section_id || null,
+        subject_id || null,
+        assigned_date || null,
+        due_date || null,
+        is_published !== undefined ? is_published : null,
+        resolvedBranchId || null,
+        id,
+        schoolId,
+      ];
+      if (filterBranch) {
+        sql += ` AND branch_id = ?`;
+        params.push(filterBranch);
       }
-      await connection.query(sql, params);
+      const [updateResult] = await connection.query(sql, params);
+      if (updateResult.affectedRows === 0) {
+        await connection.rollback();
+        return false;
+      }
 
       if (Array.isArray(questions)) {
-        // Resolve branch_id from assignment
-        const [existingAsg] = await connection.query(
-          `SELECT branch_id FROM assignments WHERE id = ? AND school_id = ?`,
-          [id, schoolId]
-        );
-        const resolvedBranchId = existingAsg.length ? existingAsg[0].branch_id : (branchId ? Number(branchId) : null);
-
-        // Soft delete old questions and answers
-        const [oldQuestions] = await connection.query(
-          `SELECT id FROM assignment_questions WHERE assignment_id = ? AND school_id = ?`,
-          [id, schoolId]
-        );
+        // Soft delete old questions and answers scoped to school and branch
+        let oldQSql = `SELECT id FROM assignment_questions WHERE assignment_id = ? AND school_id = ?`;
+        const oldQParams = [id, schoolId];
+        if (resolvedBranchId) {
+          oldQSql += ` AND branch_id = ?`;
+          oldQParams.push(resolvedBranchId);
+        }
+        const [oldQuestions] = await connection.query(oldQSql, oldQParams);
         if (oldQuestions.length > 0) {
-          const oldQIds = oldQuestions.map(q => q.id);
+          const oldQIds = oldQuestions.map((q) => q.id);
           await connection.query(
-            `UPDATE assignment_answers SET status = 4 WHERE question_id IN (?)`,
-            [oldQIds]
+            `UPDATE assignment_answers SET status = 4 WHERE question_id IN (?) AND school_id = ?`,
+            [oldQIds, schoolId]
           );
           await connection.query(
-            `UPDATE assignment_questions SET status = 4 WHERE id IN (?)`,
-            [oldQIds]
+            `UPDATE assignment_questions SET status = 4 WHERE id IN (?) AND school_id = ?`,
+            [oldQIds, schoolId]
           );
         }
 
@@ -2544,7 +2910,7 @@ class AcademicModel {
           const [qResult] = await connection.query(
             `INSERT INTO assignment_questions (school_id, branch_id, assignment_id, question, status, created_at)
              VALUES (?, ?, ?, ?, 1, NOW())`,
-            [schoolId, resolvedBranchId, id, qText]
+            [schoolId, resolvedBranchId, id, qText.trim()]
           );
           const questionId = qResult.insertId;
 
@@ -2558,7 +2924,7 @@ class AcademicModel {
             await connection.query(
               `INSERT INTO assignment_answers (school_id, branch_id, question_id, answer, is_correct, status, created_at)
                VALUES (?, ?, ?, ?, ?, 1, NOW())`,
-              [schoolId, resolvedBranchId, questionId, ansText, isCorrect]
+              [schoolId, resolvedBranchId, questionId, ansText.trim(), isCorrect]
             );
           }
         }
@@ -2575,13 +2941,26 @@ class AcademicModel {
   }
 
   static async deleteAssignment(id, schoolId, branchId = null) {
-    let sql = `UPDATE assignments SET status = 4 WHERE id = ? AND school_id = ?`;
+    const cleanBranchId = AcademicModel.parseBranchId(branchId);
+    let sql = `UPDATE assignments SET status = 4 WHERE id = ? AND school_id = ? AND (status != 4 OR status IS NULL)`;
     const params = [id, schoolId];
-    if (branchId) {
+    if (cleanBranchId) {
       sql += ` AND branch_id = ?`;
-      params.push(Number(branchId));
+      params.push(cleanBranchId);
     }
     const [result] = await pool.query(sql, params);
+    if (result.affectedRows > 0) {
+      // Also soft-delete child questions and answers scoped to school and branch
+      const [qRows] = await pool.query(
+        `SELECT id FROM assignment_questions WHERE assignment_id = ? AND school_id = ?`,
+        [id, schoolId]
+      );
+      if (qRows.length > 0) {
+        const qIds = qRows.map((q) => q.id);
+        await pool.query(`UPDATE assignment_answers SET status = 4 WHERE question_id IN (?) AND school_id = ?`, [qIds, schoolId]);
+        await pool.query(`UPDATE assignment_questions SET status = 4 WHERE id IN (?) AND school_id = ?`, [qIds, schoolId]);
+      }
+    }
     return result.affectedRows > 0;
   }
 
