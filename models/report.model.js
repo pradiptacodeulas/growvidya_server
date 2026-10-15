@@ -5,14 +5,29 @@ class ReportModel {
    * Fetches dropdown options (academic years, shifts, classes, sections) for reports
    */
   static async getFilterOptions(schoolId, branchId = null) {
-    // 1. Academic Years
-    const [years] = await pool.query(
-      `SELECT id, academic_year, start_date, end_date, is_current 
+    // 1. Academic Years filtered by schoolId and branchId
+    let yearQuery = `SELECT id, school_id, branch_id, academic_year, start_date, end_date, is_current, status
        FROM academic_year_master 
-       WHERE school_id = ? AND (status = 1 OR status IS NULL) 
-       ORDER BY is_current DESC, id ASC`,
-      [schoolId]
-    );
+       WHERE school_id = ? AND (status = 1 OR status IS NULL) AND (status != 4 OR status IS NULL)`;
+    const yearParams = [schoolId];
+    if (branchId) {
+      yearQuery += ` AND branch_id = ?`;
+      yearParams.push(Number(branchId));
+    }
+    yearQuery += ` ORDER BY is_current DESC, id ASC`;
+    let [years] = await pool.query(yearQuery, yearParams);
+
+    // Fallback for single-branch schools where academic years have branch_id IS NULL
+    if (branchId && (!years || years.length === 0)) {
+      const [nullBranchYears] = await pool.query(
+        `SELECT id, school_id, branch_id, academic_year, start_date, end_date, is_current, status
+         FROM academic_year_master 
+         WHERE school_id = ? AND branch_id IS NULL AND (status = 1 OR status IS NULL) AND (status != 4 OR status IS NULL)
+         ORDER BY is_current DESC, id ASC`,
+        [schoolId]
+      );
+      years = nullBranchYears || [];
+    }
 
     // 2. Shifts
     let shiftQuery = `SELECT id, shift_name, start_time, end_time 
@@ -68,6 +83,8 @@ class ReportModel {
 
         return {
           id: y.id,
+          school_id: y.school_id,
+          branch_id: y.branch_id,
           label,
           academic_year: label,
           name: label,

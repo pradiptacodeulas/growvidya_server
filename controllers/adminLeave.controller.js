@@ -90,29 +90,34 @@ class AdminLeaveController {
         );
       }
 
-      // Check quota restriction
+      // Check quota restriction (includes both approved and pending active leave requests)
       const quota = await LeaveModel.getStaffLeaveQuota(schoolId, Number(role), Number(staff_id), Number(leave_id));
-      if (quota && quota.max_quota > 0) {
+      if (!quota || !quota.leave_exists || quota.leave_status !== 1) {
+        return ApiResponse.error(res, 'Selected leave type is invalid or inactive.', null, 400);
+      }
+
+      if (quota.max_quota > 0) {
+        const uniqueDates = [...new Set(sortedDates)];
         let requestedDays = 1;
         if (Number(duration) === 2) {
           requestedDays = 0.5;
-        } else if (Number(duration) === 3 && Array.isArray(dates) && dates.length > 0) {
-          requestedDays = dates.length;
+        } else if (Number(duration) === 3 && uniqueDates.length > 0) {
+          requestedDays = uniqueDates.length;
         }
 
-        if (quota.approved_days >= quota.max_quota) {
+        if (quota.used_days >= quota.max_quota || quota.remaining_days <= 0) {
           return ApiResponse.error(
             res,
-            `Cannot apply for leave: Staff member has already utilized all ${quota.max_quota} allowed day(s) for "${quota.leave_name}".`,
+            `Cannot apply for leave: Staff member has already utilized all ${quota.max_quota} allowed day(s) for "${quota.leave_name}" (Approved: ${quota.approved_days}, Pending: ${quota.pending_days}, Remaining: 0).`,
             null,
             400
           );
         }
 
-        if ((quota.approved_days + requestedDays) > quota.max_quota) {
+        if ((quota.used_days + requestedDays) > quota.max_quota) {
           return ApiResponse.error(
             res,
-            `Cannot apply for leave: Requested duration (${requestedDays} day(s)) exceeds the remaining quota of ${quota.remaining_days} day(s) for "${quota.leave_name}" (Quota: ${quota.max_quota} days, Approved: ${quota.approved_days} days).`,
+            `Cannot apply for leave: Requested duration (${requestedDays} day(s)) exceeds the remaining leave balance of ${quota.remaining_days} day(s) for "${quota.leave_name}" (Allowed Limit: ${quota.max_quota} days, Used/Applied: ${quota.used_days} days, Remaining: ${quota.remaining_days} days).`,
             null,
             400
           );
@@ -132,6 +137,9 @@ class AdminLeaveController {
 
       return ApiResponse.success(res, 'Leave applied successfully.', { leaveId }, 201);
     } catch (error) {
+      if (error.statusCode === 400) {
+        return ApiResponse.error(res, error.message, null, 400);
+      }
       next(error);
     }
   }
@@ -181,11 +189,14 @@ class AdminLeaveController {
   static async getLeaveTypes(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
-      const { role } = req.query;
+      const { role, staff_id, active_only } = req.query;
       const rawBranch = req.branchId !== undefined ? req.branchId : (req.query.branch_id || req.query.branchId || null);
       const branchId = (rawBranch && rawBranch !== 'all') ? Number(rawBranch) : null;
 
-      const types = await LeaveModel.getLeaveTypes(schoolId, role, branchId);
+      const types = await LeaveModel.getLeaveTypes(schoolId, role, branchId, {
+        staffId: staff_id || null,
+        activeOnly: Boolean(active_only || staff_id),
+      });
       return ApiResponse.success(res, 'Leave types fetched successfully.', { types });
     } catch (error) {
       next(error);

@@ -529,21 +529,48 @@ class TeacherModel {
 
       const [usedLeaves] = await pool.query(
         `SELECT l.leave_id, 
-                COALESCE(SUM(CASE WHEN l.duration = 2 THEN 0.5 ELSE 1 END), 0) AS approved_days
+                COALESCE(SUM(CASE WHEN ld.status = 2 THEN (CASE WHEN l.duration = 2 THEN 0.5 ELSE 1 END) ELSE 0 END), 0) AS approved_days,
+                COALESCE(SUM(CASE WHEN ld.status = 1 AND l.status IN (1, 2) THEN (CASE WHEN l.duration = 2 THEN 0.5 ELSE 1 END) ELSE 0 END), 0) AS pending_days
          FROM leaves_date ld
          JOIN leaves l ON ld.staff_leave_id = l.id
-         WHERE l.staff_id = ? AND (l.school_id = ? OR ? IS NULL) AND l.role = 1 AND ld.status = 2 AND l.status != 4 AND l.status != 0
+         WHERE l.staff_id = ? AND (l.school_id = ? OR ? IS NULL) AND l.role = 1 AND l.status != 4 AND l.status != 0
+         GROUP BY l.leave_id`,
+        [id, teacher.school_id, teacher.school_id]
+      );
+
+      const [standaloneLeaves] = await pool.query(
+        `SELECT l.leave_id,
+                COALESCE(SUM(CASE WHEN l.status = 2 THEN (CASE WHEN l.duration = 2 THEN 0.5 ELSE 1 END) ELSE 0 END), 0) AS standalone_approved,
+                COALESCE(SUM(CASE WHEN l.status = 1 THEN (CASE WHEN l.duration = 2 THEN 0.5 ELSE 1 END) ELSE 0 END), 0) AS standalone_pending
+         FROM leaves l
+         WHERE l.staff_id = ? AND (l.school_id = ? OR ? IS NULL) AND l.role = 1 AND l.status IN (1, 2)
+           AND NOT EXISTS (SELECT 1 FROM leaves_date ld WHERE ld.staff_leave_id = l.id)
          GROUP BY l.leave_id`,
         [id, teacher.school_id, teacher.school_id]
       );
 
       const usedMap = {};
+      const approvedMap = {};
+      const pendingMap = {};
       (usedLeaves || []).forEach((u) => {
-        usedMap[u.leave_id] = Number(u.approved_days || 0);
+        const app = Number(u.approved_days || 0);
+        const pend = Number(u.pending_days || 0);
+        approvedMap[u.leave_id] = app;
+        pendingMap[u.leave_id] = pend;
+        usedMap[u.leave_id] = app + pend;
+      });
+      (standaloneLeaves || []).forEach((s) => {
+        const app = Number(s.standalone_approved || 0);
+        const pend = Number(s.standalone_pending || 0);
+        approvedMap[s.leave_id] = (approvedMap[s.leave_id] || 0) + app;
+        pendingMap[s.leave_id] = (pendingMap[s.leave_id] || 0) + pend;
+        usedMap[s.leave_id] = (usedMap[s.leave_id] || 0) + app + pend;
       });
 
       teacher.leave_types = (leaveMasters || []).map((lm) => {
         const used = usedMap[lm.id] || 0;
+        const approved = approvedMap[lm.id] || 0;
+        const pending = pendingMap[lm.id] || 0;
         const total = Number(lm.no_leave || 0);
         const available = Math.max(0, total - used);
         return {
@@ -551,6 +578,8 @@ class TeacherModel {
           leave_name: lm.leave_name,
           total_leaves: total,
           used_leaves: used,
+          approved_leaves: approved,
+          pending_leaves: pending,
           available_leaves: available,
         };
       });

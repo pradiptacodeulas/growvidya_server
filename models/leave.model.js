@@ -174,25 +174,37 @@ class LeaveModel {
       );
       leave.total_quota = quotaInfo.max_quota;
       leave.approved_days = quotaInfo.approved_days;
+      leave.pending_days = quotaInfo.pending_days;
+      leave.used_days = quotaInfo.used_days;
       leave.remaining_quota = quotaInfo.remaining_days;
-      leave.is_quota_exceeded = quotaInfo.max_quota > 0 && quotaInfo.approved_days >= quotaInfo.max_quota;
+      leave.remaining_approval_quota = quotaInfo.remaining_approval_days;
+      leave.is_quota_exceeded = quotaInfo.is_approval_exhausted;
+      leave.is_exhausted = quotaInfo.is_exhausted;
     } catch (e) {
       leave.total_quota = 0;
       leave.approved_days = 0;
+      leave.pending_days = 0;
+      leave.used_days = 0;
       leave.remaining_quota = 0;
+      leave.remaining_approval_quota = 0;
       leave.is_quota_exceeded = false;
+      leave.is_exhausted = false;
     }
 
     return leave;
   }
 
   /**
-   * Get quota and usage for a specific staff member and leave type
+   * Get quota and usage for a specific staff member and leave type.
+   * Tracks both approved (status = 2) and pending (status = 1) leave days so users
+   * cannot exceed their allowed leave limit or submit duplicate/excess requests.
    */
   static async getStaffLeaveQuota(schoolId, role, staffId, leaveId) {
     // 1. Get quota from leave_master
     const [typeRows] = await pool.query(
-      `SELECT id, leave_name, COALESCE(is_paid, 1) AS is_paid, no_leave FROM leave_master WHERE id = ? AND (school_id = ? OR ? IS NULL)`,
+      `SELECT id, role, branch_id, status, leave_name, COALESCE(is_paid, 1) AS is_paid, no_leave
+       FROM leave_master
+       WHERE id = ? AND (school_id = ? OR ? IS NULL)`,
       [leaveId, schoolId, schoolId]
     );
 
@@ -201,47 +213,63 @@ class LeaveModel {
     const isPaid = Number(leaveMaster?.is_paid !== undefined ? leaveMaster.is_paid : 1);
     const maxQuota = Number(leaveMaster?.no_leave || 0);
 
-    // 2. Calculate approved days
-    // a) From leaves_date where ld.status = 2
-    const [approvedRows] = await pool.query(
+    // 2. Calculate approved days (status = 2) and pending days (status = 1)
+    // a) From leaves_date
+    const [dateQuotaRows] = await pool.query(
       `SELECT 
-         COALESCE(SUM(CASE WHEN l.duration = 2 THEN 0.5 ELSE 1 END), 0) AS approved_days
+         COALESCE(SUM(CASE WHEN ld.status = 2 THEN (CASE WHEN l.duration = 2 THEN 0.5 ELSE 1 END) ELSE 0 END), 0) AS approved_days,
+         COALESCE(SUM(CASE WHEN ld.status = 1 AND l.status IN (1, 2) THEN (CASE WHEN l.duration = 2 THEN 0.5 ELSE 1 END) ELSE 0 END), 0) AS pending_days
        FROM leaves_date ld
        JOIN leaves l ON ld.staff_leave_id = l.id
        WHERE (l.school_id = ? OR ? IS NULL)
          AND l.role = ?
          AND l.staff_id = ?
          AND l.leave_id = ?
-         AND ld.status = 2
          AND l.status != 4 AND l.status != 0`,
       [schoolId, schoolId, Number(role), Number(staffId), Number(leaveId)]
     );
 
-    // b) Plus any leaves with status = 2 that have NO rows in leaves_date (fallback)
+    // b) Plus any leaves that have NO rows in leaves_date (fallback)
     const [standaloneRows] = await pool.query(
       `SELECT 
-         COALESCE(SUM(CASE WHEN l.duration = 2 THEN 0.5 ELSE 1 END), 0) AS standalone_approved
+         COALESCE(SUM(CASE WHEN l.status = 2 THEN (CASE WHEN l.duration = 2 THEN 0.5 ELSE 1 END) ELSE 0 END), 0) AS standalone_approved,
+         COALESCE(SUM(CASE WHEN l.status = 1 THEN (CASE WHEN l.duration = 2 THEN 0.5 ELSE 1 END) ELSE 0 END), 0) AS standalone_pending
        FROM leaves l
        WHERE (l.school_id = ? OR ? IS NULL)
          AND l.role = ?
          AND l.staff_id = ?
          AND l.leave_id = ?
-         AND l.status = 2
-         AND l.status != 4 AND l.status != 0
+         AND l.status IN (1, 2)
          AND NOT EXISTS (SELECT 1 FROM leaves_date ld WHERE ld.staff_leave_id = l.id)`,
       [schoolId, schoolId, Number(role), Number(staffId), Number(leaveId)]
     );
 
-    const approvedDays = Number(approvedRows[0]?.approved_days || 0) + Number(standaloneRows[0]?.standalone_approved || 0);
-    const remainingDays = Math.max(0, maxQuota - approvedDays);
+    const approvedDays =
+      Number(dateQuotaRows[0]?.approved_days || 0) +
+      Number(standaloneRows[0]?.standalone_approved || 0);
+    const pendingDays =
+      Number(dateQuotaRows[0]?.pending_days || 0) +
+      Number(standaloneRows[0]?.standalone_pending || 0);
+    const usedDays = approvedDays + pendingDays;
+
+    const remainingDays = Math.max(0, maxQuota - usedDays);
+    const remainingApprovalDays = Math.max(0, maxQuota - approvedDays);
 
     return {
+      leave_exists: Boolean(leaveMaster),
+      leave_status: Number(leaveMaster?.status || 0),
+      leave_role: Number(leaveMaster?.role || 0),
+      leave_branch_id: leaveMaster?.branch_id || null,
       leave_name: leaveName,
       is_paid: isPaid,
       max_quota: maxQuota,
       approved_days: approvedDays,
+      pending_days: pendingDays,
+      used_days: usedDays,
       remaining_days: remainingDays,
-      is_exhausted: maxQuota > 0 && approvedDays >= maxQuota,
+      remaining_approval_days: remainingApprovalDays,
+      is_exhausted: maxQuota > 0 && usedDays >= maxQuota,
+      is_approval_exhausted: maxQuota > 0 && approvedDays >= maxQuota,
     };
   }
 
@@ -316,6 +344,41 @@ class LeaveModel {
    * Apply / Create Leave
    */
   static async createLeave(schoolId, { role, staff_id, leave_id, duration, document, leave_reason, dates = [], branch_id = null }) {
+    const uniqueDates = [...new Set((dates || []).map((d) => String(d).split('T')[0]).filter(Boolean))].sort();
+
+    // Enforce quota validation before inserting
+    const quota = await LeaveModel.getStaffLeaveQuota(schoolId, Number(role), Number(staff_id), Number(leave_id));
+    if (!quota.leave_exists || quota.leave_status !== 1) {
+      const err = new Error('Selected leave type is invalid or inactive.');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    if (quota.max_quota > 0) {
+      let requestedDays = 1;
+      if (Number(duration) === 2) {
+        requestedDays = 0.5;
+      } else if (Number(duration) === 3 && uniqueDates.length > 0) {
+        requestedDays = uniqueDates.length;
+      }
+
+      if (quota.used_days >= quota.max_quota || quota.remaining_days <= 0) {
+        const err = new Error(
+          `Cannot apply for leave: The allowed limit of ${quota.max_quota} day(s) for "${quota.leave_name}" has already been used (Approved: ${quota.approved_days}, Pending: ${quota.pending_days}, Remaining: 0).`
+        );
+        err.statusCode = 400;
+        throw err;
+      }
+
+      if ((quota.used_days + requestedDays) > quota.max_quota) {
+        const err = new Error(
+          `Cannot apply for leave: Requested duration (${requestedDays} day(s)) exceeds the remaining leave balance of ${quota.remaining_days} day(s) for "${quota.leave_name}" (Allowed Limit: ${quota.max_quota}, Used/Applied: ${quota.used_days}, Remaining: ${quota.remaining_days}).`
+        );
+        err.statusCode = 400;
+        throw err;
+      }
+    }
+
     let resolvedBranchId = branch_id ? Number(branch_id) : null;
     if (!resolvedBranchId) {
       try {
@@ -347,8 +410,8 @@ class LeaveModel {
     const leaveId = result.insertId;
 
     // Insert date breakdown
-    if (Array.isArray(dates) && dates.length > 0) {
-      for (const d of dates) {
+    if (uniqueDates.length > 0) {
+      for (const d of uniqueDates) {
         if (d) {
           await pool.query(
             `INSERT INTO leaves_date (school_id, branch_id, staff_leave_id, date, status)
@@ -510,8 +573,34 @@ class LeaveModel {
 
   /**
    * Get Leave Types (from leave_master)
+   * When staffId is provided, filters by the staff member's branch and enriches each type
+   * with the staff member's used/approved/pending/remaining leave balance.
    */
-  static async getLeaveTypes(schoolId, role = null, branchId = null) {
+  static async getLeaveTypes(schoolId, role = null, branchId = null, { staffId = null, activeOnly = false } = {}) {
+    let effectiveBranchId = branchId && branchId !== 'all' ? Number(branchId) : null;
+
+    if (staffId) {
+      try {
+        if (Number(role) === 1) {
+          const [tRows] = await pool.query(
+            'SELECT branch_id FROM teacher_master WHERE id = ? AND (school_id = ? OR ? IS NULL) LIMIT 1',
+            [Number(staffId), schoolId, schoolId]
+          );
+          if (tRows && tRows[0]?.branch_id) {
+            effectiveBranchId = Number(tRows[0].branch_id);
+          }
+        } else if (Number(role) === 2) {
+          const [uRows] = await pool.query(
+            'SELECT branch_id FROM user_master WHERE id = ? AND (school_id = ? OR ? IS NULL) LIMIT 1',
+            [Number(staffId), schoolId, schoolId]
+          );
+          if (uRows && uRows[0]?.branch_id) {
+            effectiveBranchId = Number(uRows[0].branch_id);
+          }
+        }
+      } catch (_) {}
+    }
+
     let sql = `
       SELECT 
         lm.id, 
@@ -533,9 +622,13 @@ class LeaveModel {
     `;
     const params = [schoolId];
 
-    if (branchId && branchId !== 'all') {
+    if (activeOnly || staffId) {
+      sql += ` AND lm.status = 1`;
+    }
+
+    if (effectiveBranchId) {
       sql += ` AND (lm.branch_id = ? OR lm.branch_id IS NULL)`;
-      params.push(Number(branchId));
+      params.push(Number(effectiveBranchId));
     }
 
     if (role) {
@@ -545,7 +638,33 @@ class LeaveModel {
 
     sql += ` ORDER BY lm.role ASC, lm.sort_order ASC, lm.id ASC`;
     const [rows] = await pool.query(sql, params);
-    return rows || [];
+    const list = rows || [];
+
+    if (!staffId) {
+      return list;
+    }
+
+    const enriched = await Promise.all(
+      list.map(async (t) => {
+        const quota = await LeaveModel.getStaffLeaveQuota(
+          schoolId,
+          Number(role || t.role || 1),
+          Number(staffId),
+          t.id
+        );
+        return {
+          ...t,
+          max_quota: quota.max_quota,
+          approved_leaves: quota.approved_days,
+          pending_leaves: quota.pending_days,
+          used_leaves: quota.used_days,
+          remaining_leaves: quota.remaining_days,
+          is_exhausted: quota.is_exhausted,
+        };
+      })
+    );
+
+    return enriched;
   }
 
   /**
@@ -553,10 +672,10 @@ class LeaveModel {
    */
   static async getStaffByRole(schoolId, role, branchId = null) {
     if (Number(role) === 1) {
-      // Teachers
-      let sql = `SELECT id, teacher_id AS code, CONCAT(IFNULL(first_name, ''), ' ', IFNULL(last_name, '')) AS name, picture, gender
+      // Teachers: show only active (status = 1) and exclude inactive/deleted (status = 2, 4, 0)
+      let sql = `SELECT id, branch_id, teacher_id AS code, CONCAT(IFNULL(first_name, ''), ' ', IFNULL(last_name, '')) AS name, picture, gender, status
          FROM teacher_master
-         WHERE school_id = ? AND status != 0 AND status != 4`;
+         WHERE school_id = ? AND status = 1 AND status != 4 AND status != 2 AND status != 0`;
       const params = [schoolId];
       if (branchId) {
         sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
@@ -566,10 +685,10 @@ class LeaveModel {
       const [rows] = await pool.query(sql, params);
       return rows || [];
     } else {
-      // Users / Staff
-      let sql = `SELECT id, CONCAT(IFNULL(first_name, ''), ' ', IFNULL(last_name, '')) AS name, picture, gender
+      // Users / Staff: show only active (status = 1) and exclude inactive/deleted (status = 2, 4, 0)
+      let sql = `SELECT id, branch_id, CONCAT(IFNULL(first_name, ''), ' ', IFNULL(last_name, '')) AS name, picture, gender, status
          FROM user_master
-         WHERE school_id = ? AND status != 0 AND status != 4`;
+         WHERE school_id = ? AND status = 1 AND status != 4 AND status != 2 AND status != 0`;
       const params = [schoolId];
       if (branchId) {
         sql += ` AND (branch_id = ? OR branch_id IS NULL)`;

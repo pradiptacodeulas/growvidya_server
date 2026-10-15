@@ -12,13 +12,15 @@ class PayrollModel {
         bm.id,
         bm.school_id,
         COALESCE(
-          bm.branch_id,
           CASE
             WHEN bm.user_type = 2 THEN t.branch_id
             WHEN bm.user_type = 3 THEN op.branch_id
             ELSE u.branch_id
-          END
+          END,
+          bm.branch_id
         ) AS branch_id,
+        br.branch_name AS campus_name,
+        br.branch_code,
         bm.user_type,
         CASE 
           WHEN bm.user_type = 2 THEN 'Teacher'
@@ -106,6 +108,14 @@ class PayrollModel {
           SELECT MAX(id) FROM operator_bank WHERE school_id = ? AND status != 0 AND status != 4 GROUP BY operator_id
         )
       ) ob ON bm.user_type = 3 AND bm.employee_id = ob.operator_id
+      LEFT JOIN branch_master br ON br.id = COALESCE(
+        CASE
+          WHEN bm.user_type = 2 THEN t.branch_id
+          WHEN bm.user_type = 3 THEN op.branch_id
+          ELSE u.branch_id
+        END,
+        bm.branch_id
+      )
       WHERE bm.status != 4 AND bm.status != 0 AND bm.school_id = ?
         AND (
           (bm.user_type = 1 AND u.id IS NOT NULL AND u.status != 4) OR
@@ -121,15 +131,15 @@ class PayrollModel {
     }
 
     if (branchId) {
-      sql += ` AND (
-        (bm.branch_id = ?) OR 
-        (bm.branch_id IS NULL AND (
-          (bm.user_type = 2 AND (t.branch_id = ? OR t.branch_id IS NULL)) OR 
-          (bm.user_type = 3 AND (op.branch_id = ? OR op.branch_id IS NULL)) OR 
-          (bm.user_type = 1 AND (u.branch_id = ? OR u.branch_id IS NULL))
-        ))
-      )`;
-      params.push(Number(branchId), Number(branchId), Number(branchId), Number(branchId));
+      sql += ` AND COALESCE(
+        CASE
+          WHEN bm.user_type = 2 THEN t.branch_id
+          WHEN bm.user_type = 3 THEN op.branch_id
+          ELSE u.branch_id
+        END,
+        bm.branch_id
+      ) = ?`;
+      params.push(Number(branchId));
     }
 
     if (search && search.trim() !== '') {
@@ -154,7 +164,16 @@ class PayrollModel {
       SELECT 
         bm.id,
         bm.school_id,
-        bm.branch_id,
+        COALESCE(
+          CASE
+            WHEN bm.user_type = 2 THEN t.branch_id
+            WHEN bm.user_type = 3 THEN op.branch_id
+            ELSE u.branch_id
+          END,
+          bm.branch_id
+        ) AS branch_id,
+        br.branch_name AS campus_name,
+        br.branch_code,
         bm.user_type,
         CASE 
           WHEN bm.user_type = 2 THEN 'Teacher'
@@ -226,19 +245,27 @@ class PayrollModel {
           SELECT MAX(id) FROM operator_bank WHERE school_id = ? AND status != 0 AND status != 4 GROUP BY operator_id
         )
       ) ob ON bm.user_type = 3 AND bm.employee_id = ob.operator_id
+      LEFT JOIN branch_master br ON br.id = COALESCE(
+        CASE
+          WHEN bm.user_type = 2 THEN t.branch_id
+          WHEN bm.user_type = 3 THEN op.branch_id
+          ELSE u.branch_id
+        END,
+        bm.branch_id
+      )
       WHERE bm.id = ? AND bm.status != 0 AND bm.status != 4 AND bm.school_id = ?
     `;
     const params = [schoolId, schoolId, schoolId, schoolId, id, schoolId];
     if (branchId) {
-      sql += ` AND (
-        (bm.branch_id = ?) OR 
-        (bm.branch_id IS NULL AND (
-          (bm.user_type = 2 AND (t.branch_id = ? OR t.branch_id IS NULL)) OR 
-          (bm.user_type = 3 AND (op.branch_id = ? OR op.branch_id IS NULL)) OR 
-          (bm.user_type = 1 AND (u.branch_id = ? OR u.branch_id IS NULL))
-        ))
-      )`;
-      params.push(Number(branchId), Number(branchId), Number(branchId), Number(branchId));
+      sql += ` AND COALESCE(
+        CASE
+          WHEN bm.user_type = 2 THEN t.branch_id
+          WHEN bm.user_type = 3 THEN op.branch_id
+          ELSE u.branch_id
+        END,
+        bm.branch_id
+      ) = ?`;
+      params.push(Number(branchId));
     }
     const [rows] = await pool.query(sql, params);
     return rows && rows.length > 0 ? rows[0] : null;
@@ -270,7 +297,7 @@ class PayrollModel {
           err.statusCode = 404;
           throw err;
         }
-        if (!resolvedBranchId && tm[0].branch_id) resolvedBranchId = tm[0].branch_id;
+        if (tm[0].branch_id) resolvedBranchId = Number(tm[0].branch_id);
       } else if (uType === 3) {
         const [opm] = await pool.query('SELECT id, branch_id FROM operator_master WHERE id = ? AND school_id = ? AND status != 4', [empId, sId]);
         if (!opm.length) {
@@ -278,7 +305,7 @@ class PayrollModel {
           err.statusCode = 404;
           throw err;
         }
-        if (!resolvedBranchId && opm[0].branch_id) resolvedBranchId = opm[0].branch_id;
+        if (opm[0].branch_id) resolvedBranchId = Number(opm[0].branch_id);
       } else {
         const [um] = await pool.query('SELECT id, branch_id FROM user_master WHERE id = ? AND school_id = ? AND status != 4', [empId, sId]);
         if (!um.length) {
@@ -286,7 +313,7 @@ class PayrollModel {
           err.statusCode = 404;
           throw err;
         }
-        if (!resolvedBranchId && um[0].branch_id) resolvedBranchId = um[0].branch_id;
+        if (um[0].branch_id) resolvedBranchId = Number(um[0].branch_id);
       }
     }
 
@@ -320,8 +347,8 @@ class PayrollModel {
       );
       if (existingPayroll && existingPayroll.length > 0) {
         await pool.query(
-          `UPDATE teacher_payroll SET basic_salary = ?, status = 1 WHERE id = ?`,
-          [Number(basic_salary), existingPayroll[0].id]
+          `UPDATE teacher_payroll SET branch_id = COALESCE(?, branch_id), basic_salary = ?, status = 1 WHERE id = ?`,
+          [resolvedBranchId, Number(basic_salary), existingPayroll[0].id]
         );
       } else {
         await pool.query(
@@ -342,9 +369,9 @@ class PayrollModel {
         if (existing && existing.length > 0) {
           await pool.query(
             `UPDATE teacher_bank 
-             SET bank_name = ?, account_name = ?, account_number = ?, ifsc_code = ?, branch_name = ?, status = 1
+             SET branch_id = COALESCE(?, branch_id), bank_name = ?, account_name = ?, account_number = ?, ifsc_code = ?, branch_name = ?, status = 1
              WHERE id = ?`,
-            [bank_name || '', account_name || '', account_no || '', ifsc_code || '', branch_name || '', existing[0].id]
+            [resolvedBranchId, bank_name || '', account_name || '', account_no || '', ifsc_code || '', branch_name || '', existing[0].id]
           );
         } else {
           await pool.query(
@@ -361,9 +388,9 @@ class PayrollModel {
         if (existing && existing.length > 0) {
           await pool.query(
             `UPDATE operator_bank 
-             SET bank_name = ?, account_name = ?, account_number = ?, ifsc_code = ?, branch_name = ?, status = 1
+             SET branch_id = COALESCE(?, branch_id), bank_name = ?, account_name = ?, account_number = ?, ifsc_code = ?, branch_name = ?, status = 1
              WHERE id = ?`,
-            [bank_name || '', account_name || '', account_no || '', ifsc_code || '', branch_name || '', existing[0].id]
+            [resolvedBranchId, bank_name || '', account_name || '', account_no || '', ifsc_code || '', branch_name || '', existing[0].id]
           );
         } else {
           await pool.query(
@@ -380,9 +407,9 @@ class PayrollModel {
         if (existing && existing.length > 0) {
           await pool.query(
             `UPDATE user_bank 
-             SET bank_name = ?, account_name = ?, account_number = ?, ifsc_code = ?, branch_name = ?, status = 1
+             SET branch_id = COALESCE(?, branch_id), bank_name = ?, account_name = ?, account_number = ?, ifsc_code = ?, branch_name = ?, status = 1
              WHERE id = ?`,
-            [bank_name || '', account_name || '', account_no || '', ifsc_code || '', branch_name || '', existing[0].id]
+            [resolvedBranchId, bank_name || '', account_name || '', account_no || '', ifsc_code || '', branch_name || '', existing[0].id]
           );
         } else {
           await pool.query(
@@ -401,37 +428,31 @@ class PayrollModel {
     const uType = [1, 2, 3].includes(Number(user_type)) ? Number(user_type) : 1;
     const empId = Number(employee_id);
 
+    let resolvedBranchId = branch_id ? Number(branch_id) : (branchId ? Number(branchId) : null);
+    if (empId) {
+      if (uType === 2) {
+        const [tm] = await pool.query('SELECT branch_id FROM teacher_master WHERE id = ? AND school_id = ?', [empId, sId]);
+        if (tm.length && tm[0].branch_id) resolvedBranchId = Number(tm[0].branch_id);
+      } else if (uType === 3) {
+        const [opm] = await pool.query('SELECT branch_id FROM operator_master WHERE id = ? AND school_id = ?', [empId, sId]);
+        if (opm.length && opm[0].branch_id) resolvedBranchId = Number(opm[0].branch_id);
+      } else {
+        const [um] = await pool.query('SELECT branch_id FROM user_master WHERE id = ? AND school_id = ?', [empId, sId]);
+        if (um.length && um[0].branch_id) resolvedBranchId = Number(um[0].branch_id);
+      }
+    }
+
     let sql = `UPDATE beneficiary_master 
        SET user_type = ?, employee_id = ?, basic_salary = ?, status = ?`;
     const params = [uType, empId, Number(basic_salary) || 0, status];
-    if (branch_id !== undefined && branch_id !== null) {
+    if (resolvedBranchId !== null) {
       sql += `, branch_id = ?`;
-      params.push(Number(branch_id));
+      params.push(Number(resolvedBranchId));
     }
     sql += ` WHERE id = ? AND school_id = ?`;
     params.push(id, sId);
 
-    const effectiveBranchId = branchId || branch_id;
-    if (effectiveBranchId) {
-      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
-      params.push(Number(effectiveBranchId));
-    }
-
     await pool.query(sql, params);
-
-    let resolvedBranchId = effectiveBranchId || null;
-    if (!resolvedBranchId && empId) {
-      if (uType === 2) {
-        const [tm] = await pool.query('SELECT branch_id FROM teacher_master WHERE id = ? AND school_id = ?', [empId, sId]);
-        if (tm.length && tm[0].branch_id) resolvedBranchId = tm[0].branch_id;
-      } else if (uType === 3) {
-        const [opm] = await pool.query('SELECT branch_id FROM operator_master WHERE id = ? AND school_id = ?', [empId, sId]);
-        if (opm.length && opm[0].branch_id) resolvedBranchId = opm[0].branch_id;
-      } else {
-        const [um] = await pool.query('SELECT branch_id FROM user_master WHERE id = ? AND school_id = ?', [empId, sId]);
-        if (um.length && um[0].branch_id) resolvedBranchId = um[0].branch_id;
-      }
-    }
 
     if (uType === 2 && Number(basic_salary) > 0) {
       const [existingPayroll] = await pool.query(
@@ -440,8 +461,8 @@ class PayrollModel {
       );
       if (existingPayroll && existingPayroll.length > 0) {
         await pool.query(
-          `UPDATE teacher_payroll SET basic_salary = ?, status = 1 WHERE id = ?`,
-          [Number(basic_salary), existingPayroll[0].id]
+          `UPDATE teacher_payroll SET branch_id = COALESCE(?, branch_id), basic_salary = ?, status = 1 WHERE id = ?`,
+          [resolvedBranchId, Number(basic_salary), existingPayroll[0].id]
         );
       }
     }
@@ -456,9 +477,9 @@ class PayrollModel {
         if (existing && existing.length > 0) {
           await pool.query(
             `UPDATE teacher_bank 
-             SET bank_name = ?, account_name = ?, account_number = ?, ifsc_code = ?, branch_name = ?, status = 1
+             SET branch_id = COALESCE(?, branch_id), bank_name = ?, account_name = ?, account_number = ?, ifsc_code = ?, branch_name = ?, status = 1
              WHERE id = ?`,
-            [bank_name || '', account_name || '', account_no || '', ifsc_code || '', branch_name || '', existing[0].id]
+            [resolvedBranchId, bank_name || '', account_name || '', account_no || '', ifsc_code || '', branch_name || '', existing[0].id]
           );
         } else {
           await pool.query(
@@ -475,9 +496,9 @@ class PayrollModel {
         if (existing && existing.length > 0) {
           await pool.query(
             `UPDATE operator_bank 
-             SET bank_name = ?, account_name = ?, account_number = ?, ifsc_code = ?, branch_name = ?, status = 1
+             SET branch_id = COALESCE(?, branch_id), bank_name = ?, account_name = ?, account_number = ?, ifsc_code = ?, branch_name = ?, status = 1
              WHERE id = ?`,
-            [bank_name || '', account_name || '', account_no || '', ifsc_code || '', branch_name || '', existing[0].id]
+            [resolvedBranchId, bank_name || '', account_name || '', account_no || '', ifsc_code || '', branch_name || '', existing[0].id]
           );
         } else {
           await pool.query(
@@ -494,9 +515,9 @@ class PayrollModel {
         if (existing && existing.length > 0) {
           await pool.query(
             `UPDATE user_bank 
-             SET bank_name = ?, account_name = ?, account_number = ?, ifsc_code = ?, branch_name = ?, status = 1
+             SET branch_id = COALESCE(?, branch_id), bank_name = ?, account_name = ?, account_number = ?, ifsc_code = ?, branch_name = ?, status = 1
              WHERE id = ?`,
-            [bank_name || '', account_name || '', account_no || '', ifsc_code || '', branch_name || '', existing[0].id]
+            [resolvedBranchId, bank_name || '', account_name || '', account_no || '', ifsc_code || '', branch_name || '', existing[0].id]
           );
         } else {
           await pool.query(
@@ -765,13 +786,18 @@ class PayrollModel {
       let sql = `
         SELECT 
            t.id,
+           t.school_id,
+           COALESCE(t.branch_id, bm.branch_id) AS branch_id,
+           br.branch_name AS campus_name,
+           br.branch_code,
            2 AS user_type,
            'Teacher' AS type_name,
            COALESCE(NULLIF(t.teacher_id, ''), CONCAT('TCH-', t.id)) AS employee_code,
            TRIM(CONCAT(IFNULL(t.first_name, ''), ' ', IFNULL(t.last_name, ''))) AS name,
            t.email_address AS email,
            t.primary_contact_number AS phone,
-           COALESCE(bm.branch_id, t.branch_id) AS branch_id,
+           t.status AS status,
+           t.status AS employee_status,
            bm.id AS beneficiary_id,
            bm.status AS beneficiary_status,
            COALESCE(NULLIF(bm.basic_salary, 0), tp.basic_salary, 0) AS basic_salary,
@@ -804,15 +830,13 @@ class PayrollModel {
              GROUP BY teacher_id
            )
          ) tb ON t.id = tb.teacher_id
-         WHERE t.status != 4 AND t.status != 0 AND t.school_id = ?
+         LEFT JOIN branch_master br ON br.id = COALESCE(t.branch_id, bm.branch_id)
+         WHERE t.status = 1 AND t.status != 4 AND t.status != 2 AND t.status != 0 AND t.school_id = ?
       `;
       const params = [sId, sId, sId, sId];
-      if (!onlyBeneficiaries) {
-        sql += ` AND t.status = 1`;
-      }
       if (branchId) {
-        sql += ` AND (bm.branch_id = ? OR t.branch_id = ? OR (bm.branch_id IS NULL AND t.branch_id IS NULL))`;
-        params.push(Number(branchId), Number(branchId));
+        sql += ` AND COALESCE(t.branch_id, bm.branch_id) = ?`;
+        params.push(Number(branchId));
       }
       sql += ` ORDER BY t.first_name ASC, t.id ASC`;
       const [resRows] = await pool.query(sql, params);
@@ -822,13 +846,18 @@ class PayrollModel {
       let sql = `
         SELECT 
            op.id,
+           op.school_id,
+           COALESCE(op.branch_id, bm.branch_id) AS branch_id,
+           br.branch_name AS campus_name,
+           br.branch_code,
            3 AS user_type,
            'Driver' AS type_name,
            CONCAT('DRV-', op.id) AS employee_code,
            TRIM(CONCAT(IFNULL(op.first_name, ''), ' ', IFNULL(op.last_name, ''))) AS name,
            op.email,
            op.phone,
-           COALESCE(bm.branch_id, op.branch_id) AS branch_id,
+           op.status AS status,
+           op.status AS employee_status,
            bm.id AS beneficiary_id,
            bm.status AS beneficiary_status,
            IFNULL(bm.basic_salary, 0) AS basic_salary,
@@ -856,15 +885,13 @@ class PayrollModel {
              GROUP BY operator_id
            )
          ) ob ON op.id = ob.operator_id
-         WHERE op.type = 1 AND op.status != 4 AND op.status != 0 AND op.school_id = ?
+         LEFT JOIN branch_master br ON br.id = COALESCE(op.branch_id, bm.branch_id)
+         WHERE op.type = 1 AND op.status = 1 AND op.status != 4 AND op.status != 2 AND op.status != 0 AND op.school_id = ?
       `;
       const params = [sId, sId, sId];
-      if (!onlyBeneficiaries) {
-        sql += ` AND op.status = 1`;
-      }
       if (branchId) {
-        sql += ` AND (bm.branch_id = ? OR op.branch_id = ? OR (bm.branch_id IS NULL AND op.branch_id IS NULL))`;
-        params.push(Number(branchId), Number(branchId));
+        sql += ` AND COALESCE(op.branch_id, bm.branch_id) = ?`;
+        params.push(Number(branchId));
       }
       sql += ` ORDER BY op.first_name ASC, op.id ASC`;
       const [resRows] = await pool.query(sql, params);
@@ -874,13 +901,18 @@ class PayrollModel {
       let sql = `
         SELECT 
            u.id,
+           u.school_id,
+           COALESCE(u.branch_id, bm.branch_id) AS branch_id,
+           br.branch_name AS campus_name,
+           br.branch_code,
            1 AS user_type,
            'Staff' AS type_name,
            CONCAT('STF-', u.id) AS employee_code,
            TRIM(CONCAT(IFNULL(u.first_name, ''), ' ', IFNULL(u.last_name, ''))) AS name,
            u.email,
            u.phone,
-           COALESCE(bm.branch_id, u.branch_id) AS branch_id,
+           u.status AS status,
+           u.status AS employee_status,
            bm.id AS beneficiary_id,
            bm.status AS beneficiary_status,
            IFNULL(bm.basic_salary, 0) AS basic_salary,
@@ -908,15 +940,13 @@ class PayrollModel {
              GROUP BY user_id
            )
          ) ub ON u.id = ub.user_id
-         WHERE u.status != 4 AND u.status != 0 AND u.school_id = ?
+         LEFT JOIN branch_master br ON br.id = COALESCE(u.branch_id, bm.branch_id)
+         WHERE u.status = 1 AND u.status != 4 AND u.status != 2 AND u.status != 0 AND u.school_id = ?
       `;
       const params = [sId, sId, sId];
-      if (!onlyBeneficiaries) {
-        sql += ` AND u.status = 1`;
-      }
       if (branchId) {
-        sql += ` AND (bm.branch_id = ? OR u.branch_id = ? OR (bm.branch_id IS NULL AND u.branch_id IS NULL))`;
-        params.push(Number(branchId), Number(branchId));
+        sql += ` AND COALESCE(u.branch_id, bm.branch_id) = ?`;
+        params.push(Number(branchId));
       }
       sql += ` ORDER BY u.first_name ASC, u.id ASC`;
       const [resRows] = await pool.query(sql, params);
@@ -925,7 +955,7 @@ class PayrollModel {
 
     // Fetch existing salary records for the target month to track status per employee
     const [existingSalaries] = await pool.query(
-      `SELECT id, user_type, employee_id, payment_status, transaction_id, payment_date, basic_salary, total_deductions, net_salary
+      `SELECT id, school_id, branch_id, user_type, employee_id, payment_status, transaction_id, payment_date, basic_salary, total_deductions, net_salary
        FROM employee_salary
        WHERE school_id = ? AND user_type = ? AND payment_date LIKE ?
        ORDER BY id DESC`,
@@ -949,9 +979,18 @@ class PayrollModel {
         basic_salary: row.basic_salary,
       });
       const existing = existingMap[`${uType}_${row.id}`] || null;
+      const resolvedRowBranchId = row.branch_id
+        ? Number(row.branch_id)
+        : existing?.branch_id
+        ? Number(existing.branch_id)
+        : branchId
+        ? Number(branchId)
+        : null;
 
       enriched.push({
         ...row,
+        school_id: Number(row.school_id || sId),
+        branch_id: resolvedRowBranchId,
         ...eligibility,
         ...leaveInfo,
         configured_salary_date: configuredDateSetting?.configured_salary_date || null,
@@ -995,7 +1034,8 @@ class PayrollModel {
           (c.employee_code || '').toLowerCase().includes(q) ||
           (c.type_name || '').toLowerCase().includes(q) ||
           (c.bank_name || '').toLowerCase().includes(q) ||
-          (c.account_no || '').toLowerCase().includes(q)
+          (c.account_no || '').toLowerCase().includes(q) ||
+          (c.campus_name || '').toLowerCase().includes(q)
       );
     }
 
@@ -1033,10 +1073,15 @@ class PayrollModel {
       throw err;
     }
 
-    let resolvedBranchId = branch_id || empRecord.branch_id || null;
+    // Prioritize employee's authoritative branch_id from their master table / beneficiary record
+    let resolvedBranchId = empRecord.branch_id
+      ? Number(empRecord.branch_id)
+      : branch_id
+      ? Number(branch_id)
+      : null;
     if (!resolvedBranchId) {
       const [mb] = await pool.query('SELECT id FROM branch_master WHERE school_id = ? ORDER BY id ASC LIMIT 1', [sId]);
-      if (mb.length) resolvedBranchId = mb[0].id;
+      if (mb.length) resolvedBranchId = Number(mb[0].id);
     }
 
     const finalLeaveId = leave_id ? Number(leave_id) : (empRecord.primary_leave_id || null);
@@ -1126,6 +1171,8 @@ class PayrollModel {
       if (!candidate) {
         failed++;
         results.push({
+          school_id: sId,
+          branch_id: item.branch_id ? Number(item.branch_id) : (branch_id ? Number(branch_id) : null),
           user_type: uType,
           employee_id: empId,
           name: item.name || `Employee #${empId}`,
@@ -1136,13 +1183,30 @@ class PayrollModel {
         continue;
       }
 
+      // Resolve authoritative branch_id from employee's record first
+      let resolvedBranchId = candidate.branch_id
+        ? Number(candidate.branch_id)
+        : item.branch_id
+        ? Number(item.branch_id)
+        : branch_id
+        ? Number(branch_id)
+        : null;
+      if (!resolvedBranchId) {
+        const [mb] = await pool.query('SELECT id FROM branch_master WHERE school_id = ? ORDER BY id ASC LIMIT 1', [sId]);
+        if (mb.length) resolvedBranchId = Number(mb[0].id);
+      }
+
       // 1. Prevent double-paying employees who are already Paid (status = 1) for this month
       if (candidate.is_already_paid && candidate.existing_payment_status === 1) {
         skippedAlreadyPaid++;
         results.push({
+          school_id: sId,
+          branch_id: resolvedBranchId,
+          campus_name: candidate.campus_name || null,
           user_type: uType,
           employee_id: empId,
           name: candidate.name,
+          type_name: candidate.type_name,
           salary_id: candidate.existing_salary_id,
           outcome: 'skipped_already_paid',
           payment_status: 1,
@@ -1150,12 +1214,6 @@ class PayrollModel {
           message: 'Already paid for this salary period.',
         });
         continue;
-      }
-
-      let resolvedBranchId = branch_id || candidate.branch_id || null;
-      if (!resolvedBranchId) {
-        const [mb] = await pool.query('SELECT id FROM branch_master WHERE school_id = ? ORDER BY id ASC LIMIT 1', [sId]);
-        if (mb.length) resolvedBranchId = mb[0].id;
       }
 
       const FIXED_SALARY_DAYS = 30;
@@ -1187,9 +1245,9 @@ class PayrollModel {
         if (failedSalaryId) {
           await pool.query(
             `UPDATE employee_salary
-             SET basic_salary = ?, total_deductions = ?, net_salary = ?, payment_date = ?, payment_status = 3
+             SET branch_id = ?, basic_salary = ?, total_deductions = ?, net_salary = ?, payment_date = ?, payment_status = 3
              WHERE id = ? AND school_id = ?`,
-            [baseSalary, totalDeductions, netSalary, effectiveDate, failedSalaryId, sId]
+            [resolvedBranchId, baseSalary, totalDeductions, netSalary, effectiveDate, failedSalaryId, sId]
           );
         } else {
           const [ins] = await pool.query(
@@ -1212,9 +1270,13 @@ class PayrollModel {
         }
 
         results.push({
+          school_id: sId,
+          branch_id: resolvedBranchId,
+          campus_name: candidate.campus_name || null,
           user_type: uType,
           employee_id: empId,
           name: candidate.name,
+          type_name: candidate.type_name,
           salary_id: failedSalaryId,
           outcome: 'failed',
           payment_status: 3,
@@ -1278,6 +1340,9 @@ class PayrollModel {
         else failed++;
 
         results.push({
+          school_id: sId,
+          branch_id: resolvedBranchId,
+          campus_name: candidate.campus_name || null,
           user_type: uType,
           employee_id: empId,
           name: candidate.name,
@@ -1302,9 +1367,13 @@ class PayrollModel {
       } catch (dbErr) {
         failed++;
         results.push({
+          school_id: sId,
+          branch_id: resolvedBranchId,
+          campus_name: candidate.campus_name || null,
           user_type: uType,
           employee_id: empId,
           name: candidate.name,
+          type_name: candidate.type_name,
           outcome: 'failed',
           payment_status: 3,
           message: dbErr.message || 'Database error while recording salary payment.',
@@ -1374,6 +1443,8 @@ class PayrollModel {
         skippedPaid++;
         results.push({
           salary_id: sal.id,
+          school_id: sId,
+          branch_id: sal.branch_id ? Number(sal.branch_id) : (branchId ? Number(branchId) : null),
           user_type: sal.user_type,
           employee_id: sal.employee_id,
           outcome: 'skipped_already_paid',
@@ -1395,6 +1466,8 @@ class PayrollModel {
         skippedPaid++;
         results.push({
           salary_id: sal.id,
+          school_id: sId,
+          branch_id: sal.branch_id ? Number(sal.branch_id) : (branchId ? Number(branchId) : null),
           user_type: sal.user_type,
           employee_id: sal.employee_id,
           outcome: 'skipped_already_paid',
@@ -1415,6 +1488,8 @@ class PayrollModel {
         const issues = candidate ? candidate.beneficiary_issues.join(', ') : 'Employee not registered in beneficiary_master or inactive';
         results.push({
           salary_id: sal.id,
+          school_id: sId,
+          branch_id: candidate?.branch_id || sal.branch_id || null,
           user_type: sal.user_type,
           employee_id: sal.employee_id,
           name: candidate?.name || `Employee #${sal.employee_id}`,
@@ -1424,6 +1499,14 @@ class PayrollModel {
         });
         continue;
       }
+
+      const resolvedBranchId = candidate.branch_id
+        ? Number(candidate.branch_id)
+        : sal.branch_id
+        ? Number(sal.branch_id)
+        : branchId
+        ? Number(branchId)
+        : null;
 
       const FIXED_SALARY_DAYS = 30;
       const baseSalary = Number(candidate.basic_salary || sal.basic_salary || 0);
@@ -1442,14 +1525,17 @@ class PayrollModel {
 
       await pool.query(
         `UPDATE employee_salary
-         SET basic_salary = ?, total_deductions = ?, net_salary = ?, payment_date = ?, transaction_id = ?, payment_status = 1
+         SET branch_id = ?, basic_salary = ?, total_deductions = ?, net_salary = ?, payment_date = ?, transaction_id = ?, payment_status = 1
          WHERE id = ? AND school_id = ?`,
-        [baseSalary, totalDeductions, netSalary, effectiveDate, newTxId, sal.id, sId]
+        [resolvedBranchId, baseSalary, totalDeductions, netSalary, effectiveDate, newTxId, sal.id, sId]
       );
 
       retriedSuccess++;
       results.push({
         salary_id: sal.id,
+        school_id: sId,
+        branch_id: resolvedBranchId,
+        campus_name: candidate.campus_name || null,
         user_type: sal.user_type,
         employee_id: sal.employee_id,
         name: candidate.name,
@@ -1493,7 +1579,16 @@ class PayrollModel {
       SELECT 
         es.id,
         es.school_id,
-        es.branch_id,
+        COALESCE(
+          es.branch_id,
+          CASE
+            WHEN es.user_type = 2 THEN t.branch_id
+            WHEN es.user_type = 3 THEN op.branch_id
+            ELSE u.branch_id
+          END
+        ) AS branch_id,
+        br.branch_name AS campus_name,
+        br.branch_code,
         es.user_type,
         CASE 
           WHEN es.user_type = 2 THEN 'Teacher'
@@ -1501,11 +1596,21 @@ class PayrollModel {
           ELSE 'Staff'
         END AS type_name,
         es.employee_id,
+        CASE
+          WHEN es.user_type = 2 THEN COALESCE(NULLIF(t.teacher_id, ''), CONCAT('TCH-', t.id))
+          WHEN es.user_type = 3 THEN CONCAT('DRV-', op.id)
+          ELSE CONCAT('STF-', u.id)
+        END AS employee_code,
         CASE 
-          WHEN es.user_type = 2 THEN CONCAT(IFNULL(t.first_name, ''), ' ', IFNULL(t.last_name, ''))
-          WHEN es.user_type = 3 THEN CONCAT(IFNULL(op.first_name, ''), ' ', IFNULL(op.last_name, ''))
-          ELSE CONCAT(IFNULL(u.first_name, ''), ' ', IFNULL(u.last_name, ''))
+          WHEN es.user_type = 2 THEN TRIM(CONCAT(IFNULL(t.first_name, ''), ' ', IFNULL(t.last_name, '')))
+          WHEN es.user_type = 3 THEN TRIM(CONCAT(IFNULL(op.first_name, ''), ' ', IFNULL(op.last_name, '')))
+          ELSE TRIM(CONCAT(IFNULL(u.first_name, ''), ' ', IFNULL(u.last_name, '')))
         END AS employee_name,
+        CASE
+          WHEN es.user_type = 2 THEN t.status
+          WHEN es.user_type = 3 THEN op.status
+          ELSE u.status
+        END AS employee_status,
         CASE
           WHEN es.user_type = 2 THEN tb.bank_name
           WHEN es.user_type = 3 THEN ob.bank_name
@@ -1549,20 +1654,33 @@ class PayrollModel {
         FROM user_bank
         WHERE id IN (SELECT MAX(id) FROM user_bank WHERE status != 0 AND status != 4 GROUP BY user_id)
       ) ub ON es.user_type = 1 AND es.employee_id = ub.user_id
+      LEFT JOIN branch_master br ON br.id = COALESCE(
+        es.branch_id,
+        CASE
+          WHEN es.user_type = 2 THEN t.branch_id
+          WHEN es.user_type = 3 THEN op.branch_id
+          ELSE u.branch_id
+        END
+      )
       WHERE es.school_id = ?
+        AND (
+          (es.user_type = 2 AND t.id IS NOT NULL AND t.status = 1 AND t.status != 4 AND t.status != 2 AND t.status != 0) OR
+          (es.user_type = 3 AND op.id IS NOT NULL AND op.status = 1 AND op.status != 4 AND op.status != 2 AND op.status != 0) OR
+          (es.user_type = 1 AND u.id IS NOT NULL AND u.status = 1 AND u.status != 4 AND u.status != 2 AND u.status != 0)
+        )
     `;
     const params = [schoolId];
 
     if (branchId) {
-      sql += ` AND (
-        (es.branch_id = ?) OR
-        (es.branch_id IS NULL AND (
-          (es.user_type = 2 AND (t.branch_id = ? OR t.branch_id IS NULL)) OR
-          (es.user_type = 3 AND (op.branch_id = ? OR op.branch_id IS NULL)) OR
-          (es.user_type != 2 AND es.user_type != 3 AND (u.branch_id = ? OR u.branch_id IS NULL))
-        ))
-      )`;
-      params.push(Number(branchId), Number(branchId), Number(branchId), Number(branchId));
+      sql += ` AND COALESCE(
+        es.branch_id,
+        CASE
+          WHEN es.user_type = 2 THEN t.branch_id
+          WHEN es.user_type = 3 THEN op.branch_id
+          ELSE u.branch_id
+        END
+      ) = ?`;
+      params.push(Number(branchId));
     }
 
     if (user_type !== undefined && user_type !== null && user_type !== '') {
@@ -1587,10 +1705,11 @@ class PayrollModel {
         t.first_name LIKE ? OR t.last_name LIKE ? OR 
         op.first_name LIKE ? OR op.last_name LIKE ? OR 
         u.first_name LIKE ? OR u.last_name LIKE ? OR 
-        es.transaction_id LIKE ?
+        es.transaction_id LIKE ? OR
+        br.branch_name LIKE ?
       )`;
       const q = `%${search.trim()}%`;
-      params.push(q, q, q, q, q, q, q);
+      params.push(q, q, q, q, q, q, q, q);
     }
 
     sql += ` ORDER BY es.payment_date DESC, es.id DESC`;

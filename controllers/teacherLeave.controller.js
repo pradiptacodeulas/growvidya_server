@@ -193,30 +193,11 @@ class TeacherLeaveController {
       const teacherId = TeacherLeaveController.getTeacherId(req);
       const rawBranch = req.branchId || req.user?.branch_id || req.user?.branchId || null;
       const branchId = (rawBranch && rawBranch !== 'all') ? Number(rawBranch) : null;
-      let typesSql = `SELECT id, leave_name, need_document, COALESCE(is_paid, 1) AS is_paid, no_leave, sort_order, status 
-         FROM leave_master 
-         WHERE school_id = ? 
-           AND role = 1 
-           AND status = 1`;
-      const typesParams = [schoolId];
-      if (branchId) {
-        typesSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
-        typesParams.push(branchId);
-      }
-      typesSql += ` ORDER BY sort_order ASC, id ASC`;
-      const [types] = await pool.query(typesSql, typesParams);
 
-      const typesWithQuota = await Promise.all(
-        (types || []).map(async (t) => {
-          const quota = await LeaveModel.getStaffLeaveQuota(schoolId, 1, teacherId, t.id);
-          return {
-            ...t,
-            approved_leaves: quota.approved_days,
-            remaining_leaves: quota.remaining_days,
-            is_exhausted: quota.is_exhausted,
-          };
-        })
-      );
+      const typesWithQuota = await LeaveModel.getLeaveTypes(schoolId, 1, branchId, {
+        staffId: teacherId,
+        activeOnly: true,
+      });
 
       return ApiResponse.success(res, 'Teacher leave types fetched successfully.', { types: typesWithQuota });
     } catch (error) {
@@ -287,29 +268,34 @@ class TeacherLeaveController {
         );
       }
 
-      // Check quota restriction
+      // Check quota restriction (includes both approved and pending active leave requests)
       const quota = await LeaveModel.getStaffLeaveQuota(schoolId, 1, teacherId, Number(leave_id));
-      if (quota && quota.max_quota > 0) {
+      if (!quota || !quota.leave_exists || quota.leave_status !== 1) {
+        return ApiResponse.error(res, 'Selected leave type is invalid or inactive.', null, 400);
+      }
+
+      if (quota.max_quota > 0) {
+        const uniqueDates = [...new Set(sortedDates)];
         let requestedDays = 1;
         if (Number(duration) === 2) {
           requestedDays = 0.5;
-        } else if (Number(duration) === 3 && Array.isArray(dates) && dates.length > 0) {
-          requestedDays = dates.length;
+        } else if (Number(duration) === 3 && uniqueDates.length > 0) {
+          requestedDays = uniqueDates.length;
         }
 
-        if (quota.approved_days >= quota.max_quota) {
+        if (quota.used_days >= quota.max_quota || quota.remaining_days <= 0) {
           return ApiResponse.error(
             res,
-            `Cannot apply for leave: You have already utilized all ${quota.max_quota} allowed day(s) for "${quota.leave_name}".`,
+            `Cannot apply for leave: You have already utilized all ${quota.max_quota} allowed day(s) for "${quota.leave_name}" (Approved: ${quota.approved_days}, Pending: ${quota.pending_days}, Remaining: 0).`,
             null,
             400
           );
         }
 
-        if ((quota.approved_days + requestedDays) > quota.max_quota) {
+        if ((quota.used_days + requestedDays) > quota.max_quota) {
           return ApiResponse.error(
             res,
-            `Cannot apply for leave: Requested duration (${requestedDays} day(s)) exceeds your remaining quota of ${quota.remaining_days} day(s) for "${quota.leave_name}" (Quota: ${quota.max_quota} days, Approved: ${quota.approved_days} days).`,
+            `Cannot apply for leave: Requested duration (${requestedDays} day(s)) exceeds your remaining leave balance of ${quota.remaining_days} day(s) for "${quota.leave_name}" (Allowed Limit: ${quota.max_quota} days, Used/Applied: ${quota.used_days} days, Remaining: ${quota.remaining_days} days).`,
             null,
             400
           );
@@ -330,6 +316,9 @@ class TeacherLeaveController {
       return ApiResponse.success(res, 'Leave applied successfully.', { leaveId }, 201);
     } catch (error) {
       console.error('Error in TeacherLeaveController.applyLeave:', error);
+      if (error.statusCode === 400) {
+        return ApiResponse.error(res, error.message, null, 400);
+      }
       next(error);
     }
   }

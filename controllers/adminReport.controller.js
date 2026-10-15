@@ -9,8 +9,14 @@ class AdminReportController {
   static async getClassReportOptions(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
-      const rawBranch = req.branchId !== undefined ? req.branchId : (req.query.branch_id || req.query.branchId || null);
-      const branchId = (rawBranch && rawBranch !== 'all') ? Number(rawBranch) : null;
+      const rawBranch =
+        req.query.branch_id ||
+        req.query.branchId ||
+        req.branchId ||
+        req.user?.branchId ||
+        req.user?.branch_id ||
+        null;
+      const branchId = rawBranch && rawBranch !== 'all' ? Number(rawBranch) : null;
       const options = await ReportModel.getFilterOptions(schoolId, branchId);
       return ApiResponse.success(res, 'Report filter options fetched successfully.', options);
     } catch (error) {
