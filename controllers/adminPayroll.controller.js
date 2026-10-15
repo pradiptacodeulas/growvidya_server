@@ -16,8 +16,8 @@ class AdminPayrollController {
     try {
       const schoolId = AdminPayrollController.getSchoolId(req);
       const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
-      const { search } = req.query;
-      const beneficiaries = await PayrollModel.getAllBeneficiaries(schoolId, { search, branchId });
+      const { search, user_type } = req.query;
+      const beneficiaries = await PayrollModel.getAllBeneficiaries(schoolId, { search, user_type, branchId });
       return ApiResponse.success(res, 'Beneficiaries retrieved successfully.', { beneficiaries });
     } catch (err) {
       next(err);
@@ -142,10 +142,22 @@ class AdminPayrollController {
     try {
       const schoolId = AdminPayrollController.getSchoolId(req);
       const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
-      const { user_type, salary_month, payment_date } = req.query;
+      const { user_type, salary_month, payment_date, only_beneficiaries } = req.query;
       const targetMonth = salary_month || (payment_date ? String(payment_date).slice(0, 7) : null);
-      const employees = await PayrollModel.getEmployeesByType(schoolId, user_type, branchId, targetMonth);
-      return ApiResponse.success(res, 'Employees retrieved successfully.', { employees });
+      const onlyBeneficiaries = String(only_beneficiaries) === '1' || String(only_beneficiaries).toLowerCase() === 'true';
+
+      const [employees, salaryDateSetting] = await Promise.all([
+        PayrollModel.getEmployeesByType(schoolId, user_type, branchId, targetMonth, {
+          onlyBeneficiaries,
+        }),
+        PayrollModel.getConfiguredSalaryDate(schoolId, branchId, targetMonth),
+      ]);
+
+      return ApiResponse.success(res, 'Employees retrieved successfully.', {
+        employees,
+        configured_salary_date: salaryDateSetting?.configured_salary_date || null,
+        salary_date_setting: salaryDateSetting || null,
+      });
     } catch (err) {
       next(err);
     }
@@ -160,17 +172,24 @@ class AdminPayrollController {
       const schoolId = AdminPayrollController.getSchoolId(req);
       const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { salary_month, payment_date, user_type, search } = req.query;
-      const targetMonth = salary_month || (payment_date ? String(payment_date).slice(0, 7) : new Date().toISOString().slice(0, 7));
+      const requestedMonth = salary_month || (payment_date ? String(payment_date).slice(0, 7) : null);
+      const initialSetting = await PayrollModel.getConfiguredSalaryDate(schoolId, branchId, requestedMonth);
+      const targetMonth = requestedMonth || initialSetting?.salary_month || new Date().toISOString().slice(0, 7);
 
-      const candidates = await PayrollModel.getBulkSalaryCandidates(schoolId, {
-        salary_month: targetMonth,
-        user_type: user_type || null,
-        branchId,
-        search: search || '',
-      });
+      const [candidates, salaryDateSetting] = await Promise.all([
+        PayrollModel.getBulkSalaryCandidates(schoolId, {
+          salary_month: targetMonth,
+          user_type: user_type || null,
+          branchId,
+          search: search || '',
+        }),
+        PayrollModel.getConfiguredSalaryDate(schoolId, branchId, targetMonth),
+      ]);
 
       return ApiResponse.success(res, 'Bulk salary candidates retrieved successfully.', {
         salary_month: targetMonth,
+        configured_salary_date: salaryDateSetting?.configured_salary_date || null,
+        salary_date_setting: salaryDateSetting || null,
         candidates,
       });
     } catch (err) {
@@ -193,8 +212,15 @@ class AdminPayrollController {
         filters.employee_id = teacherId;
       }
 
-      const salaries = await PayrollModel.getAllSalaries(schoolId, filters);
-      return ApiResponse.success(res, 'Salaries retrieved successfully.', { salaries });
+      const [salaries, salaryDateSetting] = await Promise.all([
+        PayrollModel.getAllSalaries(schoolId, filters),
+        PayrollModel.getConfiguredSalaryDate(schoolId, branchId, salary_month),
+      ]);
+      return ApiResponse.success(res, 'Salaries retrieved successfully.', {
+        salaries,
+        configured_salary_date: salaryDateSetting?.configured_salary_date || null,
+        salary_date_setting: salaryDateSetting || null,
+      });
     } catch (err) {
       next(err);
     }

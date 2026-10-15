@@ -1057,7 +1057,7 @@ class TeacherModel {
       }
     }
 
-    // 4. Insert Bank Account
+    // 4. Insert Bank Account & Sync Beneficiary Master (user_type = 2)
     if (bank && (bank.account_name || bank.account_number || bank.bank_name)) {
       try {
         await pool.query(
@@ -1076,8 +1076,27 @@ class TeacherModel {
             bank.branch_name || '',
           ]
         );
+        if (bank.bank_name && bank.account_number) {
+          const teacherSalary = Number(payroll?.basic_salary || 0);
+          const [existingBen] = await pool.query(
+            `SELECT id FROM beneficiary_master WHERE school_id = ? AND user_type = 2 AND employee_id = ? LIMIT 1`,
+            [schoolId, newId]
+          );
+          if (existingBen && existingBen.length > 0) {
+            await pool.query(
+              `UPDATE beneficiary_master SET branch_id = COALESCE(?, branch_id), basic_salary = COALESCE(NULLIF(?, 0), basic_salary), status = 1 WHERE id = ?`,
+              [branchId, teacherSalary, existingBen[0].id]
+            );
+          } else {
+            await pool.query(
+              `INSERT INTO beneficiary_master (school_id, branch_id, user_type, employee_id, basic_salary, status)
+               VALUES (?, ?, 2, ?, ?, 1)`,
+              [schoolId, branchId, newId, teacherSalary]
+            );
+          }
+        }
       } catch (bankErr) {
-        console.error('[TeacherModel.createTeacher] Error saving teacher_bank:', bankErr.message);
+        console.error('[TeacherModel.createTeacher] Error saving teacher_bank / beneficiary_master:', bankErr.message);
       }
     }
 
@@ -1474,7 +1493,7 @@ class TeacherModel {
       }
     }
 
-    // 4. Update Bank Account (only if bank provided)
+    // 4. Update Bank Account & Sync Beneficiary Master (user_type = 2)
     const bankPayload = data.bank || data.bank_account;
     if (bankPayload) {
       try {
@@ -1496,10 +1515,36 @@ class TeacherModel {
               bankPayload.branch_name || '',
             ]
           );
+          if (bankPayload.bank_name && bankPayload.account_number) {
+            const teacherSalary = Number(data.payroll?.basic_salary || 0);
+            const [existingBen] = await pool.query(
+              `SELECT id FROM beneficiary_master WHERE school_id = ? AND user_type = 2 AND employee_id = ? LIMIT 1`,
+              [schoolId, id]
+            );
+            if (existingBen && existingBen.length > 0) {
+              await pool.query(
+                `UPDATE beneficiary_master SET branch_id = COALESCE(?, branch_id), basic_salary = COALESCE(NULLIF(?, 0), basic_salary), status = 1 WHERE id = ?`,
+                [teacherBranchId, teacherSalary, existingBen[0].id]
+              );
+            } else {
+              await pool.query(
+                `INSERT INTO beneficiary_master (school_id, branch_id, user_type, employee_id, basic_salary, status)
+                 VALUES (?, ?, 2, ?, ?, 1)`,
+                [schoolId, teacherBranchId, id, teacherSalary]
+              );
+            }
+          }
         }
       } catch (bankErr) {
-        console.error('[TeacherModel.updateTeacher] Error saving teacher_bank:', bankErr.message);
+        console.error('[TeacherModel.updateTeacher] Error saving teacher_bank / beneficiary_master:', bankErr.message);
       }
+    } else if (data.payroll && Number(data.payroll.basic_salary) > 0) {
+      try {
+        await pool.query(
+          `UPDATE beneficiary_master SET basic_salary = ? WHERE school_id = ? AND user_type = 2 AND employee_id = ? AND status = 1`,
+          [Number(data.payroll.basic_salary), schoolId, id]
+        );
+      } catch {}
     }
 
     // 5. Update Transport (only if transport provided)

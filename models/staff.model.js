@@ -301,7 +301,7 @@ class StaffModel {
     const [result] = await pool.query(sql, params);
     const userId = result.insertId;
 
-    // 1. Bank
+    // 1. Bank & Beneficiary Master (user_type = 1)
     if (data.account_name || data.account_number || data.bank_name || data.ifsc_code || data.branch_name) {
       try {
         await pool.query(
@@ -318,8 +318,26 @@ class StaffModel {
             data.branch_name || '',
           ]
         );
+        if (data.bank_name && data.account_number) {
+          const [existingBen] = await pool.query(
+            `SELECT id FROM beneficiary_master WHERE school_id = ? AND user_type = 1 AND employee_id = ? LIMIT 1`,
+            [schoolId, userId]
+          );
+          if (existingBen && existingBen.length > 0) {
+            await pool.query(
+              `UPDATE beneficiary_master SET branch_id = COALESCE(?, branch_id), basic_salary = COALESCE(NULLIF(?, 0), basic_salary), status = 1 WHERE id = ?`,
+              [branchId, Number(data.basic_salary || 0), existingBen[0].id]
+            );
+          } else {
+            await pool.query(
+              `INSERT INTO beneficiary_master (school_id, branch_id, user_type, employee_id, basic_salary, status)
+               VALUES (?, ?, 1, ?, ?, 1)`,
+              [schoolId, branchId, userId, Number(data.basic_salary || 0)]
+            );
+          }
+        }
       } catch (err) {
-        console.error('Error inserting user_bank:', err);
+        console.error('Error inserting user_bank / beneficiary_master:', err);
       }
     }
 
@@ -492,7 +510,7 @@ class StaffModel {
       } catch (e) {}
     }
 
-    // 1. Bank
+    // 1. Bank & Beneficiary Master (user_type = 1)
     if (data.account_number !== undefined || data.bank_name !== undefined || data.account_name !== undefined) {
       try {
         const [existingBank] = await pool.query(`SELECT id FROM user_bank WHERE user_id = ?`, [id]);
@@ -526,8 +544,26 @@ class StaffModel {
             ]
           );
         }
+        if (data.bank_name && data.account_number) {
+          const [existingBen] = await pool.query(
+            `SELECT id FROM beneficiary_master WHERE school_id = ? AND user_type = 1 AND employee_id = ? LIMIT 1`,
+            [schoolId, id]
+          );
+          if (existingBen && existingBen.length > 0) {
+            await pool.query(
+              `UPDATE beneficiary_master SET branch_id = COALESCE(?, branch_id), basic_salary = COALESCE(NULLIF(?, 0), basic_salary), status = 1 WHERE id = ?`,
+              [staffBranchId, Number(data.basic_salary || 0), existingBen[0].id]
+            );
+          } else {
+            await pool.query(
+              `INSERT INTO beneficiary_master (school_id, branch_id, user_type, employee_id, basic_salary, status)
+               VALUES (?, ?, 1, ?, ?, 1)`,
+              [schoolId, staffBranchId, id, Number(data.basic_salary || 0)]
+            );
+          }
+        }
       } catch (err) {
-        console.error('Error updating user_bank:', err);
+        console.error('Error updating user_bank / beneficiary_master:', err);
       }
     }
 

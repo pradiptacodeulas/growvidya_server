@@ -667,7 +667,7 @@ class AdminExaminationModel {
 
     const masterId = existingMaster.length > 0 ? existingMaster[0].id : null;
     const masterStatus = existingMaster.length > 0 ? existingMaster[0].status : null;
-    const isMasterActive = masterStatus === 1;
+    const isMasterActive = masterStatus !== null && Number(masterStatus) !== 4;
 
     let configuredMarks = [];
     if (masterId && isMasterActive) {
@@ -706,20 +706,18 @@ class AdminExaminationModel {
            AND (esm_marks.is_check = 1 OR esm_marks.mark > 0)
            AND sm.school_id = ?
            AND sm.class_id = ?
-           AND sm.status = 1
            AND sm.status != 4
          ORDER BY sm.sort_order ASC, sm.id ASC`,
         [masterId, schoolId, classId]
       );
       subjects = confSubs || [];
     } else {
-      // For Add / Edit screen: strictly load active (status = 1) subjects for this specific class
+      // For Add / Edit screen: load non-deleted (status != 4) subjects for this specific class
       const [allSubs] = await pool.query(
         `SELECT id AS subject_id, subject_name 
          FROM subject_master 
          WHERE school_id = ? 
            AND class_id = ?
-           AND status = 1
            AND status != 4
          ORDER BY sort_order ASC, id ASC`,
         [schoolId, classId]
@@ -732,7 +730,6 @@ class AdminExaminationModel {
       SELECT id AS exam_type_id, exam_type, sort_order 
       FROM exam_type_master 
       WHERE school_id = ? 
-        AND status = 1
         AND status != 4
     `;
     const examTypeParams = [schoolId];
