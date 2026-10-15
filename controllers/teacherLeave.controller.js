@@ -116,6 +116,7 @@ class TeacherLeaveController {
            l.staff_id,
            l.leave_id,
            lm.leave_name,
+           COALESCE(lm.is_paid, 1) AS is_paid,
            l.duration,
            CASE 
              WHEN l.duration = 1 THEN 'Full Day'
@@ -125,6 +126,7 @@ class TeacherLeaveController {
            END AS duration_label,
            l.document,
            l.leave_reason,
+           TRIM(CONCAT(IFNULL(t.first_name, ''), ' ', IFNULL(t.last_name, ''))) AS person_name,
            COALESCE(
              (
                SELECT 
@@ -147,6 +149,7 @@ class TeacherLeaveController {
            ) AS leave_date
          FROM leaves l
          LEFT JOIN leave_master lm ON (l.leave_id = lm.id AND lm.school_id = l.school_id)
+         LEFT JOIN teacher_master t ON (l.role = 1 AND l.staff_id = t.id AND t.school_id = l.school_id)
          WHERE l.id = ? 
            AND l.role = 1 
            AND l.staff_id = ?
@@ -177,6 +180,21 @@ class TeacherLeaveController {
       );
 
       leave.dates = dates || [];
+
+      try {
+        const quotaInfo = await LeaveModel.getStaffLeaveQuota(
+          leave.school_id || schoolId,
+          1,
+          teacherId,
+          leave.leave_id
+        );
+        leave.total_quota = quotaInfo.max_quota;
+        leave.approved_days = quotaInfo.approved_days;
+        leave.pending_days = quotaInfo.pending_days;
+        leave.used_days = quotaInfo.used_days;
+        leave.remaining_quota = quotaInfo.remaining_days;
+      } catch (_) {}
+
       return ApiResponse.success(res, 'Leave details fetched successfully.', { leave });
     } catch (error) {
       console.error('Error in TeacherLeaveController.getMyLeaveById:', error);
