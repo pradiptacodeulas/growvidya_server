@@ -421,7 +421,7 @@ class AttendanceModel {
 
     const whereConditions = [
       `t.school_id = ?`,
-      `t.status = 1`,
+      `t.status != 4`,
     ];
     const whereParams = [schoolId];
 

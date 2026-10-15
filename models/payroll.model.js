@@ -601,13 +601,15 @@ class PayrollModel {
     const daysInMonth = FIXED_SALARY_DAYS;
     const perDaySalary = baseSalary > 0 ? baseSalary / FIXED_SALARY_DAYS : 0;
 
-    // 1. Fetch leave dates in the target month from leaves_date joined with leaves and leave_master
+    // 1. Fetch ONLY approved leave dates (status = 2) in the target month from leaves_date joined with leaves and leave_master
+    // Pending (1), Rejected (3), and Cancelled/Deleted (0, 4) leaves/dates are strictly excluded.
     const [dateLeaveRows] = await pool.query(
       `SELECT 
          l.id AS leave_application_id,
          l.leave_id,
          l.duration,
          l.status AS leave_status,
+         ld.id AS leave_date_id,
          ld.status AS date_status,
          DATE_FORMAT(ld.date, '%Y-%m-%d') AS leave_date,
          COALESCE(lm.leave_name, 'Leave') AS leave_name,
@@ -621,13 +623,13 @@ class PayrollModel {
          AND l.staff_id = ?
          AND YEAR(ld.date) = ?
          AND MONTH(ld.date) = ?
-         AND l.status IN (1, 2)
-         AND ld.status IN (1, 2)
-       ORDER BY ld.date ASC`,
+         AND l.status = 2
+         AND ld.status = 2
+       ORDER BY ld.date ASC, ld.id ASC`,
       [schoolId, leaveRole, empId, targetYear, targetMonth]
     );
 
-    // 2. Also check standalone leaves without leaves_date rows in the target month
+    // 2. Also check standalone approved leaves (status = 2) without leaves_date rows in the target month
     const [standaloneLeaveRows] = await pool.query(
       `SELECT 
          l.id AS leave_application_id,
@@ -646,15 +648,15 @@ class PayrollModel {
          AND l.staff_id = ?
          AND YEAR(l.created_at) = ?
          AND MONTH(l.created_at) = ?
-         AND l.status IN (1, 2)
+         AND l.status = 2
          AND NOT EXISTS (SELECT 1 FROM leaves_date ld WHERE ld.staff_leave_id = l.id)
-       ORDER BY l.created_at ASC`,
+       ORDER BY l.created_at ASC, l.id ASC`,
       [schoolId, leaveRole, empId, targetYear, targetMonth]
     );
 
     const allMonthLeaveEntries = [...(dateLeaveRows || []), ...(standaloneLeaveRows || [])];
 
-    // 3. For paid leave types (is_paid = 1) with a quota (max_quota > 0), check if cumulative usage prior to this month + this month exceeds quota
+    // 3. For paid leave types (is_paid = 1) with a quota (max_quota > 0), check if cumulative approved usage prior to this month + this month exceeds quota
     const paidLeaveIdsInMonth = [
       ...new Set(
         allMonthLeaveEntries
@@ -667,7 +669,8 @@ class PayrollModel {
     const monthEndStr = `${targetYear}-${String(targetMonth).padStart(2, '0')}-01`;
     for (const leaveTypeId of paidLeaveIdsInMonth) {
       const [priorRows] = await pool.query(
-        `SELECT COALESCE(SUM(CASE WHEN l.duration = 2 THEN 0.5 ELSE 1 END), 0) AS prior_days
+        `SELECT DATE_FORMAT(ld.date, '%Y-%m-%d') AS leave_date,
+                MAX(CASE WHEN l.duration = 2 THEN 0.5 ELSE 1 END) AS day_weight
          FROM leaves_date ld
          JOIN leaves l ON ld.staff_leave_id = l.id
          WHERE l.school_id = ?
@@ -676,10 +679,12 @@ class PayrollModel {
            AND l.leave_id = ?
            AND DATE(ld.date) < ?
            AND l.status = 2
-           AND ld.status = 2`,
+           AND ld.status = 2
+         GROUP BY DATE_FORMAT(ld.date, '%Y-%m-%d')`,
         [schoolId, leaveRole, empId, leaveTypeId, monthEndStr]
       );
-      priorUsedByLeaveType[leaveTypeId] = Number(priorRows[0]?.prior_days || 0);
+      const priorSum = (priorRows || []).reduce((acc, r) => acc + Number(r.day_weight || 0), 0);
+      priorUsedByLeaveType[leaveTypeId] = Number(priorSum);
     }
 
     let unpaidLeaveDays = 0;
@@ -687,9 +692,35 @@ class PayrollModel {
     let primaryLeaveId = null;
     const runningPaidUsage = { ...priorUsedByLeaveType };
     const breakdownMap = {};
+    const seenApplicationDateKeys = new Set();
+    const countedWeightByDate = {};
 
     for (const entry of allMonthLeaveEntries) {
-      const dayWeight = Number(entry.duration) === 2 ? 0.5 : 1;
+      // Guard: only process strictly approved leave entries (status === 2)
+      if (Number(entry.leave_status) !== 2 || Number(entry.date_status) !== 2) {
+        continue;
+      }
+
+      const dateKey = entry.leave_date ? String(entry.leave_date).trim() : '';
+      const appDateKey = `${entry.leave_application_id || 0}_${dateKey}`;
+      if (seenApplicationDateKeys.has(appDateKey)) {
+        continue;
+      }
+
+      const rawDayWeight = Number(entry.duration) === 2 ? 0.5 : 1;
+      // Avoid double deductions on the same calendar date across duplicate/overlapping approved leave records
+      const alreadyCountedOnDate = dateKey ? Number(countedWeightByDate[dateKey] || 0) : 0;
+      const remainingDayCapacity = dateKey ? Math.max(0, 1 - alreadyCountedOnDate) : rawDayWeight;
+      const dayWeight = Math.min(rawDayWeight, remainingDayCapacity);
+      if (dayWeight <= 0) {
+        continue;
+      }
+
+      seenApplicationDateKeys.add(appDateKey);
+      if (dateKey) {
+        countedWeightByDate[dateKey] = alreadyCountedOnDate + dayWeight;
+      }
+
       const isPaidType = Number(entry.is_paid) === 1;
       const maxQuota = Number(entry.max_quota || 0);
       const lId = Number(entry.leave_id || 0);
@@ -1229,9 +1260,11 @@ class PayrollModel {
           : 0;
       const additionalDeduction = Math.max(0, Number(item.additional_deductions || 0));
       const totalDeductions =
-        item.total_deductions !== undefined && item.total_deductions !== null && item.total_deductions !== ''
-          ? Math.max(leaveDeduction, Number(item.total_deductions))
-          : Number((leaveDeduction + additionalDeduction).toFixed(2));
+        item.additional_deductions !== undefined && item.additional_deductions !== null && item.additional_deductions !== ''
+          ? Number(Math.min(baseSalary, leaveDeduction + additionalDeduction).toFixed(2))
+          : item.total_deductions !== undefined && item.total_deductions !== null && item.total_deductions !== ''
+          ? Number(Math.min(baseSalary, Math.max(leaveDeduction, Number(item.total_deductions))).toFixed(2))
+          : Number(Math.min(baseSalary, leaveDeduction + additionalDeduction).toFixed(2));
       const netSalary = Number(Math.max(0, baseSalary - totalDeductions).toFixed(2));
       const txId =
         (item.transaction_id && String(item.transaction_id).trim()) ||

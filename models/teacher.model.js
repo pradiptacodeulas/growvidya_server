@@ -344,7 +344,7 @@ class TeacherModel {
           CAST(t.marital_status AS CHAR) = CAST(mm.id AS CHAR) OR
           (t.marital_status NOT IN ('0', 0, '') AND CAST(t.marital_status AS CHAR) COLLATE utf8mb4_unicode_ci = mm.marital_status)
         )
-       WHERE t.id = ? AND t.school_id = ? AND t.status != 4 ${cleanBranchId ? ' AND t.branch_id = ?' : ''}
+       WHERE t.id = ? AND t.school_id = ? AND t.status != 4 ${cleanBranchId ? ' AND (t.branch_id = ? OR t.branch_id IS NULL)' : ''}
        LIMIT 1`,
       cleanBranchId ? [id, schoolId, cleanBranchId] : [id, schoolId]
     );

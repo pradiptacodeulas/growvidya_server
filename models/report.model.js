@@ -482,8 +482,8 @@ class ReportModel {
     let total = 0;
 
     if (type === 'teacher') {
-      // 1. Teachers
-      let whereConditions = [`t.school_id = ?`, `t.status = 1`];
+      // 1. Teachers (include active and inactive teachers so historical attendance reports remain visible)
+      let whereConditions = [`t.school_id = ?`, `t.status != 4`];
       let queryParams = [schoolId];
 
       if (branchId) {
@@ -529,7 +529,7 @@ class ReportModel {
         const [attRecords] = await pool.query(
           `SELECT teacher_id AS entity_id, attendance, DAY(date) AS day_num 
            FROM teacher_attendance 
-           WHERE school_id = ? AND teacher_id IN (${placeholders}) AND date BETWEEN ? AND ?`,
+           WHERE school_id = ? AND teacher_id IN (${placeholders}) AND date BETWEEN ? AND ? AND (status != 4 OR status IS NULL)`,
           [schoolId, ...teacherIds, startDateTime, endDateTime]
         );
 
