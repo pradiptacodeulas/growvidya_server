@@ -115,15 +115,15 @@ class StaffModel {
         u.state_id,
         s.state AS state_name,
         u.city,
-        COALESCE(ci.name, u.city) AS city_name,
+        ci.name AS city_name,
         u.status,
         u.date AS created_on
       FROM user_master u
       LEFT JOIN branch_master bm ON u.branch_id = bm.id
       LEFT JOIN role_master r ON u.role = r.id
       LEFT JOIN countries c ON u.country_id = c.id
-      LEFT JOIN states s ON u.state_id = s.id_state
-      LEFT JOIN cities ci ON (u.city = ci.id OR u.city = ci.name)
+      LEFT JOIN states s ON u.state_id = s.id_state AND s.country_id = u.country_id
+      LEFT JOIN cities ci ON u.city = ci.id AND ci.state_id = u.state_id
       LEFT JOIN gender_master g ON (
         (g.id = 1 AND (u.gender = 1 OR u.gender = '1' OR LOWER(CAST(u.gender AS CHAR)) = 'male')) OR
         (g.id = 2 AND (u.gender = 2 OR u.gender = '2' OR LOWER(CAST(u.gender AS CHAR)) = 'female')) OR
@@ -752,17 +752,27 @@ class StaffModel {
   }
 
   static async getStates(countryId) {
+    const cId = Number(countryId);
+    if (!cId || isNaN(cId) || cId <= 0) return [];
     const [rows] = await pool.query(
-      `SELECT id_state AS id, state AS name, country_id FROM states WHERE country_id = ? ORDER BY state ASC`,
-      [countryId]
+      `SELECT id_state AS id, state AS name, country_id
+       FROM states
+       WHERE country_id = ? AND (is_active = 1 OR is_active IS NULL)
+       ORDER BY state ASC`,
+      [cId]
     );
     return rows || [];
   }
 
   static async getCities(stateId) {
+    const sId = Number(stateId);
+    if (!sId || isNaN(sId) || sId <= 0) return [];
     const [rows] = await pool.query(
-      `SELECT id, name, state_id FROM cities WHERE state_id = ? ORDER BY name ASC`,
-      [stateId]
+      `SELECT id, name, state_id
+       FROM cities
+       WHERE state_id = ?
+       ORDER BY name ASC`,
+      [sId]
     );
     return rows || [];
   }
