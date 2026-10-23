@@ -1079,6 +1079,27 @@ class ParentModel {
     }
   }
 
+  static async getChildSyllabus(studentId, schoolId, classId, branchId = null, filters = {}) {
+    try {
+      if (!classId) return [];
+      const AcademicModel = require('./academic.model');
+      const result = await AcademicModel.getSyllabusList(schoolId, {
+        classId,
+        branchId,
+        subjectId: filters.subject_id || filters.subjectId,
+        academic_year_id: filters.academic_year_id || filters.academic_year,
+        status: filters.status,
+        search: filters.search,
+        page: 1,
+        limit: 500,
+      });
+      return result?.syllabus || [];
+    } catch (e) {
+      console.error('Error fetching child syllabus:', e);
+      return [];
+    }
+  }
+
   static async getChildStudyMaterials(studentId, schoolId, classId) {
     try {
       const [materials] = await pool.query(

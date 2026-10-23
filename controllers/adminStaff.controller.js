@@ -22,6 +22,7 @@ class AdminStaffController {
         role,
         status,
         branchId,
+        isSuperAdmin: scope.isSuperAdmin,
         limit: Number(limit),
         offset,
       });
@@ -47,7 +48,10 @@ class AdminStaffController {
       const branchId = scope.branchId;
       const staffId = req.params.id;
 
-      const staffMember = await StaffModel.getById(staffId, schoolId, branchId);
+      const staffMember = await StaffModel.getById(staffId, schoolId, branchId, {
+        isSuperAdmin: scope.isSuperAdmin,
+        excludeSuperAdmin: true,
+      });
 
       if (!staffMember) {
         return ApiResponse.error(res, 'Staff member record not found.', null, 404);
@@ -171,10 +175,19 @@ class AdminStaffController {
         branchId = await scope.resolveBranchForCreate(req.body.branch_id || req.body.branchId);
       }
 
-      const updatedStaff = await StaffModel.update(staffId, schoolId, {
-        ...data,
-        ...(branchId !== undefined ? { branch_id: branchId } : {}),
-      }, scope.branchId || branchId);
+      const updatedStaff = await StaffModel.update(
+        staffId,
+        schoolId,
+        {
+          ...data,
+          ...(branchId !== undefined ? { branch_id: branchId } : {}),
+        },
+        scope.branchId || branchId,
+        {
+          isSuperAdmin: scope.isSuperAdmin,
+          excludeSuperAdmin: true,
+        }
+      );
 
       if (!updatedStaff) {
         return ApiResponse.error(res, 'Staff member record not found or could not be updated.', null, 404);
@@ -195,7 +208,9 @@ class AdminStaffController {
       const staffId = req.params.id;
       const branchId = scope.branchId;
 
-      const success = await StaffModel.delete(staffId, schoolId, branchId);
+      const success = await StaffModel.delete(staffId, schoolId, branchId, {
+        isSuperAdmin: scope.isSuperAdmin,
+      });
 
       if (!success) {
         return ApiResponse.error(res, 'Staff member not found or already deleted.', null, 404);
@@ -209,8 +224,8 @@ class AdminStaffController {
 
   static async getRoles(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
-      const roles = await StaffModel.getRoles(schoolId);
+      const scope = DataScope.getDataScope(req);
+      const roles = await StaffModel.getRoles(scope.schoolId, { isSuperAdmin: scope.isSuperAdmin });
       return ApiResponse.success(res, 'Staff roles fetched successfully.', { roles });
     } catch (error) {
       next(error);
@@ -219,9 +234,9 @@ class AdminStaffController {
 
   static async getOptions(req, res, next) {
     try {
-      const schoolId = req.user.schoolId;
-      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
-      const options = await StaffModel.getOptions(schoolId, branchId);
+      const scope = DataScope.getDataScope(req);
+      const branchId = scope.branchId || req.query.branch_id || req.query.branchId || null;
+      const options = await StaffModel.getOptions(scope.schoolId, branchId, { isSuperAdmin: scope.isSuperAdmin });
       return ApiResponse.success(res, 'Staff options fetched successfully.', options);
     } catch (error) {
       next(error);

@@ -213,6 +213,27 @@ class ParentChildController {
   }
 
   /**
+   * Get Child Syllabus
+   */
+  static async getSyllabus(req, res, next) {
+    try {
+      const studentId = await ParentChildController.getActiveStudentId(req);
+      if (!studentId) {
+        return ApiResponse.error(res, 'No linked child student found.', null, 404);
+      }
+
+      const student = await ParentModel.getChildFullProfile(studentId, req.user.schoolId);
+      const classId = student ? (student.class || student.class_id || student.classId) : null;
+      const branchId = student ? (student.branch_id || student.branchId || null) : null;
+
+      const data = await ParentModel.getChildSyllabus(studentId, req.user.schoolId, classId, branchId, req.query);
+      return ApiResponse.success(res, 'Child syllabus fetched successfully.', data);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Get Child Study Materials
    */
   static async getStudyMaterials(req, res, next) {

@@ -87,8 +87,15 @@ exports.createNotice = async (req, res) => {
       const { pool } = require('../config/db.config');
 
       const noticeTitle = `Notice: ${title.trim()}`;
-      const noticeBody = message
-        ? (String(message).length > 120 ? String(message).substring(0, 117) + '...' : String(message))
+      const cleanMessageText = message
+        ? String(message)
+            .replace(/<[^>]*>/g, ' ')
+            .replace(/&nbsp;/gi, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+        : '';
+      const noticeBody = cleanMessageText
+        ? (cleanMessageText.length > 120 ? cleanMessageText.substring(0, 117) + '...' : cleanMessageText)
         : 'A new school notice has been published.';
 
       const pushPayloadData = {

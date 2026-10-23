@@ -21,11 +21,7 @@ class DataScope {
     }
 
     const adminType = Number(req.user?.adminType ?? req.user?.admin_type);
-    const roleStr = String(req.user?.roleName || req.user?.role_name || req.user?.role || '').toLowerCase();
-    const isSuperAdmin = Boolean(req.user?.isSuperAdmin) ||
-      adminType === 1 ||
-      roleStr === 'super admin' ||
-      roleStr === 'superadmin';
+    const isSuperAdmin = Boolean(req.user?.isSuperAdmin) || adminType === 1;
 
     const registrationType = req.user?.registrationType || req.user?.registration_type || 'single';
     const userAssignedBranch = Number(req.user?.branchId ?? req.user?.branch_id) || null;

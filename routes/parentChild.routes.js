@@ -16,6 +16,7 @@ router.get('/fees', ParentChildController.getFees);
 router.post('/fees/pay', ParentChildController.payFee);
 router.post('/pay-fee', ParentChildController.payFee);
 router.get('/exam-results', ParentChildController.getExamResults);
+router.get('/syllabus', ParentChildController.getSyllabus);
 router.get('/study-materials', ParentChildController.getStudyMaterials);
 router.get('/material-types', ParentChildController.getMaterialTypes);
 router.get('/timetable', ParentChildController.getTimetable);

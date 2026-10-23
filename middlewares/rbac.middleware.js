@@ -45,13 +45,10 @@ function rbacMiddleware(...args) {
       const roleId = Number(req.user.roleId ?? req.user.role_id);
       const portalType = req.user.portalType;
 
-      // 1. Super Admin (admin_type = 1 or roleName = 'Super Admin' / 'superadmin') always has full unrestricted access
-      const uRoleLower = userRole.toLowerCase();
+      // 1. Super Admin (admin_type = 1) always has full unrestricted access
       const isSuperAdmin =
         Boolean(req.user.isSuperAdmin) ||
-        adminType === 1 ||
-        uRoleLower === 'super admin' ||
-        uRoleLower === 'superadmin';
+        adminType === 1;
 
       if (isSuperAdmin) {
         return next();

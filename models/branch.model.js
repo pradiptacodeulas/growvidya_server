@@ -477,7 +477,7 @@ class BranchModel {
         if (oldHeadUserId && oldHeadUserId !== resolvedHead) {
           // Revert old head's role if they were assigned the Branch Head role
           const [fallbackRoles] = await pool.query(
-            `SELECT id FROM role_master WHERE (school_id = ? OR school_id IS NULL) AND LOWER(TRIM(role_name)) != 'branch head' AND (status = 1 OR status IS NULL) ORDER BY id ASC LIMIT 1`,
+            `SELECT id FROM role_master WHERE (school_id = ? OR school_id IS NULL) AND IFNULL(is_system_role, 0) = 0 AND (status = 1 OR status IS NULL) ORDER BY id ASC LIMIT 1`,
             [parsedSchoolId]
           );
           const fallbackRoleId = fallbackRoles[0]?.id || 2;
@@ -678,7 +678,7 @@ class BranchModel {
       try {
         const branchHeadRoleId = await PermissionModel.ensureBranchHeadRole(parsedSchoolId);
         const [fallbackRoles] = await pool.query(
-          `SELECT id FROM role_master WHERE (school_id = ? OR school_id IS NULL) AND LOWER(TRIM(role_name)) != 'branch head' AND (status = 1 OR status IS NULL) ORDER BY id ASC LIMIT 1`,
+          `SELECT id FROM role_master WHERE (school_id = ? OR school_id IS NULL) AND IFNULL(is_system_role, 0) = 0 AND (status = 1 OR status IS NULL) ORDER BY id ASC LIMIT 1`,
           [parsedSchoolId]
         );
         const fallbackRoleId = fallbackRoles[0]?.id || 2;

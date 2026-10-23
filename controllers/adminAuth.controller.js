@@ -32,8 +32,8 @@ class AdminAuthController {
       // Verify admin role access:
       // admin_type: 1 = Super Admin, 2 = Staff
       const adminType = Number(user.admin_type);
-      const isSuperAdmin = adminType === 1 || user.role_name === 'Super Admin';
-      const isAdmin = isSuperAdmin || adminType === 2 || Boolean(user.role_id) || (user.role_name && (user.role_name.toLowerCase().includes('admin') || user.role_name.toLowerCase().includes('head')));
+      const isSuperAdmin = adminType === 1;
+      const isAdmin = isSuperAdmin || adminType === 2 || Boolean(user.role_id);
 
       if (!isAdmin) {
         return ApiResponse.error(res, 'Access denied. Account does not have administrative privileges.', null, 403);
@@ -153,7 +153,7 @@ class AdminAuthController {
       }
 
       const adminType = Number(user.admin_type);
-      const isSuperAdmin = adminType === 1 || user.role_name === 'Super Admin';
+      const isSuperAdmin = adminType === 1;
       const roleName = isSuperAdmin ? 'Super Admin' : (user.role_name || null);
       const permissions = isSuperAdmin ? {} : await PermissionModel.getUserPermissionMap(user.role_id);
       const sub = await SubscriptionModel.getSchoolSubscription(user.school_id);
@@ -285,7 +285,7 @@ class AdminAuthController {
 
       const refreshedUser = await AdminUserModel.findById(userId);
       const adminType = Number(refreshedUser.admin_type);
-      const isSuperAdmin = adminType === 1 || refreshedUser.role_name === 'Super Admin';
+      const isSuperAdmin = adminType === 1;
       const roleName = isSuperAdmin ? 'Super Admin' : (refreshedUser.role_name || null);
 
       return ApiResponse.success(res, 'Profile updated successfully.', {

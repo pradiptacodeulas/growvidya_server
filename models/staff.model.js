@@ -3,7 +3,7 @@ const { hashPassword } = require('../utils/password.util');
 const { saveBase64File } = require('../utils/file.util');
 
 class StaffModel {
-  static async getAll(schoolId, { search = '', role = '', status = '', branchId = null, limit = 12, offset = 0 } = {}) {
+  static async getAll(schoolId, { search = '', role = '', status = '', branchId = null, isSuperAdmin = false, limit = 12, offset = 0 } = {}) {
     let sql = `
       SELECT 
         u.id,
@@ -31,10 +31,14 @@ class StaffModel {
       LEFT JOIN role_master r ON u.role = r.id
       LEFT JOIN gender_master g ON g.id = u.gender
       LEFT JOIN blood_group_master bg ON bg.id = u.blood_group
-      WHERE u.school_id = ?
+      WHERE u.school_id = ? AND u.admin_type != 1
     `;
 
     const params = [schoolId];
+
+    if (!isSuperAdmin) {
+      sql += ` AND (bm.head_user_id IS NULL OR u.id != bm.head_user_id) AND IFNULL(r.is_system_role, 0) != 1`;
+    }
 
     if (branchId) {
       sql += ` AND u.branch_id = ?`;
@@ -75,7 +79,15 @@ class StaffModel {
     return { staff: rows || [], total };
   }
 
-  static async getById(id, schoolId, branchId = null) {
+  static async getById(id, schoolId, branchId = null, { isSuperAdmin = true, excludeSuperAdmin = false } = {}) {
+    let accessFilter = '';
+    if (excludeSuperAdmin || !isSuperAdmin) {
+      accessFilter += ' AND u.admin_type != 1';
+    }
+    if (!isSuperAdmin) {
+      accessFilter += ' AND (bm.head_user_id IS NULL OR u.id != bm.head_user_id) AND IFNULL(r.is_system_role, 0) != 1';
+    }
+
     let sql = `
       SELECT 
         u.id,
@@ -112,7 +124,7 @@ class StaffModel {
       LEFT JOIN cities ci ON u.city = ci.id AND ci.state_id = u.state_id
       LEFT JOIN gender_master g ON g.id = u.gender
       LEFT JOIN blood_group_master bg ON bg.id = u.blood_group
-      WHERE u.id = ? AND u.school_id = ? ${branchId ? ' AND (u.branch_id = ? OR u.branch_id IS NULL)' : ''}
+      WHERE u.id = ? AND u.school_id = ?${accessFilter}${branchId ? ' AND (u.branch_id = ? OR u.branch_id IS NULL)' : ''}
       LIMIT 1
     `;
 
@@ -276,7 +288,7 @@ class StaffModel {
       data.state_id || null,
       data.city || null,
       data.role ? Number(data.role) : null,
-      data.admin_type || 0,
+      Number(data.admin_type) === 1 ? 1 : 2,
       data.status !== undefined ? data.status : 1,
     ];
 
@@ -394,9 +406,9 @@ class StaffModel {
     return this.getById(userId, schoolId);
   }
 
-  static async update(id, schoolId, data, branchId = null) {
+  static async update(id, schoolId, data, branchId = null, { isSuperAdmin = true, excludeSuperAdmin = false } = {}) {
     const resolvedBranchId = branchId || data.branch_id || data.branchId || null;
-    const existing = await this.getById(id, schoolId, resolvedBranchId);
+    const existing = await this.getById(id, schoolId, resolvedBranchId, { isSuperAdmin, excludeSuperAdmin });
     if (!existing) return null;
 
     const trimmedEmail = data.email !== undefined
@@ -622,12 +634,18 @@ class StaffModel {
     return this.getById(id, schoolId);
   }
 
-  static async delete(id, schoolId, branchId = null) {
-    // Prevent deletion of primary Super Admin accounts
-    let userSql = `SELECT admin_type FROM user_master WHERE id = ? AND school_id = ?`;
+  static async delete(id, schoolId, branchId = null, { isSuperAdmin = false } = {}) {
+    // Prevent deletion of primary Super Admin or protected Branch Head accounts
+    let userSql = `
+      SELECT u.id, u.admin_type, bm.head_user_id, r.is_system_role
+      FROM user_master u
+      LEFT JOIN branch_master bm ON u.branch_id = bm.id
+      LEFT JOIN role_master r ON u.role = r.id
+      WHERE u.id = ? AND u.school_id = ?
+    `;
     const userParams = [id, schoolId];
     if (branchId) {
-      userSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      userSql += ` AND (u.branch_id = ? OR u.branch_id IS NULL)`;
       userParams.push(Number(branchId));
     }
     const [userRows] = await pool.query(userSql + ' LIMIT 1', userParams);
@@ -636,6 +654,12 @@ class StaffModel {
     }
     if (Number(userRows[0].admin_type) === 1) {
       throw new Error('Primary Super Admin accounts cannot be deleted.');
+    }
+    if (
+      !isSuperAdmin &&
+      (Number(userRows[0].id) === Number(userRows[0].head_user_id) || Number(userRows[0].is_system_role) === 1)
+    ) {
+      throw new Error('Branch Head accounts cannot be deleted by branch staff.');
     }
 
     let delSql = `UPDATE user_master SET status = 4 WHERE id = ? AND school_id = ?`;
@@ -659,17 +683,19 @@ class StaffModel {
     return result.affectedRows > 0;
   }
 
-  static async getRoles(schoolId) {
+  static async getRoles(schoolId, { isSuperAdmin = false } = {}) {
+    const roleFilter = isSuperAdmin ? '' : ' AND IFNULL(is_system_role, 0) = 0';
     const [rows] = await pool.query(
-      `SELECT id, role_name, status FROM role_master WHERE school_id = ? AND status != 4 AND LOWER(TRIM(role_name)) != 'super admin' ORDER BY id ASC`,
+      `SELECT id, role_name, is_system_role, status FROM role_master WHERE school_id = ? AND status != 4${roleFilter} ORDER BY id ASC`,
       [schoolId]
     );
     return rows || [];
   }
 
-  static async getOptions(schoolId, branchId = null) {
+  static async getOptions(schoolId, branchId = null, { isSuperAdmin = false } = {}) {
+    const roleFilter = isSuperAdmin ? '' : ' AND IFNULL(is_system_role, 0) = 0';
     const [roles] = await pool.query(
-      `SELECT id, role_name, status FROM role_master WHERE school_id = ? AND status != 4 AND LOWER(TRIM(role_name)) != 'super admin' ORDER BY id ASC`,
+      `SELECT id, role_name, is_system_role, status FROM role_master WHERE school_id = ? AND status != 4${roleFilter} ORDER BY id ASC`,
       [schoolId]
     );
 

@@ -14,6 +14,8 @@ router.get('/timetable', StudentPortalController.getTimetable);
 router.get('/routine', StudentPortalController.getTimetable);
 router.get('/exam-results', StudentPortalController.getExamResults);
 router.get('/results', StudentPortalController.getExamResults);
+router.get('/syllabus', StudentPortalController.getSyllabus);
+router.get('/my-syllabus', StudentPortalController.getSyllabus);
 router.get('/study-materials', StudentPortalController.getStudyMaterials);
 router.get('/studymaterial', StudentPortalController.getStudyMaterials);
 router.get('/activities', StudentPortalController.getActivities);

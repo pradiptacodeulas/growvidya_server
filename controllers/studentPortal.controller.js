@@ -385,6 +385,25 @@ class StudentPortalController {
   }
 
   /**
+   * Get Student Syllabus
+   */
+  static async getSyllabus(req, res, next) {
+    try {
+      const studentId = StudentPortalController.getStudentId(req);
+      const schoolId = StudentPortalController.getSchoolId(req);
+
+      const student = await ParentModel.getChildFullProfile(studentId, schoolId);
+      const classId = student ? (student.class || student.class_id || student.classId) : null;
+      const branchId = student ? (student.branch_id || student.branchId || null) : null;
+
+      const data = await ParentModel.getChildSyllabus(studentId, schoolId, classId, branchId, req.query);
+      return ApiResponse.success(res, 'Student syllabus fetched successfully.', data);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Get Student Study Materials
    */
   static async getStudyMaterials(req, res, next) {

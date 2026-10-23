@@ -42,10 +42,7 @@ class PermissionModel {
     const [rows] = await pool.query(query, params);
     return rows.map((r) => ({
       ...r,
-      is_system_role: Boolean(
-        Number(r.is_system_role) === 1 ||
-        String(r.role_name || '').toLowerCase().trim() === 'super admin'
-      ),
+      is_system_role: Number(r.is_system_role) === 1,
     }));
   }
 
@@ -63,13 +60,9 @@ class PermissionModel {
     const [rows] = await pool.query(query, params);
     if (!rows || rows.length === 0) return null;
     const role = rows[0];
-    const isSuperAdmin = Boolean(
-      Number(role.is_system_role) === 1 ||
-      String(role.role_name || '').toLowerCase().trim() === 'super admin'
-    );
     return {
       ...role,
-      is_system_role: isSuperAdmin,
+      is_system_role: Number(role.is_system_role) === 1,
     };
   }
 
@@ -312,9 +305,9 @@ class PermissionModel {
   static async ensureBranchHeadRole(schoolId) {
     const parsedSchoolId = Number(schoolId) || 1;
 
-    // Check if 'Branch Head' role already exists for this school
+    // Check if system role (Branch Head) already exists for this school
     const [existing] = await pool.query(
-      `SELECT id FROM role_master WHERE (school_id = ? OR school_id IS NULL) AND LOWER(TRIM(role_name)) = 'branch head' AND (status = 1 OR status IS NULL) LIMIT 1`,
+      `SELECT id FROM role_master WHERE (school_id = ? OR school_id IS NULL) AND is_system_role = 1 AND (status = 1 OR status IS NULL) LIMIT 1`,
       [parsedSchoolId]
     );
 
