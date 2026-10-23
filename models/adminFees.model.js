@@ -1631,6 +1631,7 @@ class AdminFeesModel {
         sm.admission_number,
         sm.roll_number,
         cm.class_name,
+        sec.section_name,
         fi.invoice_no,
         fi.title AS invoice_title,
         fi.total_amount AS invoice_total,
@@ -1640,6 +1641,7 @@ class AdminFeesModel {
       INNER JOIN student_master sm ON sm.id = fp.student_id
       LEFT JOIN branch_master brm ON brm.id = COALESCE(fp.branch_id, sm.branch_id)
       LEFT JOIN class_master cm ON cm.id = sm.class
+      LEFT JOIN section_master sec ON sec.id = sm.section
       LEFT JOIN fee_invoices fi ON fi.id = fp.invoice_id
       WHERE fp.school_id = ?
     `;

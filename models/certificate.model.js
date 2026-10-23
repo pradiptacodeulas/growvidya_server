@@ -403,11 +403,7 @@ class CertificateModel {
       LEFT JOIN student_class scl ON s.id = scl.student_id AND scl.status = 1
       LEFT JOIN class_master cm ON COALESCE(scl.class_id, s.class) = cm.id
       LEFT JOIN section_master sec ON COALESCE(scl.section_id, s.section) = sec.id
-      LEFT JOIN gender_master g ON (
-        (g.id = 1 AND (s.gender = 1 OR s.gender = '1' OR LOWER(CAST(s.gender AS CHAR)) = 'male')) OR
-        (g.id = 2 AND (s.gender = 2 OR s.gender = '2' OR LOWER(CAST(s.gender AS CHAR)) = 'female')) OR
-        (g.id = 3 AND (s.gender = 3 OR s.gender = '3' OR LOWER(CAST(s.gender AS CHAR)) IN ('other', 'others')))
-      )
+      LEFT JOIN gender_master g ON g.id = s.gender
       LEFT JOIN student_to_parent stp ON s.id = stp.student_id
       LEFT JOIN parent_master p ON (stp.father_id = p.id OR stp.guardian_id = p.id)
       LEFT JOIN certificate_category cat ON sc.certificate_category_id = cat.id
@@ -426,7 +422,7 @@ class CertificateModel {
       let selectSql = `
         SELECT sc.*, 
                s.first_name, s.last_name, s.admission_number, s.date_of_birth,
-               COALESCE(g.gender, IF(s.gender = '1', 'Male', IF(s.gender = '2', 'Female', s.gender)), 'Male') AS gender,
+               g.gender AS gender,
                CONCAT(COALESCE(p.first_name, ''), ' ', COALESCE(p.last_name, '')) AS guardian_name,
                COALESCE(s.primary_contact_number, p.phone) AS primary_contact_number,
                s.email_address, s.picture,
@@ -455,7 +451,7 @@ class CertificateModel {
     let sql = `
       SELECT sc.*, 
              s.first_name, s.last_name, s.admission_number, s.date_of_birth,
-             COALESCE(g.gender, IF(s.gender = '1', 'Male', IF(s.gender = '2', 'Female', s.gender)), 'Male') AS gender,
+             g.gender AS gender,
              CONCAT(COALESCE(p.first_name, ''), ' ', COALESCE(p.last_name, '')) AS guardian_name,
              COALESCE(s.primary_contact_number, p.phone) AS primary_contact_number,
              s.email_address, s.picture,
@@ -475,7 +471,7 @@ class CertificateModel {
   static async getIssuedCertificateById(id, schoolId, branchId = null) {
     let sql = `SELECT sc.*, 
              s.first_name, s.last_name, s.admission_number, s.date_of_birth,
-             COALESCE(g.gender, IF(s.gender = '1', 'Male', IF(s.gender = '2', 'Female', s.gender)), 'Male') AS gender,
+             g.gender AS gender,
              CONCAT(COALESCE(p.first_name, ''), ' ', COALESCE(p.last_name, '')) AS guardian_name,
              COALESCE(s.primary_contact_number, p.phone) AS primary_contact_number,
              s.email_address, s.picture,
@@ -489,11 +485,7 @@ class CertificateModel {
       LEFT JOIN student_class scl ON s.id = scl.student_id AND scl.status = 1
       LEFT JOIN class_master cm ON COALESCE(scl.class_id, s.class) = cm.id
       LEFT JOIN section_master sec ON COALESCE(scl.section_id, s.section) = sec.id
-      LEFT JOIN gender_master g ON (
-        (g.id = 1 AND (s.gender = 1 OR s.gender = '1' OR LOWER(CAST(s.gender AS CHAR)) = 'male')) OR
-        (g.id = 2 AND (s.gender = 2 OR s.gender = '2' OR LOWER(CAST(s.gender AS CHAR)) = 'female')) OR
-        (g.id = 3 AND (s.gender = 3 OR s.gender = '3' OR LOWER(CAST(s.gender AS CHAR)) IN ('other', 'others')))
-      )
+      LEFT JOIN gender_master g ON g.id = s.gender
       LEFT JOIN student_to_parent stp ON s.id = stp.student_id
       LEFT JOIN parent_master p ON (stp.father_id = p.id OR stp.guardian_id = p.id)
       LEFT JOIN certificate_category cat ON sc.certificate_category_id = cat.id

@@ -143,7 +143,7 @@ class StudentModel {
             THEN CONCAT(aym.academic_year, ' - ', CAST(aym.academic_year AS UNSIGNED) + 1)
           ELSE COALESCE(aym.academic_year, s.academic_year)
         END AS academic_year_range,
-        COALESCE(g.gender, IF(s.gender = '1', 'Male', IF(s.gender = '2', 'Female', IF(s.gender = '3', 'Others', s.gender))), 'Male') AS gender,
+        g.gender AS gender,
         s.date_of_birth,
         s.primary_contact_number,
         s.email_address,
@@ -160,11 +160,7 @@ class StudentModel {
       LEFT JOIN class_master cm ON s.class = cm.id
       LEFT JOIN section_master sec ON s.section = sec.id
       LEFT JOIN academic_year_master aym ON (s.academic_year = aym.id OR s.academic_year = aym.academic_year)
-      LEFT JOIN gender_master g ON (
-        (g.id = 1 AND (s.gender = 1 OR s.gender = '1' OR LOWER(CAST(s.gender AS CHAR)) = 'male')) OR
-        (g.id = 2 AND (s.gender = 2 OR s.gender = '2' OR LOWER(CAST(s.gender AS CHAR)) = 'female')) OR
-        (g.id = 3 AND (s.gender = 3 OR s.gender = '3' OR LOWER(CAST(s.gender AS CHAR)) IN ('other', 'others')))
-      )
+      LEFT JOIN gender_master g ON g.id = s.gender
       LEFT JOIN student_to_parent stp ON s.id = stp.student_id
       LEFT JOIN parent_master p ON (stp.father_id = p.id OR stp.guardian_id = p.id)
       ${whereString}
@@ -242,7 +238,7 @@ class StudentModel {
           ELSE COALESCE(aym.academic_year, s.academic_year)
         END AS academic_year_range,
         CONCAT(IFNULL(s.first_name, ''), ' ', IFNULL(s.last_name, '')) AS full_name,
-        COALESCE(g.gender, IF(s.gender = 1 OR s.gender = '1', 'Male', IF(s.gender = 2 OR s.gender = '2', 'Female', IF(s.gender = 3 OR s.gender = '3', 'Others', s.gender))), 'Male') AS gender_name,
+        g.gender AS gender_name,
         COALESCE(bg.blood_group, s.blood_group) AS blood_group_name,
         COALESCE(rm.religion, s.religion) AS religion_name,
         COALESCE(scm.category, s.category) AS category_name,
@@ -342,11 +338,7 @@ class StudentModel {
       LEFT JOIN class_master cm ON s.class = cm.id
       LEFT JOIN section_master sec ON s.section = sec.id
       LEFT JOIN house_master hm ON (s.house = hm.id OR s.house = hm.house_name)
-      LEFT JOIN gender_master g ON (
-        (g.id = 1 AND (s.gender = 1 OR s.gender = '1' OR LOWER(CAST(s.gender AS CHAR)) = 'male')) OR
-        (g.id = 2 AND (s.gender = 2 OR s.gender = '2' OR LOWER(CAST(s.gender AS CHAR)) = 'female')) OR
-        (g.id = 3 AND (s.gender = 3 OR s.gender = '3' OR LOWER(CAST(s.gender AS CHAR)) IN ('other', 'others')))
-      )
+      LEFT JOIN gender_master g ON g.id = s.gender
       LEFT JOIN blood_group_master bg ON (s.blood_group = bg.id OR s.blood_group = bg.blood_group)
       LEFT JOIN religion_master rm ON (s.religion = rm.id OR s.religion = rm.religion)
       LEFT JOIN student_category_master scm ON (s.category = scm.id OR s.category = scm.category)

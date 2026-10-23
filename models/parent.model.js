@@ -227,7 +227,7 @@ class ParentModel {
         s.first_name,
         s.last_name,
         CONCAT(s.first_name, ' ', s.last_name) AS full_name,
-        COALESCE(g.gender, IF(s.gender = '1' OR s.gender = 1, 'Male', IF(s.gender = '2' OR s.gender = 2, 'Female', IF(s.gender = '3' OR s.gender = 3, 'Others', 'Male')))) AS gender,
+        g.gender AS gender,
         s.admission_date,
         s.created_at,
         s.status,
@@ -239,7 +239,7 @@ class ParentModel {
         s.picture
       FROM student_to_parent stp
       JOIN student_master s ON stp.student_id = s.id
-      LEFT JOIN gender_master g ON (s.gender != 0 AND (s.gender = g.id OR CAST(s.gender AS CHAR) = g.gender))
+      LEFT JOIN gender_master g ON g.id = s.gender
       LEFT JOIN class_master cm ON s.class = cm.id
       LEFT JOIN section_master sec ON s.section = sec.id
       WHERE (stp.father_id = ? OR stp.mother_id = ? OR stp.guardian_id = ?) 
@@ -585,7 +585,7 @@ class ParentModel {
         s.first_name,
         s.last_name,
         CONCAT(s.first_name, ' ', s.last_name) AS full_name,
-        COALESCE(g.gender, IF(s.gender = '1' OR s.gender = 1, 'Male', IF(s.gender = '2' OR s.gender = 2, 'Female', IF(s.gender = '3' OR s.gender = 3, 'Others', 'Male')))) AS gender,
+        g.gender AS gender,
         s.admission_date,
         s.date_of_birth,
         s.blood_group,
@@ -598,7 +598,7 @@ class ParentModel {
         s.picture
       FROM student_to_parent stp
       JOIN student_master s ON stp.student_id = s.id
-      LEFT JOIN gender_master g ON (s.gender != 0 AND (s.gender = g.id OR CAST(s.gender AS CHAR) = g.gender))
+      LEFT JOIN gender_master g ON g.id = s.gender
       LEFT JOIN class_master cm ON s.class = cm.id
       LEFT JOIN section_master sec ON s.section = sec.id
       WHERE (stp.father_id = ? OR stp.mother_id = ? OR stp.guardian_id = ?) 
@@ -621,7 +621,7 @@ class ParentModel {
         CONCAT(s.first_name, ' ', s.last_name) AS full_name,
         cm.class_name,
         sec.section_name,
-        COALESCE(g.gender, IF(s.gender = '1' OR s.gender = 1, 'Male', IF(s.gender = '2' OR s.gender = 2, 'Female', IF(s.gender = '3' OR s.gender = 3, 'Others', 'Male')))) AS gender_name,
+        g.gender AS gender_name,
         COALESCE(bg.blood_group, s.blood_group) AS blood_group_name,
         COALESCE(r.religion, s.religion) AS religion_name,
         COALESCE(c.category, s.category) AS category_name,
@@ -637,7 +637,7 @@ class ParentModel {
       FROM student_master s
       LEFT JOIN class_master cm ON s.class = cm.id
       LEFT JOIN section_master sec ON s.section = sec.id
-      LEFT JOIN gender_master g ON (s.gender != 0 AND (s.gender = g.id OR CAST(s.gender AS CHAR) = g.gender))
+      LEFT JOIN gender_master g ON g.id = s.gender
       LEFT JOIN blood_group_master bg ON (s.blood_group = bg.id OR s.blood_group = bg.blood_group)
       LEFT JOIN religion_master r ON (s.religion = r.id OR s.religion = r.religion)
       LEFT JOIN student_category_master c ON (s.category = c.id OR s.category = c.category)

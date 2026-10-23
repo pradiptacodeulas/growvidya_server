@@ -17,12 +17,7 @@ class StaffModel {
         u.email,
         u.phone,
         u.gender,
-        CASE 
-          WHEN u.gender = 1 OR u.gender = '1' OR LOWER(CAST(u.gender AS CHAR)) = 'male' THEN 'Male'
-          WHEN u.gender = 2 OR u.gender = '2' OR LOWER(CAST(u.gender AS CHAR)) = 'female' THEN 'Female'
-          WHEN u.gender = 3 OR u.gender = '3' OR LOWER(CAST(u.gender AS CHAR)) IN ('other', 'others') THEN 'Others'
-          ELSE g.gender
-        END AS gender_name,
+        g.gender AS gender_name,
         u.blood_group,
         bg.blood_group AS blood_group_name,
         u.picture,
@@ -34,11 +29,7 @@ class StaffModel {
       FROM user_master u
       LEFT JOIN branch_master bm ON u.branch_id = bm.id
       LEFT JOIN role_master r ON u.role = r.id
-      LEFT JOIN gender_master g ON (
-        (g.id = 1 AND (u.gender = 1 OR u.gender = '1' OR LOWER(CAST(u.gender AS CHAR)) = 'male')) OR
-        (g.id = 2 AND (u.gender = 2 OR u.gender = '2' OR LOWER(CAST(u.gender AS CHAR)) = 'female')) OR
-        (g.id = 3 AND (u.gender = 3 OR u.gender = '3' OR LOWER(CAST(u.gender AS CHAR)) IN ('other', 'others')))
-      )
+      LEFT JOIN gender_master g ON g.id = u.gender
       LEFT JOIN blood_group_master bg ON bg.id = u.blood_group
       WHERE u.school_id = ?
     `;
@@ -98,12 +89,7 @@ class StaffModel {
         u.email,
         u.phone,
         u.gender,
-        CASE 
-          WHEN u.gender = 1 OR u.gender = '1' OR LOWER(CAST(u.gender AS CHAR)) = 'male' THEN 'Male'
-          WHEN u.gender = 2 OR u.gender = '2' OR LOWER(CAST(u.gender AS CHAR)) = 'female' THEN 'Female'
-          WHEN u.gender = 3 OR u.gender = '3' OR LOWER(CAST(u.gender AS CHAR)) IN ('other', 'others') THEN 'Others'
-          ELSE g.gender
-        END AS gender_name,
+        g.gender AS gender_name,
         u.blood_group,
         bg.blood_group AS blood_group_name,
         u.picture,
@@ -124,11 +110,7 @@ class StaffModel {
       LEFT JOIN countries c ON u.country_id = c.id
       LEFT JOIN states s ON u.state_id = s.id_state AND s.country_id = u.country_id
       LEFT JOIN cities ci ON u.city = ci.id AND ci.state_id = u.state_id
-      LEFT JOIN gender_master g ON (
-        (g.id = 1 AND (u.gender = 1 OR u.gender = '1' OR LOWER(CAST(u.gender AS CHAR)) = 'male')) OR
-        (g.id = 2 AND (u.gender = 2 OR u.gender = '2' OR LOWER(CAST(u.gender AS CHAR)) = 'female')) OR
-        (g.id = 3 AND (u.gender = 3 OR u.gender = '3' OR LOWER(CAST(u.gender AS CHAR)) IN ('other', 'others')))
-      )
+      LEFT JOIN gender_master g ON g.id = u.gender
       LEFT JOIN blood_group_master bg ON bg.id = u.blood_group
       WHERE u.id = ? AND u.school_id = ? ${branchId ? ' AND (u.branch_id = ? OR u.branch_id IS NULL)' : ''}
       LIMIT 1

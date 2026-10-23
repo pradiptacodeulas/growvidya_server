@@ -43,7 +43,7 @@ class TeacherModel {
       SELECT t.*, 
         bm.branch_name, bm.branch_code,
         c.class_name, sec.section_name, 
-        COALESCE(g.gender, IF(t.gender = '2' OR t.gender = 2, 'Female', IF(t.gender = '3' OR t.gender = 3, 'Others', 'Male'))) AS gender_name,
+        g.gender AS gender_name,
         (
           SELECT GROUP_CONCAT(DISTINCT cm.class_name ORDER BY cm.id ASC SEPARATOR ', ')
           FROM teacher_class_assign tca
@@ -67,11 +67,7 @@ class TeacherModel {
       LEFT JOIN class_master c ON t.class = c.id
       LEFT JOIN section_master sec ON t.section = sec.id
       LEFT JOIN subject_master sub ON t.subject = sub.id
-      LEFT JOIN gender_master g ON (
-        (g.id = 1 AND (t.gender = '1' OR t.gender = 1 OR LOWER(CAST(t.gender AS CHAR)) = 'male')) OR
-        (g.id = 2 AND (t.gender = '2' OR t.gender = 2 OR LOWER(CAST(t.gender AS CHAR)) = 'female')) OR
-        (g.id = 3 AND (t.gender = '3' OR t.gender = 3 OR LOWER(CAST(t.gender AS CHAR)) IN ('other', 'others')))
-      )
+      LEFT JOIN gender_master g ON g.id = t.gender
       WHERE t.school_id = ? AND t.status != 4
     `;
 
@@ -279,12 +275,7 @@ class TeacherModel {
     }
 
     const teachers = (rows || []).map((t) => {
-      const rawGender = t.gender;
-      const genderId = (rawGender === '2' || rawGender === 2 || String(rawGender).toLowerCase().includes('fem'))
-        ? 2
-        : (rawGender === '3' || rawGender === 3 || String(rawGender).toLowerCase().includes('oth'))
-        ? 3
-        : 1;
+      const genderId = t.gender !== null && t.gender !== undefined ? Number(t.gender) || t.gender : null;
 
       const myAssignments = classAssignMap[t.id] || [];
       const distinctClasses = [...new Set(myAssignments.map((a) => a.class_name).filter(Boolean))];
@@ -296,7 +287,7 @@ class TeacherModel {
         ...t,
         gender_id: genderId,
         gender: genderId,
-        gender_name: genderId === 2 ? 'Female' : genderId === 3 ? 'Others' : 'Male',
+        gender_name: t.gender_name || null,
         class_assignments: myAssignments,
         assigned_classes: assignedClassesStr,
         assigned_classes_list: distinctClasses.length > 0 ? distinctClasses : (t.class_name ? [t.class_name] : []),
@@ -321,7 +312,7 @@ class TeacherModel {
           WHERE tca.teacher_id = t.id AND tca.school_id = t.school_id AND tca.status != 4 AND sm.status != 4
           ORDER BY tca.id ASC LIMIT 1
         )) AS subject_name,
-        COALESCE(g.gender, IF(t.gender = '2' OR t.gender = 2, 'Female', IF(t.gender = '3' OR t.gender = 3, 'Others', 'Male'))) AS gender_name,
+        g.gender AS gender_name,
         COALESCE(bg.blood_group, 'N/A') AS blood_group_name,
         COALESCE(mm.marital_status, IF(t.marital_status = '1' OR t.marital_status = 1, 'Single', IF(t.marital_status = '2' OR t.marital_status = 2, 'Married', 'N/A'))) AS marital_status_name
        FROM teacher_master t
@@ -329,11 +320,7 @@ class TeacherModel {
        LEFT JOIN class_master c ON t.class = c.id
        LEFT JOIN section_master sec ON t.section = sec.id
        LEFT JOIN subject_master sub ON t.subject = sub.id
-       LEFT JOIN gender_master g ON (
-         (g.id = 1 AND (t.gender = '1' OR t.gender = 1 OR LOWER(CAST(t.gender AS CHAR)) = 'male')) OR
-         (g.id = 2 AND (t.gender = '2' OR t.gender = 2 OR LOWER(CAST(t.gender AS CHAR)) = 'female')) OR
-         (g.id = 3 AND (t.gender = '3' OR t.gender = 3 OR LOWER(CAST(t.gender AS CHAR)) IN ('other', 'others')))
-       )
+       LEFT JOIN gender_master g ON g.id = t.gender
         LEFT JOIN blood_group_master bg ON (
           t.blood_group = bg.id OR
           CAST(t.blood_group AS CHAR) = CAST(bg.id AS CHAR) OR
@@ -351,15 +338,10 @@ class TeacherModel {
     const teacher = rows[0] || null;
     if (!teacher) return null;
 
-    const rawGender = teacher.gender;
-    const genderId = (rawGender === '2' || rawGender === 2 || String(rawGender).toLowerCase().includes('fem'))
-      ? 2
-      : (rawGender === '3' || rawGender === 3 || String(rawGender).toLowerCase().includes('oth'))
-      ? 3
-      : 1;
+    const genderId = teacher.gender !== null && teacher.gender !== undefined ? Number(teacher.gender) || teacher.gender : null;
     teacher.gender_id = genderId;
     teacher.gender = genderId;
-    teacher.gender_name = genderId === 2 ? 'Female' : genderId === 3 ? 'Others' : 'Male';
+    teacher.gender_name = teacher.gender_name || null;
 
     // Fetch Address Details
     try {
@@ -1250,14 +1232,9 @@ class TeacherModel {
     const isInactive = newStatus === 2 || newStatus === 0;
 
     const rawGender = data.gender !== undefined ? data.gender : existing.gender;
-    let normalizedGender = 1;
-    if (rawGender === '2' || rawGender === 2 || String(rawGender).toLowerCase().includes('fem')) {
-      normalizedGender = 2;
-    } else if (rawGender === '3' || rawGender === 3 || String(rawGender).toLowerCase().includes('oth')) {
-      normalizedGender = 3;
-    } else {
-      normalizedGender = 1;
-    }
+    const normalizedGender = rawGender !== null && rawGender !== undefined && String(rawGender).trim() !== ''
+      ? Number(rawGender) || rawGender
+      : null;
 
     const academic_year = data.academic_year !== undefined ? data.academic_year : existing.academic_year;
     const teacher_id = data.teacher_id !== undefined ? data.teacher_id : existing.teacher_id;

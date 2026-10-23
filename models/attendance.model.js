@@ -154,11 +154,7 @@ class AttendanceModel {
       INNER JOIN student_attendance sa ON (${joinConditions.join(' AND ')})
       LEFT JOIN class_master cm ON s.class = cm.id
       LEFT JOIN section_master sm ON s.section = sm.id
-      LEFT JOIN gender_master g ON (
-        (g.id = 1 AND (s.gender = 1 OR s.gender = '1' OR LOWER(CAST(s.gender AS CHAR)) = 'male')) OR
-        (g.id = 2 AND (s.gender = 2 OR s.gender = '2' OR LOWER(CAST(s.gender AS CHAR)) = 'female')) OR
-        (g.id = 3 AND (s.gender = 3 OR s.gender = '3' OR LOWER(CAST(s.gender AS CHAR)) IN ('other', 'others')))
-      )
+      LEFT JOIN gender_master g ON g.id = s.gender
       WHERE ${whereConditions.join(' AND ')}
     `;
 
@@ -177,7 +173,7 @@ class AttendanceModel {
         s.last_name,
         CONCAT(IFNULL(s.first_name, ''), ' ', IFNULL(s.last_name, '')) AS full_name,
         s.gender,
-        COALESCE(g.gender, IF(s.gender = '1', 'Male', IF(s.gender = '2', 'Female', 'Others'))) AS gender_name,
+        g.gender AS gender_name,
         s.picture,
         s.class AS class_id,
         cm.class_name,
@@ -265,11 +261,7 @@ class AttendanceModel {
       FROM student_master s
       LEFT JOIN class_master cm ON s.class = cm.id
       LEFT JOIN section_master sm ON s.section = sm.id
-      LEFT JOIN gender_master g ON (
-        (g.id = 1 AND (s.gender = 1 OR s.gender = '1' OR LOWER(CAST(s.gender AS CHAR)) = 'male')) OR
-        (g.id = 2 AND (s.gender = 2 OR s.gender = '2' OR LOWER(CAST(s.gender AS CHAR)) = 'female')) OR
-        (g.id = 3 AND (s.gender = 3 OR s.gender = '3' OR LOWER(CAST(s.gender AS CHAR)) IN ('other', 'others')))
-      )
+      LEFT JOIN gender_master g ON g.id = s.gender
       LEFT JOIN student_attendance sa ON (${joinConditions.join(' AND ')})
       WHERE ${whereConditions.join(' AND ')}
     `;
@@ -288,7 +280,7 @@ class AttendanceModel {
         s.first_name,
         s.last_name,
         s.gender,
-        COALESCE(g.gender, IF(s.gender = '1', 'Male', IF(s.gender = '2', 'Female', 'Others'))) AS gender_name,
+        g.gender AS gender_name,
         s.picture,
         s.class AS class_id,
         cm.class_name,
@@ -442,11 +434,7 @@ class AttendanceModel {
     const baseFrom = `
       FROM teacher_master t
       INNER JOIN teacher_attendance ta ON (${joinConditions.join(' AND ')})
-      LEFT JOIN gender_master g ON (
-        (g.id = 1 AND (t.gender = 1 OR t.gender = '1' OR LOWER(CAST(t.gender AS CHAR)) = 'male')) OR
-        (g.id = 2 AND (t.gender = 2 OR t.gender = '2' OR LOWER(CAST(t.gender AS CHAR)) = 'female')) OR
-        (g.id = 3 AND (t.gender = 3 OR t.gender = 3 OR LOWER(CAST(t.gender AS CHAR)) IN ('other', 'others')))
-      )
+      LEFT JOIN gender_master g ON g.id = t.gender
       WHERE ${whereConditions.join(' AND ')}
     `;
 
@@ -465,7 +453,7 @@ class AttendanceModel {
         t.email_address AS email,
         t.primary_contact_number AS phone_number,
         t.gender,
-        COALESCE(g.gender, IF(t.gender = '1', 'Male', IF(t.gender = '2', 'Female', 'Others'))) AS gender_name,
+        g.gender AS gender_name,
         t.picture,
         ta.id AS attendance_id,
         ta.attendance,
@@ -535,11 +523,7 @@ class AttendanceModel {
 
     const baseFrom = `
       FROM teacher_master t
-      LEFT JOIN gender_master g ON (
-        (g.id = 1 AND (t.gender = 1 OR t.gender = '1' OR LOWER(CAST(t.gender AS CHAR)) = 'male')) OR
-        (g.id = 2 AND (t.gender = 2 OR t.gender = '2' OR LOWER(CAST(t.gender AS CHAR)) = 'female')) OR
-        (g.id = 3 AND (t.gender = 3 OR t.gender = 3 OR LOWER(CAST(t.gender AS CHAR)) IN ('other', 'others')))
-      )
+      LEFT JOIN gender_master g ON g.id = t.gender
       LEFT JOIN class_master cm ON t.class = cm.id
       LEFT JOIN section_master sm ON t.section = sm.id
       LEFT JOIN teacher_attendance ta ON (${joinConditions.join(' AND ')})
@@ -561,7 +545,7 @@ class AttendanceModel {
         t.email_address AS email,
         t.primary_contact_number AS phone_number,
         t.gender,
-        COALESCE(g.gender, IF(t.gender = '1', 'Male', IF(t.gender = '2', 'Female', 'Others'))) AS gender_name,
+        g.gender AS gender_name,
         t.picture,
         cm.class_name,
         sm.section_name,
@@ -671,11 +655,7 @@ class AttendanceModel {
       FROM user_master u
       INNER JOIN user_master_attendance uma ON (${joinConditions.join(' AND ')})
       LEFT JOIN role_master r ON u.role = r.id
-      LEFT JOIN gender_master g ON (
-        (g.id = 1 AND (u.gender = 1 OR u.gender = '1' OR LOWER(CAST(u.gender AS CHAR)) = 'male')) OR
-        (g.id = 2 AND (u.gender = 2 OR u.gender = '2' OR LOWER(CAST(u.gender AS CHAR)) = 'female')) OR
-        (g.id = 3 AND (u.gender = 3 OR u.gender = 3 OR LOWER(CAST(u.gender AS CHAR)) IN ('other', 'others')))
-      )
+      LEFT JOIN gender_master g ON g.id = u.gender
       WHERE ${whereConditions.join(' AND ')}
     `;
 
@@ -693,7 +673,7 @@ class AttendanceModel {
         u.email,
         u.phone,
         u.gender,
-        COALESCE(g.gender, IF(u.gender = '1', 'Male', IF(u.gender = '2', 'Female', 'Others'))) AS gender_name,
+        g.gender AS gender_name,
         u.picture,
         CASE 
           WHEN u.admin_type = 1 THEN 'Super Admin'
@@ -768,11 +748,7 @@ class AttendanceModel {
     const baseFrom = `
       FROM user_master u
       LEFT JOIN role_master r ON u.role = r.id
-      LEFT JOIN gender_master g ON (
-        (g.id = 1 AND (u.gender = 1 OR u.gender = '1' OR LOWER(CAST(u.gender AS CHAR)) = 'male')) OR
-        (g.id = 2 AND (u.gender = 2 OR u.gender = '2' OR LOWER(CAST(u.gender AS CHAR)) = 'female')) OR
-        (g.id = 3 AND (u.gender = 3 OR u.gender = '3' OR LOWER(CAST(u.gender AS CHAR)) IN ('other', 'others')))
-      )
+      LEFT JOIN gender_master g ON g.id = u.gender
       LEFT JOIN user_master_attendance uma ON (${joinConditions.join(' AND ')})
       WHERE ${whereConditions.join(' AND ')}
     `;
@@ -791,7 +767,7 @@ class AttendanceModel {
         u.email,
         u.phone,
         u.gender,
-        COALESCE(g.gender, IF(u.gender = '1', 'Male', IF(u.gender = '2', 'Female', 'Others'))) AS gender_name,
+        g.gender AS gender_name,
         u.picture,
         CASE 
           WHEN u.admin_type = 1 THEN 'Super Admin'

@@ -168,7 +168,7 @@ class ReportModel {
         s.picture,
         COALESCE(s.primary_contact_number, '') AS phone,
         COALESCE(s.email_address, '') AS email,
-        COALESCE(g.gender, IF(s.gender = '1', 'Male', IF(s.gender = '2', 'Female', s.gender)), 'Male') AS gender,
+        g.gender AS gender,
         s.status,
         COALESCE(scl.roll_number, s.roll_number, '') AS roll_number,
         COALESCE(scl.academic_year, s.academic_year) AS academic_year_id,
@@ -188,7 +188,7 @@ class ReportModel {
       LEFT JOIN shift_master sh ON cm.shift_id = sh.id
       LEFT JOIN section_master sec ON (sec.id = COALESCE(scl.section_id, s.section) OR sec.section_name = COALESCE(scl.section_id, s.section))
       LEFT JOIN academic_year_master ay ON (ay.id = COALESCE(scl.academic_year, s.academic_year) OR ay.academic_year = COALESCE(scl.academic_year, s.academic_year))
-      LEFT JOIN gender_master g ON (s.gender != 0 AND (s.gender = g.id OR CAST(s.gender AS CHAR) = g.gender))
+      LEFT JOIN gender_master g ON g.id = s.gender
       ${whereClause}
       GROUP BY s.id
       ORDER BY COALESCE(scl.roll_number, s.roll_number) ASC, s.first_name ASC
@@ -329,7 +329,7 @@ class ReportModel {
         s.picture,
         COALESCE(s.primary_contact_number, '') AS phone,
         COALESCE(s.email_address, '') AS email,
-        COALESCE(g.gender, IF(s.gender = '1', 'Male', IF(s.gender = '2', 'Female', s.gender)), 'Male') AS gender,
+        g.gender AS gender,
         s.status,
         COALESCE(scl.roll_number, s.roll_number, '') AS roll_number,
         COALESCE(scl.academic_year, s.academic_year) AS academic_year_id,
@@ -350,7 +350,7 @@ class ReportModel {
       LEFT JOIN shift_master sh ON cm.shift_id = sh.id
       LEFT JOIN section_master sec ON (sec.id = COALESCE(scl.section_id, s.section) OR sec.section_name = COALESCE(scl.section_id, s.section))
       LEFT JOIN academic_year_master ay ON (ay.id = COALESCE(scl.academic_year, s.academic_year) OR ay.academic_year = COALESCE(scl.academic_year, s.academic_year))
-      LEFT JOIN gender_master g ON (s.gender != 0 AND (s.gender = g.id OR CAST(s.gender AS CHAR) = g.gender))
+      LEFT JOIN gender_master g ON g.id = s.gender
       LEFT JOIN student_to_parent stp ON s.id = stp.student_id
       LEFT JOIN parent_master p ON (stp.father_id = p.id OR stp.guardian_id = p.id)
       ${whereClause}
