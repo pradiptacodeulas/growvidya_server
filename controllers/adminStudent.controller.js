@@ -82,7 +82,7 @@ class AdminStudentController {
       if (!schoolId) {
         return ApiResponse.error(res, 'School context required. Please log in again.', null, 401);
       }
-      const branchId = req.branchId || req.query.branch_id || req.query.branchId || req.body?.branch_id || null;
+      const branchId = req.query.branch_id || req.query.branchId || req.body?.branch_id || req.branchId || null;
       const email = req.query.email || req.body.email;
       const studentId = req.query.studentId || req.query.id || null;
 
@@ -108,11 +108,43 @@ class AdminStudentController {
     }
   }
 
+  static async checkAdmissionNumber(req, res, next) {
+    try {
+      const schoolId = req.user?.schoolId || req.user?.school_id;
+      if (!schoolId) {
+        return ApiResponse.error(res, 'School context required. Please log in again.', null, 401);
+      }
+      const branchId = req.query.branch_id || req.query.branchId || req.body?.branch_id || req.branchId || null;
+      const admissionNumber = req.query.admission_number || req.query.admissionNumber || req.body?.admission_number;
+      const studentId = req.query.studentId || req.query.id || null;
+
+      if (!admissionNumber || !String(admissionNumber).trim()) {
+        return ApiResponse.success(res, 'Admission number query is empty.', { isDuplicate: false });
+      }
+
+      const existing = await StudentModel.checkDuplicateAdmissionNumber(schoolId, admissionNumber, studentId, branchId);
+      if (existing) {
+        return ApiResponse.success(res, 'Admission number is already registered.', {
+          isDuplicate: true,
+          student: {
+            id: existing.id,
+            name: `${existing.first_name || ''} ${existing.last_name || ''}`.trim(),
+            admission_number: existing.admission_number,
+          },
+        });
+      }
+
+      return ApiResponse.success(res, 'Admission number is available.', { isDuplicate: false });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   static async createStudent(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
       const branchId = req.body.branch_id || req.body.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null;
-      const { first_name, class_id, email_address } = req.body || {};
+      const { first_name, class_id, email_address, admission_number } = req.body || {};
 
       if (!first_name || !class_id) {
         return ApiResponse.error(res, 'First name and Class selection are required.', null, 400);
@@ -130,6 +162,14 @@ class AdminStudentController {
           },
           403
         );
+      }
+
+      // Check duplicate admission number within school + branch scope
+      if (admission_number && String(admission_number).trim()) {
+        const existingAdm = await StudentModel.checkDuplicateAdmissionNumber(schoolId, admission_number, null, branchId);
+        if (existingAdm) {
+          return ApiResponse.error(res, 'A student with this admission number already exists.', null, 400);
+        }
       }
 
       // Check duplicate email within branch scope
@@ -167,12 +207,29 @@ class AdminStudentController {
   static async updateStudent(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
-      const studentId = req.params.id;
+      let studentId = req.params.id;
+      if (typeof studentId === 'string' && !/^\d+$/.test(studentId)) {
+        try {
+          const decoded = Buffer.from(studentId, 'base64').toString('utf-8');
+          if (/^\d+$/.test(decoded)) {
+            studentId = decoded;
+          }
+        } catch (e) {}
+      }
+
       const branchId = req.body.branch_id || req.body.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null;
-      const { first_name, class_id, email_address } = req.body || {};
+      const { first_name, class_id, email_address, admission_number } = req.body || {};
 
       if (!first_name || !class_id) {
         return ApiResponse.error(res, 'First name and Class selection are required.', null, 400);
+      }
+
+      // Check duplicate admission number within school + branch scope (excluding current student)
+      if (admission_number && String(admission_number).trim()) {
+        const existingAdm = await StudentModel.checkDuplicateAdmissionNumber(schoolId, admission_number, studentId, branchId);
+        if (existingAdm) {
+          return ApiResponse.error(res, 'A student with this admission number already exists.', null, 400);
+        }
       }
 
       // Check duplicate email within branch scope (excluding current student)

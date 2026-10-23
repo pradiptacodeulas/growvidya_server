@@ -29,9 +29,9 @@ class PayrollModel {
         END AS type_name,
         bm.employee_id,
         CASE
-          WHEN bm.user_type = 2 THEN COALESCE(NULLIF(t.teacher_id, ''), CONCAT('TCH-', t.id))
-          WHEN bm.user_type = 3 THEN CONCAT('DRV-', op.id)
-          ELSE CONCAT('STF-', u.id)
+          WHEN bm.user_type = 2 THEN COALESCE(NULLIF(t.teacher_id, ''), CAST(t.id AS CHAR))
+          WHEN bm.user_type = 3 THEN CAST(op.id AS CHAR)
+          ELSE CAST(u.id AS CHAR)
         END AS employee_code,
         CASE 
           WHEN bm.user_type = 2 THEN TRIM(CONCAT(IFNULL(t.first_name, ''), ' ', IFNULL(t.last_name, '')))
@@ -823,7 +823,7 @@ class PayrollModel {
            br.branch_code,
            2 AS user_type,
            'Teacher' AS type_name,
-           COALESCE(NULLIF(t.teacher_id, ''), CONCAT('TCH-', t.id)) AS employee_code,
+           COALESCE(NULLIF(t.teacher_id, ''), CAST(t.id AS CHAR)) AS employee_code,
            TRIM(CONCAT(IFNULL(t.first_name, ''), ' ', IFNULL(t.last_name, ''))) AS name,
            t.email_address AS email,
            t.primary_contact_number AS phone,
@@ -883,7 +883,7 @@ class PayrollModel {
            br.branch_code,
            3 AS user_type,
            'Driver' AS type_name,
-           CONCAT('DRV-', op.id) AS employee_code,
+           CAST(op.id AS CHAR) AS employee_code,
            TRIM(CONCAT(IFNULL(op.first_name, ''), ' ', IFNULL(op.last_name, ''))) AS name,
            op.email,
            op.phone,
@@ -938,7 +938,7 @@ class PayrollModel {
            br.branch_code,
            1 AS user_type,
            'Staff' AS type_name,
-           CONCAT('STF-', u.id) AS employee_code,
+           CAST(u.id AS CHAR) AS employee_code,
            TRIM(CONCAT(IFNULL(u.first_name, ''), ' ', IFNULL(u.last_name, ''))) AS name,
            u.email,
            u.phone,

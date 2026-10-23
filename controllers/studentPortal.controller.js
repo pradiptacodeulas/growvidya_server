@@ -290,11 +290,19 @@ class StudentPortalController {
       const studentId = StudentPortalController.getStudentId(req);
       const schoolId = StudentPortalController.getSchoolId(req);
 
+      const {
+        primary_contact_number,
+        email_address,
+        blood_group,
+        mother_tongue,
+        ...allowedUpdates
+      } = req.body || {};
+
       const updated = await ParentModel.updateChildProfile(
         studentId,
         schoolId,
         null,
-        req.body
+        allowedUpdates
       );
 
       return ApiResponse.success(res, 'Profile updated successfully.', updated);
@@ -330,6 +338,7 @@ class StudentPortalController {
       const student = await ParentModel.getChildFullProfile(studentId, schoolId);
       const classId = student ? student.class : null;
       const sectionId = student ? student.section : null;
+      const branchId = student ? student.branch_id : null;
 
       let data = await ParentModel.getChildTimetable(studentId, schoolId, classId, sectionId);
       if ((!data || data.length === 0) && classId && sectionId) {
@@ -343,7 +352,18 @@ class StudentPortalController {
         end_time: cls.end_time ? String(cls.end_time).slice(0, 5) : '',
       }));
 
-      return ApiResponse.success(res, 'Student timetable fetched successfully.', formatted);
+      const AcademicModel = require('../models/academic.model');
+      let rawDays = await AcademicModel.getDays(schoolId, branchId);
+      let days = (rawDays || []).filter((d) => Number(d.status) === 1);
+      if (days.length === 0 && branchId) {
+        const schoolDays = await AcademicModel.getDays(schoolId, null);
+        days = (schoolDays || []).filter((d) => Number(d.status) === 1);
+      }
+
+      return ApiResponse.success(res, 'Student timetable fetched successfully.', {
+        routines: formatted,
+        days,
+      });
     } catch (error) {
       next(error);
     }

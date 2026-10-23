@@ -28,6 +28,7 @@ router.get('/subjects', TeacherAcademicController.getSubjects);
 router.get('/subjects/:id', TeacherAcademicController.getSubjectById);
 
 // Routine & Timetable
+router.get('/days', TeacherAcademicController.getDays);
 router.get('/routine', TeacherAcademicController.getRoutine);
 
 // Syllabus

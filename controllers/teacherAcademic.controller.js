@@ -140,7 +140,23 @@ class TeacherAcademicController {
     }
   }
 
-  // ==================== ROUTINE & TIMETABLE ====================
+  // ==================== DAYS & ROUTINE / TIMETABLE ====================
+  static async getDays(req, res, next) {
+    try {
+      const schoolId = TeacherAcademicController.getSchoolId(req);
+      const branchId = await TeacherAcademicController.resolveTeacherBranchId(req, schoolId);
+      let days = await AcademicModel.getDays(schoolId, branchId);
+      let activeDays = (days || []).filter((d) => Number(d.status) === 1);
+      if (activeDays.length === 0 && branchId) {
+        const schoolDays = await AcademicModel.getDays(schoolId, null);
+        activeDays = (schoolDays || []).filter((d) => Number(d.status) === 1);
+      }
+      return ApiResponse.success(res, 'Active days fetched successfully', activeDays);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   static async getRoutine(req, res, next) {
     try {
       const schoolId = TeacherAcademicController.getSchoolId(req);
@@ -148,7 +164,7 @@ class TeacherAcademicController {
       const targetClassId = req.query.class_id || req.query.classId;
       const targetSectionId = req.query.section_id || req.query.sectionId;
       const { day, academic_year_id } = req.query;
-      const branchId = req.branchId || req.user?.branch_id || null;
+      const branchId = await TeacherAcademicController.resolveTeacherBranchId(req, schoolId);
 
       // When a specific class or section is selected, fetch the entire class routine (all subjects and teachers)
       // When no class is selected (default), fetch the teacher's personal schedule

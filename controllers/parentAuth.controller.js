@@ -355,8 +355,8 @@ class ParentAuthController {
       const updatedParent = await ParentModel.updateParentProfile(parentId, schoolId, {
         first_name,
         last_name,
-        phone,
-        email,
+        phone: existingParent.phone,
+        email: existingParent.email,
         occupation,
         picture,
         password: hashedPassword,

@@ -615,6 +615,8 @@ class ParentModel {
     let sql = `
       SELECT 
         s.*,
+        s.blood_group AS blood_group_id,
+        s.mother_tongue AS mother_tongue_id,
         s.status AS student_status,
         CONCAT(s.first_name, ' ', s.last_name) AS full_name,
         cm.class_name,
@@ -623,6 +625,13 @@ class ParentModel {
         COALESCE(bg.blood_group, s.blood_group) AS blood_group_name,
         COALESCE(r.religion, s.religion) AS religion_name,
         COALESCE(c.category, s.category) AS category_name,
+        COALESCE(hm.house_name, s.house) AS house_name,
+        COALESCE(
+          mtm.mother_tongue,
+          IF(s.mother_tongue = '1' OR s.mother_tongue = 1, 'Bengali',
+            IF(s.mother_tongue = '2' OR s.mother_tongue = 2, 'English', s.mother_tongue)
+          )
+        ) AS mother_tongue_name,
         sch.school_name,
         sch.school_logo
       FROM student_master s
@@ -630,8 +639,10 @@ class ParentModel {
       LEFT JOIN section_master sec ON s.section = sec.id
       LEFT JOIN gender_master g ON (s.gender != 0 AND (s.gender = g.id OR CAST(s.gender AS CHAR) = g.gender))
       LEFT JOIN blood_group_master bg ON (s.blood_group = bg.id OR s.blood_group = bg.blood_group)
-      LEFT JOIN religion_master r ON s.religion = r.id
-      LEFT JOIN student_category_master c ON s.category = c.id
+      LEFT JOIN religion_master r ON (s.religion = r.id OR s.religion = r.religion)
+      LEFT JOIN student_category_master c ON (s.category = c.id OR s.category = c.category)
+      LEFT JOIN house_master hm ON (s.house = hm.id OR s.house = hm.house_name)
+      LEFT JOIN mother_tongue_master mtm ON (s.mother_tongue = mtm.id OR s.mother_tongue = mtm.mother_tongue)
       LEFT JOIN school_master sch ON s.school_id = sch.id
       WHERE s.id = ? AND (s.school_id = ? OR ? IS NULL) AND s.status != 4
     `;
@@ -645,6 +656,12 @@ class ParentModel {
     const [rows] = await pool.query(sql, params);
     if (!rows || rows.length === 0) return null;
     const student = rows[0];
+    if (student.blood_group_name) {
+      student.blood_group = student.blood_group_name;
+    }
+    if (student.mother_tongue_name) {
+      student.mother_tongue = student.mother_tongue_name;
+    }
 
     // Fetch Student Address
     try {
@@ -783,7 +800,7 @@ class ParentModel {
         inv.items = items || [];
       }
 
-      // 2. Paid Fees Receipts (including pending verification)
+      // 2. Fee Payments History (including verified, pending verification, and rejected)
       const [paidRows] = await pool.query(
         `SELECT 
           fp.*,
@@ -797,13 +814,27 @@ class ParentModel {
          LEFT JOIN fee_structures fs ON fi.fee_structure_id = fs.id
          WHERE fp.student_id = ? 
            AND fp.school_id = ? 
-           AND (fp.status IN ('success', 'Success', 'Pending Verification', 'pending', 'Verified'))
+           AND (fp.status IN ('success', 'Success', 'Pending Verification', 'pending', 'Verified', 'Rejected', 'rejected'))
            AND (fi.id IS NULL OR (fi.status != '4' AND (fi.fee_structure_id IS NULL OR fs.status != 4 OR fs.status IS NULL)))
          ORDER BY fp.payment_date DESC, fp.id DESC`,
         [studentId, schoolId]
       );
 
+      const extractRejectionReason = (notes) => {
+        if (!notes) return null;
+        const bracketMatch = String(notes).match(/\[Rejected by Admin(?::\s*([^\]]+))?\]/i);
+        if (bracketMatch) return (bracketMatch[1] || 'Rejected by Admin').trim();
+        const plainMatch = String(notes).match(/Rejected by Admin(?::\s*(.+))?$/i);
+        if (plainMatch) return (plainMatch[1] || 'Rejected by Admin').trim();
+        return null;
+      };
+
+      const latestPaymentByInvoice = {};
       for (const pay of paidRows || []) {
+        pay.rejection_reason = extractRejectionReason(pay.notes);
+        if (pay.invoice_id && !latestPaymentByInvoice[pay.invoice_id]) {
+          latestPaymentByInvoice[pay.invoice_id] = pay;
+        }
         if (pay.invoice_id) {
           const [items] = await pool.query(
             `SELECT id, invoice_id, fee_component_id, component_name, amount 
@@ -814,6 +845,19 @@ class ParentModel {
           pay.items = items || [];
         } else {
           pay.items = [];
+        }
+      }
+
+      // Attach latest payment status / rejection details to each invoice
+      for (const inv of dueRows || []) {
+        const latestPay = latestPaymentByInvoice[inv.id];
+        if (latestPay) {
+          inv.latest_payment_status = latestPay.status;
+          inv.latest_payment_id = latestPay.id;
+          if (String(latestPay.status || '').toLowerCase() === 'rejected') {
+            inv.latest_rejection_reason =
+              latestPay.rejection_reason || latestPay.notes || 'Payment proof was rejected by Admin.';
+          }
         }
       }
 
@@ -842,7 +886,10 @@ class ParentModel {
       }
 
       (paidRows || []).forEach((p) => {
-        totalPaid += parseFloat(p.amount_paid || p.amount || 0);
+        const st = String(p.status || '').toLowerCase();
+        if (st === 'success' || st === 'verified') {
+          totalPaid += parseFloat(p.amount_paid || p.amount || 0);
+        }
       });
 
       const activeDueFees = (dueRows || []).filter((d) => d.status !== 'paid' && d.status !== 'Paid' && parseFloat(d.due_amount || 0) > 0);
@@ -850,9 +897,11 @@ class ParentModel {
       return {
         invoices: dueRows || [],
         dueFees: activeDueFees,
+        dueInvoices: activeDueFees,
         due_this_month: activeDueFees,
         student_due_fees: activeDueFees,
         paidFees: paidRows || [],
+        paidReceipts: paidRows || [],
         bank_details: bankDetails,
         summary: {
           totalDue: totalOutstandingDue,
@@ -870,7 +919,7 @@ class ParentModel {
       };
     } catch (e) {
       console.error('Error fetching child fees:', e);
-      return { invoices: [], dueFees: [], paidFees: [], bank_details: null, summary: { totalDue: 0, totalOutstandingDue: 0, totalDueThisMonth: 0, totalPaid: 0, totalAmount: 0 }, metrics: { totalPayable: 0, totalPaid: 0, totalOutstanding: 0, totalDueThisMonth: 0 } };
+      return { invoices: [], dueFees: [], dueInvoices: [], paidFees: [], paidReceipts: [], bank_details: null, summary: { totalDue: 0, totalOutstandingDue: 0, totalDueThisMonth: 0, totalPaid: 0, totalAmount: 0 }, metrics: { totalPayable: 0, totalPaid: 0, totalOutstanding: 0, totalDueThisMonth: 0 } };
     }
   }
 
@@ -1436,8 +1485,16 @@ class ParentModel {
         params.push(formattedDob || null);
       }
       if (blood_group !== undefined) {
+        let bgVal = blood_group || null;
+        if (bgVal && isNaN(Number(bgVal))) {
+          const [bgRows] = await pool.query(
+            `SELECT id FROM blood_group_master WHERE LOWER(TRIM(blood_group)) = LOWER(TRIM(?)) LIMIT 1`,
+            [String(bgVal)]
+          );
+          if (bgRows && bgRows[0]?.id) bgVal = bgRows[0].id;
+        }
         updates.push('blood_group = ?');
-        params.push(blood_group || null);
+        params.push(bgVal);
       }
       if (primary_contact_number !== undefined) {
         updates.push('primary_contact_number = ?');
@@ -1448,20 +1505,44 @@ class ParentModel {
         params.push(email_address || null);
       }
       if (religion !== undefined) {
+        let relVal = religion || null;
+        if (relVal && isNaN(Number(relVal))) {
+          const [rRows] = await pool.query(
+            `SELECT id FROM religion_master WHERE school_id = ? AND LOWER(TRIM(religion)) = LOWER(TRIM(?)) AND status != 4 LIMIT 1`,
+            [schoolId, String(relVal)]
+          );
+          if (rRows && rRows[0]?.id) relVal = rRows[0].id;
+        }
         updates.push('religion = ?');
-        params.push(religion || null);
+        params.push(relVal);
       }
       if (caste !== undefined) {
         updates.push('caste = ?');
         params.push(caste || null);
       }
       if (category !== undefined) {
+        let catVal = category || null;
+        if (catVal && isNaN(Number(catVal))) {
+          const [cRows] = await pool.query(
+            `SELECT id FROM student_category_master WHERE school_id = ? AND LOWER(TRIM(category)) = LOWER(TRIM(?)) AND status != 4 LIMIT 1`,
+            [schoolId, String(catVal)]
+          );
+          if (cRows && cRows[0]?.id) catVal = cRows[0].id;
+        }
         updates.push('category = ?');
-        params.push(category || null);
+        params.push(catVal);
       }
       if (mother_tongue !== undefined) {
+        let mtVal = mother_tongue || null;
+        if (mtVal && isNaN(Number(mtVal))) {
+          const [mtRows] = await pool.query(
+            `SELECT id FROM mother_tongue_master WHERE school_id = ? AND LOWER(TRIM(mother_tongue)) = LOWER(TRIM(?)) AND status != 4 LIMIT 1`,
+            [schoolId, String(mtVal)]
+          );
+          if (mtRows && mtRows[0]?.id) mtVal = mtRows[0].id;
+        }
         updates.push('mother_tongue = ?');
-        params.push(mother_tongue || null);
+        params.push(mtVal);
       }
       if (language_known !== undefined || languages_known !== undefined) {
         updates.push('language_known = ?');

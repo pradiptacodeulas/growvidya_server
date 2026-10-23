@@ -98,26 +98,6 @@ class ParentChildController {
   }
 
   /**
-   * Get Active Child Timetable
-   */
-  static async getTimetable(req, res, next) {
-    try {
-      const studentId = await ParentChildController.getActiveStudentId(req);
-      if (!studentId) {
-        return ApiResponse.error(res, 'No linked child student found.', null, 404);
-      }
-
-      const schoolId = req.user?.schoolId;
-      const { academic_year_id } = req.query;
-
-      const data = await ParentModel.getChildTimetable(studentId, schoolId, academic_year_id);
-      return ApiResponse.success(res, 'Timetable fetched successfully.', data);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /**
    * Get Active Child Fee Invoices & Payments
    */
   static async getFees(req, res, next) {
@@ -276,21 +256,34 @@ class ParentChildController {
         return ApiResponse.error(res, 'No linked child student found.', null, 404);
       }
 
-      const student = await ParentModel.getChildFullProfile(studentId, req.user.schoolId);
+      const schoolId = req.user.schoolId;
+      const student = await ParentModel.getChildFullProfile(studentId, schoolId);
       const classId = req.query.class_id || (student ? student.class : null);
       const sectionId = req.query.section_id || (student ? student.section : null);
+      const branchId = student ? student.branch_id : null;
 
-      let data = await ParentModel.getChildTimetable(studentId, req.user.schoolId, classId, sectionId);
+      let data = await ParentModel.getChildTimetable(studentId, schoolId, classId, sectionId);
 
       // If no routines found for specific section, try class-level routines
       if ((!data || data.length === 0) && classId && sectionId) {
-        const classRoutines = await ParentModel.getChildTimetable(studentId, req.user.schoolId, classId, null);
+        const classRoutines = await ParentModel.getChildTimetable(studentId, schoolId, classId, null);
         if (classRoutines && classRoutines.length > 0) {
           data = classRoutines;
         }
       }
 
-      return ApiResponse.success(res, 'Child timetable fetched successfully.', data);
+      const AcademicModel = require('../models/academic.model');
+      let rawDays = await AcademicModel.getDays(schoolId, branchId);
+      let days = (rawDays || []).filter((d) => Number(d.status) === 1);
+      if (days.length === 0 && branchId) {
+        const schoolDays = await AcademicModel.getDays(schoolId, null);
+        days = (schoolDays || []).filter((d) => Number(d.status) === 1);
+      }
+
+      return ApiResponse.success(res, 'Child timetable fetched successfully.', {
+        routines: data || [],
+        days,
+      });
     } catch (error) {
       next(error);
     }

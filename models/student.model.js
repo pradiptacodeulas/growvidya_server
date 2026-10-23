@@ -644,12 +644,44 @@ class StudentModel {
     return result.affectedRows > 0;
   }
 
+  static async resolveBranchId(schoolId, branchId = null) {
+    if (branchId && branchId !== 'all' && branchId !== '0' && !isNaN(Number(branchId)) && Number(branchId) > 0) {
+      return Number(branchId);
+    }
+    if (!schoolId) return null;
+    try {
+      const [rows] = await pool.query(
+        'SELECT id FROM branch_master WHERE school_id = ? AND status != 4 ORDER BY is_main_branch DESC, id ASC LIMIT 1',
+        [schoolId]
+      );
+      if (rows && rows.length > 0 && rows[0].id) {
+        return Number(rows[0].id);
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  static async isMainBranch(schoolId, branchId) {
+    if (!schoolId || !branchId) return true;
+    try {
+      const [rows] = await pool.query(
+        'SELECT id, is_main_branch FROM branch_master WHERE school_id = ? AND status != 4 ORDER BY is_main_branch DESC, id ASC LIMIT 1',
+        [schoolId]
+      );
+      if (rows && rows.length > 0) {
+        return Number(rows[0].id) === Number(branchId);
+      }
+    } catch (e) {}
+    return false;
+  }
+
   static async checkDuplicateEmail(schoolId, email, excludeStudentId = null, branchId = null) {
     if (!email || !String(email).trim()) return null;
     const cleanEmail = String(email).trim().toLowerCase();
+    const targetBranchId = await StudentModel.resolveBranchId(schoolId, branchId);
 
     let query = `
-      SELECT id, first_name, last_name, admission_number 
+      SELECT id, first_name, last_name, admission_number, branch_id 
       FROM student_master 
       WHERE school_id = ? 
         AND LOWER(TRIM(email_address)) = ? 
@@ -657,14 +689,26 @@ class StudentModel {
     `;
     const params = [schoolId, cleanEmail];
 
-    if (branchId) {
-      query += ` AND (branch_id = ? OR branch_id IS NULL)`;
-      params.push(Number(branchId));
+    if (targetBranchId) {
+      const isMain = await StudentModel.isMainBranch(schoolId, targetBranchId);
+      if (isMain) {
+        query += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      } else {
+        query += ` AND branch_id = ?`;
+      }
+      params.push(Number(targetBranchId));
     }
 
     if (excludeStudentId) {
+      let cleanExcludeId = excludeStudentId;
+      if (typeof cleanExcludeId === 'string' && !/^\d+$/.test(cleanExcludeId)) {
+        try {
+          const decoded = Buffer.from(cleanExcludeId, 'base64').toString('utf-8');
+          if (/^\d+$/.test(decoded)) cleanExcludeId = decoded;
+        } catch (e) {}
+      }
       query += ` AND id != ?`;
-      params.push(excludeStudentId);
+      params.push(cleanExcludeId);
     }
 
     query += ` LIMIT 1`;
@@ -675,25 +719,27 @@ class StudentModel {
 
   static async checkDuplicateAdmissionNumber(schoolId, admissionNumber, excludeStudentId = null, branchId = null) {
     if (!admissionNumber || !String(admissionNumber).trim()) return null;
-    const cleanNum = String(admissionNumber).trim();
+    const cleanNum = String(admissionNumber).trim().toLowerCase();
 
     let query = `
-      SELECT id, first_name, last_name, admission_number 
+      SELECT id, first_name, last_name, admission_number, branch_id 
       FROM student_master 
       WHERE school_id = ? 
-        AND admission_number = ? 
+        AND LOWER(TRIM(admission_number)) = ? 
         AND status != 4
     `;
     const params = [schoolId, cleanNum];
 
-    if (branchId) {
-      query += ` AND (branch_id = ? OR branch_id IS NULL)`;
-      params.push(Number(branchId));
-    }
-
     if (excludeStudentId) {
+      let cleanExcludeId = excludeStudentId;
+      if (typeof cleanExcludeId === 'string' && !/^\d+$/.test(cleanExcludeId)) {
+        try {
+          const decoded = Buffer.from(cleanExcludeId, 'base64').toString('utf-8');
+          if (/^\d+$/.test(decoded)) cleanExcludeId = decoded;
+        } catch (e) {}
+      }
       query += ` AND id != ?`;
-      params.push(excludeStudentId);
+      params.push(cleanExcludeId);
     }
 
     query += ` LIMIT 1`;
@@ -703,7 +749,7 @@ class StudentModel {
   }
 
   static async create(data) {
-    const branchId = data.branch_id || data.branchId ? Number(data.branch_id || data.branchId) : null;
+    const branchId = await StudentModel.resolveBranchId(data.school_id, data.branch_id || data.branchId);
     if (data.email_address && String(data.email_address).trim()) {
       const existing = await StudentModel.checkDuplicateEmail(data.school_id, data.email_address, null, branchId);
       if (existing) {
@@ -902,7 +948,20 @@ class StudentModel {
   }
 
   static async update(id, schoolId, data, branchId = null) {
-    const resolvedBranchId = branchId || data.branch_id || data.branchId || null;
+    let resolvedBranchId = branchId || data.branch_id || data.branchId || null;
+    if (!resolvedBranchId) {
+      try {
+        const [stRow] = await pool.query(
+          'SELECT branch_id FROM student_master WHERE id = ? AND school_id = ? LIMIT 1',
+          [id, schoolId]
+        );
+        if (stRow && stRow.length > 0 && stRow[0].branch_id) {
+          resolvedBranchId = stRow[0].branch_id;
+        }
+      } catch (e) {}
+    }
+    resolvedBranchId = await StudentModel.resolveBranchId(schoolId, resolvedBranchId);
+
     if (data.email_address && String(data.email_address).trim()) {
       const existing = await StudentModel.checkDuplicateEmail(schoolId, data.email_address, id, resolvedBranchId);
       if (existing) {

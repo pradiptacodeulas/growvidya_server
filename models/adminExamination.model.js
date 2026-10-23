@@ -1510,9 +1510,10 @@ class AdminExaminationModel {
         throw err;
       }
 
-      // 3. Role-Based Date Validation:
-      // School Administration (Super Admin, Admin, School Staff) can record or update attendance at any time.
-      // Teachers can record attendance for their exams; past exams cannot be altered by teachers without admin intervention.
+      // 3. Date & Role-Based Validation:
+      // No one (including Admin, Staff, and Teachers) can record attendance before the scheduled exam date.
+      // School Administration (Super Admin, Admin, School Staff) can record or update attendance on or after the exam date.
+      // Teachers can record attendance on the exam date; past exams cannot be altered by teachers without admin intervention.
       const normalizedRole = String(userRole || '').toLowerCase().trim();
       const resolvedIsAdmin =
         isAdminOrSchool !== null
@@ -1523,7 +1524,7 @@ class AdminExaminationModel {
              normalizedRole === 'super admin' ||
              normalizedRole === 'staff');
 
-      if (!resolvedIsAdmin && scheduleDate) {
+      if (scheduleDate) {
         const now = new Date();
         const year = now.getFullYear();
         const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -1540,7 +1541,16 @@ class AdminExaminationModel {
           examDateStr = `${ey}-${em}-${ed}`;
         }
 
-        if (examDateStr && todayStr > examDateStr) {
+        if (examDateStr && todayStr < examDateStr) {
+          await connection.rollback();
+          const err = new Error(
+            `Attendance Locked: Exam attendance cannot be recorded before the scheduled exam date (${examDateStr}).`
+          );
+          err.statusCode = 400;
+          throw err;
+        }
+
+        if (!resolvedIsAdmin && examDateStr && todayStr > examDateStr) {
           await connection.rollback();
           const err = new Error(
             `Attendance Locked: The scheduled exam date (${examDateStr}) has passed. Staff and teachers cannot alter past exam attendance. Please contact the school administration for any corrections.`
