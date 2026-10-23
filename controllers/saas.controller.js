@@ -187,11 +187,20 @@ class SaasController {
           );
         }
 
-        const { keySecret } = require('../config/razorpay.config');
+        const { getRazorpayConfig } = require('../config/razorpay.config');
+        const razorpayConfig = await getRazorpayConfig();
+        if (!razorpayConfig || !razorpayConfig.keySecret) {
+          return ApiResponse.error(
+            res,
+            'Payment verification is unavailable because Razorpay credentials are not configured in Settings.',
+            null,
+            503
+          );
+        }
         const crypto = require('crypto');
         const body = `${orderId}|${paymentId}`;
         const expectedSignature = crypto
-          .createHmac('sha256', keySecret)
+          .createHmac('sha256', razorpayConfig.keySecret)
           .update(body.toString())
           .digest('hex');
 
@@ -351,20 +360,24 @@ class SaasController {
         return ApiResponse.error(res, 'Cannot create payment order for an amount of ₹0. Please proceed with free trial activation.', null, 400);
       }
 
-      const { razorpayInstance, keyId, keySecret } = require('../config/razorpay.config');
-      if (!keyId || !keySecret || keyId === 'rzp_test_placeholder_key') {
+      const { getRazorpayConfig } = require('../config/razorpay.config');
+      const razorpayConfig = await getRazorpayConfig();
+      if (!razorpayConfig || !razorpayConfig.razorpayInstance || !razorpayConfig.keyId || !razorpayConfig.keySecret) {
         return ApiResponse.error(
           res,
-          'Razorpay keys are not configured. Please set valid RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in server .env file.',
+          'Online payment gateway is currently unavailable. Razorpay credentials are not configured in Settings.',
           null,
-          500
+          503
         );
       }
+      const { razorpayInstance, keyId } = razorpayConfig;
 
       const amountInPaise = Math.round(totalAmount * 100);
       const receiptId = `REG_${Date.now()}`.slice(0, 40);
 
-      const order = await razorpayInstance.orders.create({
+      let order;
+      try {
+        order = await razorpayInstance.orders.create({
         amount: amountInPaise,
         currency: 'INR',
         receipt: receiptId,
@@ -377,6 +390,14 @@ class SaasController {
           cards_count: String(breakdown.cards?.length || 0),
         },
       });
+      } catch (rzpErr) {
+        return ApiResponse.error(
+          res,
+          'Failed to initialize payment order with Razorpay. Please verify that valid Razorpay credentials are configured in Settings.',
+          null,
+          502
+        );
+      }
 
       return ApiResponse.success(res, 'Registration payment order created successfully.', {
         order_id: order.id,

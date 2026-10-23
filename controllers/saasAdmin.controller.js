@@ -3,6 +3,7 @@ const SaasAdminModel = require('../models/saasAdmin.model');
 const SaasRoleModel = require('../models/saasRole.model');
 const CouponModel = require('../models/coupon.model');
 const SubscriptionItemModel = require('../models/subscriptionItem.model');
+const RazorpayCredentialModel = require('../models/razorpayCredential.model');
 const ApiResponse = require('../utils/api.response');
 const { generateToken } = require('../utils/jwt.util');
 const { comparePassword } = require('../utils/password.util');
@@ -1142,6 +1143,86 @@ class SaasAdminController {
       if (error.statusCode === 400) {
         return ApiResponse.error(res, error.message, null, 400);
       }
+      next(error);
+    }
+  }
+
+  // ========================================================
+  // 8. SETTINGS — RAZORPAY CREDENTIALS MANAGEMENT
+  // ========================================================
+  static async getRazorpayCredentials(req, res, next) {
+    try {
+      const credentials = await RazorpayCredentialModel.getCurrent();
+      if (!credentials) {
+        return ApiResponse.success(res, 'No Razorpay credentials configured.', null);
+      }
+      return ApiResponse.success(res, 'Razorpay credentials retrieved successfully.', credentials);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async saveRazorpayCredentials(req, res, next) {
+    try {
+      const body = req.body || {};
+      const key_id = body.key_id !== undefined ? body.key_id : body.keyId;
+      const key_secret = body.key_secret !== undefined ? body.key_secret : body.keySecret;
+      const { status } = body;
+
+      const saved = await RazorpayCredentialModel.create({
+        key_id,
+        key_secret,
+        status,
+      });
+
+      return ApiResponse.created(res, 'Razorpay credentials saved successfully.', saved);
+    } catch (error) {
+      if (error.statusCode === 400) {
+        return ApiResponse.error(res, error.message, null, 400);
+      }
+      next(error);
+    }
+  }
+
+  static async updateRazorpayCredentials(req, res, next) {
+    try {
+      const body = req.body || {};
+      const id = req.params?.id || body.id || req.query?.id || null;
+      const key_id = body.key_id !== undefined ? body.key_id : body.keyId;
+      const key_secret = body.key_secret !== undefined ? body.key_secret : body.keySecret;
+      const { status } = body;
+
+      const updated = await RazorpayCredentialModel.update(id, {
+        key_id,
+        key_secret,
+        status,
+      });
+
+      if (!updated) {
+        return ApiResponse.notFound(res, 'Razorpay credentials not found.');
+      }
+
+      return ApiResponse.success(res, 'Razorpay credentials updated successfully.', updated);
+    } catch (error) {
+      if (error.statusCode === 400) {
+        return ApiResponse.error(res, error.message, null, 400);
+      }
+      next(error);
+    }
+  }
+
+  static async deleteRazorpayCredentials(req, res, next) {
+    try {
+      const body = req.body || {};
+      const id = req.params?.id || body.id || req.query?.id || null;
+
+      const deleted = await RazorpayCredentialModel.delete(id);
+      if (!deleted) {
+        return ApiResponse.notFound(res, 'Razorpay credentials not found.');
+      }
+
+      return ApiResponse.success(res, 'Razorpay credentials deleted successfully.', null);
+    } catch (error) {
       next(error);
     }
   }

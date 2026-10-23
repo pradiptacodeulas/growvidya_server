@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const SubscriptionModel = require('../models/subscription.model');
 const CouponModel = require('../models/coupon.model');
 const ApiResponse = require('../utils/api.response');
-const { razorpayInstance, keyId, keySecret } = require('../config/razorpay.config');
+const { getRazorpayConfig } = require('../config/razorpay.config');
 const { pool } = require('../config/db.config');
 
 /**
@@ -284,14 +284,16 @@ class AdminSubscriptionController {
         return ApiResponse.error(res, 'Cannot create payment order for a free plan.', null, 400);
       }
 
-      if (!keyId || !keySecret || keyId === 'rzp_test_placeholder_key') {
+      const razorpayConfig = await getRazorpayConfig();
+      if (!razorpayConfig || !razorpayConfig.razorpayInstance || !razorpayConfig.keyId || !razorpayConfig.keySecret) {
         return ApiResponse.error(
           res,
-          'Razorpay keys are not configured. Please set valid RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in server .env file.',
+          'Online payment gateway is currently unavailable. Razorpay credentials are not configured in Settings.',
           null,
-          500
+          503
         );
       }
+      const { razorpayInstance, keyId } = razorpayConfig;
 
       // Calculate total price accurately against database records including coupon
       const { totalAmount, originalAmount, discountAmount, couponInfo, breakdown } = await calculateVerifiedTotal({
@@ -309,7 +311,9 @@ class AdminSubscriptionController {
       const amountInPaise = Math.round(totalAmount * 100);
       const receiptId = `SUB_${schoolId}_${Date.now()}`.slice(0, 40);
 
-      const order = await razorpayInstance.orders.create({
+      let order;
+      try {
+        order = await razorpayInstance.orders.create({
         amount: amountInPaise,
         currency: 'INR',
         receipt: receiptId,
@@ -324,6 +328,14 @@ class AdminSubscriptionController {
           discount_amount: String(discountAmount),
         },
       });
+      } catch (rzpErr) {
+        return ApiResponse.error(
+          res,
+          'Failed to initialize payment order with Razorpay. Please verify that valid Razorpay credentials are configured in Settings.',
+          null,
+          502
+        );
+      }
 
       return ApiResponse.success(res, 'Subscription payment order created successfully.', {
         order_id: order.id,
@@ -416,9 +428,18 @@ class AdminSubscriptionController {
       }
 
       // Cryptographically verify signature using HMAC SHA256
+      const razorpayConfig = await getRazorpayConfig();
+      if (!razorpayConfig || !razorpayConfig.keySecret) {
+        return ApiResponse.error(
+          res,
+          'Payment verification is unavailable because Razorpay credentials are not configured in Settings.',
+          null,
+          503
+        );
+      }
       const body = `${orderId}|${paymentId}`;
       const expectedSignature = crypto
-        .createHmac('sha256', keySecret)
+        .createHmac('sha256', razorpayConfig.keySecret)
         .update(body.toString())
         .digest('hex');
 

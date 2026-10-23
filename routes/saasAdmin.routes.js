@@ -147,4 +147,12 @@ router.put('/sub-admins/:id', checkPermission('sub_admins', 'can_edit'), upload.
 router.delete('/sub-admins/:id', checkPermission('sub_admins', 'can_delete'), SaasAdminController.deleteSubAdmin);
 router.patch('/sub-admins/:id/status', checkPermission('sub_admins', 'can_manage'), SaasAdminController.toggleSubAdminStatus);
 
+// Settings — Razorpay Credentials Management
+router.get('/settings/razorpay', checkPermission('settings', 'can_view'), SaasAdminController.getRazorpayCredentials);
+router.post('/settings/razorpay', checkPermission('settings', 'can_add'), SaasAdminController.saveRazorpayCredentials);
+router.put('/settings/razorpay/:id', checkPermission('settings', 'can_edit'), SaasAdminController.updateRazorpayCredentials);
+router.put('/settings/razorpay', checkPermission('settings', 'can_edit'), SaasAdminController.updateRazorpayCredentials);
+router.delete('/settings/razorpay/:id', checkPermission('settings', 'can_delete'), SaasAdminController.deleteRazorpayCredentials);
+router.delete('/settings/razorpay', checkPermission('settings', 'can_delete'), SaasAdminController.deleteRazorpayCredentials);
+
 module.exports = router;

@@ -157,10 +157,19 @@ class ParentChildController {
         const orderId = req.body.razorpay_order_id || req.body.razorpayOrderId;
         const paymentId = req.body.razorpay_payment_id || req.body.razorpayPaymentId || referenceNo;
         const signature = req.body.razorpay_signature || req.body.razorpaySignature;
-        const { keySecret } = require('../config/razorpay.config');
+        const { getRazorpayConfig } = require('../config/razorpay.config');
+        const razorpayConfig = await getRazorpayConfig();
+        if (!razorpayConfig || !razorpayConfig.keySecret) {
+          return ApiResponse.error(
+            res,
+            'Online payment verification is unavailable because Razorpay credentials are not configured.',
+            null,
+            503
+          );
+        }
         const crypto = require('crypto');
         const expectedSignature = crypto
-          .createHmac('sha256', keySecret)
+          .createHmac('sha256', razorpayConfig.keySecret)
           .update(`${orderId}|${paymentId}`)
           .digest('hex');
 

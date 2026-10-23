@@ -1,23 +1,30 @@
 const Razorpay = require('razorpay');
+const RazorpayCredentialModel = require('../models/razorpayCredential.model');
 
-const keyId = process.env.RAZORPAY_KEY_ID || '';
-const keySecret = process.env.RAZORPAY_KEY_SECRET || '';
-const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET || 'growvidya_webhook_secret_2026';
+/**
+ * Dynamically retrieves active Razorpay credentials from the database
+ * and initializes the Razorpay SDK client at runtime.
+ * Changes in Settings take effect immediately without restarting the server.
+ */
+async function getRazorpayConfig() {
+  const credentials = await RazorpayCredentialModel.getActiveCredentials();
 
-let razorpayInstance = null;
+  if (!credentials || !credentials.keyId || !credentials.keySecret) {
+    return null;
+  }
 
-try {
-  razorpayInstance = new Razorpay({
-    key_id: keyId || 'q6JQHhSsV3SIZXWLOA05zsmV',
-    key_secret: keySecret || 'q6JQHhSsV3SIZXWLOA05zsmV',
+  const razorpayInstance = new Razorpay({
+    key_id: credentials.keyId,
+    key_secret: credentials.keySecret,
   });
-} catch (err) {
-  console.warn('[Razorpay] Failed to initialize client:', err.message);
+
+  return {
+    razorpayInstance,
+    keyId: credentials.keyId,
+    keySecret: credentials.keySecret,
+  };
 }
 
 module.exports = {
-  razorpayInstance,
-  keyId,
-  keySecret,
-  webhookSecret,
+  getRazorpayConfig,
 };
