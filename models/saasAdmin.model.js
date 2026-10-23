@@ -232,7 +232,9 @@ class SaasAdminModel {
         COUNT(*) AS total_subscriptions,
         SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active_subscriptions,
         SUM(CASE WHEN status = 'trial' THEN 1 ELSE 0 END) AS trial_subscriptions,
+        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending_subscriptions,
         SUM(CASE WHEN status = 'expired' THEN 1 ELSE 0 END) AS expired_subscriptions,
+        SUM(CASE WHEN status = 'suspended' THEN 1 ELSE 0 END) AS suspended_subscriptions,
         SUM(CASE WHEN payment_status = 'pending' THEN 1 ELSE 0 END) AS pending_payments,
         SUM(CASE WHEN payment_status = 'completed' THEN amount_paid ELSE 0 END) AS total_revenue
       FROM school_subscriptions
@@ -250,6 +252,30 @@ class SaasAdminModel {
       FROM coupons
     `);
 
+    // Storage plans count
+    const [storageRows] = await pool.query(`
+      SELECT COUNT(*) AS total_storage, SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END) AS active_storage
+      FROM storage_master
+    `);
+
+    // Attendance machines count
+    const [machineRows] = await pool.query(`
+      SELECT COUNT(*) AS total_machines, SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END) AS active_machines
+      FROM attendance_machine_master
+    `);
+
+    // RFID cards count
+    const [rfidRows] = await pool.query(`
+      SELECT COUNT(*) AS total_rfid, SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END) AS active_rfid
+      FROM rfid_card_master
+    `);
+
+    // Bank accounts count
+    const [bankRows] = await pool.query(`
+      SELECT COUNT(*) AS total_banks, SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END) AS active_banks
+      FROM bank_account_master
+    `);
+
     // Recent registered schools (latest 5)
     const [recentSchools] = await pool.query(`
       SELECT 
@@ -264,39 +290,57 @@ class SaasAdminModel {
       LIMIT 5
     `);
 
-    // Pending payment subscriptions (latest 5)
+    // Pending approval / payment subscriptions (latest 5)
     const [pendingSubs] = await pool.query(`
       SELECT 
-        ss.*, s.school_name, s.email AS school_email, sp.plan_name, sp.price AS plan_price
+        ss.*, s.school_name, s.school_code, s.email AS school_email, sp.plan_name, sp.price AS plan_price
       FROM school_subscriptions ss
       JOIN school_master s ON ss.school_id = s.id
-      JOIN subscription_plans sp ON ss.plan_id = sp.id
-      WHERE ss.payment_status = 'pending'
+      LEFT JOIN subscription_plans sp ON ss.plan_id = sp.id
+      WHERE ss.status = 'pending' OR ss.payment_status = 'pending'
       ORDER BY ss.id DESC
       LIMIT 5
     `);
 
     return {
       schools: {
-        total: schoolRows[0]?.total_schools || 0,
-        active: schoolRows[0]?.active_schools || 0,
-        inactive: schoolRows[0]?.inactive_schools || 0,
+        total: Number(schoolRows[0]?.total_schools || 0),
+        active: Number(schoolRows[0]?.active_schools || 0),
+        inactive: Number(schoolRows[0]?.inactive_schools || 0),
       },
       subscriptions: {
-        total: subRows[0]?.total_subscriptions || 0,
-        active: subRows[0]?.active_subscriptions || 0,
-        trial: subRows[0]?.trial_subscriptions || 0,
-        expired: subRows[0]?.expired_subscriptions || 0,
-        pendingPayments: subRows[0]?.pending_payments || 0,
+        total: Number(subRows[0]?.total_subscriptions || 0),
+        active: Number(subRows[0]?.active_subscriptions || 0),
+        trial: Number(subRows[0]?.trial_subscriptions || 0),
+        pending: Number(subRows[0]?.pending_subscriptions || 0),
+        expired: Number(subRows[0]?.expired_subscriptions || 0),
+        suspended: Number(subRows[0]?.suspended_subscriptions || 0),
+        pendingPayments: Number(subRows[0]?.pending_payments || 0),
         totalRevenue: parseFloat(subRows[0]?.total_revenue || 0),
       },
       packages: {
-        total: planRows[0]?.total_packages || 0,
-        active: planRows[0]?.active_packages || 0,
+        total: Number(planRows[0]?.total_packages || 0),
+        active: Number(planRows[0]?.active_packages || 0),
       },
       coupons: {
-        total: couponRows[0]?.total_coupons || 0,
-        active: couponRows[0]?.active_coupons || 0,
+        total: Number(couponRows[0]?.total_coupons || 0),
+        active: Number(couponRows[0]?.active_coupons || 0),
+      },
+      storagePlans: {
+        total: Number(storageRows[0]?.total_storage || 0),
+        active: Number(storageRows[0]?.active_storage || 0),
+      },
+      attendanceMachines: {
+        total: Number(machineRows[0]?.total_machines || 0),
+        active: Number(machineRows[0]?.active_machines || 0),
+      },
+      rfidCards: {
+        total: Number(rfidRows[0]?.total_rfid || 0),
+        active: Number(rfidRows[0]?.active_rfid || 0),
+      },
+      bankAccounts: {
+        total: Number(bankRows[0]?.total_banks || 0),
+        active: Number(bankRows[0]?.active_banks || 0),
       },
       recentSchools,
       pendingSubscriptions: pendingSubs,
