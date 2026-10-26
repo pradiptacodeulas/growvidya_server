@@ -41,13 +41,13 @@ router.patch('/schools/:id/status', checkPermission('schools', 'can_manage'), Sa
 router.put('/schools/:id', checkPermission('schools', 'can_edit'), SaasAdminController.updateSchool);
 
 // Subscription & Payment Verification
-router.get('/subscriptions', checkPermission('subscriptions', 'can_view'), SaasAdminController.getSubscriptions);
-router.get('/subscriptions/:id', checkPermission('subscriptions', 'can_view'), SaasAdminController.getSubscriptionById);
-router.post('/subscriptions/:id/approve', checkPermission('subscriptions', 'can_manage'), SaasAdminController.approveSubscription);
-router.post('/subscriptions/:id/reject', checkPermission('subscriptions', 'can_manage'), SaasAdminController.rejectSubscription);
-router.post('/subscriptions/:id/verify', checkPermission('subscriptions', 'can_manage'), SaasAdminController.verifySubscriptionPayment);
-router.patch('/subscriptions/:id/status', checkPermission('subscriptions', 'can_manage'), SaasAdminController.updateSubscriptionStatus);
-router.post('/subscriptions/:id/extend', checkPermission('subscriptions', 'can_manage'), SaasAdminController.extendSubscription);
+router.get('/subscriptions', checkPermission(['subscriptions', 'schools'], 'can_view'), SaasAdminController.getSubscriptions);
+router.get('/subscriptions/:id', checkPermission(['subscriptions', 'schools'], 'can_view'), SaasAdminController.getSubscriptionById);
+router.post('/subscriptions/:id/approve', checkPermission(['subscriptions', 'schools'], 'can_manage'), SaasAdminController.approveSubscription);
+router.post('/subscriptions/:id/reject', checkPermission(['subscriptions', 'schools'], 'can_manage'), SaasAdminController.rejectSubscription);
+router.post('/subscriptions/:id/verify', checkPermission(['subscriptions', 'schools'], 'can_manage'), SaasAdminController.verifySubscriptionPayment);
+router.patch('/subscriptions/:id/status', checkPermission(['subscriptions', 'schools'], 'can_manage'), SaasAdminController.updateSubscriptionStatus);
+router.post('/subscriptions/:id/extend', checkPermission(['subscriptions', 'schools'], 'can_manage'), SaasAdminController.extendSubscription);
 
 // Package / Subscription Plan Management
 router.get('/packages', checkPermission('packages', 'can_view'), SaasAdminController.getPackages);
@@ -133,10 +133,11 @@ router.patch('/bank-accounts/:id/default', checkPermission('bank_accounts', 'can
 router.patch('/bank-accounts/default', checkPermission('bank_accounts', 'can_manage'), BankAccountMasterController.setDefault);
 
 // Roles & Permissions Management
-router.get('/roles', checkPermission('roles', 'can_view'), SaasAdminController.getRoles);
+router.get('/roles', checkPermission(['roles', 'sub_admins'], ['can_view', 'can_add', 'can_edit']), SaasAdminController.getRoles);
 router.get('/roles/:id', checkPermission('roles', 'can_view'), SaasAdminController.getRoleById);
 router.post('/roles', checkPermission('roles', 'can_add'), SaasAdminController.createRole);
 router.put('/roles/:id', checkPermission('roles', 'can_edit'), SaasAdminController.updateRole);
+router.patch('/roles/:id/status', checkPermission('roles', ['can_manage', 'can_edit']), SaasAdminController.toggleRoleStatus);
 router.delete('/roles/:id', checkPermission('roles', 'can_delete'), SaasAdminController.deleteRole);
 
 // Sub Admin Users Management

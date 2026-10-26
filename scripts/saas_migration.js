@@ -115,14 +115,18 @@ async function runMigration() {
 
     // Seed default SaaS modules
     const modules = [
-      { key: 'dashboard', name: 'Dashboard & Analytics', desc: 'Overview metrics, registration statistics, revenue', order: 1 },
-      { key: 'schools', name: 'School Management', desc: 'Registered schools, approvals, school status', order: 2 },
-      { key: 'subscriptions', name: 'Subscriptions & Payments', desc: 'School subscriptions, manual payment verification, extensions', order: 3 },
-      { key: 'packages', name: 'Packages & Plans', desc: 'Subscription pricing tiers, features, plan limits', order: 4 },
-      { key: 'coupons', name: 'Coupon Management', desc: 'Promo codes, discounts, redemption limits', order: 5 },
-      { key: 'storage_plans', name: 'Storage Plans', desc: 'Storage add-on packages and capacity units', order: 6 },
-      { key: 'roles', name: 'Roles & Permissions', desc: 'Manage SaaS roles and granular module permissions', order: 7 },
-      { key: 'sub_admins', name: 'Sub Admin Users', desc: 'Manage sub-admin staff accounts and role assignments', order: 8 },
+      { key: 'dashboard', name: 'Dashboard & Analytics', desc: 'Overview metrics, registration statistics, and revenue insights', order: 1 },
+      { key: 'schools', name: 'School Management', desc: 'Registered schools, approvals, and school account status', order: 2 },
+      { key: 'subscriptions', name: 'Subscriptions & Payments', desc: 'School subscriptions, manual payment verification, and extensions', order: 3 },
+      { key: 'packages', name: 'Packages & Pricing', desc: 'Subscription pricing tiers, package items, features, and plan limits', order: 4 },
+      { key: 'attendance_machines', name: 'Attendance Machines', desc: 'Biometric and RFID attendance hardware catalog and pricing', order: 5 },
+      { key: 'rfid_cards', name: 'RFID Cards', desc: 'Smart RFID card inventory, pricing, and specifications', order: 6 },
+      { key: 'storage_plans', name: 'Storage Plans', desc: 'Cloud storage add-on packages and capacity units', order: 7 },
+      { key: 'coupons', name: 'Coupons & Discounts', desc: 'Promo codes, discounts, and redemption limits', order: 8 },
+      { key: 'bank_accounts', name: 'Bank Accounts', desc: 'Platform bank accounts and UPI/QR payment details', order: 9 },
+      { key: 'roles', name: 'Roles & Permissions', desc: 'Manage SaaS roles and granular module permissions', order: 10 },
+      { key: 'sub_admins', name: 'Users & Sub-Admins', desc: 'Manage sub-admin staff accounts and role assignments', order: 11 },
+      { key: 'settings', name: 'Settings & Payment Gateway', desc: 'Platform settings and Razorpay payment gateway credentials', order: 12 },
     ];
 
     for (const m of modules) {

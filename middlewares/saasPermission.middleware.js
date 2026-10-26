@@ -6,10 +6,10 @@ const ApiResponse = require('../utils/api.response');
  * 
  * Rules:
  * 1. Super Admin ('superadmin') has unrestricted bypass access to all modules and actions.
- * 2. Sub-Admin ('subadmin') access is strictly evaluated against the permissions assigned to their role.
+ * 2. Sub-Admin ('subadmin') access is strictly evaluated against the permissions assigned to their active role in the database.
  * 
- * @param {string} moduleKey - The key of the SaaS module (e.g. 'schools', 'subscriptions', 'coupons', 'roles', 'sub_admins')
- * @param {'can_view'|'can_add'|'can_edit'|'can_delete'|'can_manage'} action - The required action permission
+ * @param {string|string[]} moduleKey - The key(s) of the SaaS module (e.g. 'schools', 'subscriptions', 'coupons', 'roles', 'sub_admins')
+ * @param {string|string[]} action - The required action permission(s) ('can_view'|'can_add'|'can_edit'|'can_delete'|'can_manage')
  */
 const checkPermission = (moduleKey, action = 'can_view') => {
   return async (req, res, next) => {
@@ -40,9 +40,11 @@ const checkPermission = (moduleKey, action = 'can_view') => {
       );
 
       if (!hasPermission) {
+        const modLabel = Array.isArray(moduleKey) ? moduleKey.join(' / ') : moduleKey;
+        const actLabel = Array.isArray(action) ? action.join(' / ') : action;
         return ApiResponse.error(
           res,
-          `Access denied. You do not have '${action}' permission for the '${moduleKey}' module.`,
+          `Access denied. You do not have '${actLabel}' permission for the '${modLabel}' module.`,
           null,
           403
         );

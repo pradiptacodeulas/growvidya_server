@@ -1,6 +1,7 @@
 const { pool } = require('../config/db.config');
 const { hashPassword } = require('../utils/password.util');
 const SubscriptionItemModel = require('./subscriptionItem.model');
+const SaasRoleModel = require('./saasRole.model');
 
 class SaasAdminModel {
   // ========================================================
@@ -24,36 +25,7 @@ class SaasAdminModel {
     const user = rows[0];
 
     // Fetch permissions
-    if (user.role === 'superadmin') {
-      const [modules] = await pool.query('SELECT module_key, module_name FROM saas_modules WHERE status = 1 ORDER BY display_order ASC');
-      user.permissions = modules.map(m => ({
-        module_key: m.module_key,
-        module_name: m.module_name,
-        can_view: 1,
-        can_add: 1,
-        can_edit: 1,
-        can_delete: 1,
-        can_manage: 1,
-      }));
-    } else if (user.role_id) {
-      const [perms] = await pool.query(`
-        SELECT 
-          srp.module_key, 
-          sm.module_name,
-          srp.can_view, 
-          srp.can_add, 
-          srp.can_edit, 
-          srp.can_delete, 
-          srp.can_manage
-        FROM saas_role_permissions srp
-        JOIN saas_modules sm ON srp.module_key = sm.module_key
-        WHERE srp.role_id = ?
-        ORDER BY sm.display_order ASC
-      `, [user.role_id]);
-      user.permissions = perms;
-    } else {
-      user.permissions = [];
-    }
+    user.permissions = await SaasRoleModel.resolveEffectivePermissions(user);
 
     return user;
   }
@@ -87,36 +59,7 @@ class SaasAdminModel {
     const user = rows[0];
 
     // Fetch permissions
-    if (user.role === 'superadmin') {
-      const [modules] = await pool.query('SELECT module_key, module_name FROM saas_modules WHERE status = 1 ORDER BY display_order ASC');
-      user.permissions = modules.map(m => ({
-        module_key: m.module_key,
-        module_name: m.module_name,
-        can_view: 1,
-        can_add: 1,
-        can_edit: 1,
-        can_delete: 1,
-        can_manage: 1,
-      }));
-    } else if (user.role_id) {
-      const [perms] = await pool.query(`
-        SELECT 
-          srp.module_key, 
-          sm.module_name,
-          srp.can_view, 
-          srp.can_add, 
-          srp.can_edit, 
-          srp.can_delete, 
-          srp.can_manage
-        FROM saas_role_permissions srp
-        JOIN saas_modules sm ON srp.module_key = sm.module_key
-        WHERE srp.role_id = ?
-        ORDER BY sm.display_order ASC
-      `, [user.role_id]);
-      user.permissions = perms;
-    } else {
-      user.permissions = [];
-    }
+    user.permissions = await SaasRoleModel.resolveEffectivePermissions(user);
 
     return user;
   }

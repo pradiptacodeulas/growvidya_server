@@ -885,20 +885,22 @@ class SaasAdminController {
 
   static async createRole(req, res, next) {
     try {
-      const { role_name, description, permissions } = req.body;
+      const { role_name, slug, description, status, permissions } = req.body;
       if (!role_name || !String(role_name).trim()) {
         return ApiResponse.error(res, 'Role name is required.', null, 400);
       }
 
       const role = await SaasRoleModel.createRole({
         role_name,
+        slug,
         description,
+        status,
         permissions,
       });
       return ApiResponse.success(res, 'Role created successfully.', role, 201);
     } catch (error) {
-      if (error.statusCode === 400) {
-        return ApiResponse.error(res, error.message, null, 400);
+      if (error.statusCode === 400 || error.statusCode === 403) {
+        return ApiResponse.error(res, error.message, null, error.statusCode);
       }
       next(error);
     }
@@ -907,10 +909,11 @@ class SaasAdminController {
   static async updateRole(req, res, next) {
     try {
       const { id } = req.params;
-      const { role_name, description, status, permissions } = req.body;
+      const { role_name, slug, description, status, permissions } = req.body;
 
       const role = await SaasRoleModel.updateRole(id, {
         role_name,
+        slug,
         description,
         status,
         permissions,
@@ -920,8 +923,33 @@ class SaasAdminController {
       }
       return ApiResponse.success(res, 'Role updated successfully.', role);
     } catch (error) {
-      if (error.statusCode === 400) {
-        return ApiResponse.error(res, error.message, null, 400);
+      if (error.statusCode === 400 || error.statusCode === 403) {
+        return ApiResponse.error(res, error.message, null, error.statusCode);
+      }
+      next(error);
+    }
+  }
+
+  static async toggleRoleStatus(req, res, next) {
+    try {
+      const { id } = req.params;
+      const { status } = req.body || {};
+      if (status === undefined || (Number(status) !== 0 && Number(status) !== 1)) {
+        return ApiResponse.error(res, 'Status must be 0 (inactive) or 1 (active).', null, 400);
+      }
+
+      const role = await SaasRoleModel.toggleRoleStatus(id, status);
+      if (!role) {
+        return ApiResponse.notFound(res, 'Role not found.');
+      }
+      return ApiResponse.success(
+        res,
+        `Role ${Number(status) === 1 ? 'activated' : 'deactivated'} successfully.`,
+        role
+      );
+    } catch (error) {
+      if (error.statusCode === 400 || error.statusCode === 403) {
+        return ApiResponse.error(res, error.message, null, error.statusCode);
       }
       next(error);
     }
@@ -936,8 +964,8 @@ class SaasAdminController {
       }
       return ApiResponse.success(res, 'Role deleted successfully.');
     } catch (error) {
-      if (error.statusCode === 400) {
-        return ApiResponse.error(res, error.message, null, 400);
+      if (error.statusCode === 400 || error.statusCode === 403) {
+        return ApiResponse.error(res, error.message, null, error.statusCode);
       }
       next(error);
     }
@@ -1028,12 +1056,13 @@ class SaasAdminController {
         profile_image,
         role_id,
         status,
+        actor: req.saasAdmin,
       });
 
       return ApiResponse.success(res, 'Sub-admin user created successfully.', subAdmin, 201);
     } catch (error) {
-      if (error.statusCode === 400) {
-        return ApiResponse.error(res, error.message, null, 400);
+      if (error.statusCode === 400 || error.statusCode === 403) {
+        return ApiResponse.error(res, error.message, null, error.statusCode);
       }
       next(error);
     }
@@ -1092,6 +1121,7 @@ class SaasAdminController {
         profile_image,
         role_id,
         status,
+        actor: req.saasAdmin,
       });
 
       if (!updated) {
@@ -1100,8 +1130,8 @@ class SaasAdminController {
 
       return ApiResponse.success(res, 'Sub-admin user updated successfully.', updated);
     } catch (error) {
-      if (error.statusCode === 400) {
-        return ApiResponse.error(res, error.message, null, 400);
+      if (error.statusCode === 400 || error.statusCode === 403) {
+        return ApiResponse.error(res, error.message, null, error.statusCode);
       }
       next(error);
     }
@@ -1110,14 +1140,14 @@ class SaasAdminController {
   static async deleteSubAdmin(req, res, next) {
     try {
       const { id } = req.params;
-      const result = await SaasRoleModel.deleteSubAdmin(id);
+      const result = await SaasRoleModel.deleteSubAdmin(id, req.saasAdmin);
       if (result.notFound) {
         return ApiResponse.notFound(res, 'Sub-admin user not found.');
       }
       return ApiResponse.success(res, 'Sub-admin user deleted successfully.');
     } catch (error) {
-      if (error.statusCode === 400) {
-        return ApiResponse.error(res, error.message, null, 400);
+      if (error.statusCode === 400 || error.statusCode === 403) {
+        return ApiResponse.error(res, error.message, null, error.statusCode);
       }
       next(error);
     }
@@ -1132,7 +1162,7 @@ class SaasAdminController {
         return ApiResponse.error(res, 'Status must be 0 (inactive) or 1 (active).', null, 400);
       }
 
-      const updated = await SaasRoleModel.toggleSubAdminStatus(id, status);
+      const updated = await SaasRoleModel.toggleSubAdminStatus(id, status, req.saasAdmin);
       if (!updated) {
         return ApiResponse.notFound(res, 'Sub-admin user not found.');
       }
@@ -1140,8 +1170,8 @@ class SaasAdminController {
       const user = await SaasRoleModel.getSubAdminById(id);
       return ApiResponse.success(res, `Sub-admin status updated to ${status == 1 ? 'active' : 'inactive'}.`, user);
     } catch (error) {
-      if (error.statusCode === 400) {
-        return ApiResponse.error(res, error.message, null, 400);
+      if (error.statusCode === 400 || error.statusCode === 403) {
+        return ApiResponse.error(res, error.message, null, error.statusCode);
       }
       next(error);
     }
