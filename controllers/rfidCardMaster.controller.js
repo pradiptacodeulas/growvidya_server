@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs');
 const RfidCardMasterModel = require('../models/rfidCardMaster.model');
 const ApiResponse = require('../utils/api.response');
+const { parsePagination } = require('../utils/pagination.util');
 
 // Helper to safely delete locally uploaded RFID images
 const deleteLocalRfidImage = (imagePath) => {
@@ -35,7 +36,8 @@ const extractCardId = (req) => {
 class RfidCardMasterController {
   /**
    * GET /rfid-cards
-   * List all RFID cards (supports ?search=, ?status=, ?card_type=)
+   * List RFID cards (supports ?search=, ?status=, ?card_type=, ?page=, ?limit=)
+   * Returns { cards, pagination, counts }
    */
   static async getAll(req, res, next) {
     try {
@@ -47,8 +49,9 @@ class RfidCardMasterController {
         return RfidCardMasterController.getById(req, res, next);
       }
 
-      const cards = await RfidCardMasterModel.getAll({ search, status, card_type });
-      return ApiResponse.success(res, 'RFID cards retrieved successfully.', cards);
+      const { page, limit } = parsePagination(req.query);
+      const result = await RfidCardMasterModel.getAll({ search, status, card_type, page, limit });
+      return ApiResponse.success(res, 'RFID cards retrieved successfully.', result);
     } catch (error) {
       next(error);
     }

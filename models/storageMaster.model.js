@@ -1,5 +1,6 @@
 const { pool } = require('../config/db.config');
 const CapacityUnitMasterModel = require('./capacityUnitMaster.model');
+const { parsePagination, buildPagination } = require('../utils/pagination.util');
 
 class StorageMasterModel {
   /**
@@ -25,9 +26,11 @@ class StorageMasterModel {
   }
 
   /**
-   * Fetch all storage plans with joined capacity unit details
+   * Fetch a page of storage plans with joined capacity unit details
+   * Returns { plans, pagination, counts }
    */
-  static async getAll({ search = '', status = '' } = {}) {
+  static async getAll({ search = '', status = '', page, limit } = {}) {
+    const { page: pageNum, limit: pageSize, offset } = parsePagination({ page, limit });
     let conditions = [];
     let params = [];
 
@@ -62,10 +65,42 @@ class StorageMasterModel {
       FROM storage_master sm
       JOIN capacity_unit_master cu ON sm.capacity_unit_id = cu.id
       ${where}
-      ORDER BY total_capacity_mb ASC
+      ORDER BY total_capacity_mb ASC, sm.id ASC
+      LIMIT ? OFFSET ?
     `;
-    const [rows] = await pool.query(query, params);
-    return rows;
+    const countQuery = `
+      SELECT COUNT(*) AS total
+      FROM storage_master sm
+      JOIN capacity_unit_master cu ON sm.capacity_unit_id = cu.id
+      ${where}
+    `;
+
+    const [[rows], [[countRow]], counts] = await Promise.all([
+      pool.query(query, [...params, pageSize, offset]),
+      pool.query(countQuery, params),
+      StorageMasterModel.getCounts(),
+    ]);
+
+    return {
+      plans: rows,
+      pagination: buildPagination(countRow.total, pageNum, pageSize),
+      counts,
+    };
+  }
+
+  /**
+   * Global (unfiltered) storage plan counts for summary metric cards
+   */
+  static async getCounts() {
+    const [[row]] = await pool.query(`
+      SELECT
+        COUNT(*) AS total,
+        COALESCE(SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END), 0) AS active
+      FROM storage_master
+    `);
+    const total = Number(row.total) || 0;
+    const active = Number(row.active) || 0;
+    return { total, active, inactive: total - active };
   }
 
   /**

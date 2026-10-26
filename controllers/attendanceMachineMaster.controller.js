@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs');
 const AttendanceMachineMasterModel = require('../models/attendanceMachineMaster.model');
 const ApiResponse = require('../utils/api.response');
+const { parsePagination } = require('../utils/pagination.util');
 
 // Helper to safely delete locally uploaded attendance machine images
 const deleteLocalMachineImage = (imagePath) => {
@@ -35,7 +36,8 @@ const extractMachineId = (req) => {
 class AttendanceMachineMasterController {
   /**
    * GET /attendance-machines
-   * List all attendance machines (supports ?search=, ?status=, ?machine_type=, ?brand=)
+   * List attendance machines (supports ?search=, ?status=, ?machine_type=, ?brand=, ?page=, ?limit=)
+   * Returns { machines, pagination, counts }
    */
   static async getAll(req, res, next) {
     try {
@@ -47,8 +49,9 @@ class AttendanceMachineMasterController {
         return AttendanceMachineMasterController.getById(req, res, next);
       }
 
-      const machines = await AttendanceMachineMasterModel.getAll({ search, status, machine_type, brand });
-      return ApiResponse.success(res, 'Attendance machines retrieved successfully.', machines);
+      const { page, limit } = parsePagination(req.query);
+      const result = await AttendanceMachineMasterModel.getAll({ search, status, machine_type, brand, page, limit });
+      return ApiResponse.success(res, 'Attendance machines retrieved successfully.', result);
     } catch (error) {
       next(error);
     }

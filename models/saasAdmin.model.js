@@ -2,6 +2,7 @@ const { pool } = require('../config/db.config');
 const { hashPassword } = require('../utils/password.util');
 const SubscriptionItemModel = require('./subscriptionItem.model');
 const SaasRoleModel = require('./saasRole.model');
+const { parsePagination, buildPagination } = require('../utils/pagination.util');
 
 class SaasAdminModel {
   // ========================================================
@@ -779,13 +780,19 @@ class SaasAdminModel {
   // ========================================================
   // 5. PACKAGE / SUBSCRIPTION PLAN MANAGEMENT
   // ========================================================
-  static async getAllPackages({ search = '', status = '' } = {}) {
+  static async getAllPackages({ search = '', status = '', billing_cycle = '', page, limit } = {}) {
+    const { page: pageNum, limit: pageSize, offset } = parsePagination({ page, limit });
     let conditions = [];
     let params = [];
 
     if (status !== '' && status !== undefined && status !== 'all') {
       conditions.push('status = ?');
       params.push(parseInt(status, 10));
+    }
+
+    if (billing_cycle && billing_cycle !== 'all') {
+      conditions.push('billing_cycle = ?');
+      params.push(billing_cycle.trim());
     }
 
     if (search && search.trim()) {
@@ -802,17 +809,67 @@ class SaasAdminModel {
       FROM subscription_plans sp
       ${where}
       ORDER BY sp.id ASC
+      LIMIT ? OFFSET ?
     `;
-    const [rows] = await pool.query(query, params);
+    const countQuery = `SELECT COUNT(*) AS total FROM subscription_plans sp ${where}`;
 
-    for (const pkg of rows) {
+    const [[rows], [[countRow]], counts] = await Promise.all([
+      pool.query(query, [...params, pageSize, offset]),
+      pool.query(countQuery, params),
+      SaasAdminModel.getPackageCounts(),
+    ]);
+
+    // Attach items for every package on this page with a single query (avoids N+1)
+    for (const pkg of rows) pkg.items = [];
+    if (rows.length > 0) {
+      const ids = rows.map((pkg) => pkg.id);
       const [items] = await pool.query(
-        'SELECT * FROM subscription_items WHERE sub_id = ? ORDER BY id ASC',
-        [pkg.id]
+        'SELECT * FROM subscription_items WHERE sub_id IN (?) ORDER BY id ASC',
+        [ids]
       );
-      pkg.items = items || [];
+      const itemsByPackage = new Map();
+      for (const item of items) {
+        const key = String(item.sub_id);
+        if (!itemsByPackage.has(key)) itemsByPackage.set(key, []);
+        itemsByPackage.get(key).push(item);
+      }
+      for (const pkg of rows) pkg.items = itemsByPackage.get(String(pkg.id)) || [];
     }
-    return rows;
+
+    return {
+      packages: rows,
+      pagination: buildPagination(countRow.total, pageNum, pageSize),
+      counts,
+    };
+  }
+
+  /**
+   * Global (unfiltered) package + package item counts for summary metric cards
+   */
+  static async getPackageCounts() {
+    const [[[planRow]], [[itemRow]]] = await Promise.all([
+      pool.query(`
+        SELECT
+          COUNT(*) AS total,
+          COALESCE(SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END), 0) AS active
+        FROM subscription_plans
+      `),
+      pool.query(`
+        SELECT
+          COUNT(*) AS total_items,
+          COALESCE(SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END), 0) AS active_items
+        FROM subscription_items
+      `),
+    ]);
+    const total = Number(planRow.total) || 0;
+    const active = Number(planRow.active) || 0;
+    return {
+      total,
+      active,
+      inactive: total - active,
+      total_items: Number(itemRow.total_items) || 0,
+      active_items: Number(itemRow.active_items) || 0,
+    };
   }
 
   static async getPackageById(id) {

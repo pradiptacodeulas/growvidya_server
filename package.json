@@ -25,6 +25,7 @@
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.2.0",
     "mysql2": "^3.23.3",
+    "nodemailer": "^10.2.1",
     "puppeteer": "^25.10.0",
     "qrcode": "^1.5.4",
     "razorpay": "^2.9.8",

@@ -1,10 +1,13 @@
 const { pool } = require('../config/db.config');
+const { parsePagination, buildPagination } = require('../utils/pagination.util');
 
 class RfidCardMasterModel {
   /**
-   * Fetch all RFID cards (with search and status filter)
+   * Fetch a page of RFID cards (with search, status and card_type filters)
+   * Returns { cards, pagination, counts }
    */
-  static async getAll({ search = '', status = '', card_type = '' } = {}) {
+  static async getAll({ search = '', status = '', card_type = '', page, limit } = {}) {
+    const { page: pageNum, limit: pageSize, offset } = parsePagination({ page, limit });
     let conditions = [];
     let params = [];
 
@@ -44,10 +47,36 @@ class RfidCardMasterModel {
       FROM rfid_card_master
       ${where}
       ORDER BY id DESC
+      LIMIT ? OFFSET ?
     `;
+    const countQuery = `SELECT COUNT(*) AS total FROM rfid_card_master ${where}`;
 
-    const [rows] = await pool.query(query, params);
-    return rows;
+    const [[rows], [[countRow]], counts] = await Promise.all([
+      pool.query(query, [...params, pageSize, offset]),
+      pool.query(countQuery, params),
+      RfidCardMasterModel.getCounts(),
+    ]);
+
+    return {
+      cards: rows,
+      pagination: buildPagination(countRow.total, pageNum, pageSize),
+      counts,
+    };
+  }
+
+  /**
+   * Global (unfiltered) RFID card counts for summary metric cards
+   */
+  static async getCounts() {
+    const [[row]] = await pool.query(`
+      SELECT
+        COUNT(*) AS total,
+        COALESCE(SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END), 0) AS active
+      FROM rfid_card_master
+    `);
+    const total = Number(row.total) || 0;
+    const active = Number(row.active) || 0;
+    return { total, active, inactive: total - active };
   }
 
   /**

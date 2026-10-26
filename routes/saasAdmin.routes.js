@@ -156,4 +156,14 @@ router.put('/settings/razorpay', checkPermission('settings', 'can_edit'), SaasAd
 router.delete('/settings/razorpay/:id', checkPermission('settings', 'can_delete'), SaasAdminController.deleteRazorpayCredentials);
 router.delete('/settings/razorpay', checkPermission('settings', 'can_delete'), SaasAdminController.deleteRazorpayCredentials);
 
+// Settings — Email Credentials (Mailjet & SMTP) Management
+router.get('/settings/email', checkPermission('settings', 'can_view'), SaasAdminController.getEmailCredentials);
+router.post('/settings/email', checkPermission('settings', 'can_add'), SaasAdminController.saveEmailCredentials);
+router.put('/settings/email/:id', checkPermission('settings', 'can_edit'), SaasAdminController.updateEmailCredentials);
+router.put('/settings/email', checkPermission('settings', 'can_edit'), SaasAdminController.updateEmailCredentials);
+router.patch('/settings/email/:id/default', checkPermission('settings', ['can_manage', 'can_edit']), SaasAdminController.setDefaultEmailProvider);
+router.patch('/settings/email/:id/status', checkPermission('settings', ['can_manage', 'can_edit']), SaasAdminController.toggleEmailCredentialStatus);
+router.delete('/settings/email/:id', checkPermission('settings', 'can_delete'), SaasAdminController.deleteEmailCredentials);
+router.post('/settings/email/test', checkPermission('settings', ['can_view', 'can_edit', 'can_manage']), SaasAdminController.sendTestEmail);
+
 module.exports = router;

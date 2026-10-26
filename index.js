@@ -12,6 +12,7 @@ const { initSocket } = require('./services/socket.service');
 const MessageModel = require('./models/message.model');
 const BranchModel = require('./models/branch.model');
 const RazorpayCredentialModel = require('./models/razorpayCredential.model');
+const EmailCredentialModel = require('./models/emailCredential.model');
 const SaasRoleModel = require('./models/saasRole.model');
 
 // Middleware & Router Imports
@@ -185,6 +186,7 @@ server.listen(config.port, async () => {
   await BranchModel.initTable();
   await MessageModel.initTable();
   await RazorpayCredentialModel.initTable();
+  await EmailCredentialModel.initTable();
   await SaasRoleModel.initTable();
 
   console.log(`\n  \x1b[1m\x1b[36mGrowvidya Core API Server\x1b[0m \x1b[90mv1.0.0\x1b[0m`);

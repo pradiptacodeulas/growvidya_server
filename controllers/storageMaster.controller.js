@@ -1,11 +1,13 @@
 const StorageMasterModel = require('../models/storageMaster.model');
 const CapacityUnitMasterModel = require('../models/capacityUnitMaster.model');
 const ApiResponse = require('../utils/api.response');
+const { parsePagination } = require('../utils/pagination.util');
 
 class StorageMasterController {
   /**
    * GET /storage-plans
-   * List all storage plans (supports ?search= and ?status=)
+   * List storage plans (supports ?search=, ?status=, ?page=, ?limit=)
+   * Returns { plans, pagination, counts }
    */
   static async getAll(req, res, next) {
     try {
@@ -18,8 +20,9 @@ class StorageMasterController {
         return StorageMasterController.getById(req, res, next);
       }
 
-      const plans = await StorageMasterModel.getAll({ search, status });
-      return ApiResponse.success(res, 'Storage plans retrieved successfully.', plans);
+      const { page, limit } = parsePagination(req.query);
+      const result = await StorageMasterModel.getAll({ search, status, page, limit });
+      return ApiResponse.success(res, 'Storage plans retrieved successfully.', result);
     } catch (error) {
       next(error);
     }

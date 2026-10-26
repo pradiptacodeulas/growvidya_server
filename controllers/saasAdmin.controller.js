@@ -4,9 +4,12 @@ const SaasRoleModel = require('../models/saasRole.model');
 const CouponModel = require('../models/coupon.model');
 const SubscriptionItemModel = require('../models/subscriptionItem.model');
 const RazorpayCredentialModel = require('../models/razorpayCredential.model');
+const EmailCredentialModel = require('../models/emailCredential.model');
+const EmailService = require('../services/email.service');
 const ApiResponse = require('../utils/api.response');
 const { generateToken } = require('../utils/jwt.util');
 const { comparePassword } = require('../utils/password.util');
+const { parsePagination } = require('../utils/pagination.util');
 
 class SaasAdminController {
   // ========================================================
@@ -447,9 +450,11 @@ class SaasAdminController {
   // ========================================================
   static async getPackages(req, res, next) {
     try {
-      const { search, status } = req.query;
-      const packages = await SaasAdminModel.getAllPackages({ search, status });
-      return ApiResponse.success(res, 'Subscription packages retrieved successfully.', packages);
+      const { search, status, billing_cycle } = req.query;
+      const { page, limit } = parsePagination(req.query);
+      const result = await SaasAdminModel.getAllPackages({ search, status, billing_cycle, page, limit });
+      // result: { packages, pagination, counts }
+      return ApiResponse.success(res, 'Subscription packages retrieved successfully.', result);
     } catch (error) {
       next(error);
     }
@@ -1253,6 +1258,162 @@ class SaasAdminController {
 
       return ApiResponse.success(res, 'Razorpay credentials deleted successfully.', null);
     } catch (error) {
+      next(error);
+    }
+  }
+
+  // ========================================================
+  // 9. SETTINGS — EMAIL CREDENTIALS (MAILJET & SMTP)
+  // ========================================================
+  static async getEmailCredentials(req, res, next) {
+    try {
+      const credentials = await EmailCredentialModel.getAll();
+      return ApiResponse.success(
+        res,
+        'Email provider credentials retrieved successfully.',
+        credentials
+      );
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async saveEmailCredentials(req, res, next) {
+    try {
+      const body = req.body || {};
+      const saved = await EmailCredentialModel.save(body);
+      return ApiResponse.created(
+        res,
+        `${saved.provider === 'mailjet' ? 'Mailjet' : 'SMTP'} credentials saved successfully.`,
+        saved
+      );
+    } catch (error) {
+      if (error.statusCode === 400) {
+        return ApiResponse.error(res, error.message, null, 400);
+      }
+      next(error);
+    }
+  }
+
+  static async updateEmailCredentials(req, res, next) {
+    try {
+      const body = req.body || {};
+      const id = req.params?.id || body.id || req.query?.id || null;
+      if (!id) {
+        const saved = await EmailCredentialModel.save(body);
+        return ApiResponse.success(res, 'Email credentials updated successfully.', saved);
+      }
+
+      const updated = await EmailCredentialModel.update(id, body);
+      if (!updated) {
+        return ApiResponse.notFound(res, 'Email credential configuration not found.');
+      }
+
+      return ApiResponse.success(
+        res,
+        `${updated.provider === 'mailjet' ? 'Mailjet' : 'SMTP'} credentials updated successfully.`,
+        updated
+      );
+    } catch (error) {
+      if (error.statusCode === 400) {
+        return ApiResponse.error(res, error.message, null, 400);
+      }
+      next(error);
+    }
+  }
+
+  static async setDefaultEmailProvider(req, res, next) {
+    try {
+      const body = req.body || {};
+      const id = req.params?.id || body.id || req.query?.id;
+      if (!id) {
+        return ApiResponse.error(res, 'Credential ID is required.', null, 400);
+      }
+
+      const updated = await EmailCredentialModel.setDefault(id);
+      if (!updated) {
+        return ApiResponse.notFound(res, 'Email credential configuration not found.');
+      }
+
+      const label = updated.provider === 'mailjet' ? 'Mailjet' : 'SMTP';
+      return ApiResponse.success(
+        res,
+        `${label} is now set as the default email provider.`,
+        updated
+      );
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async toggleEmailCredentialStatus(req, res, next) {
+    try {
+      const body = req.body || {};
+      const id = req.params?.id || body.id || req.query?.id;
+      const { status } = body;
+
+      if (!id) {
+        return ApiResponse.error(res, 'Credential ID is required.', null, 400);
+      }
+      if (status === undefined || (Number(status) !== 0 && Number(status) !== 1)) {
+        return ApiResponse.error(res, 'Status must be 0 (inactive) or 1 (active).', null, 400);
+      }
+
+      const updated = await EmailCredentialModel.toggleStatus(id, status);
+      if (!updated) {
+        return ApiResponse.notFound(res, 'Email credential configuration not found.');
+      }
+
+      const label = updated.provider === 'mailjet' ? 'Mailjet' : 'SMTP';
+      return ApiResponse.success(
+        res,
+        `${label} status updated to ${Number(status) === 1 ? 'Active' : 'Inactive'}.`,
+        updated
+      );
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async deleteEmailCredentials(req, res, next) {
+    try {
+      const body = req.body || {};
+      const id = req.params?.id || body.id || req.query?.id;
+      if (!id) {
+        return ApiResponse.error(res, 'Credential ID is required.', null, 400);
+      }
+
+      const deleted = await EmailCredentialModel.delete(id);
+      if (!deleted) {
+        return ApiResponse.notFound(res, 'Email credential configuration not found.');
+      }
+
+      return ApiResponse.success(res, 'Email credentials deleted successfully.', null);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async sendTestEmail(req, res, next) {
+    try {
+      const body = req.body || {};
+      const toEmail = body.to_email || body.toEmail || body.email;
+      const credentialId = body.credential_id || body.credentialId || body.id || null;
+
+      const result = await EmailService.sendTestEmail({
+        toEmail,
+        credentialId,
+      });
+
+      return ApiResponse.success(
+        res,
+        `Test email sent successfully to ${toEmail} via ${result.provider === 'mailjet' ? 'Mailjet' : 'SMTP'}.`,
+        result
+      );
+    } catch (error) {
+      if (error.statusCode === 400) {
+        return ApiResponse.error(res, error.message, null, 400);
+      }
       next(error);
     }
   }

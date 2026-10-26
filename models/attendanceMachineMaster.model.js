@@ -1,10 +1,13 @@
 const { pool } = require('../config/db.config');
+const { parsePagination, buildPagination } = require('../utils/pagination.util');
 
 class AttendanceMachineMasterModel {
   /**
-   * Fetch all attendance machines (with search, status, machine_type, brand filters)
+   * Fetch a page of attendance machines (with search, status, machine_type, brand filters)
+   * Returns { machines, pagination, counts }
    */
-  static async getAll({ search = '', status = '', machine_type = '', brand = '' } = {}) {
+  static async getAll({ search = '', status = '', machine_type = '', brand = '', page, limit } = {}) {
+    const { page: pageNum, limit: pageSize, offset } = parsePagination({ page, limit });
     let conditions = [];
     let params = [];
 
@@ -51,10 +54,36 @@ class AttendanceMachineMasterModel {
       FROM attendance_machine_master
       ${where}
       ORDER BY id DESC
+      LIMIT ? OFFSET ?
     `;
+    const countQuery = `SELECT COUNT(*) AS total FROM attendance_machine_master ${where}`;
 
-    const [rows] = await pool.query(query, params);
-    return rows;
+    const [[rows], [[countRow]], counts] = await Promise.all([
+      pool.query(query, [...params, pageSize, offset]),
+      pool.query(countQuery, params),
+      AttendanceMachineMasterModel.getCounts(),
+    ]);
+
+    return {
+      machines: rows,
+      pagination: buildPagination(countRow.total, pageNum, pageSize),
+      counts,
+    };
+  }
+
+  /**
+   * Global (unfiltered) attendance machine counts for summary metric cards
+   */
+  static async getCounts() {
+    const [[row]] = await pool.query(`
+      SELECT
+        COUNT(*) AS total,
+        COALESCE(SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END), 0) AS active
+      FROM attendance_machine_master
+    `);
+    const total = Number(row.total) || 0;
+    const active = Number(row.active) || 0;
+    return { total, active, inactive: total - active };
   }
 
   /**
