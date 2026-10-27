@@ -1,5 +1,6 @@
 const BranchModel = require('../models/branch.model');
 const ApiResponse = require('../utils/api.response');
+const { hasGeoFields, normalizeBranchLocation } = require('../utils/branchLocation.util');
 
 class BranchController {
   /**
@@ -114,6 +115,16 @@ class BranchController {
         return ApiResponse.error(res, `Branch code "${branch_code}" is already in use in this school.`, null, 400);
       }
 
+      // Validate attendance location (geofence) fields
+      let geo = null;
+      if (hasGeoFields(req.body)) {
+        const { value, error } = normalizeBranchLocation(req.body);
+        if (error) {
+          return ApiResponse.error(res, error, null, 400);
+        }
+        geo = value;
+      }
+
       const newBranch = await BranchModel.createBranch({
         school_id: schoolId,
         branch_name,
@@ -130,6 +141,11 @@ class BranchController {
         is_main_branch,
         status,
       });
+
+      if (geo && newBranch?.id) {
+        await BranchModel.updateAttendanceLocation(newBranch.id, schoolId, geo);
+        Object.assign(newBranch, geo);
+      }
 
       return ApiResponse.success(res, 'Branch created successfully.', newBranch, 201);
     } catch (error) {
@@ -168,10 +184,51 @@ class BranchController {
         }
       }
 
+      // Validate attendance location (geofence) fields before any write
+      let geo = null;
+      if (hasGeoFields(req.body)) {
+        const { value, error } = normalizeBranchLocation(req.body, existing);
+        if (error) {
+          return ApiResponse.error(res, error, null, 400);
+        }
+        geo = value;
+      }
+
       await BranchModel.updateBranch(Number(id), schoolId, req.body);
+      if (geo) {
+        await BranchModel.updateAttendanceLocation(Number(id), schoolId, geo);
+      }
       const updated = await BranchModel.getBranchById(Number(id), schoolId);
 
       return ApiResponse.success(res, 'Branch updated successfully.', updated);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Update only the attendance location (geofence) of a branch
+   * PATCH /admin/branches/:id/attendance-location
+   */
+  static async updateAttendanceLocation(req, res, next) {
+    try {
+      const schoolId = BranchController.getSchoolId(req);
+      const { id } = req.params;
+
+      const existing = await BranchModel.getBranchById(Number(id), schoolId);
+      if (!existing) {
+        return ApiResponse.error(res, 'Branch not found.', null, 404);
+      }
+
+      const { value, error } = normalizeBranchLocation(req.body || {}, existing);
+      if (error) {
+        return ApiResponse.error(res, error, null, 400);
+      }
+
+      await BranchModel.updateAttendanceLocation(Number(id), schoolId, value);
+      const updated = await BranchModel.getBranchById(Number(id), schoolId);
+
+      return ApiResponse.success(res, 'Attendance location updated successfully.', updated);
     } catch (error) {
       next(error);
     }

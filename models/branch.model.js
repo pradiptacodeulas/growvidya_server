@@ -233,6 +233,14 @@ class BranchModel {
         b.email,
         b.is_main_branch,
         b.status,
+        b.latitude,
+        b.longitude,
+        b.geo_address,
+        b.attendance_radius_m,
+        b.gps_max_accuracy_m,
+        b.late_after,
+        b.working_days,
+        b.geo_attendance_enabled,
         b.created_at,
         b.updated_at
       FROM branch_master b
@@ -299,6 +307,14 @@ class BranchModel {
         b.email,
         b.is_main_branch,
         b.status,
+        b.latitude,
+        b.longitude,
+        b.geo_address,
+        b.attendance_radius_m,
+        b.gps_max_accuracy_m,
+        b.late_after,
+        b.working_days,
+        b.geo_attendance_enabled,
         b.created_at,
         b.updated_at
       FROM branch_master b
@@ -560,6 +576,36 @@ class BranchModel {
   }
 
   /**
+   * Update branch attendance location (geofence) settings.
+   * `geo` must be pre-validated via utils/branchLocation.util normalizeBranchLocation().
+   */
+  static async updateAttendanceLocation(id, school_id, geo) {
+    const parsedSchoolId = Number(school_id);
+    if (!parsedSchoolId) {
+      throw new Error('Valid school_id is required.');
+    }
+    const [result] = await pool.execute(
+      `UPDATE branch_master SET
+         latitude = ?, longitude = ?, geo_address = ?, attendance_radius_m = ?,
+         gps_max_accuracy_m = ?, late_after = ?, working_days = ?, geo_attendance_enabled = ?
+       WHERE id = ? AND school_id = ?`,
+      [
+        geo.latitude,
+        geo.longitude,
+        geo.geo_address,
+        geo.attendance_radius_m,
+        geo.gps_max_accuracy_m,
+        geo.late_after,
+        geo.working_days,
+        geo.geo_attendance_enabled,
+        Number(id),
+        parsedSchoolId,
+      ]
+    );
+    return result.affectedRows > 0;
+  }
+
+  /**
    * Get active staff users who can be assigned as branch heads
    */
   static async getBranchHeadCandidates(school_id) {
@@ -731,6 +777,14 @@ class BranchModel {
         b.email,
         b.is_main_branch,
         b.status,
+        b.latitude,
+        b.longitude,
+        b.geo_address,
+        b.attendance_radius_m,
+        b.gps_max_accuracy_m,
+        b.late_after,
+        b.working_days,
+        b.geo_attendance_enabled,
         b.created_at,
         COALESCE(st.student_count, 0) AS student_count,
         COALESCE(t.teacher_count, 0) AS teacher_count,

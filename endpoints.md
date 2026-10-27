@@ -699,3 +699,25 @@ This document lists all REST API endpoints implemented in the `growvidya-server`
 - **Bearer Token**: Required (Any authenticated user)
 
 
+
+---
+
+## Teacher Geofence (Location) Attendance
+
+### Branch attendance location (Admin, Bearer, RBAC `settings/branches`)
+New branch fields (accepted by `POST /admin/branches`, `PUT /admin/branches/:id`; returned by branch GET endpoints):
+`latitude`, `longitude`, `geo_address`, `attendance_radius_m` (20-2000, default 150), `gps_max_accuracy_m` (10-500, default 100),
+`late_after` (HH:mm, default 09:30), `working_days` ("1,2,3,4,5,6", ISO Mon=1..Sun=7), `geo_attendance_enabled` (0/1; requires lat/lng when 1).
+
+| Method | Path | Description |
+|---|---|---|
+| PATCH | `/admin/branches/:id/attendance-location` | Update only the geofence fields of a branch (RBAC edit) |
+
+### Teacher self attendance (Teacher, Bearer)
+| Method | Path | Description |
+|---|---|---|
+| GET | `/teacher/attendance/self/status` | Today's status: geofence, today's record, half-day leave, `blocked` + `reason` (GEOFENCE_NOT_SET, HOLIDAY, WEEKLY_OFF, ON_LEAVE, ALREADY_MARKED) + `message`, `will_be_late` |
+| POST | `/teacher/attendance/self/check-in` | Body `{ latitude, longitude, accuracy, is_mocked, device_info }`. Saves Present (1) / Late (2, after `late_after`) / Half Day (3, approved half-day leave). Errors carry `errors.code`: INVALID_LOCATION, GEOFENCE_NOT_SET, HOLIDAY, WEEKLY_OFF, ON_LEAVE, ALREADY_MARKED (409), MOCK_LOCATION, LOW_ACCURACY (422), OUTSIDE_RADIUS, RATE_LIMITED (429) |
+
+Rules: once per teacher per day (DB unique key), "today" computed in `SCHOOL_TIMEZONE` (default `Asia/Kolkata`), all checks re-validated server-side.
+Admin teacher attendance list/roster rows now include `source` (admin|app|machine), `check_in_time`, `distance_m`, `latitude`, `longitude`.

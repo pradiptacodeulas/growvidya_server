@@ -20,6 +20,7 @@ const StorageMasterModel = require('./models/storageMaster.model');
 const CouponModel = require('./models/coupon.model');
 const SupportTicketModel = require('./models/supportTicket.model');
 const DeviceTokenModel = require('./models/deviceToken.model');
+const TeacherSelfAttendanceModel = require('./models/teacherSelfAttendance.model');
 
 // Middleware & Router Imports
 const errorMiddleware = require('./middlewares/error.middleware');
@@ -190,6 +191,7 @@ initSocket(server, config);
 server.listen(config.port, async () => {
   const dbStatus = await testConnection();
   await BranchModel.initTable();
+  await TeacherSelfAttendanceModel.initTable();
   await MessageModel.initTable();
   await RazorpayCredentialModel.initTable();
   await EmailCredentialModel.initTable();

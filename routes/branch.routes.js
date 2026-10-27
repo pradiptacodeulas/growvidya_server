@@ -33,6 +33,9 @@ router.put('/:id', rbacMiddleware('settings/branches', 'edit'), BranchController
 // Set branch as main campus (Super Admin campus management)
 router.patch('/:id/set-main', rbacMiddleware('settings/branches', 'edit'), BranchController.setMainBranch);
 
+// Update attendance location / geofence for Teacher App attendance (Super Admin campus management)
+router.patch('/:id/attendance-location', rbacMiddleware('settings/branches', 'edit'), BranchController.updateAttendanceLocation);
+
 // Delete branch (Super Admin campus management)
 router.delete('/:id', rbacMiddleware('settings/branches', 'delete'), BranchController.deleteBranch);
 

@@ -465,7 +465,12 @@ class AttendanceModel {
           ELSE 'Not Marked'
         END AS attendance_status_label,
         ta.notes,
-        ta.date AS attendance_date
+        ta.date AS attendance_date,
+        ta.source,
+        ta.check_in_time,
+        ta.distance_m,
+        ta.latitude,
+        ta.longitude
       ${baseFrom}
       ORDER BY t.id ASC
     `;
@@ -550,7 +555,12 @@ class AttendanceModel {
         cm.class_name,
         sm.section_name,
         ta.attendance,
-        ta.notes
+        ta.notes,
+        ta.source,
+        ta.check_in_time,
+        ta.distance_m,
+        ta.latitude,
+        ta.longitude
       ${baseFrom}
       ORDER BY t.id ASC
     `;
@@ -577,7 +587,7 @@ class AttendanceModel {
   /**
    * Batch Save / Upsert Teacher Attendance
    */
-  static async saveTeacherAttendance(schoolId, { attendanceDate, attendanceRecords = [], branch_id = null }) {
+  static async saveTeacherAttendance(schoolId, { attendanceDate, attendanceRecords = [], branch_id = null, marked_by = null }) {
     const validDate = AttendanceModel.validateAttendanceDate(attendanceDate, 'teacher');
 
     for (const record of attendanceRecords) {
@@ -594,20 +604,27 @@ class AttendanceModel {
       }
 
       const [existing] = await pool.query(
-        `SELECT id FROM teacher_attendance WHERE teacher_id = ? AND date = ? AND school_id = ?`,
+        `SELECT id, attendance, notes, status FROM teacher_attendance WHERE teacher_id = ? AND date = ? AND school_id = ?`,
         [teacherId, validDate, schoolId]
       );
 
       if (existing && existing.length > 0) {
-        await pool.query(
-          `UPDATE teacher_attendance SET attendance = ?, notes = ?, branch_id = COALESCE(?, branch_id) WHERE id = ?`,
-          [attendance, notes, recBranchId, existing[0].id]
-        );
+        const prev = existing[0];
+        // Only flag as an admin override when something actually changed,
+        // so batch-saving the roster does not overwrite Teacher App check-ins' source.
+        const changed =
+          Number(prev.attendance) !== attendance || String(prev.notes || '') !== String(notes) || Number(prev.status) !== 1;
+        if (changed) {
+          await pool.query(
+            `UPDATE teacher_attendance SET attendance = ?, notes = ?, status = 1, branch_id = COALESCE(?, branch_id), source = 'admin', marked_by = ? WHERE id = ?`,
+            [attendance, notes, recBranchId, marked_by, prev.id]
+          );
+        }
       } else {
         await pool.query(
-          `INSERT INTO teacher_attendance (school_id, branch_id, teacher_id, attendance, notes, date, status)
-           VALUES (?, ?, ?, ?, ?, ?, 1)`,
-          [schoolId, recBranchId, teacherId, attendance, notes, validDate]
+          `INSERT INTO teacher_attendance (school_id, branch_id, teacher_id, attendance, notes, date, status, source, marked_by)
+           VALUES (?, ?, ?, ?, ?, ?, 1, 'admin', ?)`,
+          [schoolId, recBranchId, teacherId, attendance, notes, validDate, marked_by]
         );
       }
     }

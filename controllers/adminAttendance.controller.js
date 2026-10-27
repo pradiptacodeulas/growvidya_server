@@ -303,6 +303,7 @@ class AdminAttendanceController {
         attendanceDate: formattedDate,
         attendanceRecords,
         branch_id: branchId,
+        marked_by: Number(req.user?.userId || req.user?.id) || null,
       });
 
       return ApiResponse.success(res, 'Teacher attendance submitted successfully.');
