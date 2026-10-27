@@ -6,9 +6,11 @@ const StorageMasterController = require('../controllers/storageMaster.controller
 const RfidCardMasterController = require('../controllers/rfidCardMaster.controller');
 const AttendanceMachineMasterController = require('../controllers/attendanceMachineMaster.controller');
 const BankAccountMasterController = require('../controllers/bankAccountMaster.controller');
+const SupportTicketController = require('../controllers/supportTicket.controller');
+const NotificationController = require('../controllers/notification.controller');
 const saasAdminAuthMiddleware = require('../middlewares/saasAdminAuth.middleware');
 const { checkPermission } = require('../middlewares/saasPermission.middleware');
-const { upload, machineImageMiddleware, rfidImageMiddleware, bankImageMiddleware } = require('../middlewares/upload.middleware');
+const { upload, machineImageMiddleware, rfidImageMiddleware, bankImageMiddleware, supportTicketAttachmentMiddleware } = require('../middlewares/upload.middleware');
 
 // ==========================================
 // 1. PUBLIC SAAS ADMIN ROUTES
@@ -16,6 +18,7 @@ const { upload, machineImageMiddleware, rfidImageMiddleware, bankImageMiddleware
 router.post('/login', SaasAdminController.login);
 router.post('/validate-coupon', SaasAdminController.validateCoupon);
 router.get('/genders', SaasAdminController.getGenders);
+router.get('/notifications/vapid-public-key', NotificationController.getVapidPublicKey);
 router.use('/upload', express.static(path.join(__dirname, '../public/upload')));
 
 // ==========================================
@@ -27,6 +30,10 @@ router.use(saasAdminAuthMiddleware);
 router.get('/profile', SaasAdminController.getProfile);
 router.put('/profile', upload.single('profile_image'), SaasAdminController.updateProfile);
 router.post('/logout', SaasAdminController.logout);
+
+// Web Push Notification Token Registration (SaaS Admin Portal)
+router.post('/notifications/device-token', NotificationController.registerDeviceToken);
+router.delete('/notifications/device-token', NotificationController.unregisterDeviceToken);
 
 // Modules Lookup
 router.get('/modules', SaasAdminController.getModules);
@@ -73,10 +80,12 @@ router.delete('/coupons/:id', checkPermission('coupons', 'can_delete'), SaasAdmi
 router.patch('/coupons/:id/status', checkPermission('coupons', 'can_manage'), SaasAdminController.toggleCouponStatus);
 router.post('/coupons/validate', checkPermission('coupons', 'can_view'), SaasAdminController.validateCoupon);
 
-// Storage Master Plan Management
+// Storage Master Plan Management & Buyers
 router.get('/storage-plans', checkPermission('storage_plans', 'can_view'), StorageMasterController.getAll);
 router.get('/storage-plans/units', checkPermission('storage_plans', 'can_view'), StorageMasterController.getCapacityUnits);
 router.get('/capacity-units', checkPermission('storage_plans', 'can_view'), StorageMasterController.getCapacityUnits);
+router.get('/storage-plans/buyers', checkPermission('storage_plans', 'can_view'), StorageMasterController.getBuyers);
+router.patch('/storage-plans/buyers/:id', checkPermission('storage_plans', ['can_manage', 'can_edit']), StorageMasterController.updateBuyerOrder);
 router.get('/storage-plans/:id', checkPermission('storage_plans', 'can_view'), StorageMasterController.getById);
 router.post('/storage-plans', checkPermission('storage_plans', 'can_add'), StorageMasterController.create);
 router.put('/storage-plans/:id', checkPermission('storage_plans', 'can_edit'), StorageMasterController.update);
@@ -86,9 +95,11 @@ router.delete('/storage-plans', checkPermission('storage_plans', 'can_delete'), 
 router.patch('/storage-plans/:id/status', checkPermission('storage_plans', 'can_manage'), StorageMasterController.toggleStatus);
 router.patch('/storage-plans/status', checkPermission('storage_plans', 'can_manage'), StorageMasterController.toggleStatus);
 
-// RFID Card Master Management
+// RFID Card Master Management & Buyers
 router.get('/rfid-cards', checkPermission('rfid_cards', 'can_view'), RfidCardMasterController.getAll);
 router.get('/rfid-cards/active', checkPermission('rfid_cards', 'can_view'), RfidCardMasterController.getActive);
+router.get('/rfid-cards/buyers', checkPermission('rfid_cards', 'can_view'), RfidCardMasterController.getBuyers);
+router.patch('/rfid-cards/buyers/:id', checkPermission('rfid_cards', ['can_manage', 'can_edit']), RfidCardMasterController.updateBuyerOrder);
 router.get('/rfid-cards/:id', checkPermission('rfid_cards', 'can_view'), RfidCardMasterController.getById);
 router.post('/rfid-cards', checkPermission('rfid_cards', 'can_add'), rfidImageMiddleware, RfidCardMasterController.create);
 router.put('/rfid-cards/:id', checkPermission('rfid_cards', 'can_edit'), rfidImageMiddleware, RfidCardMasterController.update);
@@ -102,9 +113,11 @@ router.delete('/rfid-cards', checkPermission('rfid_cards', 'can_delete'), RfidCa
 router.patch('/rfid-cards/:id/status', checkPermission('rfid_cards', 'can_manage'), RfidCardMasterController.toggleStatus);
 router.patch('/rfid-cards/status', checkPermission('rfid_cards', 'can_manage'), RfidCardMasterController.toggleStatus);
 
-// Attendance Machine Master Management
+// Attendance Machine Master Management & Buyers
 router.get('/attendance-machines', checkPermission('attendance_machines', 'can_view'), AttendanceMachineMasterController.getAll);
 router.get('/attendance-machines/active', checkPermission('attendance_machines', 'can_view'), AttendanceMachineMasterController.getActive);
+router.get('/attendance-machines/buyers', checkPermission('attendance_machines', 'can_view'), AttendanceMachineMasterController.getBuyers);
+router.patch('/attendance-machines/buyers/:id', checkPermission('attendance_machines', ['can_manage', 'can_edit']), AttendanceMachineMasterController.updateBuyerOrder);
 router.get('/attendance-machines/:id', checkPermission('attendance_machines', 'can_view'), AttendanceMachineMasterController.getById);
 router.post('/attendance-machines', checkPermission('attendance_machines', 'can_add'), machineImageMiddleware, AttendanceMachineMasterController.create);
 router.put('/attendance-machines/:id', checkPermission('attendance_machines', 'can_edit'), machineImageMiddleware, AttendanceMachineMasterController.update);
@@ -165,5 +178,13 @@ router.patch('/settings/email/:id/default', checkPermission('settings', ['can_ma
 router.patch('/settings/email/:id/status', checkPermission('settings', ['can_manage', 'can_edit']), SaasAdminController.toggleEmailCredentialStatus);
 router.delete('/settings/email/:id', checkPermission('settings', 'can_delete'), SaasAdminController.deleteEmailCredentials);
 router.post('/settings/email/test', checkPermission('settings', ['can_view', 'can_edit', 'can_manage']), SaasAdminController.sendTestEmail);
+
+// Help & Support Tickets Management
+router.get('/support-tickets', checkPermission('support_tickets', 'can_view'), SupportTicketController.getSaasTickets);
+router.get('/support-tickets/assignees', checkPermission('support_tickets', 'can_view'), SupportTicketController.getSaasAssignees);
+router.get('/support-tickets/:id', checkPermission('support_tickets', 'can_view'), SupportTicketController.getSaasTicketById);
+router.post('/support-tickets/:id/reply', checkPermission('support_tickets', ['can_edit', 'can_manage', 'can_add']), supportTicketAttachmentMiddleware, SupportTicketController.addSaasReply);
+router.patch('/support-tickets/:id', checkPermission('support_tickets', ['can_edit', 'can_manage']), SupportTicketController.updateSaasTicket);
+router.patch('/support-tickets/:id/status', checkPermission('support_tickets', ['can_edit', 'can_manage']), SupportTicketController.updateSaasTicket);
 
 module.exports = router;

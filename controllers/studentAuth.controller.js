@@ -127,6 +127,16 @@ class StudentAuthController {
       return ApiResponse.error(res, 'Account configuration error: No school associated with this student account.', null, 400);
     }
 
+    const [sRows] = await pool.query('SELECT status FROM school_master WHERE id = ? LIMIT 1', [student.school_id]);
+    if (sRows.length > 0 && Number(sRows[0].status) !== 1) {
+      return ApiResponse.error(res, 'Your school account has been marked inactive by the Super Admin. Login is disabled until reactivated.', null, 403);
+    }
+    const SubscriptionModel = require('../models/subscription.model');
+    const sub = await SubscriptionModel.getSchoolSubscription(student.school_id);
+    if (sub && (sub.status === 'suspended' || sub.liveStatus === 'suspended')) {
+      return ApiResponse.error(res, 'Your school subscription has been marked inactive / suspended by the Super Admin. Login is disabled until reactivated.', null, 403);
+    }
+
     const tokenPayload = {
       userId: student.id,
       studentId: student.id,

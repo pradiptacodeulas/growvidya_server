@@ -15,6 +15,7 @@ class SubscriptionModel {
         s.id AS subscription_id,
         s.school_id,
         s.plan_id,
+        s.storage_plan_id,
         s.amount_paid,
         s.payment_gateway,
         s.payment_transaction_id,
@@ -57,6 +58,7 @@ class SubscriptionModel {
         s.id AS subscription_id,
         s.school_id,
         s.plan_id,
+        s.storage_plan_id,
         s.amount_paid,
         s.payment_gateway,
         s.payment_transaction_id,
@@ -90,6 +92,7 @@ class SubscriptionModel {
           subscription_id: pendingSubscription.subscription_id,
           school_id: targetSchoolId,
           plan_id: pendingSubscription.plan_id,
+          storage_plan_id: pendingSubscription.storage_plan_id,
           plan_name: pendingSubscription.plan_name,
           plan_code: pendingSubscription.plan_code,
           billing_cycle: pendingSubscription.billing_cycle,
@@ -146,6 +149,9 @@ class SubscriptionModel {
 
     if (sub.status === 'pending') {
       liveStatus = 'pending';
+      isExpired = false;
+    } else if (sub.status === 'suspended') {
+      liveStatus = 'suspended';
       isExpired = false;
     } else if (daysLeft <= 0 || sub.status === 'expired') {
       liveStatus = 'expired';
@@ -303,6 +309,7 @@ class SubscriptionModel {
   static async requestPlanSelection({
     schoolId,
     planId,
+    storagePlanId = null,
     amountPaid,
     paymentGateway = 'direct_selection',
     paymentTransactionId = null,
@@ -356,7 +363,7 @@ class SubscriptionModel {
     // We do NOT expire existing active plans here! The existing plan stays active until approval.
     const insertQuery = `
       INSERT INTO school_subscriptions (
-        school_id, plan_id, amount_paid, payment_gateway,
+        school_id, plan_id, storage_plan_id, amount_paid, payment_gateway,
         payment_transaction_id, coupon_id, discount_amount, original_amount,
         payment_status, start_date, end_date, status, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NOW())
@@ -365,6 +372,7 @@ class SubscriptionModel {
     const [result] = await pool.query(insertQuery, [
       targetSchoolId,
       targetPlanId,
+      storagePlanId ? parseInt(storagePlanId, 10) : null,
       finalAmount,
       paymentGateway,
       finalTxnId,
@@ -382,6 +390,7 @@ class SubscriptionModel {
       subscription_id: subscriptionId,
       school_id: targetSchoolId,
       plan_id: targetPlanId,
+      storage_plan_id: storagePlanId ? parseInt(storagePlanId, 10) : null,
       plan_name: plan.plan_name,
       amount_paid: finalAmount,
       coupon_id: couponId,
@@ -404,6 +413,7 @@ class SubscriptionModel {
   static async upgradeSubscription({
     schoolId,
     planId,
+    storagePlanId = null,
     amountPaid,
     paymentGateway = 'manual',
     paymentTransactionId = null,
@@ -416,6 +426,7 @@ class SubscriptionModel {
       return await this.requestPlanSelection({
         schoolId,
         planId,
+        storagePlanId,
         amountPaid,
         paymentGateway,
         paymentTransactionId,
@@ -476,15 +487,16 @@ class SubscriptionModel {
     // Insert new active paid subscription with coupon audit fields
     const insertQuery = `
       INSERT INTO school_subscriptions (
-        school_id, plan_id, amount_paid, payment_gateway,
+        school_id, plan_id, storage_plan_id, amount_paid, payment_gateway,
         payment_transaction_id, coupon_id, discount_amount, original_amount,
         payment_status, start_date, end_date, status, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, 'active', NOW())
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, 'active', NOW())
     `;
 
     const [result] = await pool.query(insertQuery, [
       targetSchoolId,
       targetPlanId,
+      storagePlanId ? parseInt(storagePlanId, 10) : null,
       finalAmount,
       paymentGateway,
       finalTxnId,
@@ -511,6 +523,7 @@ class SubscriptionModel {
       subscription_id: subscriptionId,
       school_id: targetSchoolId,
       plan_id: targetPlanId,
+      storage_plan_id: storagePlanId ? parseInt(storagePlanId, 10) : null,
       plan_name: plan.plan_name,
       amount_paid: finalAmount,
       coupon_id: couponId,
@@ -569,6 +582,7 @@ class SubscriptionModel {
   static async requestOfflineUpgrade({
     schoolId,
     planId,
+    storagePlanId = null,
     amountPaid,
     paymentTransactionId = null,
     couponId = null,
@@ -588,20 +602,10 @@ class SubscriptionModel {
       paymentTransactionId ||
       `OFFLINE_REQ_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
 
-    const startDate = new Date();
-    const endDate = new Date();
-    if (plan.billing_cycle === 'monthly') {
-      endDate.setMonth(endDate.getMonth() + 1);
-    } else {
-      endDate.setFullYear(endDate.getFullYear() + 1);
-    }
-
-    const startDateStr = startDate.toISOString().split('T')[0];
-    const endDateStr = endDate.toISOString().split('T')[0];
-
     return await this.requestPlanSelection({
       schoolId: targetSchoolId,
       planId: targetPlanId,
+      storagePlanId,
       amountPaid: finalAmount,
       paymentGateway: 'bank_transfer',
       paymentTransactionId: finalTxnId,

@@ -8,6 +8,7 @@ const featureGuard = require('../middlewares/featureGuard.middleware');
 // Route Modules
 const adminAuthRoutes = require('./adminAuth.routes');
 const adminSubscriptionRoutes = require('./adminSubscription.routes');
+const supportTicketRoutes = require('./supportTicket.routes');
 const adminAcademicRoutes = require('./adminAcademic.routes');
 const adminTeacherRoutes = require('./adminTeacher.routes');
 const adminStudentRoutes = require('./adminStudent.routes');
@@ -118,6 +119,7 @@ router.use(subscriptionGuard);
 // ==========================================
 router.use('/v1/admin/auth', adminAuthRoutes);
 router.use('/v1/admin/subscription', adminSubscriptionRoutes);
+router.use('/v1/admin/support-tickets', supportTicketRoutes);
 router.use('/v1/admin/academics', adminAcademicRoutes);
 router.use('/v1/admin/teachers', adminTeacherRoutes);
 router.use('/v1/admin/students', adminStudentRoutes);

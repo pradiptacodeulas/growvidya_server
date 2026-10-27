@@ -36,7 +36,6 @@ class StorageMasterController {
     try {
       const { id, plan_id, planId } = req.query;
 
-      // If specific storage plan ID is provided in query, body, or header, delegate to getById
       const targetId = id || plan_id || planId || req.body?.id || req.body?.plan_id || req.headers['x-storage-plan-id'];
       if (targetId && targetId !== ':id') {
         req.params.id = targetId;
@@ -64,6 +63,66 @@ class StorageMasterController {
   }
 
   /**
+   * GET /storage-plans/buyers
+   * List schools/users who purchased storage plans (supports ?search=, ?status=, ?storage_plan_id=, ?page=, ?limit=)
+   */
+  static async getBuyers(req, res, next) {
+    try {
+      const { search, status, storage_plan_id } = req.query;
+      const { page, limit } = parsePagination(req.query);
+      const result = await StorageMasterModel.getBuyers({
+        search,
+        status,
+        storage_plan_id,
+        page,
+        limit,
+      });
+      return ApiResponse.success(res, 'Storage plan buyers retrieved successfully.', result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * PATCH /storage-plans/buyers/:id
+   * Update a storage plan purchase order status / dates / remarks
+   */
+  static async updateBuyerOrder(req, res, next) {
+    try {
+      const { id } = req.params;
+      if (!id || !/^\d+$/.test(String(id).trim())) {
+        return ApiResponse.badRequest(res, 'Valid storage order ID is required.');
+      }
+
+      const existing = await StorageMasterModel.getBuyerOrderById(Number(id));
+      if (!existing) {
+        return ApiResponse.notFound(res, 'Storage plan purchase order not found.');
+      }
+
+      const { order_status, start_date, end_date, remarks } = req.body;
+      const validStatuses = ['pending', 'active', 'expired', 'cancelled'];
+      if (order_status !== undefined && !validStatuses.includes(String(order_status).trim().toLowerCase())) {
+        return ApiResponse.badRequest(
+          res,
+          `Invalid order_status. Allowed values: ${validStatuses.join(', ')}.`
+        );
+      }
+
+      await StorageMasterModel.updateBuyerOrder(Number(id), {
+        order_status,
+        start_date,
+        end_date,
+        remarks,
+      });
+
+      const updated = await StorageMasterModel.getBuyerOrderById(Number(id));
+      return ApiResponse.success(res, 'Storage plan order updated successfully.', updated);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /storage-plans/:id
    * Get single storage plan by ID
    */
@@ -71,7 +130,6 @@ class StorageMasterController {
     try {
       let { id } = req.params;
 
-      // Fallback if id was passed as query or body parameter, or literal placeholder ':id'
       if (!id || id === ':id' || String(id).trim() === '') {
         id =
           req.query?.id ||
@@ -91,7 +149,6 @@ class StorageMasterController {
       if (/^\d+$/.test(trimmedId)) {
         plan = await StorageMasterModel.getById(Number(trimmedId));
       } else {
-        // Fallback for lookup by code
         plan = await StorageMasterModel.getByCode(trimmedId);
         if (plan && plan.id) {
           plan = await StorageMasterModel.getById(plan.id);
@@ -251,6 +308,9 @@ class StorageMasterController {
       await StorageMasterModel.delete(id);
       return ApiResponse.success(res, 'Storage plan deleted successfully.');
     } catch (error) {
+      if (error.message && error.message.includes('associated with it')) {
+        return ApiResponse.badRequest(res, error.message);
+      }
       next(error);
     }
   }

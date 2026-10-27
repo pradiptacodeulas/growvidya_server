@@ -11,6 +11,18 @@ class TeacherAuthController {
    * Helper to issue session cookie & JWT token for teacher
    */
   static async _issueSession(teacher, res, message = 'Teacher authentication successful.') {
+    if (teacher.school_id) {
+      const [sRows] = await pool.query('SELECT status FROM school_master WHERE id = ? LIMIT 1', [teacher.school_id]);
+      if (sRows.length > 0 && Number(sRows[0].status) !== 1) {
+        return ApiResponse.error(res, 'Your school account has been marked inactive by the Super Admin. Login is disabled until reactivated.', null, 403);
+      }
+      const SubscriptionModel = require('../models/subscription.model');
+      const sub = await SubscriptionModel.getSchoolSubscription(teacher.school_id);
+      if (sub && (sub.status === 'suspended' || sub.liveStatus === 'suspended')) {
+        return ApiResponse.error(res, 'Your school subscription has been marked inactive / suspended by the Super Admin. Login is disabled until reactivated.', null, 403);
+      }
+    }
+
     const tokenPayload = {
       userId: teacher.id,
       teacherId: teacher.id,

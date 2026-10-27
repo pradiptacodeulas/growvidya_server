@@ -2,6 +2,7 @@ const { pool } = require('../config/db.config');
 const { hashPassword } = require('../utils/password.util');
 const SubscriptionItemModel = require('./subscriptionItem.model');
 const SaasRoleModel = require('./saasRole.model');
+const CouponModel = require('./coupon.model');
 const { parsePagination, buildPagination } = require('../utils/pagination.util');
 
 class SaasAdminModel {
@@ -14,6 +15,7 @@ class SaasAdminModel {
         sau.*, 
         sau.gender AS gender_id, 
         gm.gender AS gender_name,
+        sr.status AS role_status,
         COALESCE(sr.role_name, IF(sau.role = 'superadmin', 'Super Admin', 'Sub Admin')) AS role_name
       FROM saas_admin_users sau 
       LEFT JOIN gender_master gm ON sau.gender = gm.id 
@@ -161,96 +163,320 @@ class SaasAdminModel {
   // 2. DASHBOARD & ANALYTICS
   // ========================================================
   static async getDashboardStats() {
-    // School counts
-    const [schoolRows] = await pool.query(`
-      SELECT 
-        COUNT(*) AS total_schools,
-        SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END) AS active_schools,
-        SUM(CASE WHEN status != 1 THEN 1 ELSE 0 END) AS inactive_schools
-      FROM school_master
-    `);
+    const [
+      [schoolRows],
+      [subRows],
+      [planRows],
+      [couponRows],
+      [storageRows],
+      [machineRows],
+      [rfidRows],
+      [bankRows],
+      [storageOrderRows],
+      [machineOrderRows],
+      [rfidOrderRows],
+      [ticketSummaryRows],
+      [planDistRows],
+      [monthlySubRows],
+      [monthlyStorageRows],
+      [monthlyMachineRows],
+      [monthlyRfidRows],
+      [monthlySchoolRows],
+      [recentSchools],
+      [pendingSubs],
+      [recentTickets],
+    ] = await Promise.all([
+      // 1. School counts
+      pool.query(`
+        SELECT 
+          COUNT(*) AS total_schools,
+          COALESCE(SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END), 0) AS active_schools,
+          COALESCE(SUM(CASE WHEN status != 1 THEN 1 ELSE 0 END), 0) AS inactive_schools,
+          COALESCE(SUM(CASE WHEN YEAR(created_at) = YEAR(CURDATE()) AND MONTH(created_at) = MONTH(CURDATE()) THEN 1 ELSE 0 END), 0) AS this_month_schools
+        FROM school_master
+      `),
 
-    // Subscription & Payment counts
-    const [subRows] = await pool.query(`
-      SELECT 
-        COUNT(*) AS total_subscriptions,
-        SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active_subscriptions,
-        SUM(CASE WHEN status = 'trial' THEN 1 ELSE 0 END) AS trial_subscriptions,
-        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending_subscriptions,
-        SUM(CASE WHEN status = 'expired' THEN 1 ELSE 0 END) AS expired_subscriptions,
-        SUM(CASE WHEN status = 'suspended' THEN 1 ELSE 0 END) AS suspended_subscriptions,
-        SUM(CASE WHEN payment_status = 'pending' THEN 1 ELSE 0 END) AS pending_payments,
-        SUM(CASE WHEN payment_status = 'completed' THEN amount_paid ELSE 0 END) AS total_revenue
-      FROM school_subscriptions
-    `);
+      // 2. Subscription & Payment counts
+      pool.query(`
+        SELECT 
+          COUNT(*) AS total_subscriptions,
+          COALESCE(SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END), 0) AS active_subscriptions,
+          COALESCE(SUM(CASE WHEN status = 'trial' THEN 1 ELSE 0 END), 0) AS trial_subscriptions,
+          COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0) AS pending_subscriptions,
+          COALESCE(SUM(CASE WHEN status = 'expired' THEN 1 ELSE 0 END), 0) AS expired_subscriptions,
+          COALESCE(SUM(CASE WHEN status = 'suspended' THEN 1 ELSE 0 END), 0) AS suspended_subscriptions,
+          COALESCE(SUM(CASE WHEN payment_status = 'pending' THEN 1 ELSE 0 END), 0) AS pending_payments,
+          COALESCE(SUM(CASE WHEN payment_status = 'completed' THEN amount_paid ELSE 0 END), 0) AS total_revenue,
+          COALESCE(SUM(CASE WHEN payment_status = 'completed' AND YEAR(created_at) = YEAR(CURDATE()) AND MONTH(created_at) = MONTH(CURDATE()) THEN amount_paid ELSE 0 END), 0) AS this_month_revenue,
+          COALESCE(SUM(CASE WHEN payment_status = 'completed' THEN discount_amount ELSE 0 END), 0) AS total_discount
+        FROM school_subscriptions
+      `),
 
-    // Package count
-    const [planRows] = await pool.query(`
-      SELECT COUNT(*) AS total_packages, SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END) AS active_packages
-      FROM subscription_plans
-    `);
+      // 3. Package count
+      pool.query(`
+        SELECT COUNT(*) AS total_packages, COALESCE(SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END), 0) AS active_packages
+        FROM subscription_plans
+      `),
 
-    // Coupon count
-    const [couponRows] = await pool.query(`
-      SELECT COUNT(*) AS total_coupons, SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END) AS active_coupons
-      FROM coupons
-    `);
+      // 4. Coupon count & usages
+      pool.query(`
+        SELECT 
+          COUNT(*) AS total_coupons,
+          COALESCE(SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END), 0) AS active_coupons,
+          COALESCE(SUM(used_count), 0) AS total_usages
+        FROM coupons
+      `),
 
-    // Storage plans count
-    const [storageRows] = await pool.query(`
-      SELECT COUNT(*) AS total_storage, SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END) AS active_storage
-      FROM storage_master
-    `);
+      // 5. Storage plans count
+      pool.query(`
+        SELECT COUNT(*) AS total_storage, COALESCE(SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END), 0) AS active_storage
+        FROM storage_master
+      `),
 
-    // Attendance machines count
-    const [machineRows] = await pool.query(`
-      SELECT COUNT(*) AS total_machines, SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END) AS active_machines
-      FROM attendance_machine_master
-    `);
+      // 6. Attendance machines count
+      pool.query(`
+        SELECT COUNT(*) AS total_machines, COALESCE(SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END), 0) AS active_machines
+        FROM attendance_machine_master
+      `),
 
-    // RFID cards count
-    const [rfidRows] = await pool.query(`
-      SELECT COUNT(*) AS total_rfid, SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END) AS active_rfid
-      FROM rfid_card_master
-    `);
+      // 7. RFID cards count
+      pool.query(`
+        SELECT COUNT(*) AS total_rfid, COALESCE(SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END), 0) AS active_rfid
+        FROM rfid_card_master
+      `),
 
-    // Bank accounts count
-    const [bankRows] = await pool.query(`
-      SELECT COUNT(*) AS total_banks, SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END) AS active_banks
-      FROM bank_account_master
-    `);
+      // 8. Bank accounts count
+      pool.query(`
+        SELECT COUNT(*) AS total_banks, COALESCE(SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END), 0) AS active_banks
+        FROM bank_account_master
+      `),
 
-    // Recent registered schools (latest 5)
-    const [recentSchools] = await pool.query(`
-      SELECT 
-        s.id, s.school_name, s.school_code, s.email, s.phone_number, s.status, s.created_at,
-        ss.status AS subscription_status, ss.payment_status, sp.plan_name
-      FROM school_master s
-      LEFT JOIN school_subscriptions ss ON ss.id = (
-        SELECT id FROM school_subscriptions WHERE school_id = s.id ORDER BY id DESC LIMIT 1
-      )
-      LEFT JOIN subscription_plans sp ON ss.plan_id = sp.id
-      ORDER BY s.id DESC
-      LIMIT 5
-    `);
+      // 9. Storage buyer orders summary
+      pool.query(`
+        SELECT
+          COUNT(*) AS total_orders,
+          COALESCE(SUM(quantity), 0) AS total_quantity,
+          COALESCE(SUM(CASE WHEN order_status != 'cancelled' THEN total_amount ELSE 0 END), 0) AS total_revenue,
+          COALESCE(SUM(CASE WHEN order_status != 'cancelled' AND YEAR(created_at) = YEAR(CURDATE()) AND MONTH(created_at) = MONTH(CURDATE()) THEN total_amount ELSE 0 END), 0) AS this_month_revenue,
+          COALESCE(SUM(CASE WHEN order_status = 'pending' THEN 1 ELSE 0 END), 0) AS pending_count,
+          COALESCE(SUM(CASE WHEN order_status = 'active' THEN 1 ELSE 0 END), 0) AS active_count,
+          COALESCE(SUM(CASE WHEN order_status = 'expired' THEN 1 ELSE 0 END), 0) AS expired_count,
+          COALESCE(SUM(CASE WHEN order_status = 'cancelled' THEN 1 ELSE 0 END), 0) AS cancelled_count
+        FROM school_storage_orders
+      `),
 
-    // Pending approval / payment subscriptions (latest 5)
-    const [pendingSubs] = await pool.query(`
-      SELECT 
-        ss.*, s.school_name, s.school_code, s.email AS school_email, sp.plan_name, sp.price AS plan_price
-      FROM school_subscriptions ss
-      JOIN school_master s ON ss.school_id = s.id
-      LEFT JOIN subscription_plans sp ON ss.plan_id = sp.id
-      WHERE ss.status = 'pending' OR ss.payment_status = 'pending'
-      ORDER BY ss.id DESC
-      LIMIT 5
-    `);
+      // 10. Attendance machine buyer orders summary
+      pool.query(`
+        SELECT
+          COUNT(*) AS total_orders,
+          COALESCE(SUM(quantity), 0) AS total_quantity,
+          COALESCE(SUM(CASE WHEN order_status != 'cancelled' THEN total_amount ELSE 0 END), 0) AS total_revenue,
+          COALESCE(SUM(CASE WHEN order_status != 'cancelled' AND YEAR(created_at) = YEAR(CURDATE()) AND MONTH(created_at) = MONTH(CURDATE()) THEN total_amount ELSE 0 END), 0) AS this_month_revenue,
+          COALESCE(SUM(CASE WHEN order_status = 'pending' THEN 1 ELSE 0 END), 0) AS pending_count,
+          COALESCE(SUM(CASE WHEN order_status = 'approved' THEN 1 ELSE 0 END), 0) AS approved_count,
+          COALESCE(SUM(CASE WHEN order_status = 'dispatched' THEN 1 ELSE 0 END), 0) AS dispatched_count,
+          COALESCE(SUM(CASE WHEN order_status = 'delivered' THEN 1 ELSE 0 END), 0) AS delivered_count,
+          COALESCE(SUM(CASE WHEN order_status = 'cancelled' THEN 1 ELSE 0 END), 0) AS cancelled_count
+        FROM school_attendance_machines
+      `),
+
+      // 11. RFID card buyer orders summary
+      pool.query(`
+        SELECT
+          COUNT(*) AS total_orders,
+          COALESCE(SUM(quantity), 0) AS total_quantity,
+          COALESCE(SUM(CASE WHEN order_status != 'cancelled' THEN total_amount ELSE 0 END), 0) AS total_revenue,
+          COALESCE(SUM(CASE WHEN order_status != 'cancelled' AND YEAR(created_at) = YEAR(CURDATE()) AND MONTH(created_at) = MONTH(CURDATE()) THEN total_amount ELSE 0 END), 0) AS this_month_revenue,
+          COALESCE(SUM(CASE WHEN order_status = 'pending' THEN 1 ELSE 0 END), 0) AS pending_count,
+          COALESCE(SUM(CASE WHEN order_status = 'approved' THEN 1 ELSE 0 END), 0) AS approved_count,
+          COALESCE(SUM(CASE WHEN order_status = 'dispatched' THEN 1 ELSE 0 END), 0) AS dispatched_count,
+          COALESCE(SUM(CASE WHEN order_status = 'delivered' THEN 1 ELSE 0 END), 0) AS delivered_count,
+          COALESCE(SUM(CASE WHEN order_status = 'cancelled' THEN 1 ELSE 0 END), 0) AS cancelled_count
+        FROM school_rfid_orders
+      `),
+
+      // 12. Support tickets summary
+      pool.query(`
+        SELECT
+          COUNT(*) AS total_tickets,
+          COALESCE(SUM(CASE WHEN status = 'open' THEN 1 ELSE 0 END), 0) AS open_tickets,
+          COALESCE(SUM(CASE WHEN status = 'in_progress' THEN 1 ELSE 0 END), 0) AS in_progress_tickets,
+          COALESCE(SUM(CASE WHEN status = 'resolved' THEN 1 ELSE 0 END), 0) AS resolved_tickets,
+          COALESCE(SUM(CASE WHEN status = 'closed' THEN 1 ELSE 0 END), 0) AS closed_tickets,
+          COALESCE(SUM(CASE WHEN status IN ('open', 'in_progress') AND priority IN ('urgent', 'high') THEN 1 ELSE 0 END), 0) AS urgent_open_tickets,
+          COALESCE(SUM(CASE WHEN priority = 'urgent' THEN 1 ELSE 0 END), 0) AS priority_urgent,
+          COALESCE(SUM(CASE WHEN priority = 'high' THEN 1 ELSE 0 END), 0) AS priority_high,
+          COALESCE(SUM(CASE WHEN priority = 'medium' THEN 1 ELSE 0 END), 0) AS priority_medium,
+          COALESCE(SUM(CASE WHEN priority = 'low' THEN 1 ELSE 0 END), 0) AS priority_low
+        FROM support_tickets
+      `),
+
+      // 13. Plan-wise subscriber and revenue distribution
+      pool.query(`
+        SELECT
+          sp.id,
+          sp.plan_name,
+          sp.plan_code,
+          sp.billing_cycle,
+          sp.price,
+          COUNT(ss.id) AS total_subscribers,
+          COALESCE(SUM(CASE WHEN ss.status = 'active' THEN 1 ELSE 0 END), 0) AS active_subscribers,
+          COALESCE(SUM(CASE WHEN ss.payment_status = 'completed' THEN ss.amount_paid ELSE 0 END), 0) AS total_revenue
+        FROM subscription_plans sp
+        LEFT JOIN school_subscriptions ss ON ss.plan_id = sp.id
+        GROUP BY sp.id, sp.plan_name, sp.plan_code, sp.billing_cycle, sp.price
+        ORDER BY total_revenue DESC, total_subscribers DESC, sp.id ASC
+      `),
+
+      // 14. Monthly subscription revenue & count (last 6 months)
+      pool.query(`
+        SELECT
+          DATE_FORMAT(created_at, '%Y-%m') AS ym,
+          COUNT(*) AS sub_count,
+          COALESCE(SUM(CASE WHEN payment_status = 'completed' THEN amount_paid ELSE 0 END), 0) AS revenue
+        FROM school_subscriptions
+        WHERE created_at >= DATE_SUB(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 5 MONTH)
+        GROUP BY DATE_FORMAT(created_at, '%Y-%m')
+      `),
+
+      // 15. Monthly storage order revenue (last 6 months)
+      pool.query(`
+        SELECT
+          DATE_FORMAT(created_at, '%Y-%m') AS ym,
+          COALESCE(SUM(CASE WHEN order_status != 'cancelled' THEN total_amount ELSE 0 END), 0) AS revenue
+        FROM school_storage_orders
+        WHERE created_at >= DATE_SUB(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 5 MONTH)
+        GROUP BY DATE_FORMAT(created_at, '%Y-%m')
+      `),
+
+      // 16. Monthly attendance machine order revenue (last 6 months)
+      pool.query(`
+        SELECT
+          DATE_FORMAT(created_at, '%Y-%m') AS ym,
+          COALESCE(SUM(CASE WHEN order_status != 'cancelled' THEN total_amount ELSE 0 END), 0) AS revenue
+        FROM school_attendance_machines
+        WHERE created_at >= DATE_SUB(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 5 MONTH)
+        GROUP BY DATE_FORMAT(created_at, '%Y-%m')
+      `),
+
+      // 17. Monthly RFID order revenue (last 6 months)
+      pool.query(`
+        SELECT
+          DATE_FORMAT(created_at, '%Y-%m') AS ym,
+          COALESCE(SUM(CASE WHEN order_status != 'cancelled' THEN total_amount ELSE 0 END), 0) AS revenue
+        FROM school_rfid_orders
+        WHERE created_at >= DATE_SUB(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 5 MONTH)
+        GROUP BY DATE_FORMAT(created_at, '%Y-%m')
+      `),
+
+      // 18. Monthly school registrations (last 6 months)
+      pool.query(`
+        SELECT
+          DATE_FORMAT(created_at, '%Y-%m') AS ym,
+          COUNT(*) AS new_schools
+        FROM school_master
+        WHERE created_at >= DATE_SUB(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 5 MONTH)
+        GROUP BY DATE_FORMAT(created_at, '%Y-%m')
+      `),
+
+      // 19. Recent registered schools (latest 5)
+      pool.query(`
+        SELECT 
+          s.id, s.school_name, s.school_code, s.email, s.phone_number, s.status, s.created_at,
+          ss.status AS subscription_status, ss.payment_status, sp.plan_name
+        FROM school_master s
+        LEFT JOIN school_subscriptions ss ON ss.id = (
+          SELECT id FROM school_subscriptions WHERE school_id = s.id ORDER BY id DESC LIMIT 1
+        )
+        LEFT JOIN subscription_plans sp ON ss.plan_id = sp.id
+        ORDER BY s.id DESC
+        LIMIT 5
+      `),
+
+      // 20. Pending approval / payment subscriptions (latest 5)
+      pool.query(`
+        SELECT 
+          ss.*, s.school_name, s.school_code, s.email AS school_email, sp.plan_name, sp.price AS plan_price
+        FROM school_subscriptions ss
+        JOIN school_master s ON ss.school_id = s.id
+        LEFT JOIN subscription_plans sp ON ss.plan_id = sp.id
+        WHERE ss.status = 'pending' OR ss.payment_status = 'pending'
+        ORDER BY ss.id DESC
+        LIMIT 5
+      `),
+
+      // 21. Recent open / in-progress support tickets (latest 5)
+      pool.query(`
+        SELECT
+          st.id,
+          st.ticket_number,
+          st.subject,
+          st.category,
+          st.priority,
+          st.status,
+          st.created_at,
+          s.school_name,
+          s.school_code
+        FROM support_tickets st
+        LEFT JOIN school_master s ON st.school_id = s.id
+        ORDER BY
+          CASE WHEN st.status IN ('open', 'in_progress') THEN 0 ELSE 1 END ASC,
+          st.id DESC
+        LIMIT 5
+      `),
+    ]);
+
+    const subscriptionRevenue = parseFloat(subRows[0]?.total_revenue || 0);
+    const thisMonthSubscriptionRevenue = parseFloat(subRows[0]?.this_month_revenue || 0);
+    const storageRevenue = parseFloat(storageOrderRows[0]?.total_revenue || 0);
+    const thisMonthStorageRevenue = parseFloat(storageOrderRows[0]?.this_month_revenue || 0);
+    const machineRevenue = parseFloat(machineOrderRows[0]?.total_revenue || 0);
+    const thisMonthMachineRevenue = parseFloat(machineOrderRows[0]?.this_month_revenue || 0);
+    const rfidRevenue = parseFloat(rfidOrderRows[0]?.total_revenue || 0);
+    const thisMonthRfidRevenue = parseFloat(rfidOrderRows[0]?.this_month_revenue || 0);
+
+    const addonRevenue = storageRevenue + machineRevenue + rfidRevenue;
+    const totalPlatformRevenue = subscriptionRevenue + addonRevenue;
+    const thisMonthPlatformRevenue =
+      thisMonthSubscriptionRevenue + thisMonthStorageRevenue + thisMonthMachineRevenue + thisMonthRfidRevenue;
+
+    // Build chronological last 6 calendar months from real SQL rows
+    const subByMonth = new Map(monthlySubRows.map((r) => [r.ym, r]));
+    const storageByMonth = new Map(monthlyStorageRows.map((r) => [r.ym, r]));
+    const machineByMonth = new Map(monthlyMachineRows.map((r) => [r.ym, r]));
+    const rfidByMonth = new Map(monthlyRfidRows.map((r) => [r.ym, r]));
+    const schoolByMonth = new Map(monthlySchoolRows.map((r) => [r.ym, r]));
+
+    const monthlyTrends = [];
+    const now = new Date();
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const label = d.toLocaleDateString('en-IN', { month: 'short', year: '2-digit' });
+
+      const subRev = parseFloat(subByMonth.get(ym)?.revenue || 0);
+      const storRev = parseFloat(storageByMonth.get(ym)?.revenue || 0);
+      const machRev = parseFloat(machineByMonth.get(ym)?.revenue || 0);
+      const rfidRev = parseFloat(rfidByMonth.get(ym)?.revenue || 0);
+      const addRev = storRev + machRev + rfidRev;
+
+      monthlyTrends.push({
+        monthKey: ym,
+        label,
+        subscriptionRevenue: subRev,
+        addonRevenue: addRev,
+        totalRevenue: subRev + addRev,
+        newSchools: Number(schoolByMonth.get(ym)?.new_schools || 0),
+        newSubscriptions: Number(subByMonth.get(ym)?.sub_count || 0),
+      });
+    }
 
     return {
       schools: {
         total: Number(schoolRows[0]?.total_schools || 0),
         active: Number(schoolRows[0]?.active_schools || 0),
         inactive: Number(schoolRows[0]?.inactive_schools || 0),
+        thisMonth: Number(schoolRows[0]?.this_month_schools || 0),
       },
       subscriptions: {
         total: Number(subRows[0]?.total_subscriptions || 0),
@@ -260,8 +486,75 @@ class SaasAdminModel {
         expired: Number(subRows[0]?.expired_subscriptions || 0),
         suspended: Number(subRows[0]?.suspended_subscriptions || 0),
         pendingPayments: Number(subRows[0]?.pending_payments || 0),
-        totalRevenue: parseFloat(subRows[0]?.total_revenue || 0),
+        totalRevenue: subscriptionRevenue,
+        thisMonthRevenue: thisMonthSubscriptionRevenue,
+        totalDiscount: parseFloat(subRows[0]?.total_discount || 0),
       },
+      revenueSummary: {
+        totalPlatformRevenue,
+        thisMonthPlatformRevenue,
+        subscriptionRevenue,
+        addonRevenue,
+        storageRevenue,
+        machineRevenue,
+        rfidRevenue,
+      },
+      addonBuyers: {
+        storage: {
+          totalOrders: Number(storageOrderRows[0]?.total_orders || 0),
+          totalQuantity: Number(storageOrderRows[0]?.total_quantity || 0),
+          totalRevenue: storageRevenue,
+          pendingCount: Number(storageOrderRows[0]?.pending_count || 0),
+          activeCount: Number(storageOrderRows[0]?.active_count || 0),
+          expiredCount: Number(storageOrderRows[0]?.expired_count || 0),
+          cancelledCount: Number(storageOrderRows[0]?.cancelled_count || 0),
+        },
+        attendanceMachines: {
+          totalOrders: Number(machineOrderRows[0]?.total_orders || 0),
+          totalQuantity: Number(machineOrderRows[0]?.total_quantity || 0),
+          totalRevenue: machineRevenue,
+          pendingCount: Number(machineOrderRows[0]?.pending_count || 0),
+          approvedCount: Number(machineOrderRows[0]?.approved_count || 0),
+          dispatchedCount: Number(machineOrderRows[0]?.dispatched_count || 0),
+          deliveredCount: Number(machineOrderRows[0]?.delivered_count || 0),
+          cancelledCount: Number(machineOrderRows[0]?.cancelled_count || 0),
+        },
+        rfidCards: {
+          totalOrders: Number(rfidOrderRows[0]?.total_orders || 0),
+          totalQuantity: Number(rfidOrderRows[0]?.total_quantity || 0),
+          totalRevenue: rfidRevenue,
+          pendingCount: Number(rfidOrderRows[0]?.pending_count || 0),
+          approvedCount: Number(rfidOrderRows[0]?.approved_count || 0),
+          dispatchedCount: Number(rfidOrderRows[0]?.dispatched_count || 0),
+          deliveredCount: Number(rfidOrderRows[0]?.delivered_count || 0),
+          cancelledCount: Number(rfidOrderRows[0]?.cancelled_count || 0),
+        },
+      },
+      supportTickets: {
+        total: Number(ticketSummaryRows[0]?.total_tickets || 0),
+        open: Number(ticketSummaryRows[0]?.open_tickets || 0),
+        inProgress: Number(ticketSummaryRows[0]?.in_progress_tickets || 0),
+        resolved: Number(ticketSummaryRows[0]?.resolved_tickets || 0),
+        closed: Number(ticketSummaryRows[0]?.closed_tickets || 0),
+        urgentOpen: Number(ticketSummaryRows[0]?.urgent_open_tickets || 0),
+        priorities: {
+          urgent: Number(ticketSummaryRows[0]?.priority_urgent || 0),
+          high: Number(ticketSummaryRows[0]?.priority_high || 0),
+          medium: Number(ticketSummaryRows[0]?.priority_medium || 0),
+          low: Number(ticketSummaryRows[0]?.priority_low || 0),
+        },
+      },
+      planDistribution: planDistRows.map((p) => ({
+        id: p.id,
+        plan_name: p.plan_name,
+        plan_code: p.plan_code,
+        billing_cycle: p.billing_cycle,
+        price: parseFloat(p.price || 0),
+        total_subscribers: Number(p.total_subscribers || 0),
+        active_subscribers: Number(p.active_subscribers || 0),
+        total_revenue: parseFloat(p.total_revenue || 0),
+      })),
+      monthlyTrends,
       packages: {
         total: Number(planRows[0]?.total_packages || 0),
         active: Number(planRows[0]?.active_packages || 0),
@@ -269,6 +562,7 @@ class SaasAdminModel {
       coupons: {
         total: Number(couponRows[0]?.total_coupons || 0),
         active: Number(couponRows[0]?.active_coupons || 0),
+        totalUsages: Number(couponRows[0]?.total_usages || 0),
       },
       storagePlans: {
         total: Number(storageRows[0]?.total_storage || 0),
@@ -288,6 +582,7 @@ class SaasAdminModel {
       },
       recentSchools,
       pendingSubscriptions: pendingSubs,
+      recentTickets,
     };
   }
 
@@ -394,7 +689,7 @@ class SaasAdminModel {
 
     // Get school superadmin account
     const [adminRows] = await pool.query(
-      'SELECT id, first_name, last_name, email, phone, status, created_at, date FROM user_master WHERE school_id = ? AND admin_type = 1 LIMIT 1',
+      'SELECT id, first_name, last_name, email, phone, status, date AS created_at, date FROM user_master WHERE school_id = ? AND admin_type = 1 LIMIT 1',
       [id]
     );
     school.admin_user = adminRows[0] || null;
@@ -426,9 +721,14 @@ class SaasAdminModel {
   }
 
   static async updateSchoolStatus(id, status) {
+    const numStatus = parseInt(status, 10) === 1 ? 1 : 0;
     const [result] = await pool.query(
       'UPDATE school_master SET status = ?, updated_at = NOW() WHERE id = ?',
-      [parseInt(status, 10), id]
+      [numStatus, id]
+    );
+    await pool.query(
+      'UPDATE user_master SET status = ? WHERE school_id = ? AND admin_type = 1',
+      [numStatus, id]
     );
     return result.affectedRows > 0;
   }
@@ -751,6 +1051,14 @@ class SaasAdminModel {
         // Ensure school and admin user are active
         await pool.query('UPDATE school_master SET status = 1, updated_at = NOW() WHERE id = ?', [sub.school_id]);
         await pool.query('UPDATE user_master SET status = 1 WHERE school_id = ? AND admin_type = 1', [sub.school_id]);
+      } else if (status === 'suspended') {
+        // Suspend any other active or trial subscriptions for this school and mark school/admin inactive
+        await pool.query(
+          "UPDATE school_subscriptions SET status = 'suspended' WHERE school_id = ? AND id != ? AND status IN ('active', 'trial')",
+          [sub.school_id, id]
+        );
+        await pool.query('UPDATE school_master SET status = 0, updated_at = NOW() WHERE id = ?', [sub.school_id]);
+        await pool.query('UPDATE user_master SET status = 0 WHERE school_id = ? AND admin_type = 1', [sub.school_id]);
       }
     }
 
@@ -958,227 +1266,41 @@ class SaasAdminModel {
   }
 
   // ========================================================
-  // 6. COUPON MANAGEMENT
+  // 6. COUPON MANAGEMENT (Delegates to CouponModel)
   // ========================================================
-  static async getAllCoupons({ search = '', status = '', discount_type = '', page = 1, limit = 10 } = {}) {
-    const pageNum = Math.max(1, parseInt(page, 10) || 1);
-    const limitNum = Math.max(1, parseInt(limit, 10) || 10);
-    const offset = (pageNum - 1) * limitNum;
-
-    let conditions = [];
-    let params = [];
-
-    if (status !== '' && status !== undefined && status !== 'all') {
-      conditions.push('c.status = ?');
-      params.push(parseInt(status, 10));
-    }
-
-    if (discount_type && discount_type !== 'all') {
-      conditions.push('c.discount_type = ?');
-      params.push(discount_type.trim().toLowerCase());
-    }
-
-    if (search && search.trim()) {
-      conditions.push('(c.code LIKE ? OR c.description LIKE ?)');
-      const term = `%${search.trim()}%`;
-      params.push(term, term);
-    }
-
-    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-
-    const countQuery = `SELECT COUNT(*) AS total FROM coupons c ${where}`;
-    const [countRows] = await pool.query(countQuery, params);
-    const total = countRows[0]?.total || 0;
-
-    const query = `
-      SELECT c.*,
-             (SELECT COUNT(*) FROM coupon_usages cu WHERE cu.coupon_id = c.id) AS total_redemptions,
-             (SELECT IFNULL(SUM(discount_amount), 0.00) FROM coupon_usages cu WHERE cu.coupon_id = c.id) AS total_discount_given
-      FROM coupons c
-      ${where}
-      ORDER BY c.id DESC
-      LIMIT ? OFFSET ?
-    `;
-    const [coupons] = await pool.query(query, [...params, limitNum, offset]);
-    const totalPages = Math.ceil(total / limitNum) || 1;
-
-    return {
-      coupons,
-      pagination: {
-        total,
-        page: pageNum,
-        limit: limitNum,
-        totalPages,
-        hasNextPage: pageNum < totalPages,
-        hasPrevPage: pageNum > 1,
-      },
-    };
+  static async getAllCoupons(options = {}) {
+    return await CouponModel.getAll(options);
   }
 
   static async getCouponById(id) {
-    const [rows] = await pool.query('SELECT * FROM coupons WHERE id = ? LIMIT 1', [id]);
-    if (rows.length === 0) return null;
-    const coupon = rows[0];
-
-    // Get usage history
-    const [usages] = await pool.query(
-      `SELECT cu.*, s.school_name, s.school_code, ss.payment_status
-       FROM coupon_usages cu
-       JOIN school_master s ON cu.school_id = s.id
-       LEFT JOIN school_subscriptions ss ON cu.subscription_id = ss.id
-       WHERE cu.coupon_id = ?
-       ORDER BY cu.id DESC`,
-      [id]
-    );
-    coupon.usages = usages;
-    return coupon;
+    return await CouponModel.getById(id);
   }
 
-  static async createCoupon({ code, description, discount_type = 'percentage', discount_value, min_order_amount = 0, max_discount_amount = null, start_date = null, end_date = null, max_uses = null, status = 1 }) {
-    const [result] = await pool.query(
-      `INSERT INTO coupons (code, description, discount_type, discount_value, min_order_amount, max_discount_amount, start_date, end_date, max_uses, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        code.toUpperCase().trim(),
-        description || '',
-        discount_type,
-        parseFloat(discount_value) || 0,
-        parseFloat(min_order_amount) || 0,
-        max_discount_amount ? parseFloat(max_discount_amount) : null,
-        start_date || null,
-        end_date || null,
-        max_uses ? parseInt(max_uses, 10) : null,
-        parseInt(status, 10) === 0 ? 0 : 1,
-      ]
-    );
-    return result.insertId;
+  static async createCoupon(data) {
+    return await CouponModel.create(data);
   }
 
-  static async updateCoupon(id, { code, description, discount_type, discount_value, min_order_amount, max_discount_amount, start_date, end_date, max_uses, status }) {
-    const updates = [];
-    const params = [];
-
-    if (code !== undefined) { updates.push('code = ?'); params.push(code.toUpperCase().trim()); }
-    if (description !== undefined) { updates.push('description = ?'); params.push(description); }
-    if (discount_type !== undefined) { updates.push('discount_type = ?'); params.push(discount_type); }
-    if (discount_value !== undefined) { updates.push('discount_value = ?'); params.push(parseFloat(discount_value) || 0); }
-    if (min_order_amount !== undefined) { updates.push('min_order_amount = ?'); params.push(parseFloat(min_order_amount) || 0); }
-    if (max_discount_amount !== undefined) { updates.push('max_discount_amount = ?'); params.push(max_discount_amount ? parseFloat(max_discount_amount) : null); }
-    if (start_date !== undefined) { updates.push('start_date = ?'); params.push(start_date || null); }
-    if (end_date !== undefined) { updates.push('end_date = ?'); params.push(end_date || null); }
-    if (max_uses !== undefined) { updates.push('max_uses = ?'); params.push(max_uses ? parseInt(max_uses, 10) : null); }
-    if (status !== undefined) { updates.push('status = ?'); params.push(parseInt(status, 10)); }
-
-    if (updates.length === 0) return false;
-
-    params.push(id);
-    const query = `UPDATE coupons SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ?`;
-    const [result] = await pool.query(query, params);
-    return result.affectedRows > 0;
+  static async updateCoupon(id, data) {
+    return await CouponModel.update(id, data);
   }
 
   static async deleteCoupon(id) {
-    const [result] = await pool.query('DELETE FROM coupons WHERE id = ?', [id]);
-    return result.affectedRows > 0;
+    return await CouponModel.delete(id);
   }
 
   static async toggleCouponStatus(id, status) {
-    const [result] = await pool.query('UPDATE coupons SET status = ?, updated_at = NOW() WHERE id = ?', [parseInt(status, 10), id]);
-    return result.affectedRows > 0;
+    return await CouponModel.toggleStatus(id, status);
   }
 
   // ========================================================
-  // 7. COUPON VALIDATION & USAGE ENGINE (Used by Checkout / SaaS Registration)
+  // 7. COUPON VALIDATION & USAGE ENGINE
   // ========================================================
   static async validateCoupon(code, orderAmount, schoolId = null) {
-    if (!code || !String(code).trim()) {
-      return { valid: false, message: 'Please provide a coupon code.' };
-    }
-
-    const cleanCode = String(code).trim().toUpperCase();
-    const amount = parseFloat(orderAmount) || 0;
-
-    const [rows] = await pool.query('SELECT * FROM coupons WHERE code = ? LIMIT 1', [cleanCode]);
-    if (rows.length === 0) {
-      return { valid: false, message: 'Invalid coupon code.' };
-    }
-
-    const coupon = rows[0];
-
-    if (coupon.status !== 1) {
-      return { valid: false, message: 'This coupon is no longer active.' };
-    }
-
-    const now = new Date();
-    const todayStr = now.toISOString().slice(0, 10);
-
-    if (coupon.start_date && todayStr < coupon.start_date.toISOString?.().slice(0, 10) && String(coupon.start_date).slice(0, 10) > todayStr) {
-      return { valid: false, message: 'This coupon is not valid yet.' };
-    }
-
-    if (coupon.end_date) {
-      const endStr = typeof coupon.end_date === 'string' ? coupon.end_date.slice(0, 10) : coupon.end_date.toISOString().slice(0, 10);
-      if (todayStr > endStr) {
-        return { valid: false, message: 'This coupon has expired.' };
-      }
-    }
-
-    if (coupon.max_uses && coupon.used_count >= coupon.max_uses) {
-      return { valid: false, message: 'This coupon has reached its maximum usage limit.' };
-    }
-
-    if (coupon.min_order_amount && amount < parseFloat(coupon.min_order_amount)) {
-      return {
-        valid: false,
-        message: `Minimum package amount of ₹${parseFloat(coupon.min_order_amount).toFixed(2)} is required to use this coupon.`,
-      };
-    }
-
-    // Calculate discount amount
-    let discount = 0;
-    if (coupon.discount_type === 'percentage') {
-      discount = (amount * parseFloat(coupon.discount_value)) / 100;
-      if (coupon.max_discount_amount && discount > parseFloat(coupon.max_discount_amount)) {
-        discount = parseFloat(coupon.max_discount_amount);
-      }
-    } else {
-      // fixed discount
-      discount = parseFloat(coupon.discount_value);
-    }
-
-    // Discount cannot exceed package price
-    if (discount > amount) {
-      discount = amount;
-    }
-
-    discount = Math.round(discount * 100) / 100;
-    const finalPayable = Math.max(0, Math.round((amount - discount) * 100) / 100);
-
-    return {
-      valid: true,
-      message: 'Coupon applied successfully!',
-      coupon: {
-        id: coupon.id,
-        code: coupon.code,
-        description: coupon.description,
-        discountType: coupon.discount_type,
-        discountValue: parseFloat(coupon.discount_value),
-        discountAmount: discount,
-        originalAmount: amount,
-        finalAmount: finalPayable,
-      },
-    };
+    return await CouponModel.validateCoupon(code, orderAmount, schoolId);
   }
 
   static async recordCouponUsage(couponId, schoolId, subscriptionId, discountAmount) {
-    await pool.query(
-      'INSERT INTO coupon_usages (coupon_id, school_id, subscription_id, discount_amount, used_at) VALUES (?, ?, ?, ?, NOW())',
-      [couponId, schoolId, subscriptionId, parseFloat(discountAmount) || 0]
-    );
-    await pool.query(
-      'UPDATE coupons SET used_count = used_count + 1 WHERE id = ?',
-      [couponId]
-    );
+    return await CouponModel.recordCouponUsage(couponId, schoolId, subscriptionId, discountAmount);
   }
 }
 

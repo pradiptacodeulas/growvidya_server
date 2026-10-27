@@ -2,6 +2,40 @@ const { pool } = require('../config/db.config');
 
 class CouponModel {
   /**
+   * Ensure max_uses_per_user column exists on coupons as a non-null positive integer
+   */
+  static async initTable() {
+    try {
+      const [cols] = await pool.query(
+        `SELECT COLUMN_NAME, IS_NULLABLE
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'coupons'
+           AND COLUMN_NAME = 'max_uses_per_user'`
+      );
+
+      if (cols.length === 0) {
+        await pool.query(
+          `ALTER TABLE coupons
+           ADD COLUMN max_uses_per_user INT UNSIGNED NOT NULL DEFAULT 1 AFTER max_uses`
+        );
+      } else {
+        await pool.query(
+          `UPDATE coupons SET max_uses_per_user = 1 WHERE max_uses_per_user IS NULL OR max_uses_per_user < 1`
+        );
+        if (cols[0].IS_NULLABLE === 'YES') {
+          await pool.query(
+            `ALTER TABLE coupons
+             MODIFY COLUMN max_uses_per_user INT UNSIGNED NOT NULL DEFAULT 1`
+          );
+        }
+      }
+    } catch (err) {
+      console.error('Error initializing coupons table max_uses_per_user column:', err.message);
+    }
+  }
+
+  /**
    * Fetch paginated list of coupons with optional search and filters
    * @param {Object} options
    * @param {string} options.search - Keyword search on code or description
@@ -82,13 +116,14 @@ class CouponModel {
     if (rows.length === 0) return null;
     const coupon = rows[0];
 
-    // Get usage history with school details
+    // Get usage history with school details and per-school redemption count
     const [usages] = await pool.query(
       `SELECT 
         cu.*, 
         s.school_name, 
         s.school_code, 
-        ss.payment_status
+        ss.payment_status,
+        (SELECT COUNT(*) FROM coupon_usages cu2 WHERE cu2.coupon_id = cu.coupon_id AND cu2.school_id = cu.school_id) AS user_used_count
        FROM coupon_usages cu
        JOIN school_master s ON cu.school_id = s.id
        LEFT JOIN school_subscriptions ss ON cu.subscription_id = ss.id
@@ -124,12 +159,14 @@ class CouponModel {
     start_date = null,
     end_date = null,
     max_uses = null,
+    max_uses_per_user = 1,
     status = 1,
   }) {
+    const perUserLimit = Math.max(1, parseInt(max_uses_per_user, 10) || 1);
     const [result] = await pool.query(
       `INSERT INTO coupons 
-       (code, description, discount_type, discount_value, min_order_amount, max_discount_amount, start_date, end_date, max_uses, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+       (code, description, discount_type, discount_value, min_order_amount, max_discount_amount, start_date, end_date, max_uses, max_uses_per_user, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
       [
         code.toUpperCase().trim(),
         description || '',
@@ -140,6 +177,7 @@ class CouponModel {
         start_date || null,
         end_date || null,
         max_uses ? parseInt(max_uses, 10) : null,
+        perUserLimit,
         parseInt(status, 10) === 0 ? 0 : 1,
       ]
     );
@@ -188,6 +226,10 @@ class CouponModel {
     if (data.max_uses !== undefined) {
       updates.push('max_uses = ?');
       params.push(data.max_uses ? parseInt(data.max_uses, 10) : null);
+    }
+    if (data.max_uses_per_user !== undefined) {
+      updates.push('max_uses_per_user = ?');
+      params.push(Math.max(1, parseInt(data.max_uses_per_user, 10) || 1));
     }
     if (data.status !== undefined) {
       updates.push('status = ?');
@@ -264,6 +306,35 @@ class CouponModel {
       return { valid: false, message: 'This coupon has reached its maximum usage limit.' };
     }
 
+    // Check single-user / school integer usage limit (non-null integer check)
+    const maxUsesPerUser = Math.max(1, parseInt(coupon.max_uses_per_user, 10) || 1);
+    let userUsedCount = 0;
+    if (schoolId !== null && schoolId !== undefined && String(schoolId).trim() !== '') {
+      const targetSchoolId = parseInt(schoolId, 10);
+      if (!isNaN(targetSchoolId) && targetSchoolId > 0) {
+        const [usageRows] = await pool.query(
+          `SELECT (
+             (SELECT COUNT(*) FROM coupon_usages WHERE coupon_id = ? AND school_id = ?) +
+             (SELECT COUNT(*) FROM school_subscriptions ss
+              WHERE ss.coupon_id = ? AND ss.school_id = ?
+                AND ss.status IN ('pending', 'active', 'trial')
+                AND NOT EXISTS (
+                  SELECT 1 FROM coupon_usages cu WHERE cu.subscription_id = ss.id AND cu.coupon_id = ss.coupon_id
+                )
+             )
+           ) AS user_used_count`,
+          [coupon.id, targetSchoolId, coupon.id, targetSchoolId]
+        );
+        userUsedCount = parseInt(usageRows[0]?.user_used_count, 10) || 0;
+        if (userUsedCount >= maxUsesPerUser) {
+          return {
+            valid: false,
+            message: `You have reached the maximum usage limit (${userUsedCount}/${maxUsesPerUser}) for this coupon.`,
+          };
+        }
+      }
+    }
+
     if (coupon.min_order_amount && amount < parseFloat(coupon.min_order_amount)) {
       return {
         valid: false,
@@ -303,6 +374,9 @@ class CouponModel {
         discountAmount: discount,
         originalAmount: amount,
         finalAmount: finalPayable,
+        maxUses: coupon.max_uses,
+        maxUsesPerUser,
+        userUsedCount,
       },
     };
   }

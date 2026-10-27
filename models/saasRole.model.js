@@ -14,6 +14,7 @@ const DEFAULT_SAAS_MODULES = [
   { key: 'roles', name: 'Roles & Permissions', desc: 'Manage SaaS roles and granular module permissions', order: 10 },
   { key: 'sub_admins', name: 'Users & Sub-Admins', desc: 'Manage sub-admin staff accounts and role assignments', order: 11 },
   { key: 'settings', name: 'Settings & Payment Gateway', desc: 'Platform settings and Razorpay payment gateway credentials', order: 12 },
+  { key: 'support_tickets', name: 'Help & Support Tickets', desc: 'View, reply to, assign, and update status of school support tickets', order: 13 },
 ];
 
 class SaasRoleModel {

@@ -1,5 +1,4 @@
 const DeviceTokenModel = require('../models/deviceToken.model');
-const PushNotificationService = require('../services/pushNotification.service');
 
 class NotificationController {
   /**
@@ -29,7 +28,7 @@ class NotificationController {
    */
   static async registerDeviceToken(req, res) {
     try {
-      const { token, device_type, device_name } = req.body;
+      const { token, device_type, device_name } = req.body || {};
 
       if (!token) {
         return res.status(400).json({ success: false, message: 'Push token is required' });
@@ -42,7 +41,29 @@ class NotificationController {
         });
       }
 
-      // Extract user info from authenticated request
+      const userAgent = req.headers['user-agent'] || null;
+
+      // 1. SaaS Super Admin / Sub-Admin portal request
+      if (req.saasAdmin && req.saasAdmin.id) {
+        const result = await DeviceTokenModel.registerToken({
+          school_id: 0,
+          branch_id: null,
+          user_id: Number(req.saasAdmin.id),
+          role: 'saas_admin',
+          device_type: String(device_type).toLowerCase(),
+          token,
+          device_name: device_name || null,
+          user_agent: userAgent,
+        });
+
+        return res.status(200).json({
+          success: true,
+          message: 'SaaS Admin Web Push token registered successfully',
+          endpointHash: result.endpointHash,
+        });
+      }
+
+      // 2. School Portal (Admin / Teacher / Parent / Student) request
       const schoolId = req.user?.schoolId || req.user?.school_id;
       if (!schoolId) {
         return res.status(401).json({ success: false, message: 'Authentication required: school ID missing.' });
@@ -65,8 +86,6 @@ class NotificationController {
       if (!userId) {
         return res.status(401).json({ success: false, message: 'Unable to resolve authenticated user ID' });
       }
-
-      const userAgent = req.headers['user-agent'] || null;
 
       const branchId = req.user?.branch_id || req.user?.branchId || req.branchId || null;
 
@@ -97,7 +116,21 @@ class NotificationController {
    */
   static async unregisterDeviceToken(req, res) {
     try {
-      const { token, endpointHash } = req.body;
+      const { token, endpointHash } = req.body || {};
+
+      if (req.saasAdmin && req.saasAdmin.id) {
+        await DeviceTokenModel.unregisterToken({
+          user_id: Number(req.saasAdmin.id),
+          role: 'saas_admin',
+          token: token || null,
+          endpoint_hash: endpointHash || null,
+        });
+
+        return res.status(200).json({
+          success: true,
+          message: 'SaaS Admin Web Push token revoked successfully',
+        });
+      }
 
       let role = 'admin';
       const rawRole = String(req.user?.roleName || req.user?.role || req.user?.portalType || '').toLowerCase();
@@ -131,52 +164,6 @@ class NotificationController {
       });
     } catch (err) {
       console.error('[unregisterDeviceToken Error]:', err);
-      return res.status(500).json({ success: false, message: err.message || 'Internal server error' });
-    }
-  }
-
-  /**
-   * Send a test push notification to the authenticated user's registered devices
-   */
-  static async testSendNotification(req, res) {
-    try {
-      const { title, body } = req.body;
-      if (!title || !body) {
-        return res.status(400).json({ success: false, message: 'Title and body are required.' });
-      }
-
-      const schoolId = req.user?.schoolId || req.user?.school_id;
-      if (!schoolId) {
-        return res.status(401).json({ success: false, message: 'Authentication required: school ID missing.' });
-      }
-      const rawRole = (req.user?.roleName || req.user?.role || req.user?.portalType || '').toLowerCase();
-      let role = 'other';
-      if (rawRole.includes('student')) role = 'student';
-      else if (rawRole.includes('parent')) role = 'parent';
-      else if (rawRole.includes('teacher')) role = 'teacher';
-      else if (rawRole.includes('admin') || rawRole.includes('saas')) role = 'admin';
-
-      const userId = Number(
-        req.user?.userId ||
-        req.user?.studentId ||
-        req.user?.teacherId ||
-        req.user?.parentId ||
-        req.user?.id
-      );
-
-      const result = await PushNotificationService.sendToUser({
-        school_id: schoolId,
-        user_id: userId,
-        role,
-        title,
-        body,
-        data: { test: true, timestamp: Date.now() },
-        category: 'test',
-      });
-
-      return res.status(200).json(result);
-    } catch (err) {
-      console.error('[testSendNotification Error]:', err);
       return res.status(500).json({ success: false, message: err.message || 'Internal server error' });
     }
   }

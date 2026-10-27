@@ -11,9 +11,9 @@ router.get('/status', AdminSubscriptionController.getSubscriptionStatus);
 router.get('/config-catalog', AdminSubscriptionController.getConfigurationCatalog);
 router.post('/create-order', AdminSubscriptionController.createSubscriptionOrder);
 router.post('/verify-payment', AdminSubscriptionController.verifySubscriptionPayment);
+router.post('/purchase-addons', AdminSubscriptionController.purchaseAddons);
 router.post('/validate-coupon', AdminSubscriptionController.validateCoupon);
 router.post('/select-plan', rbacMiddleware(['Super Admin', 'Admin']), AdminSubscriptionController.selectPlan);
 router.post('/upgrade', rbacMiddleware(['Super Admin', 'Admin']), AdminSubscriptionController.upgradeSubscription);
 
 module.exports = router;
-

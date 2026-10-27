@@ -90,6 +90,45 @@ async function authMiddleware(req, res, next) {
         req.user.userId = req.user.id;
       }
 
+      // Verify school and admin user active status in DB so deactivated accounts are immediately blocked
+      if (req.user.schoolId) {
+        const { pool } = require('../config/db.config');
+        const [schoolRows] = await pool.query(
+          'SELECT status FROM school_master WHERE id = ? LIMIT 1',
+          [req.user.schoolId]
+        );
+        if (schoolRows.length > 0 && Number(schoolRows[0].status) !== 1) {
+          return ApiResponse.error(
+            res,
+            'Your school account has been marked inactive by the Super Admin. Access is disabled until reactivated.',
+            null,
+            403
+          );
+        }
+      }
+
+      if (
+        req.user.id &&
+        (!req.user.portalType || req.user.portalType === 'AdminPortal') &&
+        req.user.roleName !== 'Teacher' &&
+        req.user.roleName !== 'Parent' &&
+        req.user.roleName !== 'Student'
+      ) {
+        const { pool } = require('../config/db.config');
+        const [userRows] = await pool.query(
+          'SELECT status FROM user_master WHERE id = ? LIMIT 1',
+          [req.user.id]
+        );
+        if (userRows.length > 0 && Number(userRows[0].status) !== 1) {
+          return ApiResponse.error(
+            res,
+            'Your user account has been deactivated / marked inactive. Please contact your administrator.',
+            null,
+            403
+          );
+        }
+      }
+
       // Branch Context Scoping
       const adminType = Number(req.user.adminType ?? req.user.admin_type);
       const roleStr = String(req.user.roleName || req.user.role_name || req.user.role || '').toLowerCase();

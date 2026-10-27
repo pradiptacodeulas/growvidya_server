@@ -258,6 +258,51 @@ class PushNotificationService {
   }
 
   /**
+   * Send Web Push notifications to active SaaS Super Admins & permitted Sub-Admins
+   */
+  static async sendToSaasAdmins({
+    targetAdminIds = null,
+    includeSuperAdmins = true,
+    school_id = 1,
+    title,
+    body,
+    data = {},
+    category = 'support_ticket',
+  }) {
+    const activeDevices = await DeviceTokenModel.getActiveWebTokensForSaasAdmins(
+      targetAdminIds,
+      includeSuperAdmins
+    );
+    if (!activeDevices || activeDevices.length === 0) {
+      return { success: true, sentCount: 0, message: 'No active SaaS Admin web push tokens found' };
+    }
+
+    const seenEndpoints = new Set();
+    const uniqueDevices = [];
+    for (const dev of activeDevices) {
+      const key = dev.endpoint_hash || dev.token;
+      if (key && !seenEndpoints.has(key)) {
+        seenEndpoints.add(key);
+        uniqueDevices.push(dev);
+      }
+    }
+
+    const results = await Promise.allSettled(
+      uniqueDevices.map((device) =>
+        this.sendToDevice(device, { title, body, data, category, school_id })
+      )
+    );
+
+    const successful = results.filter((r) => r.status === 'fulfilled' && r.value?.success).length;
+    return {
+      success: true,
+      totalDevices: uniqueDevices.length,
+      sentCount: successful,
+      details: results,
+    };
+  }
+
+  /**
    * Broadcast push notification to target roles (e.g. notices, school announcements)
    */
   static async sendToRoles({

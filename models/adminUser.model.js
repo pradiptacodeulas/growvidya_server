@@ -12,6 +12,7 @@ class AdminUserModel {
         sm.school_name,
         sm.school_logo,
         sm.registration_type,
+        sm.status AS school_status,
         sm.footer AS school_footer,
         u.first_name, 
         u.last_name, 
@@ -30,7 +31,8 @@ class AdminUserModel {
       LEFT JOIN role_master r ON u.role = r.id
       LEFT JOIN school_master sm ON u.school_id = sm.id
       LEFT JOIN branch_master bm ON u.branch_id = bm.id
-      WHERE u.email = ? AND u.status = 1
+      WHERE u.email = ?
+      ORDER BY u.status DESC, u.id ASC
       LIMIT 1
     `;
     const [rows] = await pool.execute(sql, [email]);
@@ -48,6 +50,7 @@ class AdminUserModel {
         sm.school_name,
         sm.school_logo,
         sm.registration_type,
+        sm.status AS school_status,
         sm.footer AS school_footer,
         u.first_name, 
         u.last_name, 

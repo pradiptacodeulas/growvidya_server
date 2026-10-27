@@ -71,6 +71,65 @@ class RfidCardMasterController {
   }
 
   /**
+   * GET /rfid-cards/buyers
+   * List schools/users who purchased RFID cards (supports ?search=, ?status=, ?rfid_card_id=, ?page=, ?limit=)
+   */
+  static async getBuyers(req, res, next) {
+    try {
+      const { search, status, rfid_card_id } = req.query;
+      const { page, limit } = parsePagination(req.query);
+      const result = await RfidCardMasterModel.getBuyers({
+        search,
+        status,
+        rfid_card_id,
+        page,
+        limit,
+      });
+      return ApiResponse.success(res, 'RFID card buyers retrieved successfully.', result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * PATCH /rfid-cards/buyers/:id
+   * Update an RFID card purchase order status / shipping address / remarks
+   */
+  static async updateBuyerOrder(req, res, next) {
+    try {
+      const { id } = req.params;
+      if (!id || !/^\d+$/.test(String(id).trim())) {
+        return ApiResponse.badRequest(res, 'Valid RFID order ID is required.');
+      }
+
+      const existing = await RfidCardMasterModel.getBuyerOrderById(Number(id));
+      if (!existing) {
+        return ApiResponse.notFound(res, 'RFID card order not found.');
+      }
+
+      const { order_status, shipping_address, remarks } = req.body;
+      const validStatuses = ['pending', 'approved', 'dispatched', 'delivered', 'cancelled'];
+      if (order_status !== undefined && !validStatuses.includes(String(order_status).trim().toLowerCase())) {
+        return ApiResponse.badRequest(
+          res,
+          `Invalid order_status. Allowed values: ${validStatuses.join(', ')}.`
+        );
+      }
+
+      await RfidCardMasterModel.updateBuyerOrder(Number(id), {
+        order_status,
+        shipping_address,
+        remarks,
+      });
+
+      const updated = await RfidCardMasterModel.getBuyerOrderById(Number(id));
+      return ApiResponse.success(res, 'RFID card order updated successfully.', updated);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /rfid-cards/:id
    * Get single RFID card by ID or code
    */

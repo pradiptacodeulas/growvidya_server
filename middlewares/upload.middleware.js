@@ -410,6 +410,64 @@ const driverDocsMiddleware = (req, res, next) => {
   });
 };
 
+// Dedicated storage for Help & Support Ticket attachments
+const SUPPORT_TICKET_UPLOAD_ROOT = path.join(UPLOAD_ROOT, 'support_tickets');
+if (!fs.existsSync(SUPPORT_TICKET_UPLOAD_ROOT)) {
+  fs.mkdirSync(SUPPORT_TICKET_UPLOAD_ROOT, { recursive: true });
+}
+
+const supportTicketStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, SUPPORT_TICKET_UPLOAD_ROOT);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    const baseName = path
+      .basename(file.originalname, ext)
+      .replace(/[^a-zA-Z0-9_\-]/g, '_')
+      .substring(0, 50);
+
+    const timestamp = Date.now();
+    const randomSuffix = Math.round(Math.random() * 1e4);
+    cb(null, `ticket_${baseName}_${timestamp}_${randomSuffix}${ext}`);
+  },
+});
+
+const uploadSupportTicketAttachment = multer({
+  storage: supportTicketStorage,
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase().replace('.', '');
+    const isAllowed = /jpeg|jpg|png|webp|gif|pdf|doc|docx|txt|csv|xls|xlsx/i.test(ext);
+    if (isAllowed) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Invalid attachment type: .${ext}. Allowed formats: JPG, PNG, WEBP, GIF, PDF, DOC, DOCX, TXT, CSV, XLS, XLSX.`));
+    }
+  },
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB max
+  },
+});
+
+const supportTicketAttachmentMiddleware = (req, res, next) => {
+  uploadSupportTicketAttachment.fields([
+    { name: 'attachment', maxCount: 1 },
+    { name: 'file', maxCount: 1 },
+  ])(req, res, (err) => {
+    if (err) {
+      return res.status(400).json({
+        status: false,
+        message: err.message,
+        data: null,
+      });
+    }
+    if (req.files) {
+      req.file = req.files['attachment']?.[0] || req.files['file']?.[0] || null;
+    }
+    next();
+  });
+};
+
 module.exports = {
   upload,
   uploadJpgOnly,
@@ -423,11 +481,14 @@ module.exports = {
   busImageMiddleware,
   uploadDriverDocs,
   driverDocsMiddleware,
+  uploadSupportTicketAttachment,
+  supportTicketAttachmentMiddleware,
   UPLOAD_ROOT,
   MACHINE_UPLOAD_ROOT,
   RFID_UPLOAD_ROOT,
   BANK_UPLOAD_ROOT,
   BUS_UPLOAD_ROOT,
   DRIVER_DOCS_UPLOAD_ROOT,
+  SUPPORT_TICKET_UPLOAD_ROOT,
 };
 

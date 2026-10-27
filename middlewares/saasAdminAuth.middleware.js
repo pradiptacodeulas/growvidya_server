@@ -88,7 +88,8 @@ const saasAdminAuthMiddleware = async (req, res, next) => {
         sau.created_at 
       FROM saas_admin_users sau
       LEFT JOIN gender_master gm ON sau.gender = gm.id
-      WHERE sau.id = ? AND sau.status = 1 
+      LEFT JOIN saas_roles sr ON sau.role_id = sr.id
+      WHERE sau.id = ? AND sau.status = 1 AND (sau.role = 'superadmin' OR sr.status IS NULL OR sr.status = 1)
       LIMIT 1`,
       [adminId]
     );

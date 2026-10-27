@@ -560,6 +560,34 @@ class SaasModel {
         );
       }
 
+      // 5a. Record storage plan purchase order in school_storage_orders if storage was ordered
+      if (breakdown.storage && breakdown.storage.id) {
+        try {
+          const storageOrderNo = `STOR_${schoolId}_${Date.now()}_${Math.floor(100 + Math.random() * 900)}`;
+          const storageStatus = paymentTransactionId ? 'active' : 'pending';
+          await connection.query(
+            `INSERT INTO school_storage_orders
+             (order_no, school_id, storage_plan_id, billing_cycle, quantity, unit_price, total_amount, payment_transaction_id, order_status, start_date, end_date, remarks, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Ordered during school onboarding registration', NOW(), NOW())`,
+            [
+              storageOrderNo,
+              schoolId,
+              breakdown.storage.id,
+              plan.billing_cycle === 'monthly' ? 'monthly' : 'annual',
+              breakdown.storage.quantity,
+              breakdown.storage.unit_price,
+              breakdown.storage.total_price,
+              finalTxnId,
+              storageStatus,
+              startDateStr,
+              endDateStr,
+            ]
+          );
+        } catch (storageErr) {
+          console.error('Failed to log school_storage_orders during onboarding:', storageErr.message);
+        }
+      }
+
       // 5b. Record RFID card purchase order in school_rfid_orders if cards were ordered
       if (breakdown.cards && breakdown.cards.length > 0) {
         for (const card of breakdown.cards) {
@@ -567,9 +595,9 @@ class SaasModel {
             const orderNo = `RFID_${schoolId}_${Date.now()}_${Math.floor(100 + Math.random() * 900)}`;
             await connection.query(
               `INSERT INTO school_rfid_orders 
-               (order_no, school_id, rfid_card_id, quantity, unit_price, total_amount, order_status, shipping_address, remarks, created_at, updated_at) 
-               VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, 'Ordered during school onboarding registration', NOW(), NOW())`,
-              [orderNo, schoolId, card.id, card.quantity, card.unit_price, card.total_price, shippingAddress || schoolData.address || null]
+               (order_no, school_id, rfid_card_id, quantity, unit_price, total_amount, order_status, payment_transaction_id, shipping_address, remarks, created_at, updated_at) 
+               VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, 'Ordered during school onboarding registration', NOW(), NOW())`,
+              [orderNo, schoolId, card.id, card.quantity, card.unit_price, card.total_price, finalTxnId, shippingAddress || schoolData.address || null]
             );
           } catch (rfidErr) {
             console.error('Failed to log school_rfid_orders during onboarding:', rfidErr.message);
@@ -583,11 +611,22 @@ class SaasModel {
           try {
             for (let i = 0; i < machine.quantity; i++) {
               const serialNo = `DEV_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
+              const orderNo = `MACH_${schoolId}_${Date.now()}_${Math.floor(100 + Math.random() * 900)}`;
               await connection.query(
                 `INSERT INTO school_attendance_machines 
-                 (school_id, branch_id, machine_master_id, device_serial_number, device_location, status, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, 'Main School Gate - Scheduled Onboarding Setup', 0, NOW(), NOW())`,
-                [schoolId, mainBranchId, machine.id, serialNo]
+                 (order_no, school_id, branch_id, machine_master_id, quantity, unit_price, total_amount, device_serial_number, device_location, status, order_status, payment_transaction_id, shipping_address, remarks, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, 1, ?, ?, ?, 'Main School Gate - Scheduled Onboarding Setup', 0, 'pending', ?, ?, 'Ordered during school onboarding registration', NOW(), NOW())`,
+                [
+                  orderNo,
+                  schoolId,
+                  mainBranchId,
+                  machine.id,
+                  machine.unit_price,
+                  machine.unit_price,
+                  serialNo,
+                  finalTxnId,
+                  shippingAddress || schoolData.address || null,
+                ]
               );
             }
           } catch (mErr) {

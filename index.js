@@ -14,6 +14,12 @@ const BranchModel = require('./models/branch.model');
 const RazorpayCredentialModel = require('./models/razorpayCredential.model');
 const EmailCredentialModel = require('./models/emailCredential.model');
 const SaasRoleModel = require('./models/saasRole.model');
+const AttendanceMachineMasterModel = require('./models/attendanceMachineMaster.model');
+const RfidCardMasterModel = require('./models/rfidCardMaster.model');
+const StorageMasterModel = require('./models/storageMaster.model');
+const CouponModel = require('./models/coupon.model');
+const SupportTicketModel = require('./models/supportTicket.model');
+const DeviceTokenModel = require('./models/deviceToken.model');
 
 // Middleware & Router Imports
 const errorMiddleware = require('./middlewares/error.middleware');
@@ -188,6 +194,12 @@ server.listen(config.port, async () => {
   await RazorpayCredentialModel.initTable();
   await EmailCredentialModel.initTable();
   await SaasRoleModel.initTable();
+  await AttendanceMachineMasterModel.initTable();
+  await RfidCardMasterModel.initTable();
+  await StorageMasterModel.initTable();
+  await CouponModel.initTable();
+  await SupportTicketModel.initTable();
+  await DeviceTokenModel.initTable();
 
   console.log(`\n  \x1b[1m\x1b[36mGrowvidya Core API Server\x1b[0m \x1b[90mv1.0.0\x1b[0m`);
   console.log(`  \x1b[90m──────────────────────────────────────────────────\x1b[0m`);

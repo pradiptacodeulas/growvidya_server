@@ -28,8 +28,12 @@ class SaasAdminController {
         return ApiResponse.error(res, 'Invalid email or password.', null, 401);
       }
 
-      if (user.status !== 1) {
+      if (Number(user.status) !== 1) {
         return ApiResponse.error(res, 'Your SaaS Admin account has been deactivated. Please contact the administrator.', null, 403);
+      }
+
+      if (user.role !== 'superadmin' && user.role_id && user.role_status !== null && user.role_status !== undefined && Number(user.role_status) !== 1) {
+        return ApiResponse.error(res, 'Your assigned role has been deactivated. Please contact the Super Admin.', null, 403);
       }
 
       const isMatch = await comparePassword(password, user.password);
@@ -737,6 +741,8 @@ class SaasAdminController {
         start_date,
         end_date,
         max_uses,
+        max_uses_per_user,
+        maxUsesPerUser,
         status,
       } = req.body;
 
@@ -752,6 +758,37 @@ class SaasAdminController {
         return ApiResponse.error(res, 'Discount type must be percentage or fixed.', null, 400);
       }
 
+      const rawPerUser = max_uses_per_user !== undefined ? max_uses_per_user : maxUsesPerUser;
+      const parsedPerUser = parseInt(rawPerUser, 10);
+      if (
+        rawPerUser === undefined ||
+        rawPerUser === null ||
+        String(rawPerUser).trim() === '' ||
+        isNaN(parsedPerUser) ||
+        parsedPerUser < 1
+      ) {
+        return ApiResponse.error(
+          res,
+          'A valid positive integer count (>= 1) is required for max_uses_per_user (Usage Limit Per User).',
+          null,
+          400
+        );
+      }
+
+      const parsedMaxUses =
+        max_uses !== undefined && max_uses !== null && String(max_uses).trim() !== ''
+          ? parseInt(max_uses, 10)
+          : null;
+
+      if (parsedMaxUses !== null && parsedPerUser > parsedMaxUses) {
+        return ApiResponse.error(
+          res,
+          'Per-user usage limit (max_uses_per_user) cannot exceed the total usage limit (max_uses).',
+          null,
+          400
+        );
+      }
+
       const newId = await SaasAdminModel.createCoupon({
         code,
         description,
@@ -761,7 +798,8 @@ class SaasAdminController {
         max_discount_amount,
         start_date,
         end_date,
-        max_uses,
+        max_uses: parsedMaxUses,
+        max_uses_per_user: parsedPerUser,
         status: status !== undefined ? status : 1,
       });
 
@@ -783,7 +821,50 @@ class SaasAdminController {
         return ApiResponse.notFound(res, 'Coupon not found.');
       }
 
-      const success = await SaasAdminModel.updateCoupon(id, req.body);
+      const payload = { ...req.body };
+      const rawPerUser =
+        payload.max_uses_per_user !== undefined ? payload.max_uses_per_user : payload.maxUsesPerUser;
+      if (rawPerUser !== undefined) {
+        const parsedPerUser = parseInt(rawPerUser, 10);
+        if (
+          rawPerUser === null ||
+          String(rawPerUser).trim() === '' ||
+          isNaN(parsedPerUser) ||
+          parsedPerUser < 1
+        ) {
+          return ApiResponse.error(
+            res,
+            'max_uses_per_user must be a valid positive integer (>= 1) and cannot be null.',
+            null,
+            400
+          );
+        }
+        payload.max_uses_per_user = parsedPerUser;
+      }
+
+      const effectivePerUser =
+        payload.max_uses_per_user !== undefined
+          ? payload.max_uses_per_user
+          : Math.max(1, parseInt(coupon.max_uses_per_user, 10) || 1);
+      const effectiveMaxUses =
+        payload.max_uses !== undefined
+          ? payload.max_uses !== null && String(payload.max_uses).trim() !== ''
+            ? parseInt(payload.max_uses, 10)
+            : null
+          : coupon.max_uses
+          ? parseInt(coupon.max_uses, 10)
+          : null;
+
+      if (effectiveMaxUses !== null && effectivePerUser > effectiveMaxUses) {
+        return ApiResponse.error(
+          res,
+          'Per-user usage limit (max_uses_per_user) cannot exceed the total usage limit (max_uses).',
+          null,
+          400
+        );
+      }
+
+      const success = await SaasAdminModel.updateCoupon(id, payload);
       if (!success) {
         return ApiResponse.error(res, 'No changes made or update failed.', null, 400);
       }
@@ -837,12 +918,17 @@ class SaasAdminController {
   // ========================================================
   static async validateCoupon(req, res, next) {
     try {
-      const { code, amount, schoolId } = req.body;
+      const { code, amount, order_amount, orderAmount, schoolId, school_id } = req.body;
       if (!code) {
         return ApiResponse.error(res, 'Coupon code is required.', null, 400);
       }
 
-      const result = await SaasAdminModel.validateCoupon(code, amount || 0, schoolId);
+      const targetAmount =
+        amount !== undefined ? amount : order_amount !== undefined ? order_amount : orderAmount || 0;
+      const targetSchoolId =
+        schoolId || school_id || req.user?.school_id || req.user?.schoolId || null;
+
+      const result = await SaasAdminModel.validateCoupon(code, targetAmount, targetSchoolId);
       if (!result.valid) {
         return ApiResponse.error(res, result.message, null, 400);
       }

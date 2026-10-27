@@ -71,6 +71,80 @@ class AttendanceMachineMasterController {
   }
 
   /**
+   * GET /attendance-machines/buyers
+   * List schools/users who purchased attendance machines (supports ?search=, ?status=, ?machine_id=, ?page=, ?limit=)
+   */
+  static async getBuyers(req, res, next) {
+    try {
+      const { search, status, machine_id } = req.query;
+      const { page, limit } = parsePagination(req.query);
+      const result = await AttendanceMachineMasterModel.getBuyers({
+        search,
+        status,
+        machine_id,
+        page,
+        limit,
+      });
+      return ApiResponse.success(res, 'Attendance machine buyers retrieved successfully.', result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * PATCH /attendance-machines/buyers/:id
+   * Update an attendance machine purchase order / device config
+   */
+  static async updateBuyerOrder(req, res, next) {
+    try {
+      const { id } = req.params;
+      if (!id || !/^\d+$/.test(String(id).trim())) {
+        return ApiResponse.badRequest(res, 'Valid attendance machine purchase ID is required.');
+      }
+
+      const existing = await AttendanceMachineMasterModel.getBuyerOrderById(Number(id));
+      if (!existing) {
+        return ApiResponse.notFound(res, 'Attendance machine purchase record not found.');
+      }
+
+      const {
+        order_status,
+        status,
+        device_serial_number,
+        device_location,
+        ip_address,
+        port,
+        shipping_address,
+        remarks,
+      } = req.body;
+
+      const validOrderStatuses = ['pending', 'approved', 'dispatched', 'delivered', 'cancelled'];
+      if (order_status !== undefined && !validOrderStatuses.includes(String(order_status).trim().toLowerCase())) {
+        return ApiResponse.badRequest(
+          res,
+          `Invalid order_status. Allowed values: ${validOrderStatuses.join(', ')}.`
+        );
+      }
+
+      await AttendanceMachineMasterModel.updateBuyerOrder(Number(id), {
+        order_status,
+        status,
+        device_serial_number,
+        device_location,
+        ip_address,
+        port,
+        shipping_address,
+        remarks,
+      });
+
+      const updated = await AttendanceMachineMasterModel.getBuyerOrderById(Number(id));
+      return ApiResponse.success(res, 'Attendance machine order updated successfully.', updated);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /attendance-machines/:id
    * Get single machine by ID or model_number
    */

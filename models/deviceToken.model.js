@@ -3,6 +3,29 @@ const crypto = require('crypto');
 
 class DeviceTokenModel {
   /**
+   * Ensure user_device_tokens and notification_records support role = 'saas_admin'
+   */
+  static async initTable() {
+    try {
+      const [dtCols] = await pool.query("SHOW COLUMNS FROM user_device_tokens LIKE 'role'");
+      if (dtCols[0] && !String(dtCols[0].Type).includes('saas_admin')) {
+        await pool.query(
+          "ALTER TABLE user_device_tokens MODIFY COLUMN role ENUM('student','parent','teacher','admin','staff','saas_admin','other') NOT NULL COMMENT 'User role'"
+        );
+      }
+
+      const [nrCols] = await pool.query("SHOW COLUMNS FROM notification_records LIKE 'recipient_role'");
+      if (nrCols[0] && !String(nrCols[0].Type).includes('saas_admin')) {
+        await pool.query(
+          "ALTER TABLE notification_records MODIFY COLUMN recipient_role ENUM('student','parent','teacher','staff','admin','saas_admin','other') DEFAULT 'other' COMMENT 'Recipient role'"
+        );
+      }
+    } catch (err) {
+      console.error('Error initializing deviceToken ENUM columns:', err.message);
+    }
+  }
+
+  /**
    * Helper to compute a consistent SHA-256 hash for a token or web push subscription endpoint
    */
   static computeHash(tokenInput) {
@@ -33,35 +56,37 @@ class DeviceTokenModel {
     device_name = null,
     user_agent = null,
   }) {
-    if (!school_id || !user_id || !role || !device_type || !token) {
+    const normalizedRole = String(role || '').toLowerCase();
+    const resolvedSchoolId = normalizedRole === 'saas_admin' ? 0 : Number(school_id);
+
+    if ((normalizedRole !== 'saas_admin' && !resolvedSchoolId) || !user_id || !normalizedRole || !device_type || !token) {
       throw new Error('school_id, user_id, role, device_type, and token are required.');
     }
 
     const tokenStr = typeof token === 'object' ? JSON.stringify(token) : String(token).trim();
     const endpointHash = this.computeHash(token);
-    const normalizedRole = String(role).toLowerCase();
     const normalizedDeviceType = String(device_type).toLowerCase();
 
     let resolvedBranchId = branch_id ? Number(branch_id) : null;
-    if (!resolvedBranchId && user_id && school_id) {
+    if (!resolvedBranchId && user_id && resolvedSchoolId && normalizedRole !== 'saas_admin') {
       if (normalizedRole === 'student') {
         try {
-          const [sRow] = await pool.query('SELECT branch_id FROM student_master WHERE id = ? AND school_id = ? LIMIT 1', [user_id, school_id]);
+          const [sRow] = await pool.query('SELECT branch_id FROM student_master WHERE id = ? AND school_id = ? LIMIT 1', [user_id, resolvedSchoolId]);
           if (sRow.length && sRow[0].branch_id) resolvedBranchId = sRow[0].branch_id;
         } catch (e) {}
       } else if (normalizedRole === 'teacher') {
         try {
-          const [tRow] = await pool.query('SELECT branch_id FROM teacher_master WHERE id = ? AND school_id = ? LIMIT 1', [user_id, school_id]);
+          const [tRow] = await pool.query('SELECT branch_id FROM teacher_master WHERE id = ? AND school_id = ? LIMIT 1', [user_id, resolvedSchoolId]);
           if (tRow.length && tRow[0].branch_id) resolvedBranchId = tRow[0].branch_id;
         } catch (e) {}
       } else if (normalizedRole === 'parent') {
         try {
-          const [pRow] = await pool.query('SELECT branch_id FROM parent_master WHERE id = ? AND school_id = ? LIMIT 1', [user_id, school_id]);
+          const [pRow] = await pool.query('SELECT branch_id FROM parent_master WHERE id = ? AND school_id = ? LIMIT 1', [user_id, resolvedSchoolId]);
           if (pRow.length && pRow[0].branch_id) resolvedBranchId = pRow[0].branch_id;
         } catch (e) {}
       } else {
         try {
-          const [uRow] = await pool.query('SELECT branch_id FROM user_master WHERE id = ? AND school_id = ? LIMIT 1', [user_id, school_id]);
+          const [uRow] = await pool.query('SELECT branch_id FROM user_master WHERE id = ? AND school_id = ? LIMIT 1', [user_id, resolvedSchoolId]);
           if (uRow.length && uRow[0].branch_id) resolvedBranchId = uRow[0].branch_id;
         } catch (e) {}
       }
@@ -92,7 +117,7 @@ class DeviceTokenModel {
     `;
 
     const [result] = await pool.query(query, [
-      school_id,
+      resolvedSchoolId,
       resolvedBranchId,
       user_id,
       normalizedRole,
@@ -146,12 +171,60 @@ class DeviceTokenModel {
     `;
     const params = [userId, String(role).toLowerCase()];
 
-    if (schoolId) {
+    if (schoolId !== null && schoolId !== undefined) {
       query += ` AND school_id = ?`;
       params.push(schoolId);
     }
 
     const [rows] = await pool.query(query, params);
+    return rows;
+  }
+
+  /**
+   * Fetch active web push tokens for SaaS Super Admins & permitted Sub-Admins
+   */
+  static async getActiveWebTokensForSaasAdmins(targetAdminIds = null, includeSuperAdmins = true) {
+    let adminIds = [];
+
+    if (Array.isArray(targetAdminIds) && targetAdminIds.length > 0) {
+      const explicitIds = targetAdminIds.map((id) => Number(id)).filter(Boolean);
+      if (includeSuperAdmins) {
+        const [superRows] = await pool.query(
+          `SELECT id FROM saas_admin_users WHERE status = 1 AND role = 'superadmin'`
+        );
+        const superIds = superRows.map((r) => Number(r.id)).filter(Boolean);
+        adminIds = Array.from(new Set([...explicitIds, ...superIds]));
+      } else {
+        adminIds = explicitIds;
+      }
+    } else {
+      const [adminRows] = await pool.query(`
+        SELECT DISTINCT sau.id
+        FROM saas_admin_users sau
+        LEFT JOIN saas_roles sr ON sau.role_id = sr.id
+        LEFT JOIN saas_role_permissions srp
+          ON srp.role_id = sr.id AND srp.module_key = 'support_tickets'
+        WHERE sau.status = 1
+          AND (
+            sau.role = 'superadmin'
+            OR (sr.status = 1 AND (srp.can_view = 1 OR srp.can_manage = 1 OR srp.can_edit = 1))
+          )
+      `);
+      adminIds = adminRows.map((r) => Number(r.id)).filter(Boolean);
+    }
+
+    if (adminIds.length === 0) return [];
+
+    const placeholders = adminIds.map(() => '?').join(',');
+    const [rows] = await pool.query(
+      `SELECT id, school_id, user_id, role, device_type, token, endpoint_hash, device_name, last_used_at
+       FROM user_device_tokens
+       WHERE role = 'saas_admin'
+         AND device_type = 'web'
+         AND is_active = 1
+         AND user_id IN (${placeholders})`,
+      adminIds
+    );
     return rows;
   }
 

@@ -29,6 +29,24 @@ class AdminAuthController {
         return ApiResponse.error(res, 'Invalid credentials. User not found or inactive.', null, 401);
       }
 
+      if (Number(user.status) !== 1) {
+        return ApiResponse.error(
+          res,
+          'Your account has been deactivated / marked inactive. Please contact your administrator.',
+          null,
+          403
+        );
+      }
+
+      if (user.school_status !== undefined && user.school_status !== null && Number(user.school_status) !== 1) {
+        return ApiResponse.error(
+          res,
+          'Your school account has been marked inactive by the Super Admin. Please contact support.',
+          null,
+          403
+        );
+      }
+
       // Verify admin role access:
       // admin_type: 1 = Super Admin, 2 = Staff
       const adminType = Number(user.admin_type);
@@ -60,6 +78,21 @@ class AdminAuthController {
             status: 'pending',
             is_pending: true,
             is_trial: false,
+          },
+          403
+        );
+      }
+
+      // Block login if school subscription is marked inactive / suspended by the Super Admin
+      if (sub && (sub.status === 'suspended' || sub.liveStatus === 'suspended')) {
+        return ApiResponse.error(
+          res,
+          `Your school subscription for "${sub.plan_name}" has been marked inactive / suspended by the Super Admin. You cannot log in until your account is reactivated.`,
+          {
+            subscription_id: sub.subscription_id,
+            plan_name: sub.plan_name,
+            status: 'suspended',
+            is_suspended: true,
           },
           403
         );
@@ -152,6 +185,14 @@ class AdminAuthController {
         return ApiResponse.error(res, 'Admin profile not found.', null, 404);
       }
 
+      if (Number(user.status) !== 1) {
+        return ApiResponse.error(res, 'Your account has been marked inactive.', null, 403);
+      }
+
+      if (user.school_status !== undefined && user.school_status !== null && Number(user.school_status) !== 1) {
+        return ApiResponse.error(res, 'Your school account has been marked inactive by the Super Admin.', null, 403);
+      }
+
       const adminType = Number(user.admin_type);
       const isSuperAdmin = adminType === 1;
       const roleName = isSuperAdmin ? 'Super Admin' : (user.role_name || null);
@@ -168,6 +209,20 @@ class AdminAuthController {
             status: 'pending',
             is_pending: true,
             is_trial: false,
+          },
+          403
+        );
+      }
+
+      if (sub && (sub.status === 'suspended' || sub.liveStatus === 'suspended')) {
+        return ApiResponse.error(
+          res,
+          `Your school subscription for "${sub.plan_name}" has been marked inactive / suspended by the Super Admin.`,
+          {
+            subscription_id: sub.subscription_id,
+            plan_name: sub.plan_name,
+            status: 'suspended',
+            is_suspended: true,
           },
           403
         );

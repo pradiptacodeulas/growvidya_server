@@ -20,13 +20,13 @@ const calculateVerifiedTotal = async ({
   coupon_code = null,
   school_id = null,
 }) => {
-  const isTrial = Boolean(is_trial) || plan.billing_cycle === 'trial';
-  const planBaseRate = isTrial ? 0 : parseFloat(plan.price || 0);
+  const isTrial = Boolean(is_trial) || (plan && plan.billing_cycle === 'trial');
+  const planBaseRate = (!plan || isTrial) ? 0 : parseFloat(plan.price || 0);
   let totalAmount = planBaseRate;
   const breakdown = {
-    plan_name: plan.plan_name,
+    plan_name: plan ? plan.plan_name : null,
     plan_price: planBaseRate,
-    billing_cycle: isTrial ? 'trial' : plan.billing_cycle,
+    billing_cycle: plan ? (isTrial ? 'trial' : plan.billing_cycle) : 'annual',
     addons: [],
     storage: null,
     machines: [],
@@ -36,7 +36,7 @@ const calculateVerifiedTotal = async ({
 
   // 1. Subscription child items (plan features are included; add-ons are managed via dedicated masters)
   const selectedAddonIds = (addon_ids || []).map(Number);
-  if (selectedAddonIds.length > 0 && Array.isArray(plan.items)) {
+  if (selectedAddonIds.length > 0 && plan && Array.isArray(plan.items)) {
     for (const item of plan.items) {
       if (selectedAddonIds.includes(Number(item.id))) {
         breakdown.addons.push({ id: item.id, item_name: item.item_name, price: 0 });
@@ -52,7 +52,7 @@ const calculateVerifiedTotal = async ({
     );
     if (sRows.length > 0) {
       const s = sRows[0];
-      const sUnitRate = plan.billing_cycle === 'monthly' ? parseFloat(s.monthly_price) : parseFloat(s.annual_price);
+      const sUnitRate = (plan && plan.billing_cycle === 'monthly') ? parseFloat(s.monthly_price) : parseFloat(s.annual_price);
       const sQuantity = Math.max(1, parseInt(storage_qty, 10) || 1);
       const sTotal = sUnitRate * sQuantity;
       totalAmount += sTotal;
@@ -314,20 +314,20 @@ class AdminSubscriptionController {
       let order;
       try {
         order = await razorpayInstance.orders.create({
-        amount: amountInPaise,
-        currency: 'INR',
-        receipt: receiptId,
-        notes: {
-          school_id: String(schoolId),
-          plan_id: String(plan.id),
-          plan_name: plan.plan_name,
-          addon_count: String(breakdown.addons.length),
-          machines_count: String(breakdown.machines.length),
-          cards_count: String(breakdown.cards.length),
-          coupon_code: couponInfo?.code || '',
-          discount_amount: String(discountAmount),
-        },
-      });
+          amount: amountInPaise,
+          currency: 'INR',
+          receipt: receiptId,
+          notes: {
+            school_id: String(schoolId),
+            plan_id: String(plan.id),
+            plan_name: plan.plan_name,
+            addon_count: String(breakdown.addons.length),
+            machines_count: String(breakdown.machines.length),
+            cards_count: String(breakdown.cards.length),
+            coupon_code: couponInfo?.code || '',
+            discount_amount: String(discountAmount),
+          },
+        });
       } catch (rzpErr) {
         return ApiResponse.error(
           res,
@@ -471,6 +471,7 @@ class AdminSubscriptionController {
       const planRequest = await SubscriptionModel.requestPlanSelection({
         schoolId,
         planId: targetPlanId,
+        storagePlanId: breakdown.storage ? breakdown.storage.id : null,
         amountPaid: finalAmountPaid,
         paymentGateway: 'razorpay',
         paymentTransactionId: paymentId,
@@ -480,21 +481,48 @@ class AdminSubscriptionController {
         paymentStatus: 'completed',
       });
 
+      let resolvedShipping = shipping_address;
+      if (!resolvedShipping) {
+        const [sch] = await pool.query('SELECT address FROM school_master WHERE id = ?', [schoolId]);
+        resolvedShipping = sch[0]?.address || null;
+      }
+
+      // Record Storage Plan purchase order in school_storage_orders if storage was ordered
+      if (breakdown.storage && breakdown.storage.id) {
+        try {
+          const storageOrderNo = `STOR_${schoolId}_${Date.now()}_${Math.floor(100 + Math.random() * 900)}`;
+          await pool.query(
+            `INSERT INTO school_storage_orders
+             (order_no, school_id, storage_plan_id, billing_cycle, quantity, unit_price, total_amount, payment_transaction_id, order_status, start_date, end_date, remarks, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, 'Ordered with subscription configuration (Pending Super Admin Approval)', NOW(), NOW())`,
+            [
+              storageOrderNo,
+              schoolId,
+              breakdown.storage.id,
+              plan.billing_cycle === 'monthly' ? 'monthly' : 'annual',
+              breakdown.storage.quantity,
+              breakdown.storage.unit_price,
+              breakdown.storage.total_price,
+              paymentId,
+              planRequest.start_date,
+              planRequest.end_date,
+            ]
+          );
+        } catch (sErr) {
+          console.error('Failed to log school_storage_orders:', sErr.message);
+        }
+      }
+
       // Record RFID card purchase order in school_rfid_orders if cards were ordered
       if (breakdown.cards && breakdown.cards.length > 0) {
         for (const card of breakdown.cards) {
           try {
             const orderNo = `RFID_${schoolId}_${Date.now()}_${Math.floor(100 + Math.random() * 900)}`;
-            let resolvedShipping = shipping_address;
-            if (!resolvedShipping) {
-              const [sch] = await pool.query('SELECT address FROM school_master WHERE id = ?', [schoolId]);
-              resolvedShipping = sch[0]?.address || null;
-            }
             await pool.query(
               `INSERT INTO school_rfid_orders 
-               (order_no, school_id, rfid_card_id, quantity, unit_price, total_amount, order_status, shipping_address, remarks, created_at, updated_at) 
-               VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, 'Ordered with subscription configuration (Pending Super Admin Approval)', NOW(), NOW())`,
-              [orderNo, schoolId, card.id, card.quantity, card.unit_price, card.total_price, resolvedShipping]
+               (order_no, school_id, rfid_card_id, quantity, unit_price, total_amount, order_status, payment_transaction_id, shipping_address, remarks, created_at, updated_at) 
+               VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, 'Ordered with subscription configuration (Pending Super Admin Approval)', NOW(), NOW())`,
+              [orderNo, schoolId, card.id, card.quantity, card.unit_price, card.total_price, paymentId, resolvedShipping]
             );
           } catch (rfidErr) {
             console.error('Failed to log school_rfid_orders:', rfidErr.message);
@@ -508,11 +536,12 @@ class AdminSubscriptionController {
           try {
             for (let i = 0; i < machine.quantity; i++) {
               const serialNo = `DEV_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
+              const orderNo = `MACH_${schoolId}_${Date.now()}_${Math.floor(100 + Math.random() * 900)}`;
               await pool.query(
                 `INSERT INTO school_attendance_machines 
-                 (school_id, machine_master_id, device_serial_number, device_location, status, created_at, updated_at)
-                 VALUES (?, ?, ?, 'Main School Gate - Scheduled Setup', 0, NOW(), NOW())`,
-                [schoolId, machine.id, serialNo]
+                 (order_no, school_id, machine_master_id, quantity, unit_price, total_amount, device_serial_number, device_location, status, order_status, payment_transaction_id, shipping_address, remarks, created_at, updated_at)
+                 VALUES (?, ?, ?, 1, ?, ?, ?, 'Main School Gate - Scheduled Setup', 0, 'pending', ?, ?, 'Ordered with subscription configuration (Pending Super Admin Approval)', NOW(), NOW())`,
+                [orderNo, schoolId, machine.id, machine.unit_price, machine.unit_price, serialNo, paymentId, resolvedShipping]
               );
             }
           } catch (mErr) {
@@ -527,6 +556,135 @@ class AdminSubscriptionController {
         { ...planRequest, breakdown },
         200
       );
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Standalone Add-on Products Purchase (Attendance Machines, RFID Cards, Storage Plans)
+   * Allows a school already on a default subscription plan to buy add-on products later.
+   */
+  static async purchaseAddons(req, res, next) {
+    try {
+      const schoolId = req.user?.school_id || req.user?.schoolId;
+      if (!schoolId) {
+        return ApiResponse.error(res, 'School ID not found in session.', null, 400);
+      }
+
+      const {
+        storage_plan_id,
+        storagePlanId,
+        storage_qty,
+        storageQty,
+        billing_cycle,
+        billingCycle,
+        selected_machines,
+        selectedMachines,
+        selected_cards,
+        selectedCards,
+        shipping_address,
+        shippingAddress,
+        payment_transaction_id,
+        paymentTransactionId,
+        remarks,
+      } = req.body;
+
+      const sPlanId = storage_plan_id || storagePlanId || null;
+      const machines = selected_machines || selectedMachines || [];
+      const cards = selected_cards || selectedCards || [];
+
+      if (!sPlanId && (!Array.isArray(machines) || machines.length === 0) && (!Array.isArray(cards) || cards.length === 0)) {
+        return ApiResponse.badRequest(res, 'Please select at least one product (Attendance Machine, RFID Card, or Storage Plan) to purchase.');
+      }
+
+      const cycle = (billing_cycle || billingCycle || 'annual') === 'monthly' ? 'monthly' : 'annual';
+      const { totalAmount, breakdown } = await calculateVerifiedTotal({
+        plan: { plan_name: 'Standalone Add-on', price: 0, billing_cycle: cycle },
+        storage_plan_id: sPlanId,
+        storage_qty: storage_qty || storageQty || 1,
+        selected_machines: machines,
+        selected_cards: cards,
+        school_id: schoolId,
+      });
+
+      let resolvedShipping = shipping_address || shippingAddress || null;
+      if (!resolvedShipping) {
+        const [sch] = await pool.query('SELECT address FROM school_master WHERE id = ?', [schoolId]);
+        resolvedShipping = sch[0]?.address || null;
+      }
+
+      const txnId = payment_transaction_id || paymentTransactionId || `ADDON_${schoolId}_${Date.now()}`;
+      const orderNote = remarks || 'Standalone add-on product purchase';
+      const createdOrders = { storage: null, machines: [], cards: [] };
+
+      if (breakdown.storage && breakdown.storage.id) {
+        const storageOrderNo = `STOR_${schoolId}_${Date.now()}_${Math.floor(100 + Math.random() * 900)}`;
+        const startDate = new Date();
+        const endDate = new Date();
+        if (cycle === 'monthly') {
+          endDate.setMonth(endDate.getMonth() + 1);
+        } else {
+          endDate.setFullYear(endDate.getFullYear() + 1);
+        }
+        const startDateStr = startDate.toISOString().split('T')[0];
+        const endDateStr = endDate.toISOString().split('T')[0];
+
+        const [sRes] = await pool.query(
+          `INSERT INTO school_storage_orders
+           (order_no, school_id, storage_plan_id, billing_cycle, quantity, unit_price, total_amount, payment_transaction_id, order_status, start_date, end_date, remarks, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, NOW(), NOW())`,
+          [
+            storageOrderNo,
+            schoolId,
+            breakdown.storage.id,
+            cycle,
+            breakdown.storage.quantity,
+            breakdown.storage.unit_price,
+            breakdown.storage.total_price,
+            txnId,
+            startDateStr,
+            endDateStr,
+            orderNote,
+          ]
+        );
+        createdOrders.storage = { id: sRes.insertId, order_no: storageOrderNo, ...breakdown.storage };
+      }
+
+      if (breakdown.cards && breakdown.cards.length > 0) {
+        for (const card of breakdown.cards) {
+          const orderNo = `RFID_${schoolId}_${Date.now()}_${Math.floor(100 + Math.random() * 900)}`;
+          const [cRes] = await pool.query(
+            `INSERT INTO school_rfid_orders
+             (order_no, school_id, rfid_card_id, quantity, unit_price, total_amount, order_status, payment_transaction_id, shipping_address, remarks, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, NOW(), NOW())`,
+            [orderNo, schoolId, card.id, card.quantity, card.unit_price, card.total_price, txnId, resolvedShipping, orderNote]
+          );
+          createdOrders.cards.push({ id: cRes.insertId, order_no: orderNo, ...card });
+        }
+      }
+
+      if (breakdown.machines && breakdown.machines.length > 0) {
+        for (const machine of breakdown.machines) {
+          for (let i = 0; i < machine.quantity; i++) {
+            const serialNo = `DEV_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
+            const orderNo = `MACH_${schoolId}_${Date.now()}_${Math.floor(100 + Math.random() * 900)}`;
+            const [mRes] = await pool.query(
+              `INSERT INTO school_attendance_machines
+               (order_no, school_id, machine_master_id, quantity, unit_price, total_amount, device_serial_number, device_location, status, order_status, payment_transaction_id, shipping_address, remarks, created_at, updated_at)
+               VALUES (?, ?, ?, 1, ?, ?, ?, 'Main School Gate - Scheduled Setup', 0, 'pending', ?, ?, ?, NOW(), NOW())`,
+              [orderNo, schoolId, machine.id, machine.unit_price, machine.unit_price, serialNo, txnId, resolvedShipping, orderNote]
+            );
+            createdOrders.machines.push({ id: mRes.insertId, order_no: orderNo, device_serial_number: serialNo, ...machine });
+          }
+        }
+      }
+
+      return ApiResponse.created(res, 'Product purchase order submitted successfully.', {
+        total_amount: totalAmount,
+        payment_transaction_id: txnId,
+        orders: createdOrders,
+      });
     } catch (error) {
       next(error);
     }
@@ -566,6 +724,8 @@ class AdminSubscriptionController {
       const {
         plan_id,
         planId,
+        storage_plan_id,
+        storagePlanId,
         amount_paid,
         amountPaid,
         payment_gateway,
@@ -613,6 +773,7 @@ class AdminSubscriptionController {
         const offlineReq = await SubscriptionModel.requestOfflineUpgrade({
           schoolId,
           planId: targetPlanId,
+          storagePlanId: storage_plan_id || storagePlanId || null,
           amountPaid: finalOfflineAmount,
           paymentTransactionId: String(txnId).trim(),
           couponId: couponInfo?.id || null,
@@ -638,6 +799,7 @@ class AdminSubscriptionController {
         const planReq = await SubscriptionModel.requestPlanSelection({
           schoolId,
           planId: targetPlanId,
+          storagePlanId: storage_plan_id || storagePlanId || null,
           amountPaid: amount_paid !== undefined ? amount_paid : (amountPaid !== undefined ? amountPaid : plan.price),
           paymentGateway: 'direct_selection',
           paymentTransactionId: txnId || `SEL_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`,
@@ -663,6 +825,7 @@ class AdminSubscriptionController {
         const upgraded = await SubscriptionModel.upgradeSubscription({
           schoolId,
           planId: targetPlanId,
+          storagePlanId: storage_plan_id || storagePlanId || null,
           amountPaid: amount_paid || amountPaid,
           paymentGateway: gateway || 'platform_admin',
           paymentTransactionId: txnId || `MANUAL_${Date.now()}`,
@@ -748,4 +911,3 @@ class AdminSubscriptionController {
 AdminSubscriptionController.calculateVerifiedTotal = calculateVerifiedTotal;
 
 module.exports = AdminSubscriptionController;
-
