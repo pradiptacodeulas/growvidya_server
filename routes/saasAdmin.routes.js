@@ -161,23 +161,37 @@ router.put('/sub-admins/:id', checkPermission('sub_admins', 'can_edit'), upload.
 router.delete('/sub-admins/:id', checkPermission('sub_admins', 'can_delete'), SaasAdminController.deleteSubAdmin);
 router.patch('/sub-admins/:id/status', checkPermission('sub_admins', 'can_manage'), SaasAdminController.toggleSubAdminStatus);
 
-// Settings — Razorpay Credentials Management
-router.get('/settings/razorpay', checkPermission('settings', 'can_view'), SaasAdminController.getRazorpayCredentials);
-router.post('/settings/razorpay', checkPermission('settings', 'can_add'), SaasAdminController.saveRazorpayCredentials);
-router.put('/settings/razorpay/:id', checkPermission('settings', 'can_edit'), SaasAdminController.updateRazorpayCredentials);
-router.put('/settings/razorpay', checkPermission('settings', 'can_edit'), SaasAdminController.updateRazorpayCredentials);
-router.delete('/settings/razorpay/:id', checkPermission('settings', 'can_delete'), SaasAdminController.deleteRazorpayCredentials);
-router.delete('/settings/razorpay', checkPermission('settings', 'can_delete'), SaasAdminController.deleteRazorpayCredentials);
+// Settings — Payment Gateway (Razorpay) Credentials Management
+router.get('/settings/razorpay', checkPermission('payment_gateway', 'can_view'), SaasAdminController.getRazorpayCredentials);
+router.get('/settings/payment-gateway', checkPermission('payment_gateway', 'can_view'), SaasAdminController.getRazorpayCredentials);
+router.post('/settings/razorpay', checkPermission('payment_gateway', 'can_edit'), SaasAdminController.saveRazorpayCredentials);
+router.post('/settings/payment-gateway', checkPermission('payment_gateway', 'can_edit'), SaasAdminController.saveRazorpayCredentials);
+router.put('/settings/razorpay/:id', checkPermission('payment_gateway', 'can_edit'), SaasAdminController.updateRazorpayCredentials);
+router.put('/settings/razorpay', checkPermission('payment_gateway', 'can_edit'), SaasAdminController.updateRazorpayCredentials);
+router.put('/settings/payment-gateway/:id', checkPermission('payment_gateway', 'can_edit'), SaasAdminController.updateRazorpayCredentials);
+router.put('/settings/payment-gateway', checkPermission('payment_gateway', 'can_edit'), SaasAdminController.updateRazorpayCredentials);
+router.delete('/settings/razorpay/:id', checkPermission('payment_gateway', 'can_delete'), SaasAdminController.deleteRazorpayCredentials);
+router.delete('/settings/razorpay', checkPermission('payment_gateway', 'can_delete'), SaasAdminController.deleteRazorpayCredentials);
+router.delete('/settings/payment-gateway/:id', checkPermission('payment_gateway', 'can_delete'), SaasAdminController.deleteRazorpayCredentials);
+router.delete('/settings/payment-gateway', checkPermission('payment_gateway', 'can_delete'), SaasAdminController.deleteRazorpayCredentials);
 
-// Settings — Email Credentials (Mailjet & SMTP) Management
-router.get('/settings/email', checkPermission('settings', 'can_view'), SaasAdminController.getEmailCredentials);
-router.post('/settings/email', checkPermission('settings', 'can_add'), SaasAdminController.saveEmailCredentials);
-router.put('/settings/email/:id', checkPermission('settings', 'can_edit'), SaasAdminController.updateEmailCredentials);
-router.put('/settings/email', checkPermission('settings', 'can_edit'), SaasAdminController.updateEmailCredentials);
-router.patch('/settings/email/:id/default', checkPermission('settings', ['can_manage', 'can_edit']), SaasAdminController.setDefaultEmailProvider);
-router.patch('/settings/email/:id/status', checkPermission('settings', ['can_manage', 'can_edit']), SaasAdminController.toggleEmailCredentialStatus);
-router.delete('/settings/email/:id', checkPermission('settings', 'can_delete'), SaasAdminController.deleteEmailCredentials);
-router.post('/settings/email/test', checkPermission('settings', ['can_view', 'can_edit', 'can_manage']), SaasAdminController.sendTestEmail);
+// Settings — Email Delivery (Mailjet & SMTP) Credentials Management
+router.get('/settings/email', checkPermission('email_delivery', 'can_view'), SaasAdminController.getEmailCredentials);
+router.get('/settings/email-delivery', checkPermission('email_delivery', 'can_view'), SaasAdminController.getEmailCredentials);
+router.post('/settings/email', checkPermission('email_delivery', 'can_edit'), SaasAdminController.saveEmailCredentials);
+router.post('/settings/email-delivery', checkPermission('email_delivery', 'can_edit'), SaasAdminController.saveEmailCredentials);
+router.put('/settings/email/:id', checkPermission('email_delivery', 'can_edit'), SaasAdminController.updateEmailCredentials);
+router.put('/settings/email', checkPermission('email_delivery', 'can_edit'), SaasAdminController.updateEmailCredentials);
+router.put('/settings/email-delivery/:id', checkPermission('email_delivery', 'can_edit'), SaasAdminController.updateEmailCredentials);
+router.put('/settings/email-delivery', checkPermission('email_delivery', 'can_edit'), SaasAdminController.updateEmailCredentials);
+router.patch('/settings/email/:id/default', checkPermission('email_delivery', 'can_edit'), SaasAdminController.setDefaultEmailProvider);
+router.patch('/settings/email-delivery/:id/default', checkPermission('email_delivery', 'can_edit'), SaasAdminController.setDefaultEmailProvider);
+router.patch('/settings/email/:id/status', checkPermission('email_delivery', 'can_edit'), SaasAdminController.toggleEmailCredentialStatus);
+router.patch('/settings/email-delivery/:id/status', checkPermission('email_delivery', 'can_edit'), SaasAdminController.toggleEmailCredentialStatus);
+router.delete('/settings/email/:id', checkPermission('email_delivery', 'can_delete'), SaasAdminController.deleteEmailCredentials);
+router.delete('/settings/email-delivery/:id', checkPermission('email_delivery', 'can_delete'), SaasAdminController.deleteEmailCredentials);
+router.post('/settings/email/test', checkPermission('email_delivery', 'can_edit'), SaasAdminController.sendTestEmail);
+router.post('/settings/email-delivery/test', checkPermission('email_delivery', 'can_edit'), SaasAdminController.sendTestEmail);
 
 // Help & Support Tickets Management
 router.get('/support-tickets', checkPermission('support_tickets', 'can_view'), SupportTicketController.getSaasTickets);

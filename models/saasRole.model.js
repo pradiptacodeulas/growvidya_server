@@ -7,14 +7,18 @@ const DEFAULT_SAAS_MODULES = [
   { key: 'subscriptions', name: 'Subscriptions & Payments', desc: 'School subscriptions, manual payment verification, and extensions', order: 3 },
   { key: 'packages', name: 'Packages & Pricing', desc: 'Subscription pricing tiers, package items, features, and plan limits', order: 4 },
   { key: 'attendance_machines', name: 'Attendance Machines', desc: 'Biometric and RFID attendance hardware catalog and pricing', order: 5 },
-  { key: 'rfid_cards', name: 'RFID Cards', desc: 'Smart RFID card inventory, pricing, and specifications', order: 6 },
-  { key: 'storage_plans', name: 'Storage Plans', desc: 'Cloud storage add-on packages and capacity units', order: 7 },
-  { key: 'coupons', name: 'Coupons & Discounts', desc: 'Promo codes, discounts, and redemption limits', order: 8 },
-  { key: 'bank_accounts', name: 'Bank Accounts', desc: 'Platform bank accounts and UPI/QR payment details', order: 9 },
-  { key: 'roles', name: 'Roles & Permissions', desc: 'Manage SaaS roles and granular module permissions', order: 10 },
-  { key: 'sub_admins', name: 'Users & Sub-Admins', desc: 'Manage sub-admin staff accounts and role assignments', order: 11 },
-  { key: 'settings', name: 'Settings & Payment Gateway', desc: 'Platform settings and Razorpay payment gateway credentials', order: 12 },
-  { key: 'support_tickets', name: 'Help & Support Tickets', desc: 'View, reply to, assign, and update status of school support tickets', order: 13 },
+  { key: 'machines_buyers', name: 'Machines Buyers', desc: 'Biometric and RFID attendance hardware orders and buyer details', order: 6 },
+  { key: 'rfid_cards', name: 'RFID Cards', desc: 'Smart RFID card inventory, pricing, and specifications', order: 7 },
+  { key: 'rfid_buyers', name: 'RFID Buyers', desc: 'Smart RFID card buyers and order details', order: 8 },
+  { key: 'storage_plans', name: 'Storage Plans', desc: 'Cloud storage add-on packages and capacity units', order: 9 },
+  { key: 'storage_buyers', name: 'Storage Buyers', desc: 'Cloud storage buyers and add-on purchase details', order: 10 },
+  { key: 'coupons', name: 'Coupons & Discounts', desc: 'Promo codes, discounts, and redemption limits', order: 11 },
+  { key: 'bank_accounts', name: 'Bank Accounts', desc: 'Platform bank accounts and UPI/QR payment details', order: 12 },
+  { key: 'roles', name: 'Roles & Permissions', desc: 'Manage SaaS roles and granular module permissions', order: 13 },
+  { key: 'sub_admins', name: 'Users & Sub-Admins', desc: 'Manage sub-admin staff accounts and role assignments', order: 14 },
+  { key: 'payment_gateway', name: 'Payment Gateway Settings', desc: 'Razorpay payment gateway credentials, status, and environment mode', order: 15 },
+  { key: 'email_delivery', name: 'Email Delivery Settings', desc: 'Mailjet API and SMTP server credentials, default mailer, and test email delivery', order: 16 },
+  { key: 'support_tickets', name: 'Help & Support Tickets', desc: 'View, reply to, assign, and update status of school support tickets', order: 17 },
 ];
 
 class SaasRoleModel {
@@ -99,7 +103,7 @@ class SaasRoleModel {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
       `);
 
-      // 4. Upsert all 12 SaaS modules
+      // 4. Upsert all SaaS modules
       for (const m of DEFAULT_SAAS_MODULES) {
         await pool.query(`
           INSERT INTO saas_modules (module_key, module_name, description, display_order, status)
@@ -111,6 +115,30 @@ class SaasRoleModel {
             status = 1
         `, [m.key, m.name, m.desc, m.order]);
       }
+
+      // Deactivate legacy combined modules so they do not duplicate in UI
+      await pool.query("UPDATE saas_modules SET status = 0 WHERE module_key IN ('settings', 'email_settings')");
+
+      // Migrate existing permissions from legacy 'settings' or 'email_settings' to 'payment_gateway' and 'email_delivery'
+      await pool.query(`
+        INSERT INTO saas_role_permissions (role_id, module_key, can_view, can_add, can_edit, can_delete, can_manage)
+        SELECT srp.role_id, 'payment_gateway', srp.can_view, srp.can_add, srp.can_edit, srp.can_delete, srp.can_manage
+        FROM saas_role_permissions srp
+        WHERE srp.module_key = 'settings'
+        ON DUPLICATE KEY UPDATE
+          can_view = IF(saas_role_permissions.can_view = 0 AND saas_role_permissions.can_edit = 0, VALUES(can_view), saas_role_permissions.can_view),
+          can_edit = IF(saas_role_permissions.can_edit = 0, VALUES(can_edit), saas_role_permissions.can_edit)
+      `);
+
+      await pool.query(`
+        INSERT INTO saas_role_permissions (role_id, module_key, can_view, can_add, can_edit, can_delete, can_manage)
+        SELECT srp.role_id, 'email_delivery', srp.can_view, srp.can_add, srp.can_edit, srp.can_delete, srp.can_manage
+        FROM saas_role_permissions srp
+        WHERE srp.module_key IN ('email_settings', 'settings')
+        ON DUPLICATE KEY UPDATE
+          can_view = IF(saas_role_permissions.can_view = 0 AND saas_role_permissions.can_edit = 0, VALUES(can_view), saas_role_permissions.can_view),
+          can_edit = IF(saas_role_permissions.can_edit = 0, VALUES(can_edit), saas_role_permissions.can_edit)
+      `);
 
       // 5. Ensure Super Admin system role exists and has full permissions on all modules
       const [superAdminRows] = await pool.query('SELECT id FROM saas_roles WHERE is_system = 1 OR LOWER(role_name) = "super admin" ORDER BY is_system DESC, id ASC LIMIT 1');
@@ -670,10 +698,38 @@ class SaasRoleModel {
   }
 
   /**
+   * Normalize an RBAC action to the database permission column
+   */
+  static normalizeAction(action) {
+    switch (action) {
+      case 'can_view':
+      case 'view':
+        return 'can_view';
+      case 'can_add':
+      case 'create':
+      case 'add':
+        return 'can_add';
+      case 'can_edit':
+      case 'edit':
+      case 'update':
+        return 'can_edit';
+      case 'can_delete':
+      case 'delete':
+        return 'can_delete';
+      case 'can_manage':
+      case 'manage':
+      case 'approve':
+        return 'can_manage';
+      default:
+        return 'can_view';
+    }
+  }
+
+  /**
    * Check if role has specific permission on module(s)
    * @param {number} roleId
-   * @param {string|string[]} moduleKey - Single module key or array of module keys (OR logic)
-   * @param {string|string[]} action - Single action or array of actions (OR logic)
+   * @param {string|string[]} moduleKey - Single module key, array of module keys, or dot notation ('payment_gateway.view')
+   * @param {string|string[]} action - Action permission ('can_view', 'can_edit', 'update', etc.)
    */
   static async checkPermission(roleId, moduleKey, action = 'can_view') {
     if (!roleId || !moduleKey) return false;
@@ -685,21 +741,31 @@ class SaasRoleModel {
     // System role has all permissions
     if (Number(roleRows[0].is_system) === 1) return true;
 
-    const moduleKeys = (Array.isArray(moduleKey) ? moduleKey : [moduleKey]).filter(Boolean);
-    if (moduleKeys.length === 0) return false;
-
-    const allowedActions = ['can_view', 'can_add', 'can_edit', 'can_delete', 'can_manage'];
-    const rawActions = Array.isArray(action) ? action : [action];
-    const validActions = rawActions.filter(a => allowedActions.includes(a));
-    if (validActions.length === 0) {
-      validActions.push('can_view');
+    // Support dot-notation if passed e.g. 'payment_gateway.view' or 'payment_gateway.update'
+    if (typeof moduleKey === 'string' && moduleKey.includes('.')) {
+      const [modPart, actPart] = moduleKey.split('.');
+      return SaasRoleModel.checkPermission(roleId, modPart, actPart);
     }
+
+    const rawKeys = (Array.isArray(moduleKey) ? moduleKey : [moduleKey]).filter(Boolean);
+    if (rawKeys.length === 0) return false;
+
+    // Expand module keys for aliases (e.g. email_delivery <-> email_settings)
+    const moduleKeysSet = new Set(rawKeys);
+    for (const k of rawKeys) {
+      if (k === 'email_delivery') moduleKeysSet.add('email_settings');
+      if (k === 'email_settings') moduleKeysSet.add('email_delivery');
+    }
+    const moduleKeys = Array.from(moduleKeysSet);
+
+    const rawActions = Array.isArray(action) ? action : [action];
+    const normalizedActions = Array.from(new Set(rawActions.map(a => SaasRoleModel.normalizeAction(a))));
 
     const placeholders = moduleKeys.map(() => '?').join(', ');
     const [permRows] = await pool.query(
       `SELECT srp.module_key, srp.can_view, srp.can_add, srp.can_edit, srp.can_delete, srp.can_manage
        FROM saas_role_permissions srp
-       JOIN saas_modules sm ON srp.module_key = sm.module_key AND sm.status = 1
+       JOIN saas_modules sm ON srp.module_key = sm.module_key
        WHERE srp.role_id = ? AND srp.module_key IN (${placeholders})`,
       [roleId, ...moduleKeys]
     );
@@ -707,7 +773,7 @@ class SaasRoleModel {
     if (permRows.length === 0) return false;
 
     for (const row of permRows) {
-      for (const act of validActions) {
+      for (const act of normalizedActions) {
         if (act === 'can_view') {
           if (
             Number(row.can_view) === 1 ||
@@ -716,6 +782,11 @@ class SaasRoleModel {
             Number(row.can_delete) === 1 ||
             Number(row.can_manage) === 1
           ) {
+            return true;
+          }
+        } else if (act === 'can_edit') {
+          // Update / edit permission: user must have can_edit = 1 or can_manage = 1 or can_add = 1
+          if (Number(row.can_edit) === 1 || Number(row.can_manage) === 1 || Number(row.can_add) === 1) {
             return true;
           }
         } else if (Number(row[act]) === 1) {

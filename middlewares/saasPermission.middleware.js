@@ -8,8 +8,8 @@ const ApiResponse = require('../utils/api.response');
  * 1. Super Admin ('superadmin') has unrestricted bypass access to all modules and actions.
  * 2. Sub-Admin ('subadmin') access is strictly evaluated against the permissions assigned to their active role in the database.
  * 
- * @param {string|string[]} moduleKey - The key(s) of the SaaS module (e.g. 'schools', 'subscriptions', 'coupons', 'roles', 'sub_admins')
- * @param {string|string[]} action - The required action permission(s) ('can_view'|'can_add'|'can_edit'|'can_delete'|'can_manage')
+ * @param {string|string[]} moduleKey - The key(s) of the SaaS module or dot notation ('payment_gateway.view')
+ * @param {string|string[]} action - The required action permission(s) ('can_view'|'can_add'|'can_edit'|'can_delete'|'can_manage'|'view'|'update')
  */
 const checkPermission = (moduleKey, action = 'can_view') => {
   return async (req, res, next) => {
@@ -40,8 +40,13 @@ const checkPermission = (moduleKey, action = 'can_view') => {
       );
 
       if (!hasPermission) {
-        const modLabel = Array.isArray(moduleKey) ? moduleKey.join(' / ') : moduleKey;
-        const actLabel = Array.isArray(action) ? action.join(' / ') : action;
+        let modLabel = Array.isArray(moduleKey) ? moduleKey.join(' / ') : moduleKey;
+        let actLabel = Array.isArray(action) ? action.join(' / ') : action;
+        if (typeof moduleKey === 'string' && moduleKey.includes('.')) {
+          const parts = moduleKey.split('.');
+          modLabel = parts[0];
+          actLabel = parts[1];
+        }
         return ApiResponse.error(
           res,
           `Access denied. You do not have '${actLabel}' permission for the '${modLabel}' module.`,
