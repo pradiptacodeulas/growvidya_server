@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middlewares/auth.middleware');
 const rbacMiddleware = require('../middlewares/rbac.middleware');
+const multiBranchGuard = require('../middlewares/multiBranchGuard.middleware');
 const BranchController = require('../controllers/branch.controller');
 
 // Require authentication for all branch routes
@@ -25,13 +26,13 @@ router.get('/head-candidates', rbacMiddleware('settings/branches', 'view'), Bran
 router.get('/:id', BranchController.getBranchById);
 
 // Create a new branch (Super Admin campus management)
-router.post('/', rbacMiddleware('settings/branches', 'add'), BranchController.createBranch);
+router.post('/', rbacMiddleware('settings/branches', 'add'), multiBranchGuard, BranchController.createBranch);
 
 // Update branch details (Super Admin campus management)
 router.put('/:id', rbacMiddleware('settings/branches', 'edit'), BranchController.updateBranch);
 
 // Set branch as main campus (Super Admin campus management)
-router.patch('/:id/set-main', rbacMiddleware('settings/branches', 'edit'), BranchController.setMainBranch);
+router.patch('/:id/set-main', rbacMiddleware('settings/branches', 'edit'), multiBranchGuard, BranchController.setMainBranch);
 
 // Update attendance location / geofence for Teacher App attendance (Super Admin campus management)
 router.patch('/:id/attendance-location', rbacMiddleware('settings/branches', 'edit'), BranchController.updateAttendanceLocation);

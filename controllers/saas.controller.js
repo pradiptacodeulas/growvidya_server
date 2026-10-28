@@ -118,6 +118,16 @@ class SaasController {
         return ApiResponse.error(res, 'School Name is required.', null, 400);
       }
 
+      // Validate registration type (single campus / multi-branch) if provided
+      const rawRegType = school.registration_type ?? school.registrationType;
+      if (rawRegType !== undefined && rawRegType !== null && rawRegType !== '') {
+        const normalizedRegType = String(rawRegType).trim().toLowerCase();
+        if (normalizedRegType !== 'single' && normalizedRegType !== 'multiple') {
+          return ApiResponse.error(res, "Invalid registration type. Allowed values are 'single' or 'multiple'.", null, 400);
+        }
+        school.registration_type = normalizedRegType;
+      }
+
       if (!admin || !admin.email || !admin.email.trim()) {
         return ApiResponse.error(res, 'Super Admin Email is required.', null, 400);
       }
