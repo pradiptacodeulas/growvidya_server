@@ -1,8 +1,9 @@
 const { pool } = require('../config/db.config');
+const { getTodayIST, parseDateParts, formatDateParts } = require('../constants/subscriptionModules.constant');
 
 class CouponModel {
   /**
-   * Ensure max_uses_per_user column exists on coupons as a non-null positive integer
+   * Ensure max_uses_per_user and applicable_scope columns exist on coupons
    */
   static async initTable() {
     try {
@@ -10,11 +11,11 @@ class CouponModel {
         `SELECT COLUMN_NAME, IS_NULLABLE
          FROM INFORMATION_SCHEMA.COLUMNS
          WHERE TABLE_SCHEMA = DATABASE()
-           AND TABLE_NAME = 'coupons'
-           AND COLUMN_NAME = 'max_uses_per_user'`
+           AND TABLE_NAME = 'coupons'`
       );
+      const colMap = new Map(cols.map((c) => [c.COLUMN_NAME, c]));
 
-      if (cols.length === 0) {
+      if (!colMap.has('max_uses_per_user')) {
         await pool.query(
           `ALTER TABLE coupons
            ADD COLUMN max_uses_per_user INT UNSIGNED NOT NULL DEFAULT 1 AFTER max_uses`
@@ -23,26 +24,27 @@ class CouponModel {
         await pool.query(
           `UPDATE coupons SET max_uses_per_user = 1 WHERE max_uses_per_user IS NULL OR max_uses_per_user < 1`
         );
-        if (cols[0].IS_NULLABLE === 'YES') {
+        if (colMap.get('max_uses_per_user').IS_NULLABLE === 'YES') {
           await pool.query(
             `ALTER TABLE coupons
              MODIFY COLUMN max_uses_per_user INT UNSIGNED NOT NULL DEFAULT 1`
           );
         }
       }
+
+      if (!colMap.has('applicable_scope')) {
+        await pool.query(
+          `ALTER TABLE coupons
+           ADD COLUMN applicable_scope ENUM('plan_only','software_and_storage','all') NOT NULL DEFAULT 'plan_only' AFTER discount_value`
+        );
+      }
     } catch (err) {
-      console.error('Error initializing coupons table max_uses_per_user column:', err.message);
+      console.error('Error initializing coupons table columns:', err.message);
     }
   }
 
   /**
    * Fetch paginated list of coupons with optional search and filters
-   * @param {Object} options
-   * @param {string} options.search - Keyword search on code or description
-   * @param {number|string} options.status - Filter by status (0, 1, or 'all')
-   * @param {string} options.discount_type - Filter by discount type ('percentage', 'fixed')
-   * @param {number|string} options.page - Page number (default: 1)
-   * @param {number|string} options.limit - Records per page (default: 10)
    */
   static async getAll({ search = '', status = '', discount_type = '', page = 1, limit = 10 } = {}) {
     const pageNum = Math.max(1, parseInt(page, 10) || 1);
@@ -70,7 +72,6 @@ class CouponModel {
 
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-    // Count query for total matching records
     const countQuery = `
       SELECT COUNT(*) AS total
       FROM coupons c
@@ -79,7 +80,6 @@ class CouponModel {
     const [countRows] = await pool.query(countQuery, params);
     const total = countRows[0]?.total || 0;
 
-    // Data query with subqueries for redemptions and total discount given
     const selectQuery = `
       SELECT 
         c.*,
@@ -116,7 +116,6 @@ class CouponModel {
     if (rows.length === 0) return null;
     const coupon = rows[0];
 
-    // Get usage history with school details and per-school redemption count
     const [usages] = await pool.query(
       `SELECT 
         cu.*, 
@@ -154,6 +153,7 @@ class CouponModel {
     description = '',
     discount_type = 'percentage',
     discount_value,
+    applicable_scope = 'plan_only',
     min_order_amount = 0,
     max_discount_amount = null,
     start_date = null,
@@ -163,15 +163,19 @@ class CouponModel {
     status = 1,
   }) {
     const perUserLimit = Math.max(1, parseInt(max_uses_per_user, 10) || 1);
+    const validScopes = ['plan_only', 'software_and_storage', 'all'];
+    const scope = validScopes.includes(applicable_scope) ? applicable_scope : 'plan_only';
+
     const [result] = await pool.query(
       `INSERT INTO coupons 
-       (code, description, discount_type, discount_value, min_order_amount, max_discount_amount, start_date, end_date, max_uses, max_uses_per_user, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+       (code, description, discount_type, discount_value, applicable_scope, min_order_amount, max_discount_amount, start_date, end_date, max_uses, max_uses_per_user, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
       [
         code.toUpperCase().trim(),
         description || '',
         discount_type,
         parseFloat(discount_value) || 0,
+        scope,
         parseFloat(min_order_amount) || 0,
         max_discount_amount ? parseFloat(max_discount_amount) : null,
         start_date || null,
@@ -206,6 +210,13 @@ class CouponModel {
     if (data.discount_value !== undefined) {
       updates.push('discount_value = ?');
       params.push(parseFloat(data.discount_value) || 0);
+    }
+    if (data.applicable_scope !== undefined) {
+      const validScopes = ['plan_only', 'software_and_storage', 'all'];
+      if (validScopes.includes(data.applicable_scope)) {
+        updates.push('applicable_scope = ?');
+        params.push(data.applicable_scope);
+      }
     }
     if (data.min_order_amount !== undefined) {
       updates.push('min_order_amount = ?');
@@ -264,66 +275,93 @@ class CouponModel {
   }
 
   /**
-   * Validate coupon eligibility and compute discount
+   * Validate coupon eligibility and compute discount in IST with scope protection.
+   * By default (applicable_scope = 'plan_only'), coupons discount ONLY the software plan amount
+   * so hardware (Biometric Machines, RFID Cards) and SMS gateway costs are never discounted below cost.
    */
-  static async validateCoupon(code, orderAmount, schoolId = null) {
+  static async validateCoupon(code, orderAmount, schoolId = null, options = {}) {
     if (!code || !String(code).trim()) {
       return { valid: false, message: 'Please provide a coupon code.' };
     }
 
+    const db = options.connection || pool;
+    const forUpdate = Boolean(options.forUpdate && options.connection);
     const cleanCode = String(code).trim().toUpperCase();
-    const amount = parseFloat(orderAmount) || 0;
+    const totalOrderAmount = parseFloat(orderAmount) || 0;
 
-    const [rows] = await pool.query('SELECT * FROM coupons WHERE code = ? LIMIT 1', [cleanCode]);
+    const [rows] = await db.query(
+      `SELECT * FROM coupons WHERE code = ? LIMIT 1${forUpdate ? ' FOR UPDATE' : ''}`,
+      [cleanCode]
+    );
     if (rows.length === 0) {
       return { valid: false, message: 'Invalid coupon code.' };
     }
 
     const coupon = rows[0];
 
-    if (coupon.status !== 1) {
+    if (Number(coupon.status) !== 1) {
       return { valid: false, message: 'This coupon is no longer active.' };
     }
 
-    const now = new Date();
-    const todayStr = now.toISOString().slice(0, 10);
+    // IST-accurate date comparison (fixes 00:00–05:30 IST UTC drift)
+    const todayStr = getTodayIST();
 
     if (coupon.start_date) {
-      const startStr = typeof coupon.start_date === 'string' ? coupon.start_date.slice(0, 10) : coupon.start_date.toISOString().slice(0, 10);
+      const startStr = formatDateParts(parseDateParts(coupon.start_date));
       if (todayStr < startStr) {
         return { valid: false, message: 'This coupon is not valid yet.' };
       }
     }
 
     if (coupon.end_date) {
-      const endStr = typeof coupon.end_date === 'string' ? coupon.end_date.slice(0, 10) : coupon.end_date.toISOString().slice(0, 10);
+      const endStr = formatDateParts(parseDateParts(coupon.end_date));
       if (todayStr > endStr) {
         return { valid: false, message: 'This coupon has expired.' };
       }
     }
 
-    if (coupon.max_uses && coupon.used_count >= coupon.max_uses) {
+    // Include active pending offline reservations in global usage count
+    let pendingGlobalReservations = 0;
+    try {
+      const [pendRows] = await db.query(
+        `SELECT COUNT(*) AS cnt FROM subscription_payment_orders
+         WHERE coupon_id = ? AND status = 'pending_verification'
+           AND (? IS NULL OR id != ?)`,
+        [coupon.id, options.excludeOrderId || null, options.excludeOrderId || null]
+      );
+      pendingGlobalReservations = parseInt(pendRows[0]?.cnt, 10) || 0;
+    } catch (_) {}
+
+    if (coupon.max_uses && (Number(coupon.used_count) + pendingGlobalReservations) >= Number(coupon.max_uses)) {
       return { valid: false, message: 'This coupon has reached its maximum usage limit.' };
     }
 
-    // Check single-user / school integer usage limit (non-null integer check)
+    // Per-school usage check
     const maxUsesPerUser = Math.max(1, parseInt(coupon.max_uses_per_user, 10) || 1);
     let userUsedCount = 0;
     if (schoolId !== null && schoolId !== undefined && String(schoolId).trim() !== '') {
       const targetSchoolId = parseInt(schoolId, 10);
       if (!isNaN(targetSchoolId) && targetSchoolId > 0) {
-        const [usageRows] = await pool.query(
+        const [usageRows] = await db.query(
           `SELECT (
              (SELECT COUNT(*) FROM coupon_usages WHERE coupon_id = ? AND school_id = ?) +
              (SELECT COUNT(*) FROM school_subscriptions ss
               WHERE ss.coupon_id = ? AND ss.school_id = ?
                 AND ss.status IN ('pending', 'active', 'trial')
+                AND (? IS NULL OR ss.id != ?)
                 AND NOT EXISTS (
                   SELECT 1 FROM coupon_usages cu WHERE cu.subscription_id = ss.id AND cu.coupon_id = ss.coupon_id
                 )
              )
            ) AS user_used_count`,
-          [coupon.id, targetSchoolId, coupon.id, targetSchoolId]
+          [
+            coupon.id,
+            targetSchoolId,
+            coupon.id,
+            targetSchoolId,
+            options.excludeSubscriptionId || null,
+            options.excludeSubscriptionId || null,
+          ]
         );
         userUsedCount = parseInt(usageRows[0]?.user_used_count, 10) || 0;
         if (userUsedCount >= maxUsesPerUser) {
@@ -333,34 +371,81 @@ class CouponModel {
           };
         }
       }
+    } else if (options.email || options.phone) {
+      // Onboarding pre-school check against existing schools matching email/phone
+      const cleanEmail = options.email ? String(options.email).trim().toLowerCase() : null;
+      const cleanPhone = options.phone ? String(options.phone).trim() : null;
+      const [priorRows] = await db.query(
+        `SELECT COUNT(cu.id) AS cnt
+         FROM coupon_usages cu
+         JOIN school_master sm ON cu.school_id = sm.id
+         LEFT JOIN user_master um ON um.school_id = sm.id
+         WHERE cu.coupon_id = ?
+           AND (
+             (? IS NOT NULL AND (LOWER(sm.email) = ? OR LOWER(um.email) = ?))
+             OR (? IS NOT NULL AND (sm.phone_number = ? OR um.phone = ?))
+           )`,
+        [coupon.id, cleanEmail, cleanEmail, cleanEmail, cleanPhone, cleanPhone, cleanPhone]
+      );
+      userUsedCount = parseInt(priorRows[0]?.cnt, 10) || 0;
+      if (userUsedCount >= maxUsesPerUser) {
+        return {
+          valid: false,
+          message: `This coupon has already been redeemed for this email/phone (${userUsedCount}/${maxUsesPerUser}).`,
+        };
+      }
     }
 
-    if (coupon.min_order_amount && amount < parseFloat(coupon.min_order_amount)) {
+    // Scope-protected eligible discountable base amount
+    const scope = coupon.applicable_scope || 'plan_only';
+    const hasScopedBreakdown = options.planAmount !== undefined;
+    const planAmt = hasScopedBreakdown ? (parseFloat(options.planAmount) || 0) : totalOrderAmount;
+    const storageAmt = hasScopedBreakdown ? (parseFloat(options.storageAmount) || 0) : 0;
+
+    let eligibleAmount = totalOrderAmount;
+    if (hasScopedBreakdown) {
+      if (scope === 'plan_only') {
+        eligibleAmount = planAmt;
+      } else if (scope === 'software_and_storage') {
+        eligibleAmount = planAmt + storageAmt;
+      } else {
+        eligibleAmount = totalOrderAmount;
+      }
+    }
+
+    if (eligibleAmount <= 0) {
       return {
         valid: false,
-        message: `Minimum order amount of ₹${parseFloat(coupon.min_order_amount).toFixed(2)} is required to use this coupon.`,
+        message:
+          scope === 'plan_only'
+            ? 'This coupon applies to software subscription plans only and cannot discount standalone add-ons or free trials.'
+            : 'No eligible items in your cart qualify for this coupon.',
       };
     }
 
-    // Calculate discount amount
+    if (coupon.min_order_amount && eligibleAmount < parseFloat(coupon.min_order_amount)) {
+      return {
+        valid: false,
+        message: `Minimum eligible software plan amount of ₹${parseFloat(coupon.min_order_amount).toFixed(2)} is required to use this coupon.`,
+      };
+    }
+
     let discount = 0;
     if (coupon.discount_type === 'percentage') {
-      discount = (amount * parseFloat(coupon.discount_value)) / 100;
+      discount = (eligibleAmount * parseFloat(coupon.discount_value)) / 100;
       if (coupon.max_discount_amount && discount > parseFloat(coupon.max_discount_amount)) {
         discount = parseFloat(coupon.max_discount_amount);
       }
     } else {
-      // Fixed discount
       discount = parseFloat(coupon.discount_value);
     }
 
-    // Discount cannot exceed order amount
-    if (discount > amount) {
-      discount = amount;
+    if (discount > eligibleAmount) {
+      discount = eligibleAmount;
     }
 
     discount = Math.round(discount * 100) / 100;
-    const finalPayable = Math.max(0, Math.round((amount - discount) * 100) / 100);
+    const finalPayable = Math.max(0, Math.round((totalOrderAmount - discount) * 100) / 100);
 
     return {
       valid: true,
@@ -371,8 +456,10 @@ class CouponModel {
         description: coupon.description,
         discountType: coupon.discount_type,
         discountValue: parseFloat(coupon.discount_value),
+        applicableScope: scope,
+        eligibleAmount,
         discountAmount: discount,
-        originalAmount: amount,
+        originalAmount: totalOrderAmount,
         finalAmount: finalPayable,
         maxUses: coupon.max_uses,
         maxUsesPerUser,
@@ -382,17 +469,47 @@ class CouponModel {
   }
 
   /**
-   * Record coupon redemption and increment usage count
+   * Record coupon redemption idempotently (supports external DB transaction connection)
    */
-  static async recordCouponUsage(couponId, schoolId, subscriptionId, discountAmount) {
-    await pool.query(
+  static async recordCouponUsage(couponId, schoolId, subscriptionId, discountAmount, connection = null) {
+    if (!couponId || !schoolId) return;
+    const db = connection || pool;
+
+    if (subscriptionId) {
+      const [existing] = await db.query(
+        'SELECT id FROM coupon_usages WHERE coupon_id = ? AND school_id = ? AND subscription_id = ? LIMIT 1',
+        [couponId, schoolId, subscriptionId]
+      );
+      if (existing.length > 0) return;
+    }
+
+    await db.query(
       'INSERT INTO coupon_usages (coupon_id, school_id, subscription_id, discount_amount, used_at) VALUES (?, ?, ?, ?, NOW())',
-      [couponId, schoolId, subscriptionId, parseFloat(discountAmount) || 0]
+      [couponId, schoolId, subscriptionId || null, parseFloat(discountAmount) || 0]
     );
-    await pool.query(
+    await db.query(
       'UPDATE coupons SET used_count = used_count + 1 WHERE id = ?',
       [couponId]
     );
+  }
+
+  /**
+   * Release a recorded coupon redemption if a subscription is rejected/cancelled
+   */
+  static async releaseCouponUsage(couponId, schoolId, subscriptionId, connection = null) {
+    if (!couponId || !schoolId || !subscriptionId) return;
+    const db = connection || pool;
+
+    const [del] = await db.query(
+      'DELETE FROM coupon_usages WHERE coupon_id = ? AND school_id = ? AND subscription_id = ?',
+      [couponId, schoolId, subscriptionId]
+    );
+    if (del.affectedRows > 0) {
+      await db.query(
+        'UPDATE coupons SET used_count = GREATEST(0, used_count - ?) WHERE id = ?',
+        [del.affectedRows, couponId]
+      );
+    }
   }
 }
 

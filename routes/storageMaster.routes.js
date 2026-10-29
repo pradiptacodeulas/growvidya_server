@@ -3,13 +3,15 @@ const router = express.Router();
 const StorageMasterController = require('../controllers/storageMaster.controller');
 const couponAuthMiddleware = require('../middlewares/couponAuth.middleware');
 
-// Protected routes (Requires authentication)
+// Public / School-readable active catalog endpoints
+router.get('/active', StorageMasterController.getActive);
+router.get('/units', StorageMasterController.getCapacityUnits);
+
+// Protected SaaS Super Admin routes
 router.use(couponAuthMiddleware);
 
 // Listing & details
 router.get('/', StorageMasterController.getAll);
-router.get('/active', StorageMasterController.getActive);
-router.get('/units', StorageMasterController.getCapacityUnits);
 router.get('/:id', StorageMasterController.getById);
 
 // Admin / Mutation routes

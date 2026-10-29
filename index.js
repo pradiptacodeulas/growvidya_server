@@ -21,6 +21,8 @@ const CouponModel = require('./models/coupon.model');
 const SupportTicketModel = require('./models/supportTicket.model');
 const DeviceTokenModel = require('./models/deviceToken.model');
 const TeacherSelfAttendanceModel = require('./models/teacherSelfAttendance.model');
+const SubscriptionSchemaModel = require('./models/subscriptionSchema.model');
+const SubscriptionLifecycleJob = require('./jobs/subscriptionLifecycle.job');
 
 // Middleware & Router Imports
 const errorMiddleware = require('./middlewares/error.middleware');
@@ -200,8 +202,10 @@ server.listen(config.port, async () => {
   await RfidCardMasterModel.initTable();
   await StorageMasterModel.initTable();
   await CouponModel.initTable();
+  await SubscriptionSchemaModel.initTable();
   await SupportTicketModel.initTable();
   await DeviceTokenModel.initTable();
+  SubscriptionLifecycleJob.start();
 
   console.log(`\n  \x1b[1m\x1b[36mGrowvidya Core API Server\x1b[0m \x1b[90mv1.0.0\x1b[0m`);
   console.log(`  \x1b[90m──────────────────────────────────────────────────\x1b[0m`);

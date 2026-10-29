@@ -3,7 +3,6 @@ const router = express.Router();
 const config = require('../config/app.config');
 const ApiResponse = require('../utils/api.response');
 const subscriptionGuard = require('../middlewares/subscriptionGuard.middleware');
-const featureGuard = require('../middlewares/featureGuard.middleware');
 
 // Route Modules
 const adminAuthRoutes = require('./adminAuth.routes');
@@ -127,12 +126,12 @@ router.use('/v1/admin/parents', adminParentRoutes);
 router.use('/v1/admin/staff', adminStaffRoutes);
 router.use('/v1/admin/attendance', adminAttendanceRoutes);
 router.use('/v1/admin/leaves', adminLeaveRoutes);
-router.use('/v1/admin/transport', featureGuard('transport', 'Transport Management'), adminTransportRoutes);
+router.use('/v1/admin/transport', adminTransportRoutes);
 router.use('/v1/admin/permissions', adminPermissionRoutes);
 router.use('/v1/admin/examinations', adminExaminationRoutes);
 router.use('/v1/admin/fees', adminFeesRoutes);
-router.use('/v1/admin/payroll', featureGuard('payroll', 'Staff Payroll'), adminPayrollRoutes);
-router.use('/v1/admin/hostel', featureGuard('hostel', 'Hostel Management'), adminHostelRoutes);
+router.use('/v1/admin/payroll', adminPayrollRoutes);
+router.use('/v1/admin/hostel', adminHostelRoutes);
 router.use('/v1/admin/announcement', adminAnnouncementRoutes);
 router.use('/v1/admin/certificates', adminCertificateRoutes);
 router.use('/v1/admin/reports', adminReportRoutes);
@@ -152,10 +151,10 @@ router.use('/v1/teacher/dashboard', teacherDashboardRoutes);
 router.use('/v1/teacher/academics', teacherAcademicRoutes);
 router.use('/v1/teacher/attendance', teacherAttendanceRoutes);
 router.use('/v1/teacher/announcements', teacherAnnouncementRoutes);
-router.use('/v1/teacher/hostel', featureGuard('hostel', 'Hostel Management'), teacherHostelRoutes);
-router.use('/v1/teacher/transport', featureGuard('transport', 'Transport Management'), teacherTransportRoutes);
+router.use('/v1/teacher/hostel', teacherHostelRoutes);
+router.use('/v1/teacher/transport', teacherTransportRoutes);
 router.use('/v1/teacher/leaves', teacherLeaveRoutes);
-router.use('/v1/teacher/payroll', featureGuard('payroll', 'Staff Payroll'), teacherPayrollRoutes);
+router.use('/v1/teacher/payroll', teacherPayrollRoutes);
 
 // ==========================================
 // 5. Parent Portal Routes

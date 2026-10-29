@@ -3,13 +3,25 @@ const { verifyToken } = require('../utils/jwt.util');
 const config = require('../config/app.config');
 
 /**
- * Subscription Guard Middleware
- * Automatically tracks and disables features if the 14-day free trial or subscription has expired.
+ * Subscription Guard Middleware (Fail-Closed)
+ * Enforces active / trial subscription state across Admin, Teacher, Parent, and Student portals.
+ * - Keeps active schools working without interruption even while an offline renewal/upgrade is pending review.
+ * - Protects write operations to `/api/v1/upload` while keeping GET/HEAD static asset reads exempt.
+ * - Serves role-appropriate messages to non-admin portals (Teacher, Parent, Student).
  */
 async function subscriptionGuard(req, res, next) {
   try {
-    // Check if the route is explicitly exempt from subscription enforcement
     const urlPath = req.originalUrl || (req.baseUrl + req.path);
+    const method = String(req.method || 'GET').toUpperCase();
+
+    // Static asset reads (GET / HEAD) remain exempt so logos/avatars render on billing/lockout screens
+    if (
+      (method === 'GET' || method === 'HEAD') &&
+      (urlPath.includes('/upload/') || urlPath.includes('/vidya_assets') || urlPath.includes('/assets/'))
+    ) {
+      return next();
+    }
+
     const exemptPatterns = [
       '/api/health',
       '/api/v1/admin/auth',
@@ -25,18 +37,26 @@ async function subscriptionGuard(req, res, next) {
       '/api/v1/school/config',
       '/api/v1/saas',
       '/api/saas',
-      '/upload',
-      '/vidya_assets',
+      '/coupons',
+      '/v1/coupons',
+      '/api/v1/coupons',
+      '/api/v1/storage-plans/active',
+      '/api/v1/storage-plans/units',
+      '/api/v1/attendance-machines/active',
+      '/api/v1/rfid-cards/active',
     ];
 
     if (exemptPatterns.some((pattern) => urlPath.includes(pattern))) {
       return next();
     }
 
+    if (req.user?.portalType === 'SaaSAdminPortal') {
+      return next();
+    }
+
     let schoolId = req.user?.school_id || req.user?.schoolId;
 
     if (!schoolId) {
-      // Attempt extraction from token header or portal-specific cookies
       let token = null;
       if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
         token = req.headers.authorization.split(' ')[1];
@@ -76,6 +96,10 @@ async function subscriptionGuard(req, res, next) {
 
       if (token) {
         const decoded = verifyToken(token);
+        if (decoded?.portalType === 'SaaSAdminPortal') {
+          req.user = decoded;
+          return next();
+        }
         if (decoded?.schoolId || decoded?.school_id) {
           schoolId = Number(decoded.schoolId || decoded.school_id);
           req.user = decoded;
@@ -84,73 +108,127 @@ async function subscriptionGuard(req, res, next) {
     }
 
     if (!schoolId) {
-      // If we cannot identify a school (e.g. unauthenticated request), allow downstream auth middleware to handle 401
+      // Unauthenticated request — let downstream auth middleware issue 401
       return next();
     }
 
+    const isNonAdminPortal =
+      urlPath.includes('/v1/teacher/') ||
+      urlPath.includes('/v1/parent/') ||
+      urlPath.includes('/v1/student/') ||
+      ['teacher', 'parent', 'student'].includes(
+        String(req.user?.role || req.user?.userType || '').toLowerCase()
+      );
+
+    const memberPausedMessage =
+      'School portal services are temporarily paused. Please contact your School Administration.';
+
     const sub = await SubscriptionModel.getSchoolSubscription(schoolId);
+
+    // Fail-closed if an authenticated school tenant has no subscription record
     if (!sub) {
-      return next();
+      return res.status(402).json({
+        status: false,
+        code: 'SUBSCRIPTION_REQUIRED',
+        message: isNonAdminPortal
+          ? memberPausedMessage
+          : 'No active subscription found for your school. Please select a subscription plan to continue.',
+        data: {
+          school_id: schoolId,
+          portal_role: isNonAdminPortal ? 'member' : 'admin',
+          upgrade_required: !isNonAdminPortal,
+        },
+      });
     }
 
     req.subscription = sub;
 
-    // If a paid subscription is pending approval (and NOT a trial), block operations with 403 Forbidden
-    // Free trials (sub.isTrial) are NOT guarded and have full access
-    if (sub.status === 'pending' && !sub.isTrial) {
+    // 1. Offline Bank Transfer awaiting review (ONLY locks when school has NO active/trial subscription)
+    if (sub.liveStatus === 'pending' || (sub.status === 'pending' && !sub.isTrial)) {
       return res.status(403).json({
         status: false,
         code: 'SUBSCRIPTION_PENDING_APPROVAL',
-        message: `Your school subscription for "${sub.plan_name}" is currently awaiting Super Admin review and approval. Access to modules is locked until approved.`,
+        message: isNonAdminPortal
+          ? memberPausedMessage
+          : `Your offline bank transfer for "${sub.plan_name}" is currently under Super Admin verification. Portal modules will unlock automatically once approved.`,
         data: {
           subscription_id: sub.subscription_id,
           school_id: sub.school_id,
           plan_name: sub.plan_name,
+          portal_role: isNonAdminPortal ? 'member' : 'admin',
           is_pending: true,
           status: 'pending',
         },
       });
     }
 
-    // If subscription is suspended / inactive, block operations with 403 Forbidden
+    // 2. Suspended by Platform Super Admin
     if (sub.status === 'suspended' || sub.liveStatus === 'suspended') {
       return res.status(403).json({
         status: false,
         code: 'SUBSCRIPTION_SUSPENDED',
-        message: `Your school subscription for "${sub.plan_name}" has been marked inactive / suspended by the Super Admin. Operations are locked until reactivated.`,
+        message: isNonAdminPortal
+          ? memberPausedMessage
+          : `Your school subscription ("${sub.plan_name}") is currently suspended. Please contact platform support or visit Subscription & Billing.`,
         data: {
           subscription_id: sub.subscription_id,
           school_id: sub.school_id,
           plan_name: sub.plan_name,
+          portal_role: isNonAdminPortal ? 'member' : 'admin',
           is_suspended: true,
           status: 'suspended',
         },
       });
     }
 
-    // If subscription / trial has expired, block access with 402 Payment Required
+    // 3. Rejected offline subscription with no fallback active plan
+    if (sub.status === 'rejected' || sub.liveStatus === 'rejected') {
+      return res.status(402).json({
+        status: false,
+        code: 'SUBSCRIPTION_REJECTED',
+        message: isNonAdminPortal
+          ? memberPausedMessage
+          : `Your last offline payment submission for "${sub.plan_name}" could not be verified. Please complete your subscription in Subscription & Billing.`,
+        data: {
+          subscription_id: sub.subscription_id,
+          school_id: sub.school_id,
+          plan_name: sub.plan_name,
+          portal_role: isNonAdminPortal ? 'member' : 'admin',
+          is_rejected: true,
+          upgrade_required: !isNonAdminPortal,
+        },
+      });
+    }
+
+    // 4. Expired trial or paid subscription
     if (sub.isExpired || sub.liveStatus === 'expired') {
       return res.status(402).json({
         status: false,
         code: 'SUBSCRIPTION_EXPIRED',
-        message: `Your school subscription or free trial for "${sub.plan_name}" has expired. Operations are temporarily locked. Please contact your administrator or renew your subscription.`,
+        message: isNonAdminPortal
+          ? memberPausedMessage
+          : `Your school subscription for "${sub.plan_name}" has expired. Please renew or upgrade your plan in Subscription & Billing to resume operations.`,
         data: {
           subscription_id: sub.subscription_id,
           school_id: sub.school_id,
           plan_name: sub.plan_name,
           days_left: 0,
+          portal_role: isNonAdminPortal ? 'member' : 'admin',
           is_expired: true,
-          upgrade_required: true,
+          upgrade_required: !isNonAdminPortal,
         },
       });
     }
 
-    next();
+    return next();
   } catch (error) {
     console.error('[Subscription Guard Error]:', error.message);
-    next();
+    return res.status(503).json({
+      status: false,
+      code: 'SUBSCRIPTION_CHECK_UNAVAILABLE',
+      message: 'Temporary error verifying subscription status. Please try again.',
+    });
   }
 }
 
 module.exports = subscriptionGuard;
-

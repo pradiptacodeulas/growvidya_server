@@ -1,5 +1,5 @@
 const { pool } = require('../config/db.config');
-const SubscriptionModel = require('./subscription.model');
+const SubscriptionFulfillmentService = require('../services/subscriptionFulfillment.service');
 
 class WebhookModel {
   /**
@@ -62,64 +62,63 @@ class WebhookModel {
   }
 
   /**
-   * Process an order.paid or payment.captured event
+   * Process an order.paid or payment.captured event atomically & idempotently via SubscriptionFulfillmentService
    */
   static async processPaymentSuccess({ order, payment, notes, eventId }) {
-    const schoolId = notes?.school_id || order?.notes?.school_id || payment?.notes?.school_id;
-    const planId = notes?.plan_id || order?.notes?.plan_id || payment?.notes?.plan_id;
+    const razorpayOrderId = order?.id || payment?.order_id || notes?.razorpay_order_id || null;
+    const orderNo = notes?.order_no || null;
     const paymentId = payment?.id || null;
-    const amount = (payment?.amount || order?.amount || 0) / 100;
 
-    if (!schoolId || !planId) {
-      console.warn(
-        `[Webhook Payment Success] Missing school_id (${schoolId}) or plan_id (${planId}) in notes.`
-      );
-      return { status: 'skipped', reason: 'Missing school_id or plan_id in notes metadata.' };
+    if (!razorpayOrderId && !orderNo) {
+      return { status: 'skipped', reason: 'Missing razorpay_order_id and order_no in webhook payload.' };
     }
 
-    // Check if subscription with this payment_transaction_id has already been activated
-    if (paymentId) {
-      const [existing] = await pool.query(
-        "SELECT id FROM school_subscriptions WHERE payment_transaction_id = ? AND status = 'active' LIMIT 1",
-        [paymentId]
-      );
-      if (existing.length > 0) {
-        return { status: 'already_active', subscription_id: existing[0].id };
+    try {
+      const result = await SubscriptionFulfillmentService.fulfillPaidOrder({
+        orderNo,
+        razorpayOrderId,
+        razorpayPaymentId: paymentId,
+        actorType: 'webhook',
+        verificationNotes: `Auto-activated via Razorpay webhook (${eventId})`,
+      });
+
+      return {
+        status: result.alreadyFulfilled ? 'already_active' : 'fulfilled',
+        result,
+      };
+    } catch (err) {
+      // Pre-registration onboarding orders don't have school_id until /saas/register-with-plan completes;
+      // acknowledge cleanly so client registration finishes fulfillment, or if order is non-SaaS (e.g. student fee), ignore safely.
+      if (err.code === 'ORDER_NOT_FOUND' || err.code === 'MISSING_SCHOOL_ID') {
+        return { status: 'skipped', reason: err.message };
       }
+      throw err;
     }
-
-    // Activate the school subscription using SubscriptionModel
-    const result = await SubscriptionModel.upgradeSubscription({
-      schoolId: parseInt(schoolId, 10),
-      planId: parseInt(planId, 10),
-      amountPaid: amount,
-      paymentGateway: 'razorpay',
-      paymentTransactionId: paymentId,
-    });
-
-    console.log(
-      `[Webhook Payment Success] School #${schoolId} successfully upgraded to Plan #${planId} via Razorpay event ${eventId}.`
-    );
-
-    return { status: 'upgraded', result };
   }
 
   /**
-   * Process payment.failed event
+   * Process payment.failed event without overwriting any already-paid order
    */
-  static async processPaymentFailure({ payment, notes, eventId }) {
-    const schoolId = notes?.school_id || payment?.notes?.school_id;
+  static async processPaymentFailure({ order, payment, notes, eventId }) {
+    const razorpayOrderId = order?.id || payment?.order_id || null;
+    const orderNo = notes?.order_no || null;
     const paymentId = payment?.id || null;
     const errorCode = payment?.error_code || 'PAYMENT_FAILED';
     const errorDescription = payment?.error_description || 'Payment failed at gateway.';
 
-    console.warn(
-      `[Webhook Payment Failed] Event ${eventId} for School #${schoolId}, Payment #${paymentId}. Reason: ${errorDescription} (${errorCode})`
-    );
+    if (razorpayOrderId || orderNo) {
+      await SubscriptionFulfillmentService.recordPaymentFailure({
+        orderNo,
+        razorpayOrderId,
+        razorpayPaymentId: paymentId,
+        failureCode: errorCode,
+        failureReason: errorDescription,
+      });
+    }
 
     return {
       status: 'failed_recorded',
-      school_id: schoolId,
+      razorpay_order_id: razorpayOrderId,
       payment_id: paymentId,
       error_code: errorCode,
       error_description: errorDescription,

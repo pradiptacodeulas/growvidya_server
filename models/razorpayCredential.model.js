@@ -66,6 +66,7 @@ class RazorpayCredentialModel {
           method VARCHAR(255) DEFAULT 'razorpay',
           key_id VARCHAR(255) DEFAULT NULL,
           key_secret TEXT DEFAULT NULL,
+          webhook_secret TEXT DEFAULT NULL,
           status INT(11) DEFAULT 1,
           created_on TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -84,6 +85,12 @@ class RazorpayCredentialModel {
       if (!colNames.includes('key_secret')) {
         await pool.query(
           `ALTER TABLE \`payment_credentials\` ADD COLUMN \`key_secret\` TEXT DEFAULT NULL AFTER \`key_id\``
+        );
+      }
+
+      if (!colNames.includes('webhook_secret')) {
+        await pool.query(
+          `ALTER TABLE \`payment_credentials\` ADD COLUMN \`webhook_secret\` TEXT DEFAULT NULL AFTER \`key_secret\``
         );
       }
 
@@ -173,6 +180,8 @@ class RazorpayCredentialModel {
       key_id: keyId,
       key_secret_masked: row.key_secret ? MASKED_SECRET : null,
       has_key_secret: Boolean(row.key_secret),
+      webhook_secret_masked: row.webhook_secret ? MASKED_SECRET : null,
+      has_webhook_secret: Boolean(row.webhook_secret),
       mode,
       status: row.status !== undefined && row.status !== null ? Number(row.status) : 1,
       created_on: row.created_on,
@@ -187,7 +196,7 @@ class RazorpayCredentialModel {
   static async getCurrent() {
     await RazorpayCredentialModel.initTable();
     const [rows] = await pool.query(
-      `SELECT id, method, key_id, key_secret, status, created_on, updated_at
+      `SELECT id, method, key_id, key_secret, webhook_secret, status, created_on, updated_at
        FROM payment_credentials
        WHERE method = 'razorpay'
        ORDER BY status DESC, id DESC
@@ -202,7 +211,7 @@ class RazorpayCredentialModel {
   static async getAll() {
     await RazorpayCredentialModel.initTable();
     const [rows] = await pool.query(
-      `SELECT id, method, key_id, key_secret, status, created_on, updated_at
+      `SELECT id, method, key_id, key_secret, webhook_secret, status, created_on, updated_at
        FROM payment_credentials
        WHERE method = 'razorpay'
        ORDER BY status DESC, id DESC`
@@ -216,7 +225,7 @@ class RazorpayCredentialModel {
   static async getById(id) {
     await RazorpayCredentialModel.initTable();
     const [rows] = await pool.query(
-      `SELECT id, method, key_id, key_secret, status, created_on, updated_at
+      `SELECT id, method, key_id, key_secret, webhook_secret, status, created_on, updated_at
        FROM payment_credentials
        WHERE id = ? AND method = 'razorpay'
        LIMIT 1`,
@@ -228,7 +237,7 @@ class RazorpayCredentialModel {
   /**
    * Create or replace Razorpay credentials
    */
-  static async create({ key_id, key_secret, status = 1 }) {
+  static async create({ key_id, key_secret, webhook_secret, status = 1 }) {
     await RazorpayCredentialModel.initTable();
 
     const validated = RazorpayCredentialModel.validateCredentials({
@@ -237,21 +246,31 @@ class RazorpayCredentialModel {
       requireSecret: true,
     });
 
+    const cleanWebhook =
+      webhook_secret !== undefined &&
+      webhook_secret !== null &&
+      String(webhook_secret).trim() !== '' &&
+      !String(webhook_secret).includes('•')
+        ? String(webhook_secret).trim()
+        : null;
+
     const encryptedSecret = encryptSecret(validated.key_secret);
+    const encryptedWebhook = cleanWebhook ? encryptSecret(cleanWebhook) : null;
     const normalizedStatus = status !== undefined && status !== null ? (Number(status) === 0 ? 0 : 1) : 1;
 
     // Check if a Razorpay credential record already exists; if so, update it
     const [existing] = await pool.query(
-      `SELECT id FROM payment_credentials WHERE method = 'razorpay' ORDER BY id DESC LIMIT 1`
+      `SELECT id, webhook_secret FROM payment_credentials WHERE method = 'razorpay' ORDER BY id DESC LIMIT 1`
     );
 
     if (existing.length > 0) {
       const targetId = existing[0].id;
+      const nextWebhook = encryptedWebhook !== null ? encryptedWebhook : existing[0].webhook_secret;
       await pool.query(
         `UPDATE payment_credentials
-         SET key_id = ?, key_secret = ?, status = ?, updated_at = NOW()
+         SET key_id = ?, key_secret = ?, webhook_secret = ?, status = ?, updated_at = NOW()
          WHERE id = ?`,
-        [validated.key_id, encryptedSecret, normalizedStatus, targetId]
+        [validated.key_id, encryptedSecret, nextWebhook, normalizedStatus, targetId]
       );
       await pool.query(
         `DELETE FROM payment_credentials WHERE method = 'razorpay' AND id != ?`,
@@ -261,9 +280,9 @@ class RazorpayCredentialModel {
     }
 
     const [result] = await pool.query(
-      `INSERT INTO payment_credentials (method, key_id, key_secret, status)
-       VALUES ('razorpay', ?, ?, ?)`,
-      [validated.key_id, encryptedSecret, normalizedStatus]
+      `INSERT INTO payment_credentials (method, key_id, key_secret, webhook_secret, status)
+       VALUES ('razorpay', ?, ?, ?, ?)`,
+      [validated.key_id, encryptedSecret, encryptedWebhook, normalizedStatus]
     );
 
     return await RazorpayCredentialModel.getById(result.insertId);
@@ -272,7 +291,7 @@ class RazorpayCredentialModel {
   /**
    * Update existing Razorpay credentials
    */
-  static async update(id, { key_id, key_secret, status }) {
+  static async update(id, { key_id, key_secret, webhook_secret, clear_webhook_secret = false, status }) {
     await RazorpayCredentialModel.initTable();
 
     let targetRow = null;
@@ -311,6 +330,18 @@ class RazorpayCredentialModel {
     if (hasNewSecret) {
       updates.push('key_secret = ?');
       params.push(encryptSecret(validated.key_secret));
+    }
+
+    if (clear_webhook_secret) {
+      updates.push('webhook_secret = NULL');
+    } else if (
+      webhook_secret !== undefined &&
+      webhook_secret !== null &&
+      String(webhook_secret).trim() !== '' &&
+      !String(webhook_secret).includes('•')
+    ) {
+      updates.push('webhook_secret = ?');
+      params.push(encryptSecret(String(webhook_secret).trim()));
     }
 
     if (status !== undefined && status !== null) {
@@ -354,7 +385,7 @@ class RazorpayCredentialModel {
     await RazorpayCredentialModel.initTable();
 
     const [rows] = await pool.query(
-      `SELECT id, key_id, key_secret, status
+      `SELECT id, key_id, key_secret, webhook_secret, status
        FROM payment_credentials
        WHERE method = 'razorpay' AND status = 1
        ORDER BY id DESC
@@ -372,6 +403,14 @@ class RazorpayCredentialModel {
 
     try {
       const decryptedSecret = decryptSecret(row.key_secret);
+      let decryptedWebhookSecret = null;
+      if (row.webhook_secret) {
+        try {
+          decryptedWebhookSecret = decryptSecret(row.webhook_secret);
+        } catch (_) {
+          decryptedWebhookSecret = null;
+        }
+      }
       const validated = RazorpayCredentialModel.validateCredentials({
         key_id: row.key_id,
         key_secret: decryptedSecret,
@@ -382,6 +421,7 @@ class RazorpayCredentialModel {
         id: row.id,
         keyId: validated.key_id,
         keySecret: validated.key_secret,
+        webhookSecret: decryptedWebhookSecret || process.env.RAZORPAY_WEBHOOK_SECRET || null,
       };
     } catch (_) {
       return null;

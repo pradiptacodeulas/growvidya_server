@@ -49,6 +49,8 @@ router.put('/schools/:id', checkPermission('schools', 'can_edit'), SaasAdminCont
 
 // Subscription & Payment Verification
 router.get('/subscriptions', checkPermission(['subscriptions', 'schools'], 'can_view'), SaasAdminController.getSubscriptions);
+router.post('/subscriptions/manual-assign', checkPermission(['subscriptions', 'schools'], 'can_manage'), SaasAdminController.manualAssignSubscription);
+router.get('/subscriptions/orders/:orderNo/invoice', checkPermission(['subscriptions', 'schools'], 'can_view'), SaasAdminController.getSubscriptionInvoice);
 router.get('/subscriptions/:id', checkPermission(['subscriptions', 'schools'], 'can_view'), SaasAdminController.getSubscriptionById);
 router.post('/subscriptions/:id/approve', checkPermission(['subscriptions', 'schools'], 'can_manage'), SaasAdminController.approveSubscription);
 router.post('/subscriptions/:id/reject', checkPermission(['subscriptions', 'schools'], 'can_manage'), SaasAdminController.rejectSubscription);
@@ -57,6 +59,7 @@ router.patch('/subscriptions/:id/status', checkPermission(['subscriptions', 'sch
 router.post('/subscriptions/:id/extend', checkPermission(['subscriptions', 'schools'], 'can_manage'), SaasAdminController.extendSubscription);
 
 // Package / Subscription Plan Management
+router.get('/packages/meta', checkPermission('packages', 'can_view'), SaasAdminController.getPackageMeta);
 router.get('/packages', checkPermission('packages', 'can_view'), SaasAdminController.getPackages);
 router.get('/packages/:id', checkPermission('packages', 'can_view'), SaasAdminController.getPackageById);
 router.post('/packages', checkPermission('packages', 'can_add'), SaasAdminController.createPackage);
@@ -174,6 +177,12 @@ router.delete('/settings/razorpay/:id', checkPermission('payment_gateway', 'can_
 router.delete('/settings/razorpay', checkPermission('payment_gateway', 'can_delete'), SaasAdminController.deleteRazorpayCredentials);
 router.delete('/settings/payment-gateway/:id', checkPermission('payment_gateway', 'can_delete'), SaasAdminController.deleteRazorpayCredentials);
 router.delete('/settings/payment-gateway', checkPermission('payment_gateway', 'can_delete'), SaasAdminController.deleteRazorpayCredentials);
+
+// Settings — Optional Subscription Communication Alerts (Email/SMS Toggles) & Notification Credit Pricing
+router.get('/settings/communication', checkPermission(['email_delivery', 'packages'], 'can_view'), SaasAdminController.getCommunicationSettings);
+router.put('/settings/communication', checkPermission(['email_delivery', 'packages'], 'can_edit'), SaasAdminController.updateCommunicationSettings);
+router.get('/settings/notification-pricing', checkPermission(['email_delivery', 'packages'], 'can_view'), SaasAdminController.getNotificationPricing);
+router.put('/settings/notification-pricing', checkPermission(['email_delivery', 'packages'], 'can_edit'), SaasAdminController.updateNotificationPricing);
 
 // Settings — Email Delivery (Mailjet & SMTP) Credentials Management
 router.get('/settings/email', checkPermission('email_delivery', 'can_view'), SaasAdminController.getEmailCredentials);

@@ -1,12 +1,14 @@
 const crypto = require('crypto');
 const WebhookModel = require('../models/webhook.model');
-const { webhookSecret } = require('../config/razorpay.config');
+const { getRazorpayConfig } = require('../config/razorpay.config');
 const ApiResponse = require('../utils/api.response');
 
 class WebhookController {
   /**
    * Handle Razorpay Webhook Events
-   * Verifies HMAC-SHA256 signature, enforces idempotency, updates subscriptions, and logs transactions.
+   * Dynamically resolves encrypted `webhookSecret` from DB (or env fallback),
+   * verifies HMAC-SHA256 signature on rawBody, enforces idempotency,
+   * and atomically activates or marks failed orders via SubscriptionFulfillmentService.
    */
   static async handleRazorpayWebhook(req, res) {
     try {
@@ -17,8 +19,14 @@ class WebhookController {
         return ApiResponse.error(res, 'Missing webhook signature header.', null, 400);
       }
 
+      const { webhookSecret } = await getRazorpayConfig();
+      if (!webhookSecret) {
+        console.warn('[Webhook Warning] Razorpay webhook_secret is not configured in Payment Gateway Settings.');
+        return ApiResponse.error(res, 'Webhook secret is not configured on server.', null, 503);
+      }
+
       // 1. Verify HMAC SHA256 Signature using rawBody buffer
-      const rawPayload = req.rawBody || JSON.stringify(req.body);
+      const rawPayload = req.rawBody || Buffer.from(JSON.stringify(req.body || {}), 'utf8');
       const expectedSignature = crypto
         .createHmac('sha256', webhookSecret)
         .update(rawPayload)
@@ -37,7 +45,7 @@ class WebhookController {
       }
 
       const event = req.body;
-      const eventId = event?.id;
+      const eventId = event?.id || req.headers['x-razorpay-event-id'];
       const eventName = event?.event;
       const payload = event?.payload || {};
 
@@ -45,29 +53,25 @@ class WebhookController {
         return ApiResponse.error(res, 'Invalid webhook payload structure.', null, 400);
       }
 
-      console.log(`[Webhook Received] Event: ${eventName} | ID: ${eventId}`);
-
       // 2. Idempotency Check (Prevent duplicate handling of retried events)
       const alreadyProcessed = await WebhookModel.isEventProcessed(eventId);
       if (alreadyProcessed) {
-        console.log(`[Webhook Idempotent] Event ${eventId} was already processed. Returning 200 OK.`);
         return res.status(200).json({ status: 'ok', message: 'Event already processed' });
       }
 
-      let orderEntity = payload.order?.entity || null;
-      let paymentEntity = payload.payment?.entity || null;
-      let notes =
+      const orderEntity = payload.order?.entity || null;
+      const paymentEntity = payload.payment?.entity || null;
+      const notes =
         orderEntity?.notes ||
         paymentEntity?.notes ||
-        payload.payment?.entity?.notes ||
         {};
 
-      let schoolId = notes.school_id || null;
-      let planId = notes.plan_id || null;
-      let orderId = orderEntity?.id || paymentEntity?.order_id || null;
-      let paymentId = paymentEntity?.id || null;
-      let amount = (paymentEntity?.amount || orderEntity?.amount || 0) / 100;
-      let currency = paymentEntity?.currency || orderEntity?.currency || 'INR';
+      const schoolId = notes.school_id || null;
+      const planId = notes.plan_id || null;
+      const orderId = orderEntity?.id || paymentEntity?.order_id || null;
+      const paymentId = paymentEntity?.id || null;
+      const amount = (paymentEntity?.amount || orderEntity?.amount || 0) / 100;
+      const currency = paymentEntity?.currency || orderEntity?.currency || 'INR';
       let status = 'processed';
       let errorMessage = null;
 
@@ -90,6 +94,7 @@ class WebhookController {
 
         case 'payment.failed': {
           await WebhookModel.processPaymentFailure({
+            order: orderEntity,
             payment: paymentEntity,
             notes,
             eventId,
@@ -100,7 +105,6 @@ class WebhookController {
         }
 
         default: {
-          console.log(`[Webhook Notice] Unhandled event type: ${eventName}. Acknowledged and logged.`);
           status = 'ignored';
           break;
         }
@@ -121,7 +125,6 @@ class WebhookController {
         payloadJson: event,
       });
 
-      // 5. Always acknowledge Razorpay promptly with 200 OK
       return res.status(200).json({
         status: 'ok',
         event_id: eventId,
@@ -130,7 +133,6 @@ class WebhookController {
       });
     } catch (error) {
       console.error('[Webhook Controller Fatal Error]:', error.message);
-      // Return 500 so Razorpay can retry transient server failures
       return res.status(500).json({
         status: 'error',
         message: 'Internal server error processing webhook event.',

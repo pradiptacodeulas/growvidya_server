@@ -1,20 +1,156 @@
 const { pool } = require('../config/db.config');
 
-/**
- * Rates per sent communication unit (in INR ₹)
- */
-const RATES = Object.freeze({
-  SMS: 0.2000,   // ₹0.20 per sent SMS
-  PUSH: 0.0100,  // ₹0.01 per sent Push notification
-});
+let _cachedRates = null;
+let _cachedAt = 0;
+const RATE_CACHE_TTL_MS = 60 * 1000;
 
 class NotificationRecordModel {
-  static get RATES() {
-    return RATES;
+  /**
+   * Clear in-memory pricing cache whenever Super Admin updates `notification_pricing_master`
+   */
+  static invalidateRateCache() {
+    _cachedRates = null;
+    _cachedAt = 0;
   }
 
   /**
-   * Log an SMS notification record
+   * Dynamically resolve per-unit SMS & Push rates strictly from `notification_pricing_master`
+   */
+  static async getDynamicRates() {
+    const now = Date.now();
+    if (_cachedRates && now - _cachedAt < RATE_CACHE_TTL_MS) {
+      return _cachedRates;
+    }
+
+    const rates = { SMS: 0, PUSH: 0 };
+    try {
+      const [rows] = await pool.query(
+        'SELECT channel, unit_price FROM notification_pricing_master WHERE status = 1'
+      );
+      for (const r of rows) {
+        const ch = String(r.channel || '').toUpperCase();
+        if (ch === 'SMS' || ch === 'PUSH') {
+          rates[ch] = parseFloat(r.unit_price) || 0;
+        }
+      }
+      _cachedRates = rates;
+      _cachedAt = now;
+    } catch (_) {}
+
+    return rates;
+  }
+
+  /**
+   * Check whether a school's notification wallet has sufficient prepaid credits
+   */
+  static async checkWalletCredits(schoolId, channel, requiredUnits = 1) {
+    const parsedSchoolId = parseInt(schoolId, 10);
+    const ch = String(channel || '').toLowerCase();
+    const units = Math.max(1, parseInt(requiredUnits, 10) || 1);
+    if (!parsedSchoolId || !['sms', 'push'].includes(ch)) {
+      return { allowed: true, balance: 0 };
+    }
+
+    const [rows] = await pool.query(
+      'SELECT sms_balance, push_balance FROM school_notification_wallets WHERE school_id = ? LIMIT 1',
+      [parsedSchoolId]
+    );
+    const balance = rows.length > 0
+      ? parseInt(ch === 'sms' ? rows[0].sms_balance : rows[0].push_balance, 10) || 0
+      : 0;
+
+    return {
+      allowed: balance >= units,
+      balance,
+      required: units,
+      channel: ch,
+    };
+  }
+
+  /**
+   * Atomically debit sent notification units from `school_notification_wallets` and record in `school_notification_ledger`
+   */
+  static async debitWalletCredits({
+    schoolId,
+    channel,
+    units = 1,
+    unitCost = 0,
+    referenceNote = null,
+  }) {
+    const parsedSchoolId = parseInt(schoolId, 10);
+    const ch = String(channel || '').toLowerCase();
+    const deductUnits = Math.max(1, parseInt(units, 10) || 1);
+    if (!parsedSchoolId || !['sms', 'push'].includes(ch)) {
+      return { debited: false };
+    }
+
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+
+      const [rows] = await conn.query(
+        'SELECT * FROM school_notification_wallets WHERE school_id = ? LIMIT 1 FOR UPDATE',
+        [parsedSchoolId]
+      );
+      if (rows.length === 0) {
+        await conn.commit();
+        return { debited: false, balance_after: 0 };
+      }
+
+      const wallet = rows[0];
+      const currentBalance = parseInt(ch === 'sms' ? wallet.sms_balance : wallet.push_balance, 10) || 0;
+      const actualDebit = Math.min(currentBalance, deductUnits);
+      if (actualDebit <= 0) {
+        await conn.commit();
+        return { debited: false, balance_after: currentBalance };
+      }
+
+      const balanceAfter = currentBalance - actualDebit;
+      if (ch === 'sms') {
+        await conn.query(
+          `UPDATE school_notification_wallets
+           SET sms_balance = ?, total_sms_used = total_sms_used + ?
+           WHERE school_id = ?`,
+          [balanceAfter, actualDebit, parsedSchoolId]
+        );
+      } else {
+        await conn.query(
+          `UPDATE school_notification_wallets
+           SET push_balance = ?, total_push_used = total_push_used + ?
+           WHERE school_id = ?`,
+          [balanceAfter, actualDebit, parsedSchoolId]
+        );
+      }
+
+      const totalAmt = Math.round(actualDebit * (parseFloat(unitCost) || 0) * 10000) / 10000;
+      await conn.query(
+        `INSERT INTO school_notification_ledger
+           (school_id, channel, entry_type, units, balance_after, unit_price, total_amount, reference_note)
+         VALUES (?, ?, 'debit', ?, ?, ?, ?, ?)`,
+        [
+          parsedSchoolId,
+          ch,
+          actualDebit,
+          balanceAfter,
+          parseFloat(unitCost) || 0,
+          totalAmt,
+          referenceNote || `Sent ${actualDebit} ${ch.toUpperCase()} unit(s)`,
+        ]
+      );
+
+      await conn.commit();
+      return { debited: true, debited_units: actualDebit, balance_after: balanceAfter };
+    } catch (err) {
+      await conn.rollback();
+      console.error('[NotificationRecordModel.debitWalletCredits Error]:', err.message);
+      return { debited: false };
+    } finally {
+      conn.release();
+    }
+  }
+
+  /**
+   * Log an SMS notification record (using dynamic rate from `notification_pricing_master` + atomic wallet deduction)
    */
   static async logSms({
     school_id = null,
@@ -37,9 +173,12 @@ class NotificationRecordModel {
     sender_role = 'system',
     error_message = null,
   }) {
-    const unit_cost = RATES.SMS;
-    const total_cost = ['sent', 'delivered'].includes(status) ? unit_cost * Math.max(1, units_count) : 0.0000;
-    const sent_at = ['sent', 'delivered'].includes(status) ? new Date() : null;
+    const rates = await NotificationRecordModel.getDynamicRates();
+    const unit_cost = rates.SMS;
+    const normalizedUnits = Math.max(1, parseInt(units_count, 10) || 1);
+    const isBillable = ['sent', 'delivered'].includes(status);
+    const total_cost = isBillable ? unit_cost * normalizedUnits : 0.0000;
+    const sent_at = isBillable ? new Date() : null;
 
     const query = `
       INSERT INTO notification_records (
@@ -61,7 +200,7 @@ class NotificationRecordModel {
       recipient_id,
       recipient_name,
       recipient_phone,
-      Math.max(1, units_count),
+      normalizedUnits,
       unit_cost,
       total_cost,
       status,
@@ -76,11 +215,21 @@ class NotificationRecordModel {
       sent_at,
     ]);
 
+    if (isBillable && school_id) {
+      await NotificationRecordModel.debitWalletCredits({
+        schoolId: school_id,
+        channel: 'sms',
+        units: normalizedUnits,
+        unitCost: unit_cost,
+        referenceNote: `SMS #${result.insertId} (${category})`,
+      });
+    }
+
     return { id: result.insertId, channel: 'sms', unit_cost, total_cost, status };
   }
 
   /**
-   * Log a Push notification record
+   * Log a Push notification record (using dynamic rate from `notification_pricing_master` + atomic wallet deduction)
    */
   static async logPush({
     school_id = null,
@@ -103,9 +252,12 @@ class NotificationRecordModel {
     sender_role = 'system',
     error_message = null,
   }) {
-    const unit_cost = RATES.PUSH;
-    const total_cost = ['sent', 'delivered'].includes(status) ? unit_cost * Math.max(1, units_count) : 0.0000;
-    const sent_at = ['sent', 'delivered'].includes(status) ? new Date() : null;
+    const rates = await NotificationRecordModel.getDynamicRates();
+    const unit_cost = rates.PUSH;
+    const normalizedUnits = Math.max(1, parseInt(units_count, 10) || 1);
+    const isBillable = ['sent', 'delivered'].includes(status);
+    const total_cost = isBillable ? unit_cost * normalizedUnits : 0.0000;
+    const sent_at = isBillable ? new Date() : null;
 
     const query = `
       INSERT INTO notification_records (
@@ -129,7 +281,7 @@ class NotificationRecordModel {
       recipient_name,
       recipient_device_token,
       recipient_device_type,
-      Math.max(1, units_count),
+      normalizedUnits,
       unit_cost,
       total_cost,
       status,
@@ -141,6 +293,16 @@ class NotificationRecordModel {
       sender_role,
       sent_at,
     ]);
+
+    if (isBillable && school_id) {
+      await NotificationRecordModel.debitWalletCredits({
+        schoolId: school_id,
+        channel: 'push',
+        units: normalizedUnits,
+        unitCost: unit_cost,
+        referenceNote: `Push #${result.insertId} (${category})`,
+      });
+    }
 
     return { id: result.insertId, channel: 'push', unit_cost, total_cost, status };
   }
@@ -155,8 +317,21 @@ class NotificationRecordModel {
     error_message = null,
     delivered_at = null,
   }) {
+    const existing = await this.getById(id);
+    const wasBillable = existing && ['sent', 'delivered'].includes(existing.status);
+    const becomesBillable = !wasBillable && ['sent', 'delivered'].includes(status);
+
     const updates = ['status = ?'];
     const params = [status];
+
+    if (becomesBillable && existing) {
+      const rates = await NotificationRecordModel.getDynamicRates();
+      const chKey = String(existing.channel || '').toUpperCase();
+      const unitCost = rates[chKey] ?? (parseFloat(existing.unit_cost) || 0);
+      const units = Math.max(1, parseInt(existing.units_count, 10) || 1);
+      updates.push('unit_cost = ?', 'total_cost = ?', 'sent_at = COALESCE(sent_at, NOW())');
+      params.push(unitCost, unitCost * units);
+    }
 
     if (provider_message_id) {
       updates.push('provider_message_id = ?');
@@ -178,6 +353,18 @@ class NotificationRecordModel {
     params.push(id);
     const query = `UPDATE notification_records SET ${updates.join(', ')} WHERE id = ?`;
     await pool.query(query, params);
+
+    if (becomesBillable && existing?.school_id) {
+      const rates = await NotificationRecordModel.getDynamicRates();
+      const chKey = String(existing.channel || '').toUpperCase();
+      await NotificationRecordModel.debitWalletCredits({
+        schoolId: existing.school_id,
+        channel: existing.channel,
+        units: Math.max(1, parseInt(existing.units_count, 10) || 1),
+        unitCost: rates[chKey] || 0,
+        referenceNote: `Notification #${id} delivered`,
+      });
+    }
 
     return this.getById(id);
   }
@@ -311,6 +498,7 @@ class NotificationRecordModel {
     `;
 
     const [rows] = await pool.query(query, params);
+    const dynamicRates = await NotificationRecordModel.getDynamicRates();
 
     let smsStats = { total_records: 0, total_sent: 0, total_failed: 0, total_pending: 0, billable_units: 0, total_cost_inr: 0.00 };
     let pushStats = { total_records: 0, total_sent: 0, total_failed: 0, total_pending: 0, billable_units: 0, total_cost_inr: 0.00 };
@@ -340,7 +528,7 @@ class NotificationRecordModel {
     const overallTotalCost = Number((smsStats.total_cost_inr + pushStats.total_cost_inr).toFixed(4));
 
     return {
-      rates: RATES,
+      rates: dynamicRates,
       sms: smsStats,
       push: pushStats,
       overall: {

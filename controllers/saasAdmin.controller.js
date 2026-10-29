@@ -6,6 +6,9 @@ const SubscriptionItemModel = require('../models/subscriptionItem.model');
 const RazorpayCredentialModel = require('../models/razorpayCredential.model');
 const EmailCredentialModel = require('../models/emailCredential.model');
 const EmailService = require('../services/email.service');
+const SubscriptionFulfillmentService = require('../services/subscriptionFulfillment.service');
+const SubscriptionAlertService = require('../services/subscriptionAlert.service');
+const { BILLING_CYCLES } = require('../constants/subscriptionModules.constant');
 const ApiResponse = require('../utils/api.response');
 const { generateToken } = require('../utils/jwt.util');
 const { comparePassword } = require('../utils/password.util');
@@ -305,7 +308,61 @@ class SaasAdminController {
   }
 
   /**
-   * Approve a school's pending subscription plan
+   * Fetch Zero-GST Printable Invoice / Order receipt by orderNo, invoiceNo, or ID
+   */
+  static async getSubscriptionInvoice(req, res, next) {
+    try {
+      const { orderNo } = req.params;
+      const order = await SubscriptionFulfillmentService.getOrderWithInvoice(orderNo);
+      if (!order) {
+        return ApiResponse.notFound(res, 'Order / Invoice record not found.');
+      }
+      return ApiResponse.success(res, 'Invoice details fetched successfully.', order);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Super Admin Manual Plan Assignment / Enterprise Override (Audit-logged)
+   */
+  static async manualAssignSubscription(req, res, next) {
+    try {
+      const body = req.body || {};
+      const schoolId = body.school_id || body.schoolId;
+      const planId = body.plan_id || body.planId;
+      const customEndDate = body.custom_end_date || body.customEndDate || body.end_date || body.endDate || null;
+      const amountPaid = body.amount_paid !== undefined ? body.amount_paid : body.amountPaid || 0;
+      const reason = body.reason || body.notes || 'Manual plan assignment by SaaS Super Admin';
+
+      if (!schoolId || !planId) {
+        return ApiResponse.error(res, 'Both school_id and plan_id are required.', null, 400);
+      }
+
+      const assigned = await SaasAdminModel.manualAssignPlan({
+        schoolId: parseInt(schoolId, 10),
+        planId: parseInt(planId, 10),
+        customEndDate,
+        amountPaid: parseFloat(amountPaid) || 0,
+        reason,
+        adminId: req.saasAdmin?.id || null,
+      });
+
+      return ApiResponse.success(
+        res,
+        `Plan "${assigned?.plan_name || 'Assigned Plan'}" has been manually assigned and activated for ${assigned?.school_name || 'the school'}.`,
+        assigned
+      );
+    } catch (error) {
+      if (error.statusCode) {
+        return ApiResponse.error(res, error.message, null, error.statusCode);
+      }
+      next(error);
+    }
+  }
+
+  /**
+   * Approve a school's pending subscription plan (Offline Bank Transfer)
    */
   static async approveSubscription(req, res, next) {
     try {
@@ -326,16 +383,19 @@ class SaasAdminController {
 
       return ApiResponse.success(
         res,
-        `🎉 Plan "${approved.plan_name}" for ${approved.school_name} has been approved and is now active!`,
+        `Plan "${approved.plan_name}" for ${approved.school_name} has been approved and is now active!`,
         approved
       );
     } catch (error) {
+      if (error.statusCode) {
+        return ApiResponse.error(res, error.message, null, error.statusCode);
+      }
       next(error);
     }
   }
 
   /**
-   * Reject a school's pending subscription plan
+   * Reject a school's pending subscription plan (Offline Bank Transfer)
    */
   static async rejectSubscription(req, res, next) {
     try {
@@ -358,6 +418,9 @@ class SaasAdminController {
         rejected
       );
     } catch (error) {
+      if (error.statusCode) {
+        return ApiResponse.error(res, error.message, null, error.statusCode);
+      }
       next(error);
     }
   }
@@ -452,12 +515,22 @@ class SaasAdminController {
   // ========================================================
   // 5. PACKAGE / SUBSCRIPTION PLAN MANAGEMENT
   // ========================================================
+  static async getPackageMeta(req, res, next) {
+    try {
+      return ApiResponse.success(res, 'Package configuration metadata retrieved successfully.', {
+        billing_cycles: Object.values(BILLING_CYCLES),
+        unlimited_quotas: ['max_teachers', 'max_branches'],
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   static async getPackages(req, res, next) {
     try {
       const { search, status, billing_cycle } = req.query;
       const { page, limit } = parsePagination(req.query);
       const result = await SaasAdminModel.getAllPackages({ search, status, billing_cycle, page, limit });
-      // result: { packages, pagination, counts }
       return ApiResponse.success(res, 'Subscription packages retrieved successfully.', result);
     } catch (error) {
       next(error);
@@ -479,7 +552,22 @@ class SaasAdminController {
 
   static async createPackage(req, res, next) {
     try {
-      const { plan_name, plan_code, description, price, billing_cycle, free_trial_days, max_students, status, items } = req.body;
+      const {
+        plan_name,
+        plan_code,
+        plan_group,
+        tier_rank,
+        description,
+        price,
+        original_price,
+        billing_cycle,
+        free_trial_days,
+        max_students,
+        included_storage_gb,
+        is_popular,
+        status,
+        items,
+      } = req.body;
 
       if (!plan_name || plan_name.trim() === '') {
         return ApiResponse.error(res, 'Plan name is required.', null, 400);
@@ -489,14 +577,35 @@ class SaasAdminController {
         return ApiResponse.error(res, 'Valid plan price is required.', null, 400);
       }
 
+      const parsedPrice = parseFloat(price) || 0;
+      if (original_price !== undefined && original_price !== null && original_price !== '') {
+        const parsedOrig = parseFloat(original_price);
+        if (isNaN(parsedOrig) || parsedOrig < 0) {
+          return ApiResponse.error(res, 'Actual / Regular price must be a valid non-negative amount.', null, 400);
+        }
+        if (parsedOrig > 0 && parsedOrig < parsedPrice) {
+          return ApiResponse.error(
+            res,
+            'Actual / Regular price cannot be lower than the Net Selling price.',
+            null,
+            400
+          );
+        }
+      }
+
       const newId = await SaasAdminModel.createPackage({
         plan_name,
         plan_code,
+        plan_group,
+        tier_rank,
         description,
-        price,
+        price: parsedPrice,
+        original_price,
         billing_cycle,
         free_trial_days,
         max_students,
+        included_storage_gb,
+        is_popular,
         status: status !== undefined ? status : 1,
         items: items || [],
       });
@@ -504,6 +613,9 @@ class SaasAdminController {
       const pkg = await SaasAdminModel.getPackageById(newId);
       return ApiResponse.created(res, 'Package created successfully.', pkg);
     } catch (error) {
+      if (error.code === 'ER_DUP_ENTRY') {
+        return ApiResponse.error(res, 'A package with this plan code already exists.', null, 400);
+      }
       next(error);
     }
   }
@@ -516,6 +628,30 @@ class SaasAdminController {
         return ApiResponse.notFound(res, 'Package not found.');
       }
 
+      const effectivePrice =
+        req.body.price !== undefined && req.body.price !== null && req.body.price !== ''
+          ? parseFloat(req.body.price) || 0
+          : parseFloat(pkg.price) || 0;
+
+      if (
+        req.body.original_price !== undefined &&
+        req.body.original_price !== null &&
+        req.body.original_price !== ''
+      ) {
+        const parsedOrig = parseFloat(req.body.original_price);
+        if (isNaN(parsedOrig) || parsedOrig < 0) {
+          return ApiResponse.error(res, 'Actual / Regular price must be a valid non-negative amount.', null, 400);
+        }
+        if (parsedOrig > 0 && parsedOrig < effectivePrice) {
+          return ApiResponse.error(
+            res,
+            'Actual / Regular price cannot be lower than the Net Selling price.',
+            null,
+            400
+          );
+        }
+      }
+
       const success = await SaasAdminModel.updatePackage(id, req.body);
       if (!success) {
         return ApiResponse.error(res, 'No changes made or update failed.', null, 400);
@@ -524,6 +660,9 @@ class SaasAdminController {
       const updated = await SaasAdminModel.getPackageById(id);
       return ApiResponse.success(res, 'Package updated successfully.', updated);
     } catch (error) {
+      if (error.code === 'ER_DUP_ENTRY') {
+        return ApiResponse.error(res, 'A package with this plan code already exists.', null, 400);
+      }
       next(error);
     }
   }
@@ -582,7 +721,7 @@ class SaasAdminController {
   static async addPackageItem(req, res, next) {
     try {
       const { id } = req.params;
-      const { item_name, item_code, description, status } = req.body;
+      const { item_name, item_code, item_type, description, status } = req.body;
 
       if (!item_name || !item_name.trim()) {
         return ApiResponse.error(res, 'Item name is required.', null, 400);
@@ -592,6 +731,7 @@ class SaasAdminController {
         sub_id: id,
         item_name,
         item_code,
+        item_type,
         description,
         status,
       });
@@ -656,11 +796,12 @@ class SaasAdminController {
   }
 
   // ========================================================
+  // 6. COUPON MANAGEMENT
+  // ========================================================
   static async getCoupons(req, res, next) {
     try {
       const { search, status, discount_type, discountType, page, limit, id, coupon_id, couponId, code } = req.query;
 
-      // If specific coupon id or code is provided in query, body, or header, delegate to getCouponById
       const targetId =
         id ||
         coupon_id ||
@@ -692,7 +833,6 @@ class SaasAdminController {
     try {
       let { id } = req.params;
 
-      // Fallback if id was passed as query or body parameter, or literal placeholder ':id'
       if (!id || id === ':id' || String(id).trim() === '') {
         id =
           req.query?.id ||
@@ -736,6 +876,8 @@ class SaasAdminController {
         description,
         discount_type,
         discount_value,
+        applicable_scope,
+        applicableScope,
         min_order_amount,
         max_discount_amount,
         start_date,
@@ -756,6 +898,16 @@ class SaasAdminController {
 
       if (discount_type && !['percentage', 'fixed'].includes(discount_type)) {
         return ApiResponse.error(res, 'Discount type must be percentage or fixed.', null, 400);
+      }
+
+      const rawScope = applicable_scope !== undefined ? applicable_scope : applicableScope;
+      if (rawScope && !['plan_only', 'software_and_storage', 'all'].includes(rawScope)) {
+        return ApiResponse.error(
+          res,
+          'applicable_scope must be plan_only, software_and_storage, or all.',
+          null,
+          400
+        );
       }
 
       const rawPerUser = max_uses_per_user !== undefined ? max_uses_per_user : maxUsesPerUser;
@@ -794,6 +946,7 @@ class SaasAdminController {
         description,
         discount_type: discount_type || 'percentage',
         discount_value,
+        applicable_scope: rawScope || 'plan_only',
         min_order_amount,
         max_discount_amount,
         start_date,
@@ -822,6 +975,21 @@ class SaasAdminController {
       }
 
       const payload = { ...req.body };
+      if (payload.applicableScope !== undefined && payload.applicable_scope === undefined) {
+        payload.applicable_scope = payload.applicableScope;
+      }
+      if (
+        payload.applicable_scope !== undefined &&
+        !['plan_only', 'software_and_storage', 'all'].includes(payload.applicable_scope)
+      ) {
+        return ApiResponse.error(
+          res,
+          'applicable_scope must be plan_only, software_and_storage, or all.',
+          null,
+          400
+        );
+      }
+
       const rawPerUser =
         payload.max_uses_per_user !== undefined ? payload.max_uses_per_user : payload.maxUsesPerUser;
       if (rawPerUser !== undefined) {
@@ -918,7 +1086,20 @@ class SaasAdminController {
   // ========================================================
   static async validateCoupon(req, res, next) {
     try {
-      const { code, amount, order_amount, orderAmount, schoolId, school_id } = req.body;
+      const {
+        code,
+        amount,
+        order_amount,
+        orderAmount,
+        plan_amount,
+        planAmount,
+        storage_amount,
+        storageAmount,
+        schoolId,
+        school_id,
+        email,
+        phone,
+      } = req.body;
       if (!code) {
         return ApiResponse.error(res, 'Coupon code is required.', null, 400);
       }
@@ -928,7 +1109,17 @@ class SaasAdminController {
       const targetSchoolId =
         schoolId || school_id || req.user?.school_id || req.user?.schoolId || null;
 
-      const result = await SaasAdminModel.validateCoupon(code, targetAmount, targetSchoolId);
+      const options = {};
+      if (plan_amount !== undefined || planAmount !== undefined) {
+        options.planAmount = parseFloat(plan_amount !== undefined ? plan_amount : planAmount) || 0;
+      }
+      if (storage_amount !== undefined || storageAmount !== undefined) {
+        options.storageAmount = parseFloat(storage_amount !== undefined ? storage_amount : storageAmount) || 0;
+      }
+      if (email) options.email = email;
+      if (phone) options.phone = phone;
+
+      const result = await SaasAdminModel.validateCoupon(code, targetAmount, targetSchoolId, options);
       if (!result.valid) {
         return ApiResponse.error(res, result.message, null, 400);
       }
@@ -1269,7 +1460,7 @@ class SaasAdminController {
   }
 
   // ========================================================
-  // 8. SETTINGS — RAZORPAY CREDENTIALS MANAGEMENT
+  // 10. SETTINGS — RAZORPAY CREDENTIALS MANAGEMENT
   // ========================================================
   static async getRazorpayCredentials(req, res, next) {
     try {
@@ -1288,11 +1479,13 @@ class SaasAdminController {
       const body = req.body || {};
       const key_id = body.key_id !== undefined ? body.key_id : body.keyId;
       const key_secret = body.key_secret !== undefined ? body.key_secret : body.keySecret;
+      const webhook_secret = body.webhook_secret !== undefined ? body.webhook_secret : body.webhookSecret;
       const { status } = body;
 
       const saved = await RazorpayCredentialModel.create({
         key_id,
         key_secret,
+        webhook_secret,
         status,
       });
 
@@ -1311,11 +1504,15 @@ class SaasAdminController {
       const id = req.params?.id || body.id || req.query?.id || null;
       const key_id = body.key_id !== undefined ? body.key_id : body.keyId;
       const key_secret = body.key_secret !== undefined ? body.key_secret : body.keySecret;
+      const webhook_secret = body.webhook_secret !== undefined ? body.webhook_secret : body.webhookSecret;
+      const clear_webhook_secret = Boolean(body.clear_webhook_secret || body.clearWebhookSecret);
       const { status } = body;
 
       const updated = await RazorpayCredentialModel.update(id, {
         key_id,
         key_secret,
+        webhook_secret,
+        clear_webhook_secret,
         status,
       });
 
@@ -1349,8 +1546,48 @@ class SaasAdminController {
   }
 
   // ========================================================
-  // 9. SETTINGS — EMAIL CREDENTIALS (MAILJET & SMTP)
+  // 11. SETTINGS — EMAIL CREDENTIALS (MAILJET & SMTP) & OPTIONAL COMMUNICATION TOGGLES
   // ========================================================
+  static async getCommunicationSettings(req, res, next) {
+    try {
+      const settings = await SubscriptionAlertService.getSettings();
+      return ApiResponse.success(res, 'Subscription alert & communication settings retrieved successfully.', settings);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async updateCommunicationSettings(req, res, next) {
+    try {
+      const updated = await SubscriptionAlertService.updateSettings(req.body || {}, req.saasAdmin?.id || null);
+      return ApiResponse.success(res, 'Subscription alert & communication settings updated successfully.', updated);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getNotificationPricing(req, res, next) {
+    try {
+      const items = await SaasAdminModel.getNotificationPricing();
+      return ApiResponse.success(res, 'Notification credit pricing retrieved successfully.', items);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async updateNotificationPricing(req, res, next) {
+    try {
+      const rawItems = Array.isArray(req.body) ? req.body : req.body?.items;
+      if (!Array.isArray(rawItems)) {
+        return ApiResponse.error(res, 'An items array of notification pricing entries is required.', null, 400);
+      }
+      const updated = await SaasAdminModel.updateNotificationPricing(rawItems);
+      return ApiResponse.success(res, 'Notification credit pricing updated successfully.', updated);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   static async getEmailCredentials(req, res, next) {
     try {
       const credentials = await EmailCredentialModel.getAll();

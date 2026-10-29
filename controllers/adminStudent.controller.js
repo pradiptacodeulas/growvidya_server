@@ -2,6 +2,7 @@ const StudentModel = require('../models/student.model');
 const SubscriptionModel = require('../models/subscription.model');
 const ApiResponse = require('../utils/api.response');
 const { getBase64FileSize } = require('../utils/file.util');
+const { pool } = require('../config/db.config');
 
 class AdminStudentController {
   static async getAllStudents(req, res, next) {
@@ -222,6 +223,28 @@ class AdminStudentController {
 
       if (!first_name || !class_id) {
         return ApiResponse.error(res, 'First name and Class selection are required.', null, 400);
+      }
+
+      // Prevent student quota bypass via reactivating an inactive student (status: 0 -> 1)
+      if (req.body.status !== undefined && Number(req.body.status) !== 0) {
+        const [existingStatusRows] = await pool.query(
+          'SELECT status FROM student_master WHERE id = ? AND school_id = ? LIMIT 1',
+          [studentId, schoolId]
+        );
+        if (existingStatusRows.length > 0 && Number(existingStatusRows[0].status) === 0) {
+          const quotaCheck = await SubscriptionModel.checkQuota(schoolId, 'students');
+          if (!quotaCheck.allowed) {
+            return ApiResponse.error(
+              res,
+              quotaCheck.message,
+              {
+                code: 'STUDENT_QUOTA_EXCEEDED',
+                quota: quotaCheck,
+              },
+              403
+            );
+          }
+        }
       }
 
       // Check duplicate admission number within school + branch scope (excluding current student)

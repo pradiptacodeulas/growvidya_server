@@ -221,40 +221,8 @@ class SuperAdminModel {
    * Get Storage Allocation for the school from subscription / storage_master
    */
   static async getStorageAllocation(schoolId) {
-    const parsedSchoolId = Number(schoolId);
-    const [subRows] = await pool.query(
-      `SELECT s.id, s.storage_plan_id, sm.storage_capacity, sm.capacity_unit_id, cu.unit_name 
-       FROM school_subscriptions s
-       LEFT JOIN storage_master sm ON s.storage_plan_id = sm.id
-       LEFT JOIN capacity_unit_master cu ON sm.capacity_unit_id = cu.id
-       WHERE s.school_id = ? AND s.status IN ('active', 'trial')
-       ORDER BY s.id DESC LIMIT 1`,
-      [parsedSchoolId]
-    );
-
-    let allocatedBytes = 5 * 1024 * 1024 * 1024; // Default 5 GB base SaaS allocation
-    let planName = '5 GB Included Storage';
-
-    if (subRows.length > 0 && subRows[0].storage_capacity) {
-      const cap = Number(subRows[0].storage_capacity);
-      const unit = subRows[0].capacity_unit_id; // 1: MB, 2: GB, 3: TB
-      if (unit === 3) {
-        allocatedBytes = cap * 1024 * 1024 * 1024 * 1024;
-        planName = `${cap} TB Storage Plan`;
-      } else if (unit === 1) {
-        allocatedBytes = cap * 1024 * 1024;
-        planName = `${cap} MB Storage Plan`;
-      } else {
-        allocatedBytes = cap * 1024 * 1024 * 1024;
-        planName = `${cap} GB Storage Plan`;
-      }
-    }
-
-    return {
-      allocatedBytes,
-      allocatedFormatted: SuperAdminModel.formatBytes(allocatedBytes),
-      planName,
-    };
+    const StorageQuotaService = require('../services/storageQuota.service');
+    return await StorageQuotaService.getSchoolStorageAllocation(schoolId);
   }
 
   /**
@@ -409,7 +377,7 @@ class SuperAdminModel {
     // 10. Subscription Plan & Limit Enforcement
     const subscription = await SubscriptionModel.getSchoolSubscription(parsedSchoolId);
     const allowedStudents = subscription?.max_students ? Number(subscription.max_students) : 0;
-    const allowedBranches = 10; // Default max branches or as per tier
+    const allowedBranches = 0; // Unlimited branches across all plans
 
     return {
       school: {
@@ -960,7 +928,7 @@ class SuperAdminModel {
     const allowedStudents = subscription?.max_students ? Number(subscription.max_students) : 0;
     const usedStudents = Number(stuCount[0]?.count || 0);
 
-    const allowedBranches = 10;
+    const allowedBranches = 0; // Unlimited branches across all plans
     const usedBranches = Number(branchCount[0]?.count || 0);
 
     return {

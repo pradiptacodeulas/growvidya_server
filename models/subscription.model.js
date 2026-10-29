@@ -1,8 +1,94 @@
 const { pool } = require('../config/db.config');
+const SubscriptionPolicyService = require('../services/subscriptionPolicy.service');
+const SubscriptionFulfillmentService = require('../services/subscriptionFulfillment.service');
+const StorageQuotaService = require('../services/storageQuota.service');
+const {
+  ALL_BILLING_CYCLE_LIST,
+  getBillingCycleMeta,
+  getTodayIST,
+} = require('../constants/subscriptionModules.constant');
+
+function buildFeaturesMap(planFeaturesJson = null, planItems = []) {
+  const featuresMap = {};
+
+  if (planFeaturesJson) {
+    let parsed = planFeaturesJson;
+    if (typeof parsed === 'string') {
+      try {
+        parsed = JSON.parse(parsed);
+      } catch (_) {
+        parsed = null;
+      }
+    }
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      for (const [k, v] of Object.entries(parsed)) {
+        if (k && Boolean(v)) {
+          featuresMap[String(k).toLowerCase()] = true;
+        }
+      }
+    }
+  }
+
+  for (const it of planItems || []) {
+    if (it?.item_code) {
+      const lowerCode = String(it.item_code).trim().toLowerCase();
+      featuresMap[lowerCode] = true;
+    }
+  }
+
+  return featuresMap;
+}
 
 class SubscriptionModel {
   /**
-   * Get the current active/latest subscription for a given school
+   * Fetch school SMS & Push Notification Wallet balances
+   */
+  static async getNotificationWallet(schoolId) {
+    const parsedSchoolId = parseInt(schoolId, 10);
+    if (!parsedSchoolId) {
+      return {
+        sms_balance: 0,
+        push_balance: 0,
+        total_sms_purchased: 0,
+        total_sms_used: 0,
+        total_push_purchased: 0,
+        total_push_used: 0,
+      };
+    }
+
+    try {
+      const [rows] = await pool.query(
+        'SELECT * FROM school_notification_wallets WHERE school_id = ? LIMIT 1',
+        [parsedSchoolId]
+      );
+      if (rows.length > 0) {
+        const w = rows[0];
+        return {
+          sms_balance: parseInt(w.sms_balance, 10) || 0,
+          push_balance: parseInt(w.push_balance, 10) || 0,
+          total_sms_purchased: parseInt(w.total_sms_purchased, 10) || 0,
+          total_sms_used: parseInt(w.total_sms_used, 10) || 0,
+          total_push_purchased: parseInt(w.total_push_purchased, 10) || 0,
+          total_push_used: parseInt(w.total_push_used, 10) || 0,
+        };
+      }
+    } catch (_) {}
+
+    return {
+      sms_balance: 0,
+      push_balance: 0,
+      total_sms_purchased: 0,
+      total_sms_used: 0,
+      total_push_purchased: 0,
+      total_push_used: 0,
+    };
+  }
+
+  /**
+   * Get the current active/latest subscription for a given school.
+   * - Never hardcodes plan names ('starter'/'growth'/'enterprise').
+   * - Uses IST dates and fixes off-by-one expiry (days_left === 0 is STILL active today; days_left < 0 is expired).
+   * - Keeps active/trial schools unlocked even when an offline bank transfer renewal/upgrade is pending Super Admin review.
    */
   static async getSchoolSubscription(schoolId) {
     const targetSchoolId = parseInt(schoolId, 10);
@@ -10,80 +96,124 @@ class SubscriptionModel {
       return null;
     }
 
+    const todayStr = getTodayIST();
+
     const query = `
       SELECT 
         s.id AS subscription_id,
         s.school_id,
         s.plan_id,
         s.storage_plan_id,
+        s.action_type,
+        s.plan_amount,
+        s.addons_amount,
         s.amount_paid,
         s.payment_gateway,
         s.payment_transaction_id,
-        s.payment_status,
-        s.start_date,
-        s.end_date,
-        s.status,
-        s.created_at,
-        DATEDIFF(s.end_date, CURDATE()) AS days_left,
-        p.plan_name,
-        p.plan_code,
-        p.description AS plan_description,
-        p.price,
-        p.billing_cycle,
-        p.free_trial_days,
-        p.max_students
-      FROM school_subscriptions s
-      JOIN subscription_plans p ON s.plan_id = p.id
-      WHERE s.school_id = ?
-      ORDER BY 
-        CASE 
-          -- 1. Active paid subscriptions first (annual/monthly with valid end_date)
-          WHEN s.status = 'active' AND p.billing_cycle != 'trial' AND DATEDIFF(s.end_date, CURDATE()) >= 0 THEN 1
-          -- 2. Active trials next (only if valid end_date)
-          WHEN s.status = 'trial' AND DATEDIFF(s.end_date, CURDATE()) >= 0 THEN 2
-          -- 3. Paid subscriptions (even if expired, latest first)
-          WHEN p.billing_cycle != 'trial' THEN 3
-          -- 4. Expired trials
-          ELSE 4
-        END ASC,
-        s.id DESC
-      LIMIT 1
-    `;
-
-    const [rows] = await pool.query(query, [targetSchoolId]);
-
-    // Check if there is any pending subscription request for this school awaiting Super Admin approval
-    const [pendingRows] = await pool.query(
-      `SELECT 
-        s.id AS subscription_id,
-        s.school_id,
-        s.plan_id,
-        s.storage_plan_id,
-        s.amount_paid,
-        s.payment_gateway,
-        s.payment_transaction_id,
+        s.payment_order_id,
+        s.invoice_no,
         s.payment_status,
         s.start_date,
         s.end_date,
         s.status,
         s.verification_notes,
         s.created_at,
-        DATEDIFF(s.end_date, CURDATE()) AS days_left,
+        DATEDIFF(DATE(s.end_date), ?) AS days_left,
         p.plan_name,
         p.plan_code,
+        p.plan_group,
+        p.tier_rank,
         p.description AS plan_description,
         p.price,
         p.billing_cycle,
         p.free_trial_days,
-        p.max_students
+        p.max_students,
+        p.included_storage_gb,
+        p.is_popular,
+        p.features_json
+      FROM school_subscriptions s
+      JOIN subscription_plans p ON s.plan_id = p.id
+      WHERE s.school_id = ?
+        AND s.status NOT IN ('rejected', 'superseded')
+      ORDER BY 
+        CASE 
+          -- 1. Active paid subscriptions first (valid end_date >= today IST)
+          WHEN s.status = 'active' AND LOWER(p.billing_cycle) != 'trial' AND DATEDIFF(DATE(s.end_date), ?) >= 0 THEN 1
+          -- 2. Active trials next (valid end_date >= today IST)
+          WHEN s.status IN ('trial', 'active') AND DATEDIFF(DATE(s.end_date), ?) >= 0 THEN 2
+          -- 3. Suspended subscriptions
+          WHEN s.status = 'suspended' THEN 3
+          -- 4. Expired paid subscriptions (prioritized over pending so lifecycle history is preserved)
+          WHEN s.status != 'pending' AND LOWER(p.billing_cycle) != 'trial' THEN 4
+          -- 5. Expired trials
+          WHEN s.status != 'pending' THEN 5
+          -- 6. Standalone pending offline subscriptions (only primary when school has no prior active/expired row)
+          ELSE 6
+        END ASC,
+        s.id DESC
+      LIMIT 1
+    `;
+
+    const [rows] = await pool.query(query, [
+      todayStr,
+      targetSchoolId,
+      todayStr,
+      todayStr,
+    ]);
+
+    // Check for any pending offline bank transfer request awaiting Super Admin verification
+    const [pendingRows] = await pool.query(
+      `SELECT 
+        s.id AS subscription_id,
+        s.school_id,
+        s.plan_id,
+        s.storage_plan_id,
+        s.action_type,
+        s.plan_amount,
+        s.addons_amount,
+        s.amount_paid,
+        s.payment_gateway,
+        s.payment_transaction_id,
+        s.payment_order_id,
+        s.payment_status,
+        s.start_date,
+        s.end_date,
+        s.status,
+        s.verification_notes,
+        s.created_at,
+        DATEDIFF(DATE(s.end_date), ?) AS days_left,
+        p.plan_name,
+        p.plan_code,
+        p.plan_group,
+        p.tier_rank,
+        p.description AS plan_description,
+        p.price,
+        p.billing_cycle,
+        p.free_trial_days,
+        p.max_students,
+        p.included_storage_gb
       FROM school_subscriptions s
       JOIN subscription_plans p ON s.plan_id = p.id
       WHERE s.school_id = ? AND s.status = 'pending'
       ORDER BY s.id DESC
       LIMIT 1`,
-      [targetSchoolId]
+      [todayStr, targetSchoolId]
     );
     const pendingSubscription = pendingRows.length > 0 ? pendingRows[0] : null;
+
+    // Check latest rejected offline submission (for banner feedback if needed)
+    const [rejectedRows] = await pool.query(
+      `SELECT s.id AS subscription_id, s.plan_id, s.payment_transaction_id, s.verification_notes, s.verified_at, p.plan_name
+       FROM school_subscriptions s
+       JOIN subscription_plans p ON s.plan_id = p.id
+       WHERE s.school_id = ? AND s.status = 'rejected'
+       ORDER BY s.id DESC LIMIT 1`,
+      [targetSchoolId]
+    );
+    const latestRejected = rejectedRows[0] || null;
+
+    const wallet = await SubscriptionModel.getNotificationWallet(targetSchoolId);
+    const lifecycle = await SubscriptionFulfillmentService.loadSchoolLifecycleSnapshot(targetSchoolId);
 
     if (rows.length === 0) {
       if (pendingSubscription) {
@@ -95,17 +225,33 @@ class SubscriptionModel {
           storage_plan_id: pendingSubscription.storage_plan_id,
           plan_name: pendingSubscription.plan_name,
           plan_code: pendingSubscription.plan_code,
+          plan_group: pendingSubscription.plan_group,
+          tier_rank: Number(pendingSubscription.tier_rank) || 1,
           billing_cycle: pendingSubscription.billing_cycle,
+          cycle_meta: getBillingCycleMeta(pendingSubscription.billing_cycle),
+          included_storage_gb: Math.max(0, parseInt(pendingSubscription.included_storage_gb, 10) || 0),
+          max_students: Number(pendingSubscription.max_students) || 0,
+          max_teachers: 0,
+          max_branches: 0,
           amount_paid: pendingSubscription.amount_paid,
           payment_gateway: pendingSubscription.payment_gateway,
           payment_transaction_id: pendingSubscription.payment_transaction_id,
           payment_status: pendingSubscription.payment_status,
           status: 'pending',
+          liveStatus: 'pending',
           isPending: true,
+          has_pending_offline: true,
           isTrial: false,
           isExpired: false,
           days_left: Math.max(0, pendingDaysLeft),
           actual_days_left: pendingDaysLeft,
+          features: buildFeaturesMap(null, []),
+          items: [],
+          notification_wallet: wallet,
+          last_paid_subscription: lifecycle.lastPaidSub || null,
+          has_claimed_trial: lifecycle.hasClaimedTrial,
+          active_student_count: lifecycle.activeStudentCount,
+          latest_rejected_subscription: latestRejected,
           pending_subscription: pendingSubscription,
           pendingSubscription,
         };
@@ -115,11 +261,22 @@ class SubscriptionModel {
         subscription_id: null,
         school_id: targetSchoolId,
         plan_name: 'No Active Subscription',
-        status: 'expired',
+        status: latestRejected ? 'rejected' : 'expired',
+        liveStatus: latestRejected ? 'rejected' : 'expired',
         isPending: false,
+        has_pending_offline: false,
         isTrial: false,
         isExpired: true,
         days_left: 0,
+        max_teachers: 0,
+        max_branches: 0,
+        features: buildFeaturesMap(null, []),
+        items: [],
+        notification_wallet: wallet,
+        last_paid_subscription: lifecycle.lastPaidSub || null,
+        has_claimed_trial: lifecycle.hasClaimedTrial,
+        active_student_count: lifecycle.activeStudentCount,
+        latest_rejected_subscription: latestRejected,
         pending_subscription: null,
         pendingSubscription: null,
       };
@@ -127,21 +284,12 @@ class SubscriptionModel {
 
     const sub = rows[0];
     const daysLeft = sub.days_left !== null ? Number(sub.days_left) : 0;
-    const planNameLower = (sub.plan_name || '').toLowerCase();
-    const planCodeLower = (sub.plan_code || '').toLowerCase();
 
-    // A subscription is ONLY a trial if its billing cycle is trial or code/name indicates trial,
-    // AND it is not an annual/monthly paid plan (like Starter Plan, Growth Plan, Enterprise Plan).
+    // Dynamic trial identification — zero hardcoded plan names
     const isTrial = Boolean(
-      (sub.billing_cycle === 'trial' ||
-       planCodeLower.includes('trial') ||
-       planNameLower.includes('trial') ||
-       sub.status === 'trial') &&
-      sub.billing_cycle !== 'annual' &&
-      sub.billing_cycle !== 'monthly' &&
-      !planNameLower.includes('starter') &&
-      !planNameLower.includes('growth') &&
-      !planNameLower.includes('enterprise')
+      sub.status === 'trial' ||
+      String(sub.billing_cycle || '').toLowerCase() === 'trial' ||
+      sub.payment_gateway === 'free_trial'
     );
 
     let liveStatus = sub.status;
@@ -153,118 +301,201 @@ class SubscriptionModel {
     } else if (sub.status === 'suspended') {
       liveStatus = 'suspended';
       isExpired = false;
-    } else if (daysLeft <= 0 || sub.status === 'expired') {
-      liveStatus = 'expired';
-      isExpired = true;
+    } else if (daysLeft < 0 || sub.status === 'expired') {
+      // If an expired school has submitted an offline bank transfer, expose pending state cleanly to Admin UI
+      if (pendingSubscription) {
+        liveStatus = 'pending';
+        isExpired = false;
+      } else {
+        liveStatus = 'expired';
+        isExpired = true;
+      }
 
-      // Automatically sync the database status if not yet marked expired
-      if (sub.status !== 'expired') {
+      if (sub.status !== 'expired' && sub.status !== 'pending') {
         try {
           await pool.query(
             "UPDATE school_subscriptions SET status = 'expired' WHERE id = ?",
             [sub.subscription_id]
           );
-        } catch (syncErr) {
-          console.error('Failed to sync expired subscription status:', syncErr.message);
-        }
+        } catch (_) {}
       }
     }
 
-    // Fetch active items for the school's plan
     let planItems = [];
     if (sub.plan_id) {
       try {
         const [items] = await pool.query(
-          'SELECT id, item_name, item_code, description FROM subscription_items WHERE sub_id = ? AND status = 1 ORDER BY id ASC',
+          'SELECT id, item_name, item_code, item_type, description FROM subscription_items WHERE sub_id = ? AND status = 1 ORDER BY FIELD(item_type, "module", "feature"), id ASC',
           [sub.plan_id]
         );
         planItems = items || [];
-      } catch (e) {
+      } catch (_) {
         planItems = [];
       }
     }
 
-    const featuresMap = {};
-    planItems.forEach(it => {
-      if (it.item_code) featuresMap[it.item_code.toLowerCase()] = true;
-    });
+    const featuresMap = buildFeaturesMap(sub.features_json, planItems);
+
+    let storageAllocation = null;
+    try {
+      storageAllocation = await StorageQuotaService.getAllocatedBytes(targetSchoolId);
+    } catch (_) {}
+
+    const primaryIsPending = liveStatus === 'pending';
 
     return {
       ...sub,
-      days_left: Math.max(0, daysLeft),
+      tier_rank: Number(sub.tier_rank) || 1,
+      included_storage_gb: Math.max(0, parseInt(sub.included_storage_gb, 10) || 0),
+      total_storage_gb: storageAllocation ? storageAllocation.totalAllowedGb : Math.max(0, parseInt(sub.included_storage_gb, 10) || 0),
+      addon_storage_gb: storageAllocation ? storageAllocation.addonStorageGb : 0,
+      max_students: Number(sub.max_students) || 0,
+      max_teachers: 0, // Unlimited teachers on all plans
+      max_branches: 0, // Unlimited branches on all plans
+      cycle_meta: getBillingCycleMeta(sub.billing_cycle, sub.free_trial_days),
+      days_left: isExpired ? 0 : Math.max(0, daysLeft),
       actual_days_left: daysLeft,
       isTrial,
       isExpired,
-      isPending: sub.status === 'pending' || Boolean(pendingSubscription),
+      isPending: primaryIsPending,
+      has_pending_offline: Boolean(pendingSubscription),
       liveStatus,
       features: featuresMap,
       items: planItems,
+      notification_wallet: wallet,
+      last_paid_subscription: lifecycle.lastPaidSub || null,
+      has_claimed_trial: lifecycle.hasClaimedTrial,
+      active_student_count: lifecycle.activeStudentCount,
+      latest_rejected_subscription: latestRejected,
       pending_subscription: pendingSubscription,
       pendingSubscription,
     };
   }
 
   /**
-   * Get all available paid plans for upgrading.
-   * If schoolId is provided, checks active plan tier to prevent downgrades.
+   * Get all available paid plans dynamically from DB, annotated with exact policy transition states:
+   * - Strict no-downgrade enforcement (tier_rank + billing cycle duration, even after expiry!)
+   * - Active student quota floor check
+   * - Early renewal date-stacking preview vs fresh cycle upgrade preview
    */
   static async getUpgradePlans(schoolId = null) {
     const query = `
-      SELECT id, plan_name, plan_code, description, price, billing_cycle,
-             free_trial_days, max_students
+      SELECT id, plan_name, plan_code, plan_group, tier_rank, description, price, original_price, billing_cycle,
+             free_trial_days, max_students, included_storage_gb, is_popular, features_json
       FROM subscription_plans
-      WHERE status = 1 AND billing_cycle != 'trial' AND price > 0
-      ORDER BY price ASC
+      WHERE status = 1 AND LOWER(billing_cycle) != 'trial' AND price > 0
+      ORDER BY tier_rank ASC, price ASC
     `;
     const [rows] = await pool.query(query);
 
-    let currentSub = null;
+    let lifecycle = {
+      activeSub: null,
+      lastPaidSub: null,
+      hasClaimedTrial: false,
+      activeStudentCount: 0,
+    };
     if (schoolId) {
-      try {
-        currentSub = await this.getSchoolSubscription(schoolId);
-      } catch (e) {
-        currentSub = null;
-      }
+      lifecycle = await SubscriptionFulfillmentService.loadSchoolLifecycleSnapshot(schoolId);
     }
 
-    const currentPrice = currentSub && currentSub.status === 'active' && !currentSub.isTrial && currentSub.price !== null
-      ? parseFloat(currentSub.price)
-      : 0;
+    const refSub =
+      lifecycle.activeSub && !lifecycle.activeSub.isTrial && !lifecycle.activeSub.isExpired
+        ? lifecycle.activeSub
+        : lifecycle.lastPaidSub;
 
     const plans = [];
     for (const row of rows) {
       const [items] = await pool.query(
-        'SELECT id, item_name, item_code, description FROM subscription_items WHERE sub_id = ? AND status = 1 ORDER BY id ASC',
+        'SELECT id, item_name, item_code, item_type, description FROM subscription_items WHERE sub_id = ? AND status = 1 ORDER BY FIELD(item_type, "module", "feature"), id ASC',
         [row.id]
       );
-      const featuresMap = {};
-      (items || []).forEach(it => {
-        if (it.item_code) featuresMap[it.item_code.toLowerCase()] = true;
-      });
 
-      const planPrice = parseFloat(row.price);
-      const isCurrent = Boolean(currentSub && Number(currentSub.plan_id) === Number(row.id));
-      const isDowngrade = Boolean(currentPrice > 0 && planPrice < currentPrice);
-      const canSwitch = !isDowngrade;
-      const isUpgrade = Boolean(currentPrice > 0 && planPrice > currentPrice);
-      const isEqualTier = Boolean(currentPrice > 0 && planPrice === currentPrice);
+      const featuresMap = buildFeaturesMap(row.features_json, items || []);
+      const cycleMeta = getBillingCycleMeta(row.billing_cycle, row.free_trial_days);
+
+      const transition = schoolId
+        ? SubscriptionPolicyService.classifyPlanTransition({
+            activeSub: lifecycle.activeSub,
+            lastPaidSub: lifecycle.lastPaidSub,
+            hasClaimedTrial: lifecycle.hasClaimedTrial,
+            targetPlan: row,
+            isTrialIntent: false,
+            activeStudentCount: lifecycle.activeStudentCount,
+          })
+        : {
+            allowed: true,
+            code: 'OK',
+            transition_type: 'new_subscription',
+            action_type: 'onboarding',
+            is_downgrade: false,
+            is_renewal: false,
+            is_upgrade: false,
+            stacks_dates: false,
+            start_date: getTodayIST(),
+            end_date: null,
+            reason: null,
+          };
+
+      const isCurrent = Boolean(
+        lifecycle.activeSub &&
+          !lifecycle.activeSub.isTrial &&
+          !lifecycle.activeSub.isExpired &&
+          Number(lifecycle.activeSub.plan_id) === Number(row.id)
+      );
+
+      const isQuotaLocked = Boolean(
+        transition.is_quota_locked ||
+        transition.code === 'QUOTA_BELOW_ACTIVE_USAGE' ||
+        transition.code === 'QUOTA_EXCEEDED'
+      );
+
+      const sellingPrice = parseFloat(row.price) || 0;
+      const rawOrig =
+        row.original_price !== null && row.original_price !== undefined && row.original_price !== ''
+          ? parseFloat(row.original_price)
+          : null;
+      const validOrig =
+        rawOrig !== null && !isNaN(rawOrig) && rawOrig > sellingPrice
+          ? Number(rawOrig.toFixed(2))
+          : null;
 
       plans.push({
         ...row,
+        original_price: validOrig,
+        discount_amount: validOrig ? Number((validOrig - sellingPrice).toFixed(2)) : 0,
+        discount_percent: validOrig
+          ? Math.round(((validOrig - sellingPrice) / validOrig) * 100)
+          : 0,
+        tier_rank: Number(row.tier_rank) || 1,
+        included_storage_gb: Math.max(0, parseInt(row.included_storage_gb, 10) || 0),
+        is_popular: Number(row.is_popular) === 1 ? 1 : 0,
+        max_students: Number(row.max_students) || 0,
+        max_teachers: 0,
+        max_branches: 0,
+        cycle_meta: cycleMeta,
         is_current: isCurrent,
-        is_downgrade: isDowngrade,
-        is_upgrade: isUpgrade,
-        is_equal_tier: isEqualTier,
-        can_switch: canSwitch,
-        current_plan_name: currentSub?.plan_name || null,
-        current_plan_price: currentPrice,
-        downgrade_message: isDowngrade
-          ? `Downgrading to a lower-tier plan is not permitted. You are currently subscribed to the "${currentSub.plan_name}" plan (₹${currentPrice.toFixed(2)}). You may only remain on your current plan or upgrade to an equal or higher-tier plan.`
-          : null,
+        is_downgrade: Boolean(transition.is_downgrade),
+        is_quota_locked: isQuotaLocked,
+        is_upgrade: Boolean(transition.is_upgrade),
+        is_renewal: Boolean(transition.is_renewal),
+        is_equal_tier: Boolean(refSub && Number(refSub.tier_rank) === Number(row.tier_rank)),
+        can_switch: Boolean(transition.allowed),
+        transition_type: transition.transition_type,
+        action_type: transition.action_type,
+        stacks_dates: Boolean(transition.stacks_dates),
+        projected_start_date: transition.start_date || null,
+        projected_end_date: transition.end_date || null,
+        lock_code: transition.allowed ? null : transition.code,
+        lock_reason: transition.allowed ? null : transition.reason,
+        validity_note: transition.allowed ? transition.reason : null,
+        current_plan_name: refSub?.plan_name || null,
+        current_plan_price: refSub ? parseFloat(refSub.catalog_price || refSub.price || 0) : 0,
+        downgrade_message: !transition.allowed ? transition.reason : null,
         features: featuresMap,
         items: items || [],
       });
     }
+
     return plans;
   }
 
@@ -276,8 +507,8 @@ class SubscriptionModel {
     if (!targetPlanId) return null;
 
     const [rows] = await pool.query(
-      `SELECT id, plan_name, plan_code, description, price, billing_cycle,
-              free_trial_days, max_students
+      `SELECT id, plan_name, plan_code, plan_group, tier_rank, description, price, original_price, billing_cycle,
+              free_trial_days, max_students, included_storage_gb, is_popular, features_json, status
        FROM subscription_plans
        WHERE id = ? LIMIT 1`,
       [targetPlanId]
@@ -287,261 +518,50 @@ class SubscriptionModel {
 
     const row = rows[0];
     const [items] = await pool.query(
-      'SELECT id, item_name, item_code, description FROM subscription_items WHERE sub_id = ? AND status = 1 ORDER BY id ASC',
+      'SELECT id, item_name, item_code, item_type, description FROM subscription_items WHERE sub_id = ? AND status = 1 ORDER BY FIELD(item_type, "module", "feature"), id ASC',
       [row.id]
     );
-    const featuresMap = {};
-    (items || []).forEach(it => {
-      if (it.item_code) featuresMap[it.item_code.toLowerCase()] = true;
-    });
+    const featuresMap = buildFeaturesMap(row.features_json, items || []);
+    const sellingPrice = parseFloat(row.price) || 0;
+    const rawOrig =
+      row.original_price !== null && row.original_price !== undefined && row.original_price !== ''
+        ? parseFloat(row.original_price)
+        : null;
+    const validOrig =
+      rawOrig !== null && !isNaN(rawOrig) && rawOrig > sellingPrice
+        ? Number(rawOrig.toFixed(2))
+        : null;
 
     return {
       ...row,
+      original_price: validOrig,
+      discount_amount: validOrig ? Number((validOrig - sellingPrice).toFixed(2)) : 0,
+      discount_percent: validOrig
+        ? Math.round(((validOrig - sellingPrice) / validOrig) * 100)
+        : 0,
+      tier_rank: Number(row.tier_rank) || 1,
+      included_storage_gb: Math.max(0, parseInt(row.included_storage_gb, 10) || 0),
+      is_popular: Number(row.is_popular) === 1 ? 1 : 0,
+      max_students: Number(row.max_students) || 0,
+      max_teachers: 0,
+      max_branches: 0,
+      cycle_meta: getBillingCycleMeta(row.billing_cycle, row.free_trial_days),
       features: featuresMap,
       items: items || [],
     };
   }
 
   /**
-   * Request a plan selection by a user.
-   * Stored as 'pending' until the Super Admin reviews and approves it.
-   */
-  static async requestPlanSelection({
-    schoolId,
-    planId,
-    storagePlanId = null,
-    amountPaid,
-    paymentGateway = 'direct_selection',
-    paymentTransactionId = null,
-    couponId = null,
-    discountAmount = 0,
-    originalAmount = null,
-    paymentStatus = 'pending',
-  }) {
-    const targetSchoolId = parseInt(schoolId, 10);
-    const targetPlanId = parseInt(planId, 10);
-
-    const [planRows] = await pool.query(
-      'SELECT id, plan_name, price, billing_cycle FROM subscription_plans WHERE id = ? LIMIT 1',
-      [targetPlanId]
-    );
-    const plan = planRows[0];
-    if (!plan) {
-      throw new Error('Selected plan not found.');
-    }
-
-    // STRICT DOWNGRADE PREVENTION:
-    // If school has an active paid subscription, prevent moving to a lower-tier plan
-    const currentSub = await this.getSchoolSubscription(targetSchoolId);
-    if (currentSub && currentSub.status === 'active' && !currentSub.isTrial && currentSub.price !== null) {
-      const currentPrice = parseFloat(currentSub.price);
-      const targetPrice = parseFloat(plan.price);
-      if (currentPrice > 0 && targetPrice < currentPrice) {
-        throw new Error(
-          `Downgrading to a lower-tier plan is not permitted. You are currently subscribed to the "${currentSub.plan_name}" plan (₹${currentPrice.toFixed(2)}). You may only remain on your current plan or upgrade to an equal or higher-tier plan.`
-        );
-      }
-    }
-
-    const finalAmount = amountPaid !== undefined ? parseFloat(amountPaid) : parseFloat(plan.price);
-    const finalTxnId =
-      paymentTransactionId ||
-      `REQ_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
-
-    const startDate = new Date();
-    const endDate = new Date();
-    if (plan.billing_cycle === 'monthly') {
-      endDate.setMonth(endDate.getMonth() + 1);
-    } else {
-      endDate.setFullYear(endDate.getFullYear() + 1);
-    }
-
-    const startDateStr = startDate.toISOString().split('T')[0];
-    const endDateStr = endDate.toISOString().split('T')[0];
-
-    // NOTE: When a user selects a plan, it remains PENDING until Super Admin reviews and approves it!
-    // We do NOT expire existing active plans here! The existing plan stays active until approval.
-    const insertQuery = `
-      INSERT INTO school_subscriptions (
-        school_id, plan_id, storage_plan_id, amount_paid, payment_gateway,
-        payment_transaction_id, coupon_id, discount_amount, original_amount,
-        payment_status, start_date, end_date, status, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NOW())
-    `;
-
-    const [result] = await pool.query(insertQuery, [
-      targetSchoolId,
-      targetPlanId,
-      storagePlanId ? parseInt(storagePlanId, 10) : null,
-      finalAmount,
-      paymentGateway,
-      finalTxnId,
-      couponId ? parseInt(couponId, 10) : null,
-      parseFloat(discountAmount) || 0,
-      originalAmount !== null && originalAmount !== undefined ? parseFloat(originalAmount) : finalAmount,
-      paymentStatus,
-      startDateStr,
-      endDateStr,
-    ]);
-
-    const subscriptionId = result.insertId;
-
-    return {
-      subscription_id: subscriptionId,
-      school_id: targetSchoolId,
-      plan_id: targetPlanId,
-      storage_plan_id: storagePlanId ? parseInt(storagePlanId, 10) : null,
-      plan_name: plan.plan_name,
-      amount_paid: finalAmount,
-      coupon_id: couponId,
-      discount_amount: parseFloat(discountAmount) || 0,
-      original_amount: originalAmount !== null && originalAmount !== undefined ? parseFloat(originalAmount) : finalAmount,
-      transaction_id: finalTxnId,
-      payment_status: paymentStatus,
-      status: 'pending',
-      start_date: startDateStr,
-      end_date: endDateStr,
-      message: `Plan selection for ${plan.plan_name} has been submitted and is pending Super Admin review and approval.`,
-    };
-  }
-
-  /**
-   * Upgrade school subscription to a paid plan.
-   * If immediateActivate is true (Super Admin override), activates directly.
-   * Otherwise, records as pending for Super Admin approval.
-   */
-  static async upgradeSubscription({
-    schoolId,
-    planId,
-    storagePlanId = null,
-    amountPaid,
-    paymentGateway = 'manual',
-    paymentTransactionId = null,
-    couponId = null,
-    discountAmount = 0,
-    originalAmount = null,
-    immediateActivate = false,
-  }) {
-    if (!immediateActivate) {
-      return await this.requestPlanSelection({
-        schoolId,
-        planId,
-        storagePlanId,
-        amountPaid,
-        paymentGateway,
-        paymentTransactionId,
-        couponId,
-        discountAmount,
-        originalAmount,
-        paymentStatus: paymentGateway === 'razorpay' ? 'completed' : 'pending',
-      });
-    }
-
-    const targetSchoolId = parseInt(schoolId, 10);
-    const targetPlanId = parseInt(planId, 10);
-
-    const [planRows] = await pool.query(
-      'SELECT id, plan_name, price, billing_cycle FROM subscription_plans WHERE id = ? LIMIT 1',
-      [targetPlanId]
-    );
-    const plan = planRows[0];
-    if (!plan) {
-      throw new Error('Selected upgrade plan not found.');
-    }
-
-    // STRICT DOWNGRADE PREVENTION:
-    // If school has an active paid subscription, prevent moving to a lower-tier plan
-    const currentSub = await this.getSchoolSubscription(targetSchoolId);
-    if (currentSub && currentSub.status === 'active' && !currentSub.isTrial && currentSub.price !== null) {
-      const currentPrice = parseFloat(currentSub.price);
-      const targetPrice = parseFloat(plan.price);
-      if (currentPrice > 0 && targetPrice < currentPrice) {
-        throw new Error(
-          `Downgrading to a lower-tier plan is not permitted. You are currently subscribed to the "${currentSub.plan_name}" plan (₹${currentPrice.toFixed(2)}). You may only remain on your current plan or upgrade to an equal or higher-tier plan.`
-        );
-      }
-    }
-
-    const finalAmount = amountPaid !== undefined ? parseFloat(amountPaid) : parseFloat(plan.price);
-    const finalTxnId =
-      paymentTransactionId ||
-      `UPGRADE_PAY_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
-
-    const startDate = new Date();
-    const endDate = new Date();
-    if (plan.billing_cycle === 'monthly') {
-      endDate.setMonth(endDate.getMonth() + 1);
-    } else {
-      endDate.setFullYear(endDate.getFullYear() + 1);
-    }
-
-    const startDateStr = startDate.toISOString().split('T')[0];
-    const endDateStr = endDate.toISOString().split('T')[0];
-
-    // Expire any existing subscriptions for this school
-    await pool.query(
-      "UPDATE school_subscriptions SET status = 'expired' WHERE school_id = ? AND status IN ('trial', 'active')",
-      [targetSchoolId]
-    );
-
-    // Insert new active paid subscription with coupon audit fields
-    const insertQuery = `
-      INSERT INTO school_subscriptions (
-        school_id, plan_id, storage_plan_id, amount_paid, payment_gateway,
-        payment_transaction_id, coupon_id, discount_amount, original_amount,
-        payment_status, start_date, end_date, status, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, 'active', NOW())
-    `;
-
-    const [result] = await pool.query(insertQuery, [
-      targetSchoolId,
-      targetPlanId,
-      storagePlanId ? parseInt(storagePlanId, 10) : null,
-      finalAmount,
-      paymentGateway,
-      finalTxnId,
-      couponId ? parseInt(couponId, 10) : null,
-      parseFloat(discountAmount) || 0,
-      originalAmount !== null && originalAmount !== undefined ? parseFloat(originalAmount) : finalAmount,
-      startDateStr,
-      endDateStr,
-    ]);
-
-    const subscriptionId = result.insertId;
-
-    // Record coupon usage and increment used_count in coupons master table
-    if (couponId && parseFloat(discountAmount) > 0) {
-      try {
-        const CouponModel = require('./coupon.model');
-        await CouponModel.recordCouponUsage(couponId, targetSchoolId, subscriptionId, discountAmount);
-      } catch (couponErr) {
-        console.error('Failed to record coupon usage in coupon_usages:', couponErr.message);
-      }
-    }
-
-    return {
-      subscription_id: subscriptionId,
-      school_id: targetSchoolId,
-      plan_id: targetPlanId,
-      storage_plan_id: storagePlanId ? parseInt(storagePlanId, 10) : null,
-      plan_name: plan.plan_name,
-      amount_paid: finalAmount,
-      coupon_id: couponId,
-      discount_amount: parseFloat(discountAmount) || 0,
-      original_amount: originalAmount !== null && originalAmount !== undefined ? parseFloat(originalAmount) : finalAmount,
-      transaction_id: finalTxnId,
-      start_date: startDateStr,
-      end_date: endDateStr,
-      status: 'active',
-    };
-  }
-
-  /**
-   * Check if school has reached its quota for a specific entity ('students' or 'teachers')
+   * Check if school has reached its quota for a specific entity ('students', 'teachers', 'branches')
+   * Note: Teachers and Branches are unlimited (0) on all plans per business rules.
    */
   static async checkQuota(schoolId, type) {
     const targetSchoolId = parseInt(schoolId, 10);
     if (!targetSchoolId) return { allowed: true };
+
+    if (type === 'teachers' || type === 'branches') {
+      return { allowed: true };
+    }
 
     const sub = await this.getSchoolSubscription(targetSchoolId);
     if (!sub) return { allowed: true };
@@ -551,7 +571,7 @@ class SubscriptionModel {
         sub.max_students !== null && sub.max_students !== undefined
           ? Number(sub.max_students)
           : 0;
-      // 0 indicates unlimited quota (e.g. Enterprise)
+      // 0 indicates unlimited student quota
       if (maxStudents > 0) {
         const [rows] = await pool.query(
           'SELECT COUNT(id) AS count FROM student_master WHERE school_id = ? AND status != 0',
@@ -568,56 +588,13 @@ class SubscriptionModel {
           };
         }
       }
-    } else if (type === 'teachers') {
-      // Teacher limit removed - unlimited teachers allowed on all plans
-      return { allowed: true };
     }
 
     return { allowed: true };
   }
 
   /**
-   * Record an offline upgrade request for administrative review
-   */
-  static async requestOfflineUpgrade({
-    schoolId,
-    planId,
-    storagePlanId = null,
-    amountPaid,
-    paymentTransactionId = null,
-    couponId = null,
-    discountAmount = 0,
-    originalAmount = null,
-  }) {
-    const targetSchoolId = parseInt(schoolId, 10);
-    const targetPlanId = parseInt(planId, 10);
-
-    const plan = await this.getPlanById(targetPlanId);
-    if (!plan) {
-      throw new Error('Selected upgrade plan not found.');
-    }
-
-    const finalAmount = amountPaid !== undefined ? parseFloat(amountPaid) : parseFloat(plan.price);
-    const finalTxnId =
-      paymentTransactionId ||
-      `OFFLINE_REQ_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
-
-    return await this.requestPlanSelection({
-      schoolId: targetSchoolId,
-      planId: targetPlanId,
-      storagePlanId,
-      amountPaid: finalAmount,
-      paymentGateway: 'bank_transfer',
-      paymentTransactionId: finalTxnId,
-      couponId,
-      discountAmount,
-      originalAmount,
-      paymentStatus: 'pending',
-    });
-  }
-
-  /**
-   * Get active catalog for subscription configuration (Storage, Machines, RFID Cards, Notifications)
+   * Get active catalog for subscription configuration (Storage, Machines, RFID Cards, Bank Accounts, Notification Pricing)
    */
   static async getConfigurationCatalog() {
     const [storagePlans] = await pool.query(
@@ -628,25 +605,55 @@ class SubscriptionModel {
        WHERE sm.status = 1
        ORDER BY (sm.storage_capacity * COALESCE(cu.factor_in_mb, 1024)) ASC`
     );
+
     const [attendanceMachines] = await pool.query(
       'SELECT id, machine_name, model_number, brand, machine_type, connectivity, user_capacity, log_capacity, push_protocol, unit_price, amc_price, machine_image, specifications FROM attendance_machine_master WHERE status = 1 ORDER BY unit_price ASC'
     );
+
     const [rfidCards] = await pool.query(
       'SELECT id, card_name, card_code, card_type, frequency, read_range, unit_price, min_order_qty, card_image, rfid_image, description FROM rfid_card_master WHERE status = 1 ORDER BY unit_price ASC'
     );
+
     const [bankAccounts] = await pool.query(
-      'SELECT id, account_title, beneficiary_name, account_number, bank_name, branch_name, ifsc_code, account_type, upi_id, swift_code, instructions, qr_code_image, is_default, status FROM bank_account_master WHERE status = 1 AND is_default = 1 ORDER BY id ASC'
-    );
-    const [notificationRecords] = await pool.query(
-      'SELECT id, type, recipient, message, cost, status, created_at FROM notification_master ORDER BY id ASC'
+      'SELECT id, account_title, beneficiary_name, account_number, bank_name, branch_name, ifsc_code, account_type, upi_id, swift_code, instructions, qr_code_image, is_default, status FROM bank_account_master WHERE status = 1 ORDER BY is_default DESC, id ASC'
     );
 
+    const [notificationPricing] = await pool.query(
+      'SELECT id, channel, pack_name, unit_price, min_qty, description, status FROM notification_pricing_master WHERE status = 1 ORDER BY id ASC'
+    );
+
+    const enrichedStoragePlans = (storagePlans || []).map((sp) => {
+      const cycle_prices = {};
+      for (const c of ALL_BILLING_CYCLE_LIST) {
+        cycle_prices[c] = SubscriptionPolicyService.computeStorageCyclePrice(sp, c);
+      }
+      return {
+        ...sp,
+        cycle_prices,
+      };
+    });
+
+    // Backwards-compatible shape for existing UI components reading `notification_records`
+    const notificationRecords = (notificationPricing || []).map((np) => ({
+      id: np.id,
+      type: np.channel,
+      channel: np.channel,
+      name: np.pack_name,
+      pack_name: np.pack_name,
+      message: np.description || np.pack_name,
+      cost: parseFloat(np.unit_price) || 0,
+      unit_price: parseFloat(np.unit_price) || 0,
+      min_qty: Math.max(1, parseInt(np.min_qty, 10) || 1),
+      status: np.status,
+    }));
+
     return {
-      storage_plans: storagePlans || [],
+      storage_plans: enrichedStoragePlans,
       attendance_machines: attendanceMachines || [],
       rfid_cards: rfidCards || [],
       bank_accounts: bankAccounts || [],
-      notification_records: notificationRecords || [],
+      notification_pricing: notificationPricing || [],
+      notification_records: notificationRecords,
     };
   }
 }

@@ -3,10 +3,9 @@ const ApiResponse = require('../utils/api.response');
 const { pool } = require('../config/db.config');
 
 /**
- * Authentication Middleware for Coupon Management APIs
- * Accepts:
- * 1. SaaS Master Admin Bearer token / cookies (portalType: 'SaaSAdminPortal')
- * 2. School Admin / System Staff Bearer token / cookies
+ * Strict SaaS Master Admin Authentication Middleware for Catalog & Coupon Management APIs.
+ * Only accepts active SaaS Master Admin tokens (portalType: 'SaaSAdminPortal').
+ * School Admin, Teacher, Parent, and Student tokens are strictly rejected with 403 Forbidden.
  */
 const couponAuthMiddleware = async (req, res, next) => {
   try {
@@ -36,7 +35,7 @@ const couponAuthMiddleware = async (req, res, next) => {
       token = req.query.token || req.query.auth_token || req.query.access_token;
     }
 
-    // 4. Check Session Cookies (unsigned & signed) - do NOT silently use cookies in Postman without auth header
+    // 4. Check SaaS Admin Session Cookies only
     const isPostman = Boolean(
       req.headers['postman-token'] ||
       (typeof req.headers['user-agent'] === 'string' && req.headers['user-agent'].includes('PostmanRuntime'))
@@ -46,17 +45,13 @@ const couponAuthMiddleware = async (req, res, next) => {
       const getCookie = (name) => req.cookies?.[name] || req.signedCookies?.[name];
       token =
         getCookie('growvidya_saas_admin_session') ||
-        getCookie('saas_admin_token') ||
-        getCookie('growvidya_admin_session') ||
-        getCookie('growvidya_session') ||
-        getCookie('token') ||
-        getCookie('session_token');
+        getCookie('saas_admin_token');
     }
 
     if (!token) {
       return ApiResponse.error(
         res,
-        'Access denied. Authentication required. Please provide a Bearer token or sign in.',
+        'Access denied. SaaS Super Admin authentication required.',
         null,
         401
       );
@@ -72,19 +67,26 @@ const couponAuthMiddleware = async (req, res, next) => {
       );
     }
 
-    // Verify SaaS Admin account if it is a SaaS Admin token
+    // Strictly enforce SaaSAdminPortal identity — prevent privilege escalation from school/student/teacher tokens
     const userId = decoded.userId || decoded.id;
-    if (decoded.portalType === 'SaaSAdminPortal' && userId) {
-      const [adminRows] = await pool.query(
-        'SELECT id, first_name, last_name, email, role, status FROM saas_admin_users WHERE id = ? AND status = 1 LIMIT 1',
-        [userId]
+    if (decoded.portalType !== 'SaaSAdminPortal' || !userId) {
+      return ApiResponse.error(
+        res,
+        'Forbidden: Only authorized SaaS Super Administrators can access or modify platform catalogs and coupons.',
+        null,
+        403
       );
-      if (adminRows.length === 0) {
-        return ApiResponse.error(res, 'SaaS Admin account not found or deactivated.', null, 403);
-      }
-      req.saasAdmin = adminRows[0];
     }
 
+    const [adminRows] = await pool.query(
+      'SELECT id, first_name, last_name, email, role, role_id, status FROM saas_admin_users WHERE id = ? AND status = 1 LIMIT 1',
+      [userId]
+    );
+    if (adminRows.length === 0) {
+      return ApiResponse.error(res, 'SaaS Admin account not found or deactivated.', null, 403);
+    }
+
+    req.saasAdmin = adminRows[0];
     req.user = decoded;
     return next();
   } catch (error) {

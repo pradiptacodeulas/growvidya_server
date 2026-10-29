@@ -1,14 +1,48 @@
+const fs = require('fs');
 const path = require('path');
 const ApiResponse = require('../utils/api.response');
+const StorageQuotaService = require('../services/storageQuota.service');
+
+async function safeUnlinkFiles(files = []) {
+  for (const file of files) {
+    if (file?.path) {
+      try {
+        await fs.promises.unlink(file.path);
+      } catch (_) {}
+    }
+  }
+}
 
 class UploadController {
   /**
-   * Handle single file upload
+   * Handle single file upload (with Cloud Storage Quota enforcement)
    */
   static async uploadSingle(req, res, next) {
     try {
       if (!req.file) {
         return ApiResponse.error(res, 'No file was uploaded.', null, 400);
+      }
+
+      const schoolId = req.user?.schoolId || req.user?.school_id;
+      if (schoolId && req.user?.portalType !== 'SaaSAdminPortal') {
+        const incomingBytes = Number(req.file.size) || 0;
+        const quota = await StorageQuotaService.getSchoolStorageQuota(schoolId);
+        if (quota.totalAllowedBytes > 0 && quota.usedBytes + incomingBytes > quota.totalAllowedBytes) {
+          await safeUnlinkFiles([req.file]);
+          return ApiResponse.error(
+            res,
+            `Cloud storage limit reached (${quota.usedFormatted} used of ${quota.allowedFormatted}). Purchase a Cloud Storage Add-on or upgrade your plan to upload more files.`,
+            {
+              code: 'STORAGE_QUOTA_EXCEEDED',
+              used_bytes: quota.usedBytes,
+              incoming_bytes: incomingBytes,
+              allowed_bytes: quota.totalAllowedBytes,
+              allowed_gb: quota.totalAllowedGb,
+              upgrade_required: true,
+            },
+            413
+          );
+        }
       }
 
       const uploadRoot = path.join(__dirname, '../public/upload');
@@ -41,12 +75,35 @@ class UploadController {
   }
 
   /**
-   * Handle multiple files upload
+   * Handle multiple files upload (with Cloud Storage Quota enforcement)
    */
   static async uploadMultiple(req, res, next) {
     try {
       if (!req.files || req.files.length === 0) {
         return ApiResponse.error(res, 'No files were uploaded.', null, 400);
+      }
+
+      const schoolId = req.user?.schoolId || req.user?.school_id;
+      if (schoolId && req.user?.portalType !== 'SaaSAdminPortal') {
+        const batchBytes = req.files.reduce((sum, f) => sum + (Number(f.size) || 0), 0);
+        const quota = await StorageQuotaService.getSchoolStorageQuota(schoolId);
+        // Remember DB doesn't link the newly uploaded file path yet, so calculateRealStorage doesn't count unlinked files yet!
+        if (quota.totalAllowedBytes > 0 && quota.usedBytes + batchBytes > quota.totalAllowedBytes) {
+          await safeUnlinkFiles(req.files);
+          return ApiResponse.error(
+            res,
+            `Cloud storage limit reached (${quota.usedFormatted} used of ${quota.allowedFormatted}). Purchase a Cloud Storage Add-on or upgrade your plan to upload more files.`,
+            {
+              code: 'STORAGE_QUOTA_EXCEEDED',
+              used_bytes: quota.usedBytes,
+              incoming_bytes: batchBytes,
+              allowed_bytes: quota.totalAllowedBytes,
+              allowed_gb: quota.totalAllowedGb,
+              upgrade_required: true,
+            },
+            413
+          );
+        }
       }
 
       const uploadRoot = path.join(__dirname, '../public/upload');
@@ -108,4 +165,3 @@ class UploadController {
 }
 
 module.exports = UploadController;
-

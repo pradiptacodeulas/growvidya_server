@@ -22,6 +22,7 @@ async function getRazorpayConfig() {
     razorpayInstance,
     keyId: credentials.keyId,
     keySecret: credentials.keySecret,
+    webhookSecret: credentials.webhookSecret || process.env.RAZORPAY_WEBHOOK_SECRET || null,
   };
 }
 

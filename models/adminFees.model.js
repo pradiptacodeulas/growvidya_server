@@ -1050,9 +1050,12 @@ class AdminFeesModel {
     );
     invoice.items = items;
 
-    // Fetch payments
+    // Fetch only verified / successful payments applied to this official invoice
     const [payments] = await pool.query(
-      `SELECT * FROM fee_payments WHERE invoice_id = ? ORDER BY id DESC`,
+      `SELECT * FROM fee_payments
+       WHERE invoice_id = ?
+         AND LOWER(TRIM(COALESCE(status, ''))) IN ('success', 'verified', 'paid', 'completed', '1')
+       ORDER BY payment_date DESC, id DESC`,
       [invoice.id]
     );
     invoice.payments = payments;
