@@ -1462,7 +1462,21 @@ class SaasAdminModel {
 
     if (plan_name !== undefined) { updates.push('plan_name = ?'); params.push(plan_name.trim()); }
     if (plan_code !== undefined) { updates.push('plan_code = ?'); params.push(plan_code.trim()); }
-    if (plan_group !== undefined) { updates.push('plan_group = ?'); params.push(String(plan_group).trim()); }
+    if (plan_group !== undefined && String(plan_group).trim() !== '') {
+      updates.push('plan_group = ?');
+      params.push(String(plan_group).trim());
+    } else if (plan_name !== undefined) {
+      const autoGroup = (
+        plan_name
+          .toLowerCase()
+          .replace(/\b(monthly|quarterly|half[\s_-]*yearly|annual|yearly|trial|plan|package)\b/gi, '')
+          .replace(/[^a-z0-9]+/g, '_')
+          .replace(/^_+|_+$/g, '') ||
+        (plan_code || plan_name).toLowerCase().replace(/[^a-z0-9]+/g, '_')
+      ).trim();
+      updates.push('plan_group = ?');
+      params.push(autoGroup);
+    }
     if (tier_rank !== undefined) { updates.push('tier_rank = ?'); params.push(Math.max(1, parseInt(tier_rank, 10) || 1)); }
     if (description !== undefined) { updates.push('description = ?'); params.push(description); }
     if (price !== undefined) { updates.push('price = ?'); params.push(parseFloat(price) || 0); }
