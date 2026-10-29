@@ -211,8 +211,23 @@ class SubscriptionPolicyService {
       }
     }
 
-    // 8. Same Tier Allowed Transitions: Early Renewal (Date Stacking!) vs Post-Expiry Renewal vs Cycle Upgrade
-    if (targetTierRank === refTierRank) {
+    // 8. Same Plan / Plan Family Allowed Transitions: Early Renewal (Date Stacking!) vs Post-Expiry Renewal vs Cycle Upgrade
+    const stripCycleSuffix = (val) =>
+      String(val || '')
+        .toLowerCase()
+        .trim()
+        .replace(/[\s_-]+(monthly|quarterly|half[\s_-]?yearly|annual|yearly|trial)$/i, '');
+    const refPlanKey = stripCycleSuffix(
+      referencePaidSub.plan_group || referencePaidSub.plan_code || referencePaidSub.plan_name
+    );
+    const targetPlanKey = stripCycleSuffix(
+      targetPlan.plan_group || targetPlan.plan_code || targetPlan.plan_name
+    );
+    const isSamePlanFamily =
+      Number(targetPlan.id) === Number(referencePaidSub.plan_id) ||
+      Boolean(refPlanKey && targetPlanKey && refPlanKey === targetPlanKey);
+
+    if (targetTierRank === refTierRank && isSamePlanFamily) {
       const activeEndStr = activeIsPaidAndLive ? normalizeDateStr(activeSub.end_date) : null;
       const canStackDates = Boolean(activeIsPaidAndLive && activeEndStr && activeEndStr >= todayStr);
 

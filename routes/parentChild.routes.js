@@ -29,6 +29,8 @@ router.get('/events', ParentChildController.getEvents);
 router.get('/event', ParentChildController.getEvents);
 router.get('/notices', ParentChildController.getNotices);
 router.get('/notice', ParentChildController.getNotices);
+router.get('/holidays', ParentChildController.getHolidays);
+router.get('/holiday', ParentChildController.getHolidays);
 router.get('/documents', ParentChildController.getDocuments);
 router.get('/document', ParentChildController.getDocuments);
 

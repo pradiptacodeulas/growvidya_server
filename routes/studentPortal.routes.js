@@ -28,6 +28,8 @@ router.get('/documents', StudentPortalController.getDocuments);
 router.get('/document', StudentPortalController.getDocuments);
 router.get('/notices', StudentPortalController.getNotices);
 router.get('/notice', StudentPortalController.getNotices);
+router.get('/holidays', StudentPortalController.getHolidays);
+router.get('/holiday', StudentPortalController.getHolidays);
 router.get('/assignments', StudentPortalController.getAssignments);
 router.get('/assignment', StudentPortalController.getAssignments);
 router.get('/assignments/:id/attempt', StudentPortalController.getAssignmentForAttempt);

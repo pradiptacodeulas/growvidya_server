@@ -962,6 +962,27 @@ class StudentPortalController {
       next(error);
     }
   }
+
+  /**
+   * Get School Holidays for Student (scoped to student's campus + school-wide holidays)
+   */
+  static async getHolidays(req, res, next) {
+    try {
+      const studentId = StudentPortalController.getStudentId(req);
+      const schoolId = StudentPortalController.getSchoolId(req);
+      const userBranchId = StudentPortalController.getBranchId(req);
+
+      const student = await ParentModel.getChildFullProfile(studentId, schoolId);
+      const branchId = userBranchId || student?.branch_id || null;
+
+      const holidays = await AnnouncementModel.getAllHolidays(schoolId, branchId);
+      const activeHolidays = (holidays || []).filter((h) => Number(h.status ?? 1) === 1);
+
+      return ApiResponse.success(res, 'Student holidays fetched successfully.', activeHolidays);
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 module.exports = StudentPortalController;

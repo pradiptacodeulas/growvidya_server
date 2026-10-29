@@ -504,6 +504,42 @@ class ParentChildController {
       next(error);
     }
   }
+
+  /**
+   * Get School Holidays for Parent (scoped to active child's campus + school-wide holidays)
+   */
+  static async getHolidays(req, res, next) {
+    try {
+      const AnnouncementModel = require('../models/announcement.model');
+      const { pool } = require('../config/db.config');
+      const schoolId = req.user?.schoolId || req.user?.school_id;
+      if (!schoolId) {
+        return ApiResponse.error(res, 'Authentication required: school ID missing.', null, 401);
+      }
+
+      const studentId = await ParentChildController.getActiveStudentId(req);
+      let branchId = req.branchId || req.user?.branch_id || null;
+
+      if (studentId) {
+        const [studentRows] = await pool
+          .query(`SELECT branch_id FROM student_master WHERE id = ? AND school_id = ?`, [
+            studentId,
+            schoolId,
+          ])
+          .catch(() => [[]]);
+        if (studentRows && studentRows[0] && studentRows[0].branch_id) {
+          branchId = studentRows[0].branch_id;
+        }
+      }
+
+      const holidays = await AnnouncementModel.getAllHolidays(schoolId, branchId);
+      const activeHolidays = (holidays || []).filter((h) => Number(h.status ?? 1) === 1);
+
+      return ApiResponse.success(res, 'School holidays fetched successfully.', activeHolidays);
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 module.exports = ParentChildController;
