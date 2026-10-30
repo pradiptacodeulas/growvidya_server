@@ -139,9 +139,17 @@ class SaasController {
         }
       }
 
+      const hasCouponCode = Boolean(
+        (req.body.coupon_code && String(req.body.coupon_code).trim()) ||
+          (req.body.couponCode && String(req.body.couponCode).trim())
+      );
+      const isPureTrialOrFreePlan =
+        String(plan.billing_cycle).toLowerCase() === 'trial' || parseFloat(plan.price || 0) <= 0;
       const isTrialReq =
-        Boolean(req.body.is_trial !== undefined ? req.body.is_trial : req.body.isTrial) ||
-        String(plan.billing_cycle).toLowerCase() === 'trial';
+        hasCouponCode && !isPureTrialOrFreePlan
+          ? false
+          : Boolean(req.body.is_trial !== undefined ? req.body.is_trial : req.body.isTrial) ||
+            isPureTrialOrFreePlan;
 
       if (isTrialReq) {
         const eligibility = await SaasModel.checkTrialEligibility({
@@ -348,9 +356,18 @@ class SaasController {
         return ApiResponse.error(res, 'Selected subscription plan not found or is inactive.', null, 404);
       }
 
+      const hasCouponCode = Boolean(
+        (req.body.coupon_code && String(req.body.coupon_code).trim()) ||
+          (req.body.couponCode && String(req.body.couponCode).trim())
+      );
+      const isPureTrialOrFreeTargetPlan =
+        String(targetPlan.billing_cycle).toLowerCase() === 'trial' ||
+        parseFloat(targetPlan.price || 0) <= 0;
       const isTrialRequested =
-        Boolean(req.body.is_trial !== undefined ? req.body.is_trial : req.body.isTrial) ||
-        String(targetPlan.billing_cycle).toLowerCase() === 'trial';
+        hasCouponCode && !isPureTrialOrFreeTargetPlan
+          ? false
+          : Boolean(req.body.is_trial !== undefined ? req.body.is_trial : req.body.isTrial) ||
+            isPureTrialOrFreeTargetPlan;
 
       if (isTrialRequested) {
         const eligibility = await SaasModel.checkTrialEligibility({
