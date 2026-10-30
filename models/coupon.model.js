@@ -84,7 +84,7 @@ class CouponModel {
       SELECT 
         c.*,
         GREATEST(c.used_count, (SELECT COUNT(*) FROM coupon_usages cu WHERE cu.coupon_id = c.id)) AS used_count,
-        (SELECT COUNT(*) FROM coupon_usages cu WHERE cu.coupon_id = c.id) AS total_redemptions,
+        GREATEST(c.used_count, (SELECT COUNT(*) FROM coupon_usages cu WHERE cu.coupon_id = c.id)) AS total_redemptions,
         (SELECT IFNULL(SUM(discount_amount), 0.00) FROM coupon_usages cu WHERE cu.coupon_id = c.id) AS total_discount_given
       FROM coupons c
       ${where}
@@ -117,7 +117,7 @@ class CouponModel {
       `SELECT 
          c.*,
          GREATEST(c.used_count, (SELECT COUNT(*) FROM coupon_usages cu WHERE cu.coupon_id = c.id)) AS used_count,
-         (SELECT COUNT(*) FROM coupon_usages cu WHERE cu.coupon_id = c.id) AS total_redemptions,
+         GREATEST(c.used_count, (SELECT COUNT(*) FROM coupon_usages cu WHERE cu.coupon_id = c.id)) AS total_redemptions,
          (SELECT IFNULL(SUM(discount_amount), 0.00) FROM coupon_usages cu WHERE cu.coupon_id = c.id) AS total_discount_given
        FROM coupons c
        WHERE c.id = ?
@@ -353,17 +353,36 @@ class CouponModel {
       recordedUsagesCount = parseInt(redempRows[0]?.cnt, 10) || 0;
     } catch (_) {}
 
-    const currentUsedCount = Math.max(Number(coupon.used_count) || 0, recordedUsagesCount) + pendingGlobalReservations;
+    const isCheckoutOrCheckOnly = Boolean(
+      options.isCheckoutVerification || options.checkOnly || options.check_only
+    );
+    const baseUsedCount = Math.max(Number(coupon.used_count) || 0, recordedUsagesCount);
+    let currentUsedCount = baseUsedCount + pendingGlobalReservations;
     const maxUsesLimit =
       coupon.max_uses !== null && coupon.max_uses !== undefined && Number(coupon.max_uses) > 0
         ? Number(coupon.max_uses)
         : null;
 
-    if (maxUsesLimit !== null && currentUsedCount >= maxUsesLimit) {
-      return {
-        valid: false,
-        message: `This coupon has reached its maximum usage limit (${currentUsedCount}/${maxUsesLimit}).`,
-      };
+    if (!isCheckoutOrCheckOnly) {
+      if (maxUsesLimit !== null && currentUsedCount >= maxUsesLimit) {
+        return {
+          valid: false,
+          message: `This coupon has reached its maximum usage limit (${currentUsedCount}/${maxUsesLimit}).`,
+        };
+      }
+    } else if (maxUsesLimit !== null) {
+      const finalizedAndPendingCount = recordedUsagesCount + pendingGlobalReservations;
+      const unappliedDirectCheckout = (Number(coupon.used_count) || 0) === 0 && currentUsedCount >= maxUsesLimit;
+      if (
+        finalizedAndPendingCount >= maxUsesLimit ||
+        currentUsedCount > maxUsesLimit ||
+        unappliedDirectCheckout
+      ) {
+        return {
+          valid: false,
+          message: `This coupon has reached its maximum usage limit (${Math.min(currentUsedCount, maxUsesLimit)}/${maxUsesLimit}).`,
+        };
+      }
     }
 
     // Per-school / per-user usage check
@@ -494,6 +513,26 @@ class CouponModel {
     discount = Math.round(discount * 100) / 100;
     const finalPayable = Math.max(0, Math.round((totalOrderAmount - discount) * 100) / 100);
 
+    // Whenever a user applies the coupon directly, atomically update its usage count in the DB
+    // and ensure it cannot be used beyond its allowed limit.
+    if (!isCheckoutOrCheckOnly) {
+      const [incResult] = await db.query(
+        `UPDATE coupons
+         SET used_count = GREATEST(COALESCE(used_count, 0), ?) + 1,
+             updated_at = NOW()
+         WHERE id = ?
+           AND (? IS NULL OR GREATEST(COALESCE(used_count, 0), ?) < ?)`,
+        [recordedUsagesCount, coupon.id, maxUsesLimit, recordedUsagesCount, maxUsesLimit]
+      );
+      if (incResult.affectedRows === 0 && maxUsesLimit !== null) {
+        return {
+          valid: false,
+          message: `This coupon has reached its maximum usage limit (${maxUsesLimit}/${maxUsesLimit}).`,
+        };
+      }
+      currentUsedCount = baseUsedCount + 1 + pendingGlobalReservations;
+    }
+
     return {
       valid: true,
       message: 'Coupon applied successfully!',
@@ -532,6 +571,34 @@ class CouponModel {
   }
 
   /**
+   * Release an unredeemed applied coupon count when a user removes the coupon in the UI
+   */
+  static async decrementAppliedCount(code, connection = null) {
+    if (!code || !String(code).trim()) return false;
+    const db = connection || pool;
+    const cleanCode = String(code).trim().toUpperCase();
+
+    const [rows] = await db.query('SELECT id, used_count FROM coupons WHERE code = ? LIMIT 1', [
+      cleanCode,
+    ]);
+    if (rows.length === 0) return false;
+    const coupon = rows[0];
+
+    const [usageRows] = await db.query(
+      'SELECT COUNT(*) AS cnt FROM coupon_usages WHERE coupon_id = ?',
+      [coupon.id]
+    );
+    const recordedCount = parseInt(usageRows[0]?.cnt, 10) || 0;
+    const nextUsedCount = Math.max(recordedCount, (parseInt(coupon.used_count, 10) || 0) - 1, 0);
+
+    await db.query('UPDATE coupons SET used_count = ?, updated_at = NOW() WHERE id = ?', [
+      nextUsedCount,
+      coupon.id,
+    ]);
+    return true;
+  }
+
+  /**
    * Record coupon redemption idempotently and enforce usage limits atomically (supports external DB transaction connection)
    */
   static async recordCouponUsage(couponId, schoolId, subscriptionId, discountAmount, connection = null) {
@@ -564,18 +631,15 @@ class CouponModel {
       'SELECT COUNT(*) AS cnt FROM coupon_usages WHERE coupon_id = ?',
       [couponId]
     );
-    const currentTotalUsed = Math.max(
-      Number(coupon.used_count) || 0,
-      parseInt(totalRows[0]?.cnt, 10) || 0
-    );
+    const recordedUsagesCount = parseInt(totalRows[0]?.cnt, 10) || 0;
     const maxUsesLimit =
       coupon.max_uses !== null && coupon.max_uses !== undefined && Number(coupon.max_uses) > 0
         ? Number(coupon.max_uses)
         : null;
 
-    if (maxUsesLimit !== null && currentTotalUsed >= maxUsesLimit) {
+    if (maxUsesLimit !== null && recordedUsagesCount >= maxUsesLimit) {
       const err = new Error(
-        `Coupon "${coupon.code}" has reached its maximum usage limit (${currentTotalUsed}/${maxUsesLimit}).`
+        `Coupon "${coupon.code}" has reached its maximum usage limit (${recordedUsagesCount}/${maxUsesLimit}).`
       );
       err.statusCode = 400;
       err.code = 'COUPON_LIMIT_EXCEEDED';
@@ -603,7 +667,10 @@ class CouponModel {
     );
     await db.query(
       `UPDATE coupons c
-       SET c.used_count = GREATEST(c.used_count + 1, (SELECT COUNT(*) FROM coupon_usages cu WHERE cu.coupon_id = c.id)),
+       SET c.used_count = GREATEST(
+             COALESCE(c.used_count, 0),
+             (SELECT COUNT(*) FROM coupon_usages cu WHERE cu.coupon_id = c.id)
+           ),
            c.updated_at = NOW()
        WHERE c.id = ?`,
       [couponId]

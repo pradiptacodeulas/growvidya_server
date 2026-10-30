@@ -364,18 +364,32 @@ class CouponController {
    */
   static async validateCoupon(req, res, next) {
     try {
-      const { code, order_amount, orderAmount, amount, school_id, schoolId } = req.body;
+      const { code, order_amount, orderAmount, amount, school_id, schoolId, check_only, checkOnly } = req.body;
       const targetAmount =
         order_amount !== undefined ? order_amount : orderAmount !== undefined ? orderAmount : amount;
       const targetSchoolId =
         school_id || schoolId || req.user?.school_id || req.user?.schoolId || null;
 
-      const result = await CouponModel.validateCoupon(code, targetAmount, targetSchoolId);
+      const result = await CouponModel.validateCoupon(code, targetAmount, targetSchoolId, {
+        checkOnly: Boolean(check_only || checkOnly),
+      });
       if (!result.valid) {
         return ApiResponse.badRequest(res, result.message);
       }
 
       return ApiResponse.success(res, result.message, result.coupon);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async removeCoupon(req, res, next) {
+    try {
+      const { code } = req.body;
+      if (code && String(code).trim()) {
+        await CouponModel.decrementAppliedCount(code);
+      }
+      return ApiResponse.success(res, 'Coupon removed.');
     } catch (error) {
       next(error);
     }

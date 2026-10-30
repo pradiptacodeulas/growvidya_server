@@ -5,6 +5,7 @@ const couponAuthMiddleware = require('../middlewares/couponAuth.middleware');
 
 // Validation route (Public / Accessible during checkout & onboarding)
 router.post('/validate', CouponController.validateCoupon);
+router.post('/remove', CouponController.removeCoupon);
 
 // Protected routes (Requires authentication)
 router.use(couponAuthMiddleware);

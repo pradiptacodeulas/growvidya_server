@@ -518,12 +518,16 @@ class SaasController {
    */
   static async validateCoupon(req, res, next) {
     try {
-      const { code, amount, plan_amount, storage_amount, email, phone } = req.body;
+      const { code, amount, plan_amount, storage_amount, email, phone, check_only, checkOnly } = req.body;
       if (!code || !String(code).trim()) {
         return ApiResponse.error(res, 'Coupon code is required.', null, 400);
       }
 
-      const options = { email: email || null, phone: phone || null };
+      const options = {
+        email: email || null,
+        phone: phone || null,
+        checkOnly: Boolean(check_only || checkOnly),
+      };
       if (plan_amount !== undefined) options.planAmount = parseFloat(plan_amount) || 0;
       if (storage_amount !== undefined) options.storageAmount = parseFloat(storage_amount) || 0;
 
@@ -533,6 +537,22 @@ class SaasController {
       }
 
       return ApiResponse.success(res, result.message, result.coupon);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/v1/saas/remove-coupon
+   * Releases an unredeemed applied coupon count when removed by the user before checkout
+   */
+  static async removeCoupon(req, res, next) {
+    try {
+      const { code } = req.body;
+      if (code && String(code).trim()) {
+        await CouponModel.decrementAppliedCount(code);
+      }
+      return ApiResponse.success(res, 'Coupon removed.');
     } catch (error) {
       next(error);
     }

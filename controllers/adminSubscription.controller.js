@@ -595,13 +595,13 @@ class AdminSubscriptionController {
   static async validateCoupon(req, res, next) {
     try {
       const schoolId = req.user?.school_id || req.user?.schoolId;
-      const { code, amount, plan_amount, storage_amount } = req.body;
+      const { code, amount, plan_amount, storage_amount, check_only, checkOnly } = req.body;
       if (!code || !String(code).trim()) {
         return ApiResponse.error(res, 'Coupon code is required.', null, 400);
       }
 
       const totalAmt = parseFloat(amount) || 0;
-      const options = {};
+      const options = { checkOnly: Boolean(check_only || checkOnly) };
       if (plan_amount !== undefined) options.planAmount = parseFloat(plan_amount) || 0;
       if (storage_amount !== undefined) options.storageAmount = parseFloat(storage_amount) || 0;
 
@@ -610,6 +610,18 @@ class AdminSubscriptionController {
         return ApiResponse.error(res, result.message, null, 400);
       }
       return ApiResponse.success(res, result.message, result.coupon);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async removeCoupon(req, res, next) {
+    try {
+      const { code } = req.body;
+      if (code && String(code).trim()) {
+        await CouponModel.decrementAppliedCount(code);
+      }
+      return ApiResponse.success(res, 'Coupon removed.');
     } catch (error) {
       next(error);
     }

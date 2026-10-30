@@ -25,6 +25,7 @@ router.post('/verify-addon-payment', billingAdminGuard, AdminSubscriptionControl
 router.post('/purchase-addons', billingAdminGuard, AdminSubscriptionController.purchaseAddons);
 router.post('/record-payment-failure', billingAdminGuard, AdminSubscriptionController.recordPaymentFailure);
 router.post('/validate-coupon', billingAdminGuard, AdminSubscriptionController.validateCoupon);
+router.post('/remove-coupon', billingAdminGuard, AdminSubscriptionController.removeCoupon);
 router.post('/select-plan', billingAdminGuard, AdminSubscriptionController.selectPlan);
 router.post('/upgrade', billingAdminGuard, AdminSubscriptionController.upgradeSubscription);
 

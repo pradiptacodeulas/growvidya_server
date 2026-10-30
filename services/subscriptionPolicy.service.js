@@ -503,6 +503,7 @@ class SubscriptionPolicyService {
         phone,
         connection: db,
         forUpdate: forUpdateCoupon,
+        isCheckoutVerification: true,
       });
       if (!couponValidation.valid) {
         throw createPolicyError(couponValidation.message, 'INVALID_COUPON', 400);
