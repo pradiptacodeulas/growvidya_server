@@ -486,13 +486,18 @@ class SubscriptionPolicyService {
     const addonsAmount = Math.round((storageAmount + machinesAmount + rfidAmount + notificationsAmount) * 100) / 100;
     const subtotalAmount = Math.round((planAmount + addonsAmount) * 100) / 100;
 
-    // 5. Scoped Coupon Validation (protects physical hardware & SMS margins!)
+    // 5. Scoped Coupon Validation (protects physical hardware & SMS margins, and tracks coupon usage even when starting trial!)
     let couponInfo = null;
     let discountAmount = 0;
+    let payableDiscountAmount = 0;
 
     if (coupon_code && String(coupon_code).trim()) {
-      const couponValidation = await CouponModel.validateCoupon(coupon_code, subtotalAmount, school_id, {
-        planAmount,
+      const catalogPlanPrice = plan ? Math.round((parseFloat(plan.price) || 0) * 100) / 100 : 0;
+      const validationPlanAmount = planAmount > 0 ? planAmount : catalogPlanPrice;
+      const validationSubtotal = Math.round((validationPlanAmount + addonsAmount) * 100) / 100;
+
+      const couponValidation = await CouponModel.validateCoupon(coupon_code, validationSubtotal, school_id, {
+        planAmount: validationPlanAmount,
         storageAmount,
         email,
         phone,
@@ -504,11 +509,24 @@ class SubscriptionPolicyService {
       }
       couponInfo = couponValidation.coupon;
       discountAmount = parseFloat(couponValidation.coupon.discountAmount) || 0;
+
+      if (isTrial && planAmount === 0) {
+        const scope = String(couponInfo.applicableScope || couponInfo.applicable_scope || 'plan_only').toLowerCase();
+        if (scope === 'all') {
+          payableDiscountAmount = Math.min(addonsAmount, discountAmount);
+        } else if (scope === 'software_and_storage') {
+          payableDiscountAmount = Math.min(storageAmount, discountAmount);
+        } else {
+          payableDiscountAmount = 0;
+        }
+      } else {
+        payableDiscountAmount = discountAmount;
+      }
     }
 
     // Net software plan amount after software-scoped discount (never negative)
-    const netPlanAmount = Math.max(0, Math.round((planAmount - Math.min(planAmount, discountAmount)) * 100) / 100);
-    const grandTotal = Math.max(0, Math.round((subtotalAmount - discountAmount) * 100) / 100);
+    const netPlanAmount = Math.max(0, Math.round((planAmount - Math.min(planAmount, payableDiscountAmount)) * 100) / 100);
+    const grandTotal = Math.max(0, Math.round((subtotalAmount - payableDiscountAmount) * 100) / 100);
 
     return {
       planAmount,
