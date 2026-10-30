@@ -996,8 +996,206 @@ class AcademicModel {
   }
 
   // ==================== PERIODS ====================
+  static parsePeriodTimeToSeconds(timeVal) {
+    if (!timeVal) return null;
+    const match = String(timeVal).trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+    if (!match) return null;
+    const hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    const seconds = Number(match[3] || 0);
+    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59 || seconds < 0 || seconds > 59) {
+      return null;
+    }
+    return hours * 3600 + minutes * 60 + seconds;
+  }
+
+  static formatPeriodTime12h(timeVal) {
+    if (!timeVal) return '';
+    const match = String(timeVal).trim().match(/^(\d{1,2}):(\d{2})/);
+    if (!match) return String(timeVal);
+    let hours = Number(match[1]);
+    const minutes = match[2];
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12 || 12;
+    return `${String(hours).padStart(2, '0')}:${minutes} ${ampm}`;
+  }
+
+  static async validatePeriodData(schoolId, { id = null, branch_id = null, shift_id = null, period_name, start_time = null, end_time = null }) {
+    const resolvedBranchId = branch_id ? Number(branch_id) : null;
+    const resolvedShiftId = shift_id ? Number(shift_id) : null;
+    const trimmedName = period_name ? String(period_name).trim() : '';
+
+    if (!resolvedShiftId) {
+      const err = new Error('Please select a Shift.');
+      err.statusCode = 400;
+      throw err;
+    }
+    if (!trimmedName) {
+      const err = new Error('Please enter Period Name.');
+      err.statusCode = 400;
+      throw err;
+    }
+    if (!start_time) {
+      const err = new Error('Please select Start Time.');
+      err.statusCode = 400;
+      throw err;
+    }
+    if (!end_time) {
+      const err = new Error('Please select End Time.');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const pStart = AcademicModel.parsePeriodTimeToSeconds(start_time);
+    const pEnd = AcademicModel.parsePeriodTimeToSeconds(end_time);
+    if (pStart === null || pEnd === null) {
+      const err = new Error('Invalid start time or end time format.');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    let shiftSql = `SELECT id, branch_id, shift_name, start_time, end_time, status FROM shift_master WHERE id = ? AND school_id = ? AND (status != 4 OR status IS NULL)`;
+    const shiftParams = [resolvedShiftId, schoolId];
+    if (resolvedBranchId) {
+      shiftSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      shiftParams.push(resolvedBranchId);
+    }
+    shiftSql += ` LIMIT 1`;
+    const [shiftRows] = await pool.query(shiftSql, shiftParams);
+    const shiftRecord = shiftRows[0] || null;
+
+    if (!shiftRecord) {
+      const err = new Error('Selected shift was not found.');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const shiftLabel = String(shiftRecord.shift_name || '').trim() || 'selected shift';
+    const sStart = AcademicModel.parsePeriodTimeToSeconds(shiftRecord.start_time);
+    const sEnd = AcademicModel.parsePeriodTimeToSeconds(shiftRecord.end_time);
+    const DAY_SECONDS = 24 * 3600;
+    const isOvernightShift = sStart !== null && sEnd !== null && sEnd <= sStart;
+
+    let normPStart = pStart;
+    let normPEnd = pEnd;
+
+    if (sStart !== null && sEnd !== null) {
+      if (!isOvernightShift) {
+        if (pEnd <= pStart) {
+          const err = new Error('End time must be after start time.');
+          err.statusCode = 400;
+          throw err;
+        }
+        if (pStart < sStart) {
+          const err = new Error(
+            `Start time (${AcademicModel.formatPeriodTime12h(start_time)}) cannot be earlier than ${shiftLabel} start time (${AcademicModel.formatPeriodTime12h(shiftRecord.start_time)}).`
+          );
+          err.statusCode = 400;
+          throw err;
+        }
+        if (pEnd > sEnd) {
+          const err = new Error(
+            `End time (${AcademicModel.formatPeriodTime12h(end_time)}) cannot exceed ${shiftLabel} end time (${AcademicModel.formatPeriodTime12h(shiftRecord.end_time)}).`
+          );
+          err.statusCode = 400;
+          throw err;
+        }
+      } else {
+        const windowStart = sStart;
+        const windowEnd = sEnd + DAY_SECONDS;
+        normPStart = pStart < sStart ? pStart + DAY_SECONDS : pStart;
+        normPEnd = pEnd <= pStart ? pEnd + DAY_SECONDS : (pStart < sStart ? pEnd + DAY_SECONDS : pEnd);
+        if (normPEnd <= normPStart) {
+          const err = new Error('End time must be after start time.');
+          err.statusCode = 400;
+          throw err;
+        }
+        if (normPStart < windowStart || normPEnd > windowEnd) {
+          const err = new Error(
+            `Selected time (${AcademicModel.formatPeriodTime12h(start_time)} - ${AcademicModel.formatPeriodTime12h(end_time)}) must be within ${shiftLabel} timing (${AcademicModel.formatPeriodTime12h(shiftRecord.start_time)} - ${AcademicModel.formatPeriodTime12h(shiftRecord.end_time)}).`
+          );
+          err.statusCode = 400;
+          throw err;
+        }
+      }
+    } else if (pEnd <= pStart) {
+      const err = new Error('End time must be after start time.');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const effectiveBranchId = resolvedBranchId || (shiftRecord.branch_id ? Number(shiftRecord.branch_id) : null);
+
+    // 1. Check duplicate period name within the same shift
+    let dupSql = `SELECT id FROM period_master WHERE school_id = ? AND shift_id = ? AND LOWER(TRIM(period_name)) = LOWER(TRIM(?)) AND (status != 4 OR status IS NULL)`;
+    const dupParams = [schoolId, resolvedShiftId, trimmedName];
+    if (id) {
+      dupSql += ` AND id != ?`;
+      dupParams.push(id);
+    }
+    if (effectiveBranchId) {
+      dupSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      dupParams.push(effectiveBranchId);
+    }
+    dupSql += ` LIMIT 1`;
+    const [existingName] = await pool.query(dupSql, dupParams);
+    if (existingName && existingName.length > 0) {
+      const err = new Error(`A period named "${trimmedName}" already exists under ${shiftLabel}.`);
+      err.statusCode = 400;
+      throw err;
+    }
+
+    // 2. Check duplicate or overlapping period timings within the same shift
+    let overlapSql = `SELECT id, period_name, start_time, end_time FROM period_master WHERE school_id = ? AND shift_id = ? AND (status != 4 OR status IS NULL)`;
+    const overlapParams = [schoolId, resolvedShiftId];
+    if (id) {
+      overlapSql += ` AND id != ?`;
+      overlapParams.push(id);
+    }
+    if (effectiveBranchId) {
+      overlapSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      overlapParams.push(effectiveBranchId);
+    }
+    const [existingPeriods] = await pool.query(overlapSql, overlapParams);
+
+    for (const ep of existingPeriods) {
+      const eStart = AcademicModel.parsePeriodTimeToSeconds(ep.start_time);
+      const eEnd = AcademicModel.parsePeriodTimeToSeconds(ep.end_time);
+      if (eStart === null || eEnd === null) continue;
+
+      let normEStart = eStart;
+      let normEEnd = eEnd;
+      if (isOvernightShift) {
+        normEStart = eStart < sStart ? eStart + DAY_SECONDS : eStart;
+        normEEnd = eEnd <= eStart ? eEnd + DAY_SECONDS : (eStart < sStart ? eEnd + DAY_SECONDS : eEnd);
+      }
+
+      if (normPStart === normEStart && normPEnd === normEEnd) {
+        const err = new Error(
+          `The time slot ${AcademicModel.formatPeriodTime12h(ep.start_time)} - ${AcademicModel.formatPeriodTime12h(ep.end_time)} is already assigned to "${ep.period_name}" under ${shiftLabel}.`
+        );
+        err.statusCode = 400;
+        throw err;
+      }
+
+      if (normPStart < normEEnd && normPEnd > normEStart) {
+        const err = new Error(
+          `Selected time (${AcademicModel.formatPeriodTime12h(start_time)} - ${AcademicModel.formatPeriodTime12h(end_time)}) overlaps with existing period "${ep.period_name}" (${AcademicModel.formatPeriodTime12h(ep.start_time)} - ${AcademicModel.formatPeriodTime12h(ep.end_time)}) under ${shiftLabel}.`
+        );
+        err.statusCode = 400;
+        throw err;
+      }
+    }
+
+    return {
+      effectiveBranchId,
+      resolvedShiftId,
+      trimmedName,
+    };
+  }
+
   static async getPeriods(schoolId, branchId = null) {
-    let sql = `SELECT p.*, bm.branch_name, bm.branch_code, s.shift_name 
+    let sql = `SELECT p.*, bm.branch_name, bm.branch_code, s.shift_name, s.start_time AS shift_start_time, s.end_time AS shift_end_time 
        FROM period_master p 
        LEFT JOIN branch_master bm ON p.branch_id = bm.id 
        LEFT JOIN shift_master s ON p.shift_id = s.id 
@@ -1014,7 +1212,7 @@ class AcademicModel {
 
   static async getPeriodById(id, schoolId, branchId = null) {
     try {
-      let sql = `SELECT p.*, bm.branch_name, bm.branch_code, s.shift_name 
+      let sql = `SELECT p.*, bm.branch_name, bm.branch_code, s.shift_name, s.start_time AS shift_start_time, s.end_time AS shift_end_time 
          FROM period_master p 
          LEFT JOIN branch_master bm ON p.branch_id = bm.id 
          LEFT JOIN shift_master s ON p.shift_id = s.id 
@@ -1034,27 +1232,17 @@ class AcademicModel {
   }
 
   static async createPeriod(schoolId, { branch_id = null, shift_id = null, period_name, start_time = null, end_time = null, status = 1 }) {
-    const resolvedBranchId = branch_id ? Number(branch_id) : null;
-
-    if (period_name && String(period_name).trim()) {
-      let dupSql = `SELECT id FROM period_master WHERE school_id = ? AND LOWER(TRIM(period_name)) = LOWER(TRIM(?)) AND (status != 4 OR status IS NULL)`;
-      const dupParams = [schoolId, String(period_name).trim()];
-      if (resolvedBranchId) {
-        dupSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
-        dupParams.push(resolvedBranchId);
-      }
-      dupSql += ` LIMIT 1`;
-      const [existing] = await pool.query(dupSql, dupParams);
-      if (existing && existing.length > 0) {
-        const err = new Error(`A period named "${period_name}" already exists in this branch.`);
-        err.statusCode = 400;
-        throw err;
-      }
-    }
+    const { effectiveBranchId, resolvedShiftId, trimmedName } = await AcademicModel.validatePeriodData(schoolId, {
+      branch_id,
+      shift_id,
+      period_name,
+      start_time,
+      end_time,
+    });
 
     const [result] = await pool.query(
       `INSERT INTO period_master (school_id, branch_id, shift_id, period_name, start_time, end_time, status) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [schoolId, resolvedBranchId, shift_id ? Number(shift_id) : null, period_name, start_time, end_time, Number(status)]
+      [schoolId, effectiveBranchId, resolvedShiftId, trimmedName, start_time, end_time, Number(status)]
     );
     return result.insertId;
   }
@@ -1062,24 +1250,17 @@ class AcademicModel {
   static async updatePeriod(id, schoolId, { branch_id, shift_id = null, period_name, start_time, end_time, status }, branchId = null) {
     const resolvedBranchId = branch_id !== undefined ? (branch_id ? Number(branch_id) : null) : (branchId ? Number(branchId) : null);
 
-    if (period_name && String(period_name).trim()) {
-      let dupSql = `SELECT id FROM period_master WHERE school_id = ? AND LOWER(TRIM(period_name)) = LOWER(TRIM(?)) AND id != ? AND (status != 4 OR status IS NULL)`;
-      const dupParams = [schoolId, String(period_name).trim(), id];
-      if (resolvedBranchId) {
-        dupSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
-        dupParams.push(resolvedBranchId);
-      }
-      dupSql += ` LIMIT 1`;
-      const [existing] = await pool.query(dupSql, dupParams);
-      if (existing && existing.length > 0) {
-        const err = new Error(`Another period named "${period_name}" already exists in this branch.`);
-        err.statusCode = 400;
-        throw err;
-      }
-    }
+    const { effectiveBranchId, resolvedShiftId, trimmedName } = await AcademicModel.validatePeriodData(schoolId, {
+      id,
+      branch_id: resolvedBranchId,
+      shift_id,
+      period_name,
+      start_time,
+      end_time,
+    });
 
     let sql = `UPDATE period_master SET shift_id = ?, period_name = ?, start_time = ?, end_time = ?, status = ?, branch_id = COALESCE(?, branch_id) WHERE id = ? AND school_id = ?`;
-    const params = [shift_id ? Number(shift_id) : null, period_name, start_time, end_time, Number(status), resolvedBranchId, id, schoolId];
+    const params = [resolvedShiftId, trimmedName, start_time, end_time, Number(status), effectiveBranchId, id, schoolId];
     if (branchId) {
       sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
       params.push(Number(branchId));
