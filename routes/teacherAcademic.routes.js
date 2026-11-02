@@ -49,6 +49,10 @@ router.put('/assignments/:id', TeacherAcademicController.updateAssignment);
 router.delete('/assignments/:id', TeacherAcademicController.deleteAssignment);
 router.post('/assignments/:id/publish', TeacherAcademicController.publishAssignment);
 router.get('/assignments/:id/questions', TeacherAcademicController.getAssignmentQuestions);
+router.get('/assignments/:id/submissions', TeacherAcademicController.getAssignmentSubmissions);
+router.get('/assignments/:id/submissions/:studentId', TeacherAcademicController.getStudentAssignmentSubmissionDetail);
+router.get('/assignments/student-performance/:studentId', TeacherAcademicController.getStudentPerformance);
+router.get('/students/:studentId/performance', TeacherAcademicController.getStudentPerformance);
 router.get('/assignment-types', TeacherAcademicController.getAssignmentTypes);
 
 // Study Materials

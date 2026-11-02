@@ -2756,7 +2756,7 @@ class AcademicModel {
 
         const dataSql = `
           SELECT a.*, at.type_name, cm.class_name, sec.section_name, sm.subject_name,
-                 (SELECT COUNT(*) FROM assignment_questions aq WHERE aq.assignment_id = a.id AND aq.school_id = a.school_id AND (aq.status != 4 OR aq.status IS NULL)) AS question_count
+                 (SELECT COUNT(*) FROM assignment_questions aq WHERE aq.assignment_id = a.id AND aq.school_id = a.school_id AND (aq.status != 4 OR aq.status IS NULL)) AS question_count, (SELECT COUNT(*) FROM student_assignment_attempts saa WHERE saa.assignment_id = a.id AND (saa.status != 4 OR saa.status IS NULL)) AS submitted_count, (SELECT COUNT(*) FROM student_master st WHERE st.school_id = a.school_id AND st.class = a.class_id AND (a.section_id IS NULL OR a.section_id = 0 OR st.section = a.section_id) AND (a.branch_id IS NULL OR st.branch_id = a.branch_id OR st.branch_id IS NULL) AND st.status != 4) AS total_students, (SELECT ROUND(AVG(saa.score_percentage), 2) FROM student_assignment_attempts saa WHERE saa.assignment_id = a.id AND (saa.status != 4 OR saa.status IS NULL)) AS avg_score_percentage
           ${baseSql}
           ORDER BY a.id DESC
           LIMIT ? OFFSET ?
@@ -2776,7 +2776,7 @@ class AcademicModel {
 
       const sql = `
         SELECT a.*, at.type_name, cm.class_name, sec.section_name, sm.subject_name,
-               (SELECT COUNT(*) FROM assignment_questions aq WHERE aq.assignment_id = a.id AND aq.school_id = a.school_id AND (aq.status != 4 OR aq.status IS NULL)) AS question_count
+               (SELECT COUNT(*) FROM assignment_questions aq WHERE aq.assignment_id = a.id AND aq.school_id = a.school_id AND (aq.status != 4 OR aq.status IS NULL)) AS question_count, (SELECT COUNT(*) FROM student_assignment_attempts saa WHERE saa.assignment_id = a.id AND (saa.status != 4 OR saa.status IS NULL)) AS submitted_count, (SELECT COUNT(*) FROM student_master st WHERE st.school_id = a.school_id AND st.class = a.class_id AND (a.section_id IS NULL OR a.section_id = 0 OR st.section = a.section_id) AND (a.branch_id IS NULL OR st.branch_id = a.branch_id OR st.branch_id IS NULL) AND st.status != 4) AS total_students, (SELECT ROUND(AVG(saa.score_percentage), 2) FROM student_assignment_attempts saa WHERE saa.assignment_id = a.id AND (saa.status != 4 OR saa.status IS NULL)) AS avg_score_percentage
         ${baseSql}
         ORDER BY a.id DESC
       `;
@@ -2792,7 +2792,7 @@ class AcademicModel {
     try {
       const cleanBranchId = AcademicModel.parseBranchId(branchId);
       let sql = `SELECT a.*, at.type_name, cm.class_name, sec.section_name, sm.subject_name,
-                (SELECT COUNT(*) FROM assignment_questions aq WHERE aq.assignment_id = a.id AND aq.school_id = a.school_id AND (aq.status != 4 OR aq.status IS NULL)) AS question_count
+                (SELECT COUNT(*) FROM assignment_questions aq WHERE aq.assignment_id = a.id AND aq.school_id = a.school_id AND (aq.status != 4 OR aq.status IS NULL)) AS question_count, (SELECT COUNT(*) FROM student_assignment_attempts saa WHERE saa.assignment_id = a.id AND (saa.status != 4 OR saa.status IS NULL)) AS submitted_count, (SELECT COUNT(*) FROM student_master st WHERE st.school_id = a.school_id AND st.class = a.class_id AND (a.section_id IS NULL OR a.section_id = 0 OR st.section = a.section_id) AND (a.branch_id IS NULL OR st.branch_id = a.branch_id OR st.branch_id IS NULL) AND st.status != 4) AS total_students, (SELECT ROUND(AVG(saa.score_percentage), 2) FROM student_assignment_attempts saa WHERE saa.assignment_id = a.id AND (saa.status != 4 OR saa.status IS NULL)) AS avg_score_percentage
          FROM assignments a
          LEFT JOIN assignment_types at ON at.id = a.assignment_type_id
          LEFT JOIN class_master cm ON cm.id = a.class_id
@@ -3143,6 +3143,595 @@ class AcademicModel {
       }
     }
     return result.affectedRows > 0;
+  }
+
+  static isAssignmentDeadlineExpired(dueDate) {
+    if (!dueDate) return false;
+    const now = new Date();
+    const dueStr =
+      dueDate instanceof Date
+        ? dueDate.toISOString().split('T')[0]
+        : String(dueDate).trim();
+    let deadline;
+    if (dueStr.includes(':') || dueDate instanceof Date) {
+      deadline = new Date(dueDate);
+      if (!dueStr.includes(':')) {
+        deadline.setHours(23, 59, 59, 999);
+      }
+    } else {
+      deadline = new Date(`${dueStr}T23:59:59.999`);
+    }
+    if (isNaN(deadline.getTime())) return false;
+    return now > deadline;
+  }
+
+  static async getAssignmentSubmissions(assignmentId, schoolId, { branchId = null, teacherId = null } = {}) {
+    try {
+      const cleanBranchId = AcademicModel.parseBranchId(branchId);
+      const assignment = await AcademicModel.getAssignmentById(assignmentId, schoolId, cleanBranchId, teacherId);
+      if (!assignment) return null;
+
+      if (teacherId) {
+        const [tcaSubRows] = await pool.query(
+          `SELECT subject_id FROM teacher_class_assign WHERE teacher_id = ? AND school_id = ? AND class_id = ? AND status = 1`,
+          [teacherId, schoolId, assignment.class_id]
+        );
+        const [tmRows] = await pool.query(
+          `SELECT class, subject FROM teacher_master WHERE id = ? AND school_id = ? AND status != 4 LIMIT 1`,
+          [teacherId, schoolId]
+        );
+        const isPrimaryClassTeacher = Number(tmRows?.[0]?.class) === Number(assignment.class_id);
+        const hasUnrestrictedClassRow = (tcaSubRows || []).some((r) => !r.subject_id || Number(r.subject_id) === 0);
+        const assignedSubjectIds = (tcaSubRows || [])
+          .map((r) => Number(r.subject_id))
+          .filter((id) => id > 0);
+        if (tmRows?.[0]?.subject && Number(tmRows[0].subject) > 0) {
+          assignedSubjectIds.push(Number(tmRows[0].subject));
+        }
+
+        if (
+          assignedSubjectIds.length > 0 &&
+          !hasUnrestrictedClassRow &&
+          !isPrimaryClassTeacher &&
+          assignment.subject_id &&
+          !assignedSubjectIds.includes(Number(assignment.subject_id))
+        ) {
+          return null;
+        }
+      }
+
+      const effectiveBranchId = cleanBranchId || AcademicModel.parseBranchId(assignment.branch_id);
+      const sectionFilter = assignment.section_id && Number(assignment.section_id) > 0 ? Number(assignment.section_id) : null;
+
+      const [studentRows] = await pool.query(
+        `SELECT
+           s.id AS student_id,
+           s.admission_number,
+           s.roll_number,
+           s.first_name,
+           s.last_name,
+           CONCAT(TRIM(IFNULL(s.first_name, '')), ' ', TRIM(IFNULL(s.last_name, ''))) AS student_name,
+           s.picture,
+           s.email_address,
+           s.primary_contact_number,
+           s.class AS class_id,
+           cm.class_name,
+           s.section AS section_id,
+           sec.section_name,
+           att.id AS attempt_id,
+           att.total_questions AS attempt_total_questions,
+           att.correct_answers,
+           att.score_percentage,
+           att.attempted_at
+         FROM student_master s
+         LEFT JOIN class_master cm ON cm.id = s.class
+         LEFT JOIN section_master sec ON sec.id = s.section
+         LEFT JOIN student_assignment_attempts att
+           ON att.assignment_id = ? AND att.student_id = s.id AND (att.status != 4 OR att.status IS NULL)
+         WHERE s.school_id = ?
+           AND s.status != 4
+           AND (
+             (
+               s.class = ?
+               AND (? IS NULL OR s.section = ?)
+               AND (? IS NULL OR s.branch_id = ? OR s.branch_id IS NULL)
+             )
+             OR att.id IS NOT NULL
+           )
+         ORDER BY
+           CASE WHEN att.id IS NOT NULL THEN 0 ELSE 1 END ASC,
+           att.score_percentage DESC,
+           CAST(s.roll_number AS UNSIGNED) ASC,
+           s.first_name ASC`,
+        [
+          assignment.id,
+          schoolId,
+          assignment.class_id,
+          sectionFilter,
+          sectionFilter,
+          effectiveBranchId,
+          effectiveBranchId,
+        ]
+      );
+
+      const isExpired = AcademicModel.isAssignmentDeadlineExpired(assignment.due_date);
+      const totalQuestionsCount = Number(assignment.question_count) || 0;
+
+      let submittedCount = 0;
+      let pendingCount = 0;
+      let missedCount = 0;
+      const scores = [];
+
+      const students = (studentRows || []).map((row) => {
+        const isSubmitted = row.attempt_id != null;
+        let submissionStatus = 'Pending';
+        if (isSubmitted) {
+          submissionStatus = 'Submitted';
+          submittedCount++;
+          if (row.score_percentage != null) {
+            scores.push(Number(row.score_percentage));
+          }
+        } else if (isExpired) {
+          submissionStatus = 'Missed';
+          missedCount++;
+        } else {
+          submissionStatus = 'Pending';
+          pendingCount++;
+        }
+
+        return {
+          student_id: row.student_id,
+          admission_number: row.admission_number,
+          roll_number: row.roll_number,
+          first_name: row.first_name,
+          last_name: row.last_name,
+          student_name: row.student_name,
+          picture: row.picture,
+          email_address: row.email_address,
+          primary_contact_number: row.primary_contact_number,
+          class_id: row.class_id,
+          class_name: row.class_name,
+          section_id: row.section_id,
+          section_name: row.section_name,
+          attempt_id: row.attempt_id || null,
+          is_submitted: isSubmitted,
+          submission_status: submissionStatus,
+          status: isSubmitted ? 'Attempted' : isExpired ? 'Expired' : 'Pending',
+          total_questions: isSubmitted ? Number(row.attempt_total_questions || totalQuestionsCount) : totalQuestionsCount,
+          correct_answers: isSubmitted ? Number(row.correct_answers || 0) : null,
+          score_percentage: isSubmitted && row.score_percentage != null ? Number(row.score_percentage) : null,
+          attempted_at: row.attempted_at || null,
+        };
+      });
+
+      const totalStudents = students.length;
+      const completionRate = totalStudents > 0 ? Number(((submittedCount / totalStudents) * 100).toFixed(2)) : 0;
+      const averageScore =
+        scores.length > 0
+          ? Number((scores.reduce((acc, val) => acc + val, 0) / scores.length).toFixed(2))
+          : null;
+      const highestScore = scores.length > 0 ? Number(Math.max(...scores).toFixed(2)) : null;
+      const lowestScore = scores.length > 0 ? Number(Math.min(...scores).toFixed(2)) : null;
+
+      return {
+        assignment: {
+          ...assignment,
+          is_expired: isExpired,
+        },
+        summary: {
+          total_students: totalStudents,
+          submitted_count: submittedCount,
+          pending_count: pendingCount,
+          missed_count: missedCount,
+          completion_rate: completionRate,
+          average_score: averageScore,
+          highest_score: highestScore,
+          lowest_score: lowestScore,
+        },
+        students,
+      };
+    } catch (e) {
+      console.error('Error in getAssignmentSubmissions:', e.message);
+      throw e;
+    }
+  }
+
+  static async getStudentAssignmentSubmissionDetail(assignmentId, studentId, schoolId, { branchId = null, teacherId = null } = {}) {
+    try {
+      const cleanBranchId = AcademicModel.parseBranchId(branchId);
+      const assignment = await AcademicModel.getAssignmentById(assignmentId, schoolId, cleanBranchId, teacherId);
+      if (!assignment) return null;
+
+      const [stuRows] = await pool.query(
+        `SELECT
+           s.id,
+           s.admission_number,
+           s.roll_number,
+           s.first_name,
+           s.last_name,
+           CONCAT(TRIM(IFNULL(s.first_name, '')), ' ', TRIM(IFNULL(s.last_name, ''))) AS full_name,
+           s.picture,
+           s.class AS class_id,
+           cm.class_name,
+           s.section AS section_id,
+           sec.section_name
+         FROM student_master s
+         LEFT JOIN class_master cm ON cm.id = s.class
+         LEFT JOIN section_master sec ON sec.id = s.section
+         WHERE s.id = ? AND s.school_id = ? AND s.status != 4
+         LIMIT 1`,
+        [studentId, schoolId]
+      );
+      const student = stuRows?.[0] || null;
+      if (!student) return null;
+
+      const [attRows] = await pool.query(
+        `SELECT * FROM student_assignment_attempts
+         WHERE assignment_id = ? AND student_id = ? AND (status != 4 OR status IS NULL)
+         ORDER BY id DESC LIMIT 1`,
+        [assignmentId, studentId]
+      );
+      const attempt = attRows?.[0] || null;
+
+      const [questions] = await pool.query(
+        `SELECT id, question, status FROM assignment_questions
+         WHERE assignment_id = ? AND school_id = ? AND (status != 4 OR status IS NULL)
+         ORDER BY id ASC`,
+        [assignmentId, schoolId]
+      );
+
+      if (questions.length > 0) {
+        const questionIds = questions.map((q) => q.id);
+        const [options] = await pool.query(
+          `SELECT id, question_id, answer, is_correct, status
+           FROM assignment_answers
+           WHERE question_id IN (?) AND school_id = ? AND (status != 4 OR status IS NULL)
+           ORDER BY id ASC`,
+          [questionIds, schoolId]
+        );
+
+        const [submissions] = await pool.query(
+          `SELECT question_id, selected_answer_id, is_correct, created_at
+           FROM student_assignment_submissions
+           WHERE assignment_id = ? AND student_id = ?`,
+          [assignmentId, studentId]
+        );
+
+        const subMap = {};
+        (submissions || []).forEach((s) => {
+          subMap[s.question_id] = s;
+        });
+
+        questions.forEach((q) => {
+          const qOpts = (options || []).filter((o) => Number(o.question_id) === Number(q.id));
+          q.options = qOpts;
+          q.answers = qOpts;
+          q.studentSubmission = subMap[q.id] || null;
+        });
+      }
+
+      return {
+        assignment,
+        student,
+        attempt,
+        questions,
+      };
+    } catch (e) {
+      console.error('Error in getStudentAssignmentSubmissionDetail:', e.message);
+      throw e;
+    }
+  }
+
+  static async getStudentPerformance(studentId, schoolId, { branchId = null, teacherId = null } = {}) {
+    try {
+      const cleanBranchId = AcademicModel.parseBranchId(branchId);
+
+      let stuSql = `
+        SELECT
+          s.id,
+          s.school_id,
+          s.branch_id,
+          s.admission_number,
+          s.roll_number,
+          s.first_name,
+          s.last_name,
+          CONCAT(TRIM(IFNULL(s.first_name, '')), ' ', TRIM(IFNULL(s.last_name, ''))) AS full_name,
+          s.picture,
+          s.class AS class_id,
+          cm.class_name,
+          s.section AS section_id,
+          sec.section_name
+        FROM student_master s
+        LEFT JOIN class_master cm ON cm.id = s.class
+        LEFT JOIN section_master sec ON sec.id = s.section
+        WHERE s.id = ? AND s.school_id = ? AND s.status != 4
+      `;
+      const stuParams = [studentId, schoolId];
+      if (cleanBranchId) {
+        stuSql += ` AND (s.branch_id = ? OR s.branch_id IS NULL)`;
+        stuParams.push(cleanBranchId);
+      }
+      stuSql += ` LIMIT 1`;
+
+      const [stuRows] = await pool.query(stuSql, stuParams);
+      const student = stuRows?.[0] || null;
+      if (!student) return null;
+
+      let allowedSubjectIds = null; // null means all subjects for this student's class
+      if (teacherId) {
+        const [tcaRows] = await pool.query(
+          `SELECT class_id, subject_id FROM teacher_class_assign
+           WHERE teacher_id = ? AND school_id = ? AND status = 1`,
+          [teacherId, schoolId]
+        );
+        const [tmRows] = await pool.query(
+          `SELECT class, subject FROM teacher_master
+           WHERE id = ? AND school_id = ? AND status != 4 LIMIT 1`,
+          [teacherId, schoolId]
+        );
+
+        const classMatches = (tcaRows || []).filter((r) => Number(r.class_id) === Number(student.class_id));
+        const isPrimaryClassTeacher = Number(tmRows?.[0]?.class) === Number(student.class_id);
+
+        if ((tcaRows || []).length > 0 && classMatches.length === 0 && !isPrimaryClassTeacher) {
+          return null;
+        }
+
+        const hasFullClassRow = classMatches.some((r) => !r.subject_id || Number(r.subject_id) === 0);
+        const subjectIdsSet = new Set(
+          classMatches.map((r) => Number(r.subject_id)).filter((id) => id > 0)
+        );
+        if (tmRows?.[0]?.subject && Number(tmRows[0].subject) > 0 && isPrimaryClassTeacher) {
+          subjectIdsSet.add(Number(tmRows[0].subject));
+        }
+
+        if (!isPrimaryClassTeacher && !hasFullClassRow && subjectIdsSet.size > 0) {
+          allowedSubjectIds = Array.from(subjectIdsSet);
+        }
+      }
+
+      let asgSql = `
+        SELECT
+          a.id,
+          a.school_id,
+          a.branch_id,
+          a.title,
+          a.assignment_type_id,
+          at.type_name AS assignment_type,
+          a.class_id,
+          cm.class_name,
+          a.section_id,
+          sec.section_name,
+          a.subject_id,
+          sub.subject_name,
+          a.assigned_date,
+          a.due_date,
+          a.is_published,
+          a.created_on,
+          COALESCE(q.total_questions, 0) AS total_questions,
+          att.id AS attempt_id,
+          att.correct_answers,
+          att.score_percentage,
+          att.attempted_at
+        FROM assignments a
+        LEFT JOIN assignment_types at ON a.assignment_type_id = at.id
+        LEFT JOIN class_master cm ON a.class_id = cm.id
+        LEFT JOIN section_master sec ON a.section_id = sec.id
+        LEFT JOIN subject_master sub ON a.subject_id = sub.id
+        LEFT JOIN (
+          SELECT assignment_id, COUNT(*) AS total_questions
+          FROM assignment_questions
+          WHERE status != 4 OR status IS NULL
+          GROUP BY assignment_id
+        ) q ON a.id = q.assignment_id
+        LEFT JOIN student_assignment_attempts att
+          ON (a.id = att.assignment_id AND att.student_id = ? AND (att.status != 4 OR att.status IS NULL))
+        WHERE a.school_id = ?
+          AND (a.status != 4 OR a.status IS NULL)
+          AND a.is_published = 1
+          AND (
+            (
+              a.class_id = ?
+              AND (a.section_id = ? OR a.section_id IS NULL OR a.section_id = 0 OR ? IS NULL)
+            )
+            OR att.id IS NOT NULL
+          )
+      `;
+      const asgParams = [
+        student.id,
+        schoolId,
+        student.class_id,
+        student.section_id,
+        student.section_id,
+      ];
+
+      if (Array.isArray(allowedSubjectIds) && allowedSubjectIds.length > 0) {
+        asgSql += ` AND a.subject_id IN (?)`;
+        asgParams.push(allowedSubjectIds);
+      }
+
+      asgSql += ` ORDER BY a.id DESC`;
+      const [rawAssignments] = await pool.query(asgSql, asgParams);
+
+      let submittedCount = 0;
+      let pendingCount = 0;
+      let missedCount = 0;
+      let totalQuestionsAttempted = 0;
+      let totalCorrectAnswers = 0;
+      const allScores = [];
+      const subjectMap = {};
+      const typeMap = {};
+
+      const evaluatedAssignments = (rawAssignments || []).map((row) => {
+        const isSubmitted = row.attempt_id != null;
+        const isExpired = !isSubmitted && AcademicModel.isAssignmentDeadlineExpired(row.due_date);
+        const submissionStatus = isSubmitted ? 'Submitted' : isExpired ? 'Missed' : 'Pending';
+        const scoreVal = isSubmitted && row.score_percentage != null ? Number(row.score_percentage) : null;
+
+        if (isSubmitted) {
+          submittedCount++;
+          totalQuestionsAttempted += Number(row.total_questions || 0);
+          totalCorrectAnswers += Number(row.correct_answers || 0);
+          if (scoreVal != null) {
+            allScores.push(scoreVal);
+          }
+        } else if (isExpired) {
+          missedCount++;
+        } else {
+          pendingCount++;
+        }
+
+        const subKey = row.subject_id || `sub_${row.subject_name}`;
+        if (!subjectMap[subKey]) {
+          subjectMap[subKey] = {
+            subject_id: row.subject_id,
+            subject_name: row.subject_name || '',
+            total_assigned: 0,
+            submitted_count: 0,
+            pending_count: 0,
+            missed_count: 0,
+            scores: [],
+          };
+        }
+        subjectMap[subKey].total_assigned++;
+        if (isSubmitted) {
+          subjectMap[subKey].submitted_count++;
+          if (scoreVal != null) subjectMap[subKey].scores.push(scoreVal);
+        } else if (isExpired) {
+          subjectMap[subKey].missed_count++;
+        } else {
+          subjectMap[subKey].pending_count++;
+        }
+
+        const typeName = row.assignment_type || '';
+        const typeKey = row.assignment_type_id || `type_${typeName}`;
+        if (!typeMap[typeKey]) {
+          typeMap[typeKey] = {
+            assignment_type_id: row.assignment_type_id,
+            type_name: typeName,
+            total_assigned: 0,
+            submitted_count: 0,
+            pending_count: 0,
+            missed_count: 0,
+            scores: [],
+          };
+        }
+        typeMap[typeKey].total_assigned++;
+        if (isSubmitted) {
+          typeMap[typeKey].submitted_count++;
+          if (scoreVal != null) typeMap[typeKey].scores.push(scoreVal);
+        } else if (isExpired) {
+          typeMap[typeKey].missed_count++;
+        } else {
+          typeMap[typeKey].pending_count++;
+        }
+
+        return {
+          ...row,
+          is_submitted: isSubmitted,
+          is_expired: isExpired,
+          submission_status: submissionStatus,
+          status: isSubmitted ? 'Attempted' : isExpired ? 'Expired' : 'Pending',
+          score_percentage: scoreVal,
+          correct_answers: isSubmitted ? Number(row.correct_answers || 0) : null,
+        };
+      });
+
+      const totalAssigned = evaluatedAssignments.length;
+      const completionRate = totalAssigned > 0 ? Number(((submittedCount / totalAssigned) * 100).toFixed(2)) : 0;
+      const averageScore =
+        allScores.length > 0
+          ? Number((allScores.reduce((a, b) => a + b, 0) / allScores.length).toFixed(2))
+          : null;
+      const highestScore = allScores.length > 0 ? Number(Math.max(...allScores).toFixed(2)) : null;
+      const lowestScore = allScores.length > 0 ? Number(Math.min(...allScores).toFixed(2)) : null;
+
+      const subjectPerformance = Object.values(subjectMap).map((s) => ({
+        subject_id: s.subject_id,
+        subject_name: s.subject_name,
+        total_assigned: s.total_assigned,
+        submitted_count: s.submitted_count,
+        pending_count: s.pending_count,
+        missed_count: s.missed_count,
+        completion_rate:
+          s.total_assigned > 0 ? Number(((s.submitted_count / s.total_assigned) * 100).toFixed(2)) : 0,
+        average_score:
+          s.scores.length > 0
+            ? Number((s.scores.reduce((a, b) => a + b, 0) / s.scores.length).toFixed(2))
+            : null,
+      }));
+
+      const typePerformance = Object.values(typeMap).map((t) => ({
+        assignment_type_id: t.assignment_type_id,
+        type_name: t.type_name,
+        total_assigned: t.total_assigned,
+        submitted_count: t.submitted_count,
+        pending_count: t.pending_count,
+        missed_count: t.missed_count,
+        completion_rate:
+          t.total_assigned > 0 ? Number(((t.submitted_count / t.total_assigned) * 100).toFixed(2)) : 0,
+        average_score:
+          t.scores.length > 0
+            ? Number((t.scores.reduce((a, b) => a + b, 0) / t.scores.length).toFixed(2))
+            : null,
+      }));
+
+      let examResults = [];
+      try {
+        const ParentModel = require('./parent.model');
+        const rawExams = await ParentModel.getChildExamResults(student.id, schoolId);
+        if (Array.isArray(allowedSubjectIds) && allowedSubjectIds.length > 0) {
+          examResults = (rawExams || [])
+            .map((ex) => {
+              const filteredSubjects = (ex.subjects || []).filter((sub) =>
+                allowedSubjectIds.includes(Number(sub.subject_id))
+              );
+              const filteredMarks = (ex.marks || []).filter((m) =>
+                allowedSubjectIds.includes(Number(m.subject_id))
+              );
+              const obtainedMarks = filteredSubjects.reduce((sum, s) => sum + Number(s.obtained || 0), 0);
+              const totalMarks = filteredSubjects.reduce((sum, s) => sum + Number(s.full_marks || 0), 0);
+              const percentage = totalMarks > 0 ? Math.round((obtainedMarks / totalMarks) * 100) : 0;
+              return {
+                ...ex,
+                subjects: filteredSubjects,
+                marks: filteredMarks,
+                obtainedMarks,
+                totalMarks,
+                percentage,
+              };
+            })
+            .filter((ex) => ex.subjects.length > 0);
+        } else {
+          examResults = rawExams || [];
+        }
+      } catch (examErr) {
+        console.error('Error fetching student exam results in getStudentPerformance:', examErr.message);
+      }
+
+      return {
+        student,
+        summary: {
+          total_assigned: totalAssigned,
+          submitted_count: submittedCount,
+          pending_count: pendingCount,
+          missed_count: missedCount,
+          completion_rate: completionRate,
+          average_score: averageScore,
+          highest_score: highestScore,
+          lowest_score: lowestScore,
+          total_questions_attempted: totalQuestionsAttempted,
+          total_correct_answers: totalCorrectAnswers,
+        },
+        subject_performance: subjectPerformance,
+        type_performance: typePerformance,
+        assignments: evaluatedAssignments,
+        exam_results: examResults,
+      };
+    } catch (e) {
+      console.error('Error in getStudentPerformance:', e.message);
+      throw e;
+    }
   }
 
   // ==================== STUDY MATERIALS ====================

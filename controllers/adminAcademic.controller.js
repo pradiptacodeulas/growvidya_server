@@ -1190,6 +1190,45 @@ class AdminAcademicController {
     }
   }
 
+  static async getAssignmentSubmissions(req, res, next) {
+    try {
+      const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const { id } = req.params;
+      const data = await AcademicModel.getAssignmentSubmissions(id, schoolId, { branchId });
+      if (!data) return ApiResponse.error(res, 'Assignment not found', null, 404);
+      return ApiResponse.success(res, 'Assignment submissions fetched successfully', data);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getStudentAssignmentSubmissionDetail(req, res, next) {
+    try {
+      const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const { id, studentId } = req.params;
+      const data = await AcademicModel.getStudentAssignmentSubmissionDetail(id, studentId, schoolId, { branchId });
+      if (!data) return ApiResponse.error(res, 'Submission details not found', null, 404);
+      return ApiResponse.success(res, 'Student submission details fetched successfully', data);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getStudentPerformance(req, res, next) {
+    try {
+      const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const { studentId } = req.params;
+      const data = await AcademicModel.getStudentPerformance(studentId, schoolId, { branchId });
+      if (!data) return ApiResponse.error(res, 'Student performance data not found', null, 404);
+      return ApiResponse.success(res, 'Student performance fetched successfully', data);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // ==================== STUDY MATERIALS & TYPES ====================
   static async getMaterialTypes(req, res, next) {
     try {

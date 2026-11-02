@@ -201,6 +201,10 @@ router.post('/assignment-types/updateAssignmentType/:id', AdminAcademicControlle
 router.get('/assignments', AdminAcademicController.getAssignments);
 router.get('/assignments/:id', AdminAcademicController.getAssignmentById);
 router.get('/assignments/:id/questions', AdminAcademicController.getAssignmentQuestions);
+router.get('/assignments/:id/submissions', AdminAcademicController.getAssignmentSubmissions);
+router.get('/assignments/:id/submissions/:studentId', AdminAcademicController.getStudentAssignmentSubmissionDetail);
+router.get('/assignments/student-performance/:studentId', AdminAcademicController.getStudentPerformance);
+router.get('/students/:studentId/performance', AdminAcademicController.getStudentPerformance);
 router.post('/assignments', AdminAcademicController.createAssignment);
 router.post('/assignment/insertData', AdminAcademicController.createAssignment);
 router.put('/assignments/:id', AdminAcademicController.updateAssignment);

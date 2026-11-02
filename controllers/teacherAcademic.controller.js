@@ -408,6 +408,48 @@ class TeacherAcademicController {
     }
   }
 
+  static async getAssignmentSubmissions(req, res, next) {
+    try {
+      const schoolId = TeacherAcademicController.getSchoolId(req);
+      const teacherId = TeacherAcademicController.getTeacherId(req);
+      const branchId = await TeacherAcademicController.resolveTeacherBranchId(req, schoolId);
+      const { id } = req.params;
+      const data = await AcademicModel.getAssignmentSubmissions(id, schoolId, { branchId, teacherId });
+      if (!data) return ApiResponse.error(res, 'Assignment not found or access denied', null, 404);
+      return ApiResponse.success(res, 'Assignment submissions fetched successfully', data);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getStudentAssignmentSubmissionDetail(req, res, next) {
+    try {
+      const schoolId = TeacherAcademicController.getSchoolId(req);
+      const teacherId = TeacherAcademicController.getTeacherId(req);
+      const branchId = await TeacherAcademicController.resolveTeacherBranchId(req, schoolId);
+      const { id, studentId } = req.params;
+      const data = await AcademicModel.getStudentAssignmentSubmissionDetail(id, studentId, schoolId, { branchId, teacherId });
+      if (!data) return ApiResponse.error(res, 'Submission details not found or access denied', null, 404);
+      return ApiResponse.success(res, 'Student submission details fetched successfully', data);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getStudentPerformance(req, res, next) {
+    try {
+      const schoolId = TeacherAcademicController.getSchoolId(req);
+      const teacherId = TeacherAcademicController.getTeacherId(req);
+      const branchId = await TeacherAcademicController.resolveTeacherBranchId(req, schoolId);
+      const { studentId } = req.params;
+      const data = await AcademicModel.getStudentPerformance(studentId, schoolId, { branchId, teacherId });
+      if (!data) return ApiResponse.error(res, 'Student performance data not found or access denied', null, 404);
+      return ApiResponse.success(res, 'Student performance fetched successfully', data);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // ==================== STUDY MATERIALS ====================
   static async getStudyMaterials(req, res, next) {
     try {
