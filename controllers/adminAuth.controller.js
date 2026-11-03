@@ -7,8 +7,285 @@ const { comparePassword } = require('../utils/password.util');
 const { generateToken } = require('../utils/jwt.util');
 const config = require('../config/app.config');
 const ApiResponse = require('../utils/api.response');
+const PasscodeService = require('../services/passcode.service');
 
 class AdminAuthController {
+  /**
+   * Helper to issue hybrid session cookie & JWT token for Admin / Staff
+   */
+  static async _issueAdminSession(user, res, message = 'Admin authentication successful.') {
+    const adminType = Number(user.admin_type);
+    const isSuperAdmin = adminType === 1;
+    const roleName = isSuperAdmin ? 'Super Admin' : (user.role_name || null);
+    const permissions = isSuperAdmin ? {} : await PermissionModel.getUserPermissionMap(user.role_id);
+    const sub = await SubscriptionModel.getSchoolSubscription(user.school_id);
+
+    if (sub && sub.status === 'pending' && !sub.isTrial) {
+      return ApiResponse.error(
+        res,
+        `Your subscription plan "${sub.plan_name}" is currently awaiting review and approval by the Super Admin. You will be able to log in once your subscription is approved and activated.`,
+        {
+          subscription_id: sub.subscription_id,
+          plan_name: sub.plan_name,
+          status: 'pending',
+          is_pending: true,
+          is_trial: false,
+        },
+        403
+      );
+    }
+
+    if (sub && (sub.status === 'suspended' || sub.liveStatus === 'suspended')) {
+      return ApiResponse.error(
+        res,
+        `Your school subscription for "${sub.plan_name}" has been marked inactive / suspended by the Super Admin. You cannot log in until your account is reactivated.`,
+        {
+          subscription_id: sub.subscription_id,
+          plan_name: sub.plan_name,
+          status: 'suspended',
+          is_suspended: true,
+        },
+        403
+      );
+    }
+
+    const tokenPayload = {
+      userId: user.id,
+      schoolId: user.school_id,
+      branchId: user.branch_id || null,
+      branchName: user.branch_name || null,
+      branchCode: user.branch_code || null,
+      schoolName: user.school_name,
+      schoolLogo: user.school_logo,
+      registrationType: user.registration_type || 'single',
+      email: user.email,
+      roleId: user.role_id,
+      adminType: adminType,
+      isSuperAdmin: Boolean(isSuperAdmin),
+      roleName,
+      portalType: 'AdminPortal',
+    };
+
+    const token = generateToken(tokenPayload);
+
+    const cookieOptions = {
+      httpOnly: true,
+      secure: config.nodeEnv === 'production',
+      sameSite: config.nodeEnv === 'production' ? 'none' : 'lax',
+      maxAge: config.cookie?.maxAge || 30 * 24 * 60 * 60 * 1000,
+      path: '/',
+    };
+
+    const cookieName = config.cookie?.name || 'growvidya_session';
+    res.cookie('growvidya_admin_session', token, cookieOptions);
+    res.cookie(cookieName, token, cookieOptions);
+
+    return ApiResponse.success(res, message, {
+      authType: 'hybrid (session + token)',
+      token,
+      user: {
+        id: user.id,
+        schoolId: user.school_id,
+        schoolName: user.school_name || '',
+        schoolLogo: user.school_logo || null,
+        registrationType: user.registration_type || 'single',
+        schoolFooter: user.school_footer || null,
+        branchId: user.branch_id || null,
+        branch_id: user.branch_id || null,
+        branchName: user.branch_name || null,
+        branchCode: user.branch_code || null,
+        firstName: user.first_name,
+        lastName: user.last_name,
+        email: user.email,
+        phone: user.phone,
+        picture: user.picture,
+        roleId: user.role_id,
+        roleName,
+        adminType: adminType,
+        admin_type: adminType,
+        isSuperAdmin: Boolean(isSuperAdmin),
+        isTrial: Boolean(sub?.isTrial),
+        isExpired: Boolean(sub?.isExpired),
+        subscription: sub,
+        permissions,
+      },
+    });
+  }
+
+  /**
+   * Request 6-digit OTP for School Admin / Staff Login
+   */
+  static async requestOtp(req, res, next) {
+    try {
+      const emailOrIdentifier = req.body.email || req.body.identifier || req.body.phone || req.body.login;
+
+      if (!emailOrIdentifier || !String(emailOrIdentifier).trim()) {
+        return ApiResponse.error(res, 'Email address or phone number is required.', null, 400);
+      }
+
+      const cleanIdent = String(emailOrIdentifier).trim();
+      const user = await AdminUserModel.findByLoginIdentifier(cleanIdent);
+
+      if (!user) {
+        return ApiResponse.error(res, 'Admin account not found with this identifier.', null, 404);
+      }
+
+      if (Number(user.status) !== 1) {
+        return ApiResponse.error(
+          res,
+          'Your account has been deactivated / marked inactive. Please contact your administrator.',
+          null,
+          403
+        );
+      }
+
+      if (user.school_status !== undefined && user.school_status !== null && Number(user.school_status) !== 1) {
+        return ApiResponse.error(
+          res,
+          'Your school account has been marked inactive by the Super Admin. Please contact support.',
+          null,
+          403
+        );
+      }
+
+      const adminType = Number(user.admin_type);
+      const isSuperAdmin = adminType === 1;
+      const isAdmin = isSuperAdmin || adminType === 2 || Boolean(user.role_id);
+
+      if (!isAdmin) {
+        return ApiResponse.error(res, 'Access denied. Account does not have administrative privileges.', null, 403);
+      }
+
+      const sub = await SubscriptionModel.getSchoolSubscription(user.school_id);
+      if (sub && sub.status === 'pending' && !sub.isTrial) {
+        return ApiResponse.error(
+          res,
+          `Your subscription plan "${sub.plan_name}" is currently awaiting review and approval by the Super Admin. You will be able to log in once your subscription is approved and activated.`,
+          {
+            subscription_id: sub.subscription_id,
+            plan_name: sub.plan_name,
+            status: 'pending',
+            is_pending: true,
+            is_trial: false,
+          },
+          403
+        );
+      }
+
+      if (sub && (sub.status === 'suspended' || sub.liveStatus === 'suspended')) {
+        return ApiResponse.error(
+          res,
+          `Your school subscription for "${sub.plan_name}" has been marked inactive / suspended by the Super Admin. You cannot log in until your account is reactivated.`,
+          {
+            subscription_id: sub.subscription_id,
+            plan_name: sub.plan_name,
+            status: 'suspended',
+            is_suspended: true,
+          },
+          403
+        );
+      }
+
+      const otpMode = await PasscodeService.getOtpMode();
+      const isTest = otpMode === 'test';
+      const otpCode = PasscodeService.generatePasscode();
+      const expiresInMinutes = 10;
+
+      if (!isTest) {
+        const targetEmail = String(user.email || '').trim();
+        if (!targetEmail) {
+          return ApiResponse.error(res, 'No email address is registered for this account to receive the OTP.', null, 400);
+        }
+        await PasscodeService.storePasscode('user_master', user.id, otpCode, expiresInMinutes);
+        const adminName = [user.first_name, user.last_name].filter(Boolean).join(' ');
+        await PasscodeService.sendOtpEmail({
+          toEmail: targetEmail,
+          toName: adminName,
+          otpCode,
+          portalName: 'School Admin Portal',
+          expiresInMinutes,
+        });
+        return ApiResponse.success(res, 'A 6-digit OTP has been sent to your registered email address.', {
+          identifier: cleanIdent,
+          maskedIdentifier: PasscodeService.maskIdentifier(targetEmail),
+          testMode: false,
+          expiresInMinutes,
+        });
+      }
+
+      await PasscodeService.storePasscode('user_master', user.id, otpCode, expiresInMinutes);
+      const maskedIdentifier = PasscodeService.maskIdentifier(user.email || user.phone || cleanIdent);
+
+      return ApiResponse.success(res, 'A 6-digit OTP has been generated.', {
+        identifier: cleanIdent,
+        maskedIdentifier,
+        testMode: true,
+        testPasscode: otpCode,
+        expiresInMinutes,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Verify 6-digit OTP for School Admin / Staff Login
+   */
+  static async verifyOtp(req, res, next) {
+    try {
+      const emailOrIdentifier = req.body.email || req.body.identifier || req.body.phone || req.body.login;
+      const otpCode = req.body.otp || req.body.passcode || req.body.code;
+
+      if (!emailOrIdentifier || !String(emailOrIdentifier).trim()) {
+        return ApiResponse.error(res, 'Email address or phone number is required.', null, 400);
+      }
+      if (!otpCode || !String(otpCode).trim()) {
+        return ApiResponse.error(res, '6-digit OTP is required.', null, 400);
+      }
+
+      const cleanIdent = String(emailOrIdentifier).trim();
+      const user = await AdminUserModel.findByLoginIdentifier(cleanIdent);
+
+      if (!user) {
+        return ApiResponse.error(res, 'Admin account not found.', null, 401);
+      }
+
+      if (Number(user.status) !== 1) {
+        return ApiResponse.error(
+          res,
+          'Your account has been deactivated / marked inactive. Please contact your administrator.',
+          null,
+          403
+        );
+      }
+
+      if (user.school_status !== undefined && user.school_status !== null && Number(user.school_status) !== 1) {
+        return ApiResponse.error(
+          res,
+          'Your school account has been marked inactive by the Super Admin. Please contact support.',
+          null,
+          403
+        );
+      }
+
+      const adminType = Number(user.admin_type);
+      const isSuperAdmin = adminType === 1;
+      const isAdmin = isSuperAdmin || adminType === 2 || Boolean(user.role_id);
+
+      if (!isAdmin) {
+        return ApiResponse.error(res, 'Access denied. Account does not have administrative privileges.', null, 403);
+      }
+
+      const verifyResult = await PasscodeService.verifyPasscode('user_master', user.id, otpCode);
+      if (!verifyResult.valid) {
+        return ApiResponse.error(res, verifyResult.message, null, 401);
+      }
+
+      return await AdminAuthController._issueAdminSession(user, res, 'Admin authenticated successfully via OTP.');
+    } catch (error) {
+      next(error);
+    }
+  }
   /**
    * Admin Login Controller
    * Hybrid Authentication:
@@ -17,13 +294,14 @@ class AdminAuthController {
    */
   static async login(req, res, next) {
     try {
-      const { email, password } = req.body;
+      const emailOrIdentifier = req.body.email || req.body.identifier || req.body.phone || req.body.login;
+      const { password } = req.body;
 
-      if (!email || !password) {
+      if (!emailOrIdentifier || !password) {
         return ApiResponse.error(res, 'Email and password are required.', null, 400);
       }
 
-      const user = await AdminUserModel.findByEmail(email.trim());
+      const user = await AdminUserModel.findByLoginIdentifier(emailOrIdentifier.trim());
 
       if (!user) {
         return ApiResponse.error(res, 'Invalid credentials. User not found or inactive.', null, 401);
@@ -62,104 +340,7 @@ class AdminAuthController {
         return ApiResponse.error(res, 'Invalid credentials. Incorrect password.', null, 401);
       }
 
-      const roleName = isSuperAdmin ? 'Super Admin' : (user.role_name || null);
-      const permissions = isSuperAdmin ? {} : await PermissionModel.getUserPermissionMap(user.role_id);
-      const sub = await SubscriptionModel.getSchoolSubscription(user.school_id);
-
-      // Block login if school has purchased a paid plan that is awaiting Super Admin approval.
-      // Free trials (sub.isTrial) are NOT guarded and can log in immediately.
-      if (sub && sub.status === 'pending' && !sub.isTrial) {
-        return ApiResponse.error(
-          res,
-          `Your subscription plan "${sub.plan_name}" is currently awaiting review and approval by the Super Admin. You will be able to log in once your subscription is approved and activated.`,
-          {
-            subscription_id: sub.subscription_id,
-            plan_name: sub.plan_name,
-            status: 'pending',
-            is_pending: true,
-            is_trial: false,
-          },
-          403
-        );
-      }
-
-      // Block login if school subscription is marked inactive / suspended by the Super Admin
-      if (sub && (sub.status === 'suspended' || sub.liveStatus === 'suspended')) {
-        return ApiResponse.error(
-          res,
-          `Your school subscription for "${sub.plan_name}" has been marked inactive / suspended by the Super Admin. You cannot log in until your account is reactivated.`,
-          {
-            subscription_id: sub.subscription_id,
-            plan_name: sub.plan_name,
-            status: 'suspended',
-            is_suspended: true,
-          },
-          403
-        );
-      }
-
-      const tokenPayload = {
-        userId: user.id,
-        schoolId: user.school_id,
-        branchId: user.branch_id || null,
-        branchName: user.branch_name || null,
-        branchCode: user.branch_code || null,
-        schoolName: user.school_name,
-        schoolLogo: user.school_logo,
-        registrationType: user.registration_type || 'single',
-        email: user.email,
-        roleId: user.role_id,
-        adminType: adminType,
-        isSuperAdmin: Boolean(isSuperAdmin),
-        roleName,
-        portalType: 'AdminPortal',
-      };
-
-      const token = generateToken(tokenPayload);
-
-      // Set HTTP-Only Persistent Session Cookie for Web Clients (persists across tab closes & reloads)
-      const cookieOptions = {
-        httpOnly: true,
-        secure: config.nodeEnv === 'production',
-        sameSite: config.nodeEnv === 'production' ? 'none' : 'lax',
-        maxAge: config.cookie?.maxAge || 30 * 24 * 60 * 60 * 1000,
-        path: '/',
-      };
-
-      const cookieName = config.cookie?.name || 'growvidya_session';
-      res.cookie('growvidya_admin_session', token, cookieOptions);
-      res.cookie(cookieName, token, cookieOptions);
-
-      return ApiResponse.success(res, 'Admin authentication successful.', {
-        authType: 'hybrid (session + token)',
-        token, // Available for mobile app & external API consumption via Authorization header
-        user: {
-          id: user.id,
-          schoolId: user.school_id,
-          schoolName: user.school_name || '',
-          schoolLogo: user.school_logo || null,
-          registrationType: user.registration_type || 'single',
-          schoolFooter: user.school_footer || null,
-          branchId: user.branch_id || null,
-          branch_id: user.branch_id || null,
-          branchName: user.branch_name || null,
-          branchCode: user.branch_code || null,
-          firstName: user.first_name,
-          lastName: user.last_name,
-          email: user.email,
-          phone: user.phone,
-          picture: user.picture,
-          roleId: user.role_id,
-          roleName,
-          adminType: adminType,
-          admin_type: adminType,
-          isSuperAdmin: Boolean(isSuperAdmin),
-          isTrial: Boolean(sub?.isTrial),
-          isExpired: Boolean(sub?.isExpired),
-          subscription: sub,
-          permissions,
-        },
-      });
+      return await AdminAuthController._issueAdminSession(user, res, 'Admin authentication successful.');
     } catch (error) {
       next(error);
     }

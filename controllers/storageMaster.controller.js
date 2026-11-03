@@ -324,8 +324,8 @@ class StorageMasterController {
       const { id } = req.params;
       const { status } = req.body;
 
-      if (status === undefined || (parseInt(status, 10) !== 0 && parseInt(status, 10) !== 1)) {
-        return ApiResponse.badRequest(res, 'Status must be 0 (inactive) or 1 (active).');
+      if (status === undefined || (parseInt(status, 10) !== 1 && parseInt(status, 10) !== 2)) {
+        return ApiResponse.badRequest(res, 'Status must be 1 (active) or 2 (inactive).');
       }
 
       const success = await StorageMasterModel.toggleStatus(id, status);

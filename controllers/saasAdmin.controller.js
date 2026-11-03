@@ -245,8 +245,8 @@ class SaasAdminController {
       const { id } = req.params;
       const { status } = req.body;
 
-      if (status === undefined || (parseInt(status, 10) !== 0 && parseInt(status, 10) !== 1)) {
-        return ApiResponse.error(res, 'Status must be 1 (active) or 0 (inactive).', null, 400);
+      if (status === undefined || (parseInt(status, 10) !== 1 && parseInt(status, 10) !== 2)) {
+        return ApiResponse.error(res, 'Status must be 1 (active) or 2 (inactive).', null, 400);
       }
 
       const success = await SaasAdminModel.updateSchoolStatus(id, status);
@@ -675,10 +675,7 @@ class SaasAdminController {
         return ApiResponse.notFound(res, 'Package not found.');
       }
 
-      const result = await SaasAdminModel.deletePackage(id);
-      if (result.softDeleted) {
-        return ApiResponse.success(res, 'Package is in use by schools and has been deactivated (soft-deleted).');
-      }
+      await SaasAdminModel.deletePackage(id);
       return ApiResponse.success(res, 'Package deleted successfully.');
     } catch (error) {
       next(error);
@@ -689,8 +686,8 @@ class SaasAdminController {
     try {
       const { id } = req.params;
       const { status } = req.body;
-      if (status === undefined || (parseInt(status, 10) !== 0 && parseInt(status, 10) !== 1)) {
-        return ApiResponse.error(res, 'Status must be 0 or 1.', null, 400);
+      if (status === undefined || (parseInt(status, 10) !== 1 && parseInt(status, 10) !== 2)) {
+        return ApiResponse.error(res, 'Status must be 1 (active) or 2 (inactive).', null, 400);
       }
 
       const success = await SaasAdminModel.togglePackageStatus(id, status);
@@ -779,8 +776,8 @@ class SaasAdminController {
       const { itemId } = req.params;
       const { status } = req.body;
 
-      if (status === undefined || (parseInt(status, 10) !== 0 && parseInt(status, 10) !== 1)) {
-        return ApiResponse.error(res, 'Status must be 0 or 1.', null, 400);
+      if (status === undefined || (parseInt(status, 10) !== 1 && parseInt(status, 10) !== 2)) {
+        return ApiResponse.error(res, 'Status must be 1 (active) or 2 (inactive).', null, 400);
       }
 
       const existing = await SubscriptionItemModel.getById(itemId);
@@ -1066,8 +1063,8 @@ class SaasAdminController {
     try {
       const { id } = req.params;
       const { status } = req.body;
-      if (status === undefined || (parseInt(status, 10) !== 0 && parseInt(status, 10) !== 1)) {
-        return ApiResponse.error(res, 'Status must be 0 or 1.', null, 400);
+      if (status === undefined || (parseInt(status, 10) !== 1 && parseInt(status, 10) !== 2)) {
+        return ApiResponse.error(res, 'Status must be 1 (active) or 2 (inactive).', null, 400);
       }
 
       const success = await SaasAdminModel.toggleCouponStatus(id, status);
@@ -1216,8 +1213,8 @@ class SaasAdminController {
     try {
       const { id } = req.params;
       const { status } = req.body || {};
-      if (status === undefined || (Number(status) !== 0 && Number(status) !== 1)) {
-        return ApiResponse.error(res, 'Status must be 0 (inactive) or 1 (active).', null, 400);
+      if (status === undefined || (Number(status) !== 1 && Number(status) !== 2)) {
+        return ApiResponse.error(res, 'Status must be 1 (active) or 2 (inactive).', null, 400);
       }
 
       const role = await SaasRoleModel.toggleRoleStatus(id, status);
@@ -1440,8 +1437,8 @@ class SaasAdminController {
       const { id } = req.params;
       const body = req.body || {};
       const { status } = body;
-      if (status === undefined || (Number(status) !== 0 && Number(status) !== 1)) {
-        return ApiResponse.error(res, 'Status must be 0 (inactive) or 1 (active).', null, 400);
+      if (status === undefined || (Number(status) !== 1 && Number(status) !== 2)) {
+        return ApiResponse.error(res, 'Status must be 1 (active) or 2 (inactive).', null, 400);
       }
 
       const updated = await SaasRoleModel.toggleSubAdminStatus(id, status, req.saasAdmin);
@@ -1588,6 +1585,29 @@ class SaasAdminController {
     }
   }
 
+  static async getNotificationBuyers(req, res, next) {
+    try {
+      const { search, page, limit } = req.query;
+      const result = await SaasAdminModel.getNotificationBuyers({ search, page, limit });
+      return ApiResponse.success(res, 'Notification credit buyers retrieved successfully.', result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getNotificationBuyerLedger(req, res, next) {
+    try {
+      const schoolId = parseInt(req.params.schoolId, 10);
+      if (isNaN(schoolId)) {
+        return ApiResponse.error(res, 'Valid school ID is required.', null, 400);
+      }
+      const ledger = await SaasAdminModel.getNotificationBuyerLedger(schoolId);
+      return ApiResponse.success(res, 'Notification wallet ledger retrieved successfully.', ledger);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   static async getEmailCredentials(req, res, next) {
     try {
       const credentials = await EmailCredentialModel.getAll();
@@ -1678,8 +1698,8 @@ class SaasAdminController {
       if (!id) {
         return ApiResponse.error(res, 'Credential ID is required.', null, 400);
       }
-      if (status === undefined || (Number(status) !== 0 && Number(status) !== 1)) {
-        return ApiResponse.error(res, 'Status must be 0 (inactive) or 1 (active).', null, 400);
+      if (status === undefined || (Number(status) !== 1 && Number(status) !== 2)) {
+        return ApiResponse.error(res, 'Status must be 1 (active) or 2 (inactive).', null, 400);
       }
 
       const updated = await EmailCredentialModel.toggleStatus(id, status);
@@ -1713,6 +1733,23 @@ class SaasAdminController {
 
       return ApiResponse.success(res, 'Email credentials deleted successfully.', null);
     } catch (error) {
+      next(error);
+    }
+  }
+
+  static async updateEmailOtpMode(req, res, next) {
+    try {
+      const { otp_mode } = req.body || {};
+      const updatedMode = await EmailCredentialModel.updateOtpMode(otp_mode);
+      return ApiResponse.success(
+        res,
+        `Portal Sign-In OTP mode switched to ${updatedMode === 'production' ? 'Production Mode' : 'Test Mode'}.`,
+        { otp_mode: updatedMode }
+      );
+    } catch (error) {
+      if (error.statusCode === 400) {
+        return ApiResponse.error(res, error.message, null, 400);
+      }
       next(error);
     }
   }

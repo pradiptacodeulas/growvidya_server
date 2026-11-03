@@ -24,7 +24,7 @@ class BankAccountMasterModel {
         created_at, 
         updated_at
       FROM bank_account_master
-      WHERE 1=1
+      WHERE status IN (1, 2)
     `;
     const params = [];
 
@@ -34,7 +34,7 @@ class BankAccountMasterModel {
       params.push(term, term, term, term, term, term);
     }
 
-    if (status !== null && status !== undefined && status !== '') {
+    if (status !== null && status !== undefined && status !== '' && status !== 'all') {
       query += ` AND status = ?`;
       params.push(parseInt(status, 10));
     }
@@ -81,7 +81,7 @@ class BankAccountMasterModel {
    */
   static async getById(id) {
     const [rows] = await pool.query(
-      `SELECT * FROM bank_account_master WHERE id = ? LIMIT 1`,
+      `SELECT * FROM bank_account_master WHERE id = ? AND status IN (1, 2) LIMIT 1`,
       [id]
     );
     return rows.length > 0 ? rows[0] : null;
@@ -98,7 +98,7 @@ class BankAccountMasterModel {
       bank_name,
       branch_name = null,
       ifsc_code,
-      account_type = 'Current',
+      account_type = null,
       upi_id = null,
       swift_code = null,
       instructions = null,
@@ -143,7 +143,7 @@ class BankAccountMasterModel {
       instructions,
       qr_code_image,
       Number(is_default) ? 1 : 0,
-      status !== undefined ? (Number(status) ? 1 : 0) : 1,
+      status !== undefined ? (Number(status) === 2 ? 2 : 1) : 1,
     ]);
 
     return this.getById(result.insertId);
@@ -189,32 +189,35 @@ class BankAccountMasterModel {
     }
 
     values.push(id);
-    const query = `UPDATE bank_account_master SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ?`;
+    const query = `UPDATE bank_account_master SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ? AND status != 4`;
     await pool.query(query, values);
 
     return this.getById(id);
   }
 
   /**
-   * Delete bank account
+   * Soft delete bank account (status = 4)
    */
   static async delete(id) {
-    const [result] = await pool.query(`DELETE FROM bank_account_master WHERE id = ?`, [id]);
+    const [result] = await pool.query(
+      `UPDATE bank_account_master SET status = 4, is_default = 0, updated_at = NOW() WHERE id = ? AND status != 4`,
+      [id]
+    );
     return result.affectedRows > 0;
   }
 
   /**
-   * Toggle status (active / inactive)
+   * Toggle status (active = 1 / inactive = 2)
    */
   static async toggleStatus(id, status = null) {
     if (status !== null && status !== undefined) {
-      await pool.query(`UPDATE bank_account_master SET status = ?, updated_at = NOW() WHERE id = ?`, [
-        Number(status) ? 1 : 0,
-        id,
-      ]);
+      await pool.query(
+        `UPDATE bank_account_master SET status = ?, updated_at = NOW() WHERE id = ? AND status != 4`,
+        [Number(status) === 2 ? 2 : 1, id]
+      );
     } else {
       await pool.query(
-        `UPDATE bank_account_master SET status = IF(status = 1, 0, 1), updated_at = NOW() WHERE id = ?`,
+        `UPDATE bank_account_master SET status = IF(status = 1, 2, 1), updated_at = NOW() WHERE id = ? AND status != 4`,
         [id]
       );
     }
@@ -226,7 +229,10 @@ class BankAccountMasterModel {
    */
   static async setDefault(id) {
     await pool.query(`UPDATE bank_account_master SET is_default = 0 WHERE is_default = 1`);
-    await pool.query(`UPDATE bank_account_master SET is_default = 1, status = 1, updated_at = NOW() WHERE id = ?`, [id]);
+    await pool.query(
+      `UPDATE bank_account_master SET is_default = 1, status = 1, updated_at = NOW() WHERE id = ? AND status != 4`,
+      [id]
+    );
     return this.getById(id);
   }
 }

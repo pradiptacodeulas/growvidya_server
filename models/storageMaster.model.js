@@ -4,95 +4,17 @@ const { parsePagination, buildPagination } = require('../utils/pagination.util')
 
 class StorageMasterModel {
   /**
-   * Ensure school_storage_orders table exists and backfill existing school_subscriptions storage purchases
-   */
-  static async initTable() {
-    try {
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS school_storage_orders (
-          id INT(11) NOT NULL AUTO_INCREMENT,
-          order_no VARCHAR(100) NOT NULL,
-          school_id INT(11) NOT NULL,
-          storage_plan_id INT(11) NOT NULL,
-          billing_cycle VARCHAR(30) NOT NULL DEFAULT 'annual',
-          quantity INT(11) NOT NULL DEFAULT 1,
-          unit_price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
-          total_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
-          payment_transaction_id VARCHAR(150) DEFAULT NULL,
-          order_status ENUM('pending','active','expired','cancelled') NOT NULL DEFAULT 'pending',
-          start_date DATE DEFAULT NULL,
-          end_date DATE DEFAULT NULL,
-          remarks TEXT DEFAULT NULL,
-          created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-          updated_at TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-          PRIMARY KEY (id),
-          KEY idx_storage_order_school (school_id),
-          KEY idx_storage_order_plan (storage_plan_id),
-          KEY idx_storage_order_status (order_status)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-      `);
-
-      // Backfill any storage_plan_id purchases recorded on school_subscriptions into school_storage_orders
-      await pool.query(`
-        INSERT INTO school_storage_orders (
-          order_no, school_id, storage_plan_id, billing_cycle, quantity,
-          unit_price, total_amount, payment_transaction_id, order_status,
-          start_date, end_date, remarks, created_at, updated_at
-        )
-        SELECT
-          CONCAT('STOR_', ss.school_id, '_', ss.id),
-          ss.school_id,
-          ss.storage_plan_id,
-          'annual',
-          1,
-          stm.annual_price,
-          stm.annual_price,
-          ss.payment_transaction_id,
-          CASE
-            WHEN ss.status = 'active' THEN 'active'
-            WHEN ss.status = 'expired' THEN 'expired'
-            WHEN ss.status = 'cancelled' THEN 'cancelled'
-            ELSE 'pending'
-          END,
-          ss.start_date,
-          ss.end_date,
-          'Purchased with school subscription plan',
-          ss.created_at,
-          ss.created_at
-        FROM school_subscriptions ss
-        JOIN storage_master stm ON ss.storage_plan_id = stm.id
-        WHERE ss.storage_plan_id IS NOT NULL
-          AND NOT EXISTS (
-            SELECT 1 FROM school_storage_orders sso
-            WHERE sso.school_id = ss.school_id
-              AND sso.storage_plan_id = ss.storage_plan_id
-          )
-      `);
-    } catch (error) {
-      console.error('Error initializing school_storage_orders table:', error.message);
-    }
-  }
-
-  /**
    * Helper to resolve unit ID from unit code string or numeric ID
    */
   static async resolveUnitId(unitIdOrCode) {
-    if (!unitIdOrCode) {
-      // Default to GB
-      const gb = await CapacityUnitMasterModel.getByCode('GB');
-      return gb ? gb.id : 1;
-    }
+    if (!unitIdOrCode) return null;
 
     if (!isNaN(unitIdOrCode)) {
       return parseInt(unitIdOrCode, 10);
     }
 
     const unit = await CapacityUnitMasterModel.getByCode(String(unitIdOrCode));
-    if (unit) return unit.id;
-
-    // Default to GB if not found
-    const gb = await CapacityUnitMasterModel.getByCode('GB');
-    return gb ? gb.id : 1;
+    return unit ? unit.id : null;
   }
 
   /**
@@ -101,7 +23,7 @@ class StorageMasterModel {
    */
   static async getAll({ search = '', status = '', page, limit } = {}) {
     const { page: pageNum, limit: pageSize, offset } = parsePagination({ page, limit });
-    let conditions = [];
+    let conditions = ['sm.status IN (1, 2)'];
     let params = [];
 
     if (status !== '' && status !== undefined && status !== 'all') {
@@ -165,12 +87,15 @@ class StorageMasterModel {
     const [[row]] = await pool.query(`
       SELECT
         COUNT(*) AS total,
-        COALESCE(SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END), 0) AS active
+        COALESCE(SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END), 0) AS active,
+        COALESCE(SUM(CASE WHEN status = 2 THEN 1 ELSE 0 END), 0) AS inactive
       FROM storage_master
+      WHERE status IN (1, 2)
     `);
     const total = Number(row.total) || 0;
     const active = Number(row.active) || 0;
-    return { total, active, inactive: total - active };
+    const inactive = Number(row.inactive) || 0;
+    return { total, active, inactive };
   }
 
   /**
@@ -224,7 +149,7 @@ class StorageMasterModel {
         sm.updated_at
       FROM storage_master sm
       JOIN capacity_unit_master cu ON sm.capacity_unit_id = cu.id
-      WHERE sm.id = ?
+      WHERE sm.id = ? AND sm.status IN (1, 2)
       LIMIT 1
     `;
     const [rows] = await pool.query(query, [id]);
@@ -257,7 +182,7 @@ class StorageMasterModel {
         parseFloat(monthly_price) || 0,
         parseFloat(annual_price) || 0,
         description || '',
-        parseInt(status, 10) === 0 ? 0 : 1,
+        parseInt(status, 10) === 2 ? 2 : 1,
       ]
     );
     return result.insertId;
@@ -303,33 +228,28 @@ class StorageMasterModel {
     if (updates.length === 0) return false;
 
     params.push(id);
-    const query = `UPDATE storage_master SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ?`;
+    const query = `UPDATE storage_master SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ? AND status != 4`;
     const [result] = await pool.query(query, params);
     return result.affectedRows > 0;
   }
 
   /**
-   * Delete a storage plan
+   * Soft delete a storage plan (status = 4)
    */
   static async delete(id) {
-    const [orders] = await pool.query(
-      'SELECT COUNT(*) AS count FROM school_storage_orders WHERE storage_plan_id = ?',
+    const [result] = await pool.query(
+      'UPDATE storage_master SET status = 4, updated_at = NOW() WHERE id = ? AND status != 4',
       [id]
     );
-    if (orders[0].count > 0) {
-      throw new Error('Cannot delete this storage plan because school purchases are associated with it. Please deactivate it instead.');
-    }
-
-    const [result] = await pool.query('DELETE FROM storage_master WHERE id = ?', [id]);
     return result.affectedRows > 0;
   }
 
   /**
-   * Toggle active/inactive status
+   * Toggle active/inactive status (1 = Active, 2 = Inactive)
    */
   static async toggleStatus(id, status) {
     const [result] = await pool.query(
-      'UPDATE storage_master SET status = ?, updated_at = NOW() WHERE id = ?',
+      'UPDATE storage_master SET status = ?, updated_at = NOW() WHERE id = ? AND status != 4',
       [parseInt(status, 10), id]
     );
     return result.affectedRows > 0;

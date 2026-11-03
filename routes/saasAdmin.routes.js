@@ -178,11 +178,15 @@ router.delete('/settings/razorpay', checkPermission('payment_gateway', 'can_dele
 router.delete('/settings/payment-gateway/:id', checkPermission('payment_gateway', 'can_delete'), SaasAdminController.deleteRazorpayCredentials);
 router.delete('/settings/payment-gateway', checkPermission('payment_gateway', 'can_delete'), SaasAdminController.deleteRazorpayCredentials);
 
-// Settings — Optional Subscription Communication Alerts (Email/SMS Toggles) & Notification Credit Pricing
+// Settings & Notification Credit Pricing / Buyers
 router.get('/settings/communication', checkPermission(['email_delivery', 'packages'], 'can_view'), SaasAdminController.getCommunicationSettings);
 router.put('/settings/communication', checkPermission(['email_delivery', 'packages'], 'can_edit'), SaasAdminController.updateCommunicationSettings);
 router.get('/settings/notification-pricing', checkPermission(['email_delivery', 'packages'], 'can_view'), SaasAdminController.getNotificationPricing);
 router.put('/settings/notification-pricing', checkPermission(['email_delivery', 'packages'], 'can_edit'), SaasAdminController.updateNotificationPricing);
+router.get('/notifications/pricing', checkPermission(['email_delivery', 'packages'], 'can_view'), SaasAdminController.getNotificationPricing);
+router.put('/notifications/pricing', checkPermission(['email_delivery', 'packages'], 'can_edit'), SaasAdminController.updateNotificationPricing);
+router.get('/notifications/buyers', checkPermission(['email_delivery', 'packages', 'subscriptions'], 'can_view'), SaasAdminController.getNotificationBuyers);
+router.get('/notifications/buyers/:schoolId/ledger', checkPermission(['email_delivery', 'packages', 'subscriptions'], 'can_view'), SaasAdminController.getNotificationBuyerLedger);
 
 // Settings — Email Delivery (Mailjet & SMTP) Credentials Management
 router.get('/settings/email', checkPermission('email_delivery', 'can_view'), SaasAdminController.getEmailCredentials);
@@ -201,6 +205,8 @@ router.delete('/settings/email/:id', checkPermission('email_delivery', 'can_dele
 router.delete('/settings/email-delivery/:id', checkPermission('email_delivery', 'can_delete'), SaasAdminController.deleteEmailCredentials);
 router.post('/settings/email/test', checkPermission('email_delivery', 'can_edit'), SaasAdminController.sendTestEmail);
 router.post('/settings/email-delivery/test', checkPermission('email_delivery', 'can_edit'), SaasAdminController.sendTestEmail);
+router.patch('/settings/email/otp-mode', checkPermission('email_delivery', 'can_edit'), SaasAdminController.updateEmailOtpMode);
+router.patch('/settings/email-delivery/otp-mode', checkPermission('email_delivery', 'can_edit'), SaasAdminController.updateEmailOtpMode);
 
 // Help & Support Tickets Management
 router.get('/support-tickets', checkPermission('support_tickets', 'can_view'), SupportTicketController.getSaasTickets);

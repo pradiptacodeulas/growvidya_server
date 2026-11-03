@@ -116,13 +116,13 @@ class BankAccountMasterController {
         bank_name: String(bank_name).trim(),
         branch_name: branch_name ? String(branch_name).trim() : null,
         ifsc_code: String(ifsc_code).trim().toUpperCase(),
-        account_type: account_type ? String(account_type).trim() : 'Current',
+        account_type: account_type ? String(account_type).trim() : null,
         upi_id: upi_id ? String(upi_id).trim() : null,
         swift_code: swift_code ? String(swift_code).trim() : null,
         instructions: instructions ? String(instructions).trim() : null,
         qr_code_image: finalQrImage,
         is_default: is_default ? 1 : 0,
-        status: status !== undefined ? (Number(status) ? 1 : 0) : 1,
+        status: status !== undefined ? (Number(status) === 2 ? 2 : 1) : 1,
       });
 
       return ApiResponse.success(res, 'Bank account created successfully.', newAccount, 201);

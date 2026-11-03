@@ -101,13 +101,9 @@ class ParentAuthController {
         return ApiResponse.error(res, 'Invalid credentials. Parent account not found or inactive.', null, 401);
       }
 
-      // Verify password against parent.password or parent.passcode
       let isPasswordValid = false;
       if (parent.password) {
         isPasswordValid = await comparePassword(password, parent.password);
-      }
-      if (!isPasswordValid && parent.passcode) {
-        isPasswordValid = await comparePassword(password, parent.passcode);
       }
 
       if (!isPasswordValid) {
@@ -137,18 +133,42 @@ class ParentAuthController {
         return ApiResponse.error(res, 'Parent account not found with this identifier or is inactive.', null, 404);
       }
 
+      const otpMode = await PasscodeService.getOtpMode();
+      const isTest = otpMode === 'test';
       const passcode = PasscodeService.generatePasscode();
-      await PasscodeService.storePasscode('parent_master', parent.id, passcode, 10);
+      const expiresInMinutes = 10;
 
-      const isTest = PasscodeService.isTestMode();
+      if (!isTest) {
+        const targetEmail = String(parent.email || '').trim();
+        if (!targetEmail) {
+          return ApiResponse.error(res, 'No email address is registered for this account to receive the OTP.', null, 400);
+        }
+        await PasscodeService.storePasscode('parent_master', parent.id, passcode, expiresInMinutes);
+        const parentName = [parent.first_name, parent.last_name].filter(Boolean).join(' ');
+        await PasscodeService.sendOtpEmail({
+          toEmail: targetEmail,
+          toName: parentName,
+          otpCode: passcode,
+          portalName: 'Parent Portal',
+          expiresInMinutes,
+        });
+        return ApiResponse.success(res, 'A 6-digit OTP has been sent to your registered email address.', {
+          identifier: String(emailOrIdentifier).trim(),
+          maskedIdentifier: PasscodeService.maskIdentifier(targetEmail),
+          testMode: false,
+          expiresInMinutes,
+        });
+      }
+
+      await PasscodeService.storePasscode('parent_master', parent.id, passcode, expiresInMinutes);
       const maskedIdentifier = PasscodeService.maskIdentifier(parent.phone || parent.email || emailOrIdentifier);
 
-      return ApiResponse.success(res, 'A 6-digit passcode has been generated.', {
+      return ApiResponse.success(res, 'A 6-digit OTP has been generated.', {
         identifier: String(emailOrIdentifier).trim(),
         maskedIdentifier,
-        testMode: isTest,
-        testPasscode: isTest ? passcode : undefined,
-        expiresInMinutes: 10,
+        testMode: true,
+        testPasscode: passcode,
+        expiresInMinutes,
       });
     } catch (error) {
       next(error);
@@ -167,7 +187,7 @@ class ParentAuthController {
         return ApiResponse.error(res, 'Email address or Phone number is required.', null, 400);
       }
       if (!passcode || !String(passcode).trim()) {
-        return ApiResponse.error(res, '6-digit passcode is required.', null, 400);
+        return ApiResponse.error(res, '6-digit OTP is required.', null, 400);
       }
 
       const parent = await ParentModel.findByLoginIdentifier(emailOrIdentifier);
@@ -182,7 +202,7 @@ class ParentAuthController {
         return ApiResponse.error(res, verifyResult.message, null, 401);
       }
 
-      return await ParentAuthController._issueSession(parent, res, 'Parent authenticated successfully via passcode.');
+      return await ParentAuthController._issueSession(parent, res, 'Parent authenticated successfully via OTP.');
     } catch (error) {
       next(error);
     }
@@ -350,9 +370,6 @@ class ParentAuthController {
         let isCurrentValid = false;
         if (existingParent.password) {
           isCurrentValid = await comparePassword(current_password, existingParent.password);
-        }
-        if (!isCurrentValid && existingParent.passcode) {
-          isCurrentValid = await comparePassword(current_password, existingParent.passcode);
         }
 
         if (!isCurrentValid) {

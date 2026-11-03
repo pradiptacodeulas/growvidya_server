@@ -6,6 +6,10 @@ const rbacMiddleware = require('../middlewares/rbac.middleware');
 
 // Public / Session-management routes
 router.post('/login', AdminAuthController.login);
+router.post('/request-otp', AdminAuthController.requestOtp);
+router.post('/verify-otp', AdminAuthController.verifyOtp);
+router.post('/request-passcode', AdminAuthController.requestOtp);
+router.post('/verify-passcode', AdminAuthController.verifyOtp);
 router.post('/logout', AdminAuthController.logout);
 
 // Protected routes (Super Admin & Admin)

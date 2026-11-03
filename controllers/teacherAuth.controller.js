@@ -101,13 +101,9 @@ class TeacherAuthController {
         );
       }
 
-      // Verify password against teacher.password (MD5/bcrypt/plain) or teacher.passcode (bcrypt)
       let isPasswordValid = false;
       if (teacher.password) {
         isPasswordValid = await comparePassword(password, teacher.password);
-      }
-      if (!isPasswordValid && teacher.passcode) {
-        isPasswordValid = await comparePassword(password, teacher.passcode);
       }
 
       if (!isPasswordValid) {
@@ -146,18 +142,42 @@ class TeacherAuthController {
         );
       }
 
+      const otpMode = await PasscodeService.getOtpMode();
+      const isTest = otpMode === 'test';
       const passcode = PasscodeService.generatePasscode();
-      await PasscodeService.storePasscode('teacher_master', teacher.id, passcode, 10);
+      const expiresInMinutes = 10;
 
-      const isTest = PasscodeService.isTestMode();
+      if (!isTest) {
+        const targetEmail = String(teacher.email_address || '').trim();
+        if (!targetEmail) {
+          return ApiResponse.error(res, 'No email address is registered for this account to receive the OTP.', null, 400);
+        }
+        await PasscodeService.storePasscode('teacher_master', teacher.id, passcode, expiresInMinutes);
+        const teacherName = [teacher.first_name, teacher.last_name].filter(Boolean).join(' ');
+        await PasscodeService.sendOtpEmail({
+          toEmail: targetEmail,
+          toName: teacherName,
+          otpCode: passcode,
+          portalName: 'Teacher Portal',
+          expiresInMinutes,
+        });
+        return ApiResponse.success(res, 'A 6-digit OTP has been sent to your registered email address.', {
+          identifier: String(emailOrIdentifier).trim(),
+          maskedIdentifier: PasscodeService.maskIdentifier(targetEmail),
+          testMode: false,
+          expiresInMinutes,
+        });
+      }
+
+      await PasscodeService.storePasscode('teacher_master', teacher.id, passcode, expiresInMinutes);
       const maskedIdentifier = PasscodeService.maskIdentifier(teacher.email_address || teacher.primary_contact_number || emailOrIdentifier);
 
-      return ApiResponse.success(res, 'A 6-digit passcode has been generated.', {
+      return ApiResponse.success(res, 'A 6-digit OTP has been generated.', {
         identifier: String(emailOrIdentifier).trim(),
         maskedIdentifier,
-        testMode: isTest,
-        testPasscode: isTest ? passcode : undefined,
-        expiresInMinutes: 10,
+        testMode: true,
+        testPasscode: passcode,
+        expiresInMinutes,
       });
     } catch (error) {
       next(error);
@@ -176,7 +196,7 @@ class TeacherAuthController {
         return ApiResponse.error(res, 'Teacher ID, Email address or Phone number is required.', null, 400);
       }
       if (!passcode || !String(passcode).trim()) {
-        return ApiResponse.error(res, '6-digit passcode is required.', null, 400);
+        return ApiResponse.error(res, '6-digit OTP is required.', null, 400);
       }
 
       const teacher = await TeacherModel.findByLoginIdentifier(emailOrIdentifier);
@@ -200,7 +220,7 @@ class TeacherAuthController {
         return ApiResponse.error(res, verifyResult.message, null, 401);
       }
 
-      return await TeacherAuthController._issueSession(teacher, res, 'Teacher authenticated successfully via passcode.');
+      return await TeacherAuthController._issueSession(teacher, res, 'Teacher authenticated successfully via OTP.');
     } catch (error) {
       next(error);
     }
@@ -628,17 +648,12 @@ class TeacherAuthController {
         if (!current_password) {
           return ApiResponse.error(res, 'Current password is required to set a new password.', null, 400);
         }
-        let isMatch = await comparePassword(current_password, existingTeacher.password);
-        if (!isMatch && existingTeacher.passcode) {
-          isMatch = await comparePassword(current_password, existingTeacher.passcode);
-        }
+        const isMatch = await comparePassword(current_password, existingTeacher.password);
         if (!isMatch) {
           return ApiResponse.error(res, 'Current password is incorrect.', null, 400);
         }
         const hashedPassword = await hashPassword(new_password);
         updates.push('password = ?');
-        params.push(hashedPassword);
-        updates.push('passcode = ?');
         params.push(hashedPassword);
       }
 

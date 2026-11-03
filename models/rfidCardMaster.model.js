@@ -3,30 +3,12 @@ const { parsePagination, buildPagination } = require('../utils/pagination.util')
 
 class RfidCardMasterModel {
   /**
-   * Ensure school_rfid_orders has payment_transaction_id column
-   */
-  static async initTable() {
-    try {
-      const [cols] = await pool.query('SHOW COLUMNS FROM school_rfid_orders');
-      const existingCols = new Set(cols.map((c) => c.Field));
-
-      if (!existingCols.has('payment_transaction_id')) {
-        await pool.query(
-          'ALTER TABLE school_rfid_orders ADD COLUMN payment_transaction_id VARCHAR(150) DEFAULT NULL AFTER order_status'
-        );
-      }
-    } catch (error) {
-      console.error('Error initializing school_rfid_orders columns:', error.message);
-    }
-  }
-
-  /**
    * Fetch a page of RFID cards (with search, status and card_type filters)
    * Returns { cards, pagination, counts }
    */
   static async getAll({ search = '', status = '', card_type = '', page, limit } = {}) {
     const { page: pageNum, limit: pageSize, offset } = parsePagination({ page, limit });
-    let conditions = [];
+    let conditions = ['status IN (1, 2)'];
     let params = [];
 
     if (status !== '' && status !== undefined && status !== 'all') {
@@ -89,12 +71,15 @@ class RfidCardMasterModel {
     const [[row]] = await pool.query(`
       SELECT
         COUNT(*) AS total,
-        COALESCE(SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END), 0) AS active
+        COALESCE(SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END), 0) AS active,
+        COALESCE(SUM(CASE WHEN status = 2 THEN 1 ELSE 0 END), 0) AS inactive
       FROM rfid_card_master
+      WHERE status IN (1, 2)
     `);
     const total = Number(row.total) || 0;
     const active = Number(row.active) || 0;
-    return { total, active, inactive: total - active };
+    const inactive = Number(row.inactive) || 0;
+    return { total, active, inactive };
   }
 
   /**
@@ -128,7 +113,7 @@ class RfidCardMasterModel {
    */
   static async getById(id) {
     const [rows] = await pool.query(
-      'SELECT * FROM rfid_card_master WHERE id = ? LIMIT 1',
+      'SELECT * FROM rfid_card_master WHERE id = ? AND status IN (1, 2) LIMIT 1',
       [id]
     );
     return rows[0] || null;
@@ -140,7 +125,7 @@ class RfidCardMasterModel {
   static async getByCode(code) {
     if (!code) return null;
     const [rows] = await pool.query(
-      'SELECT * FROM rfid_card_master WHERE card_code = ? LIMIT 1',
+      'SELECT * FROM rfid_card_master WHERE card_code = ? AND status IN (1, 2) LIMIT 1',
       [code.trim()]
     );
     return rows[0] || null;
@@ -152,7 +137,7 @@ class RfidCardMasterModel {
   static async create({
     card_name,
     card_code,
-    card_type = 'pvc_card',
+    card_type = null,
     frequency = null,
     read_range = null,
     unit_price = 0,
@@ -170,7 +155,7 @@ class RfidCardMasterModel {
       [
         card_name.trim(),
         card_code.trim().toUpperCase(),
-        card_type || 'pvc_card',
+        card_type || null,
         frequency ? frequency.trim() : null,
         read_range ? read_range.trim() : null,
         parseFloat(unit_price) || 0.00,
@@ -178,7 +163,7 @@ class RfidCardMasterModel {
         finalImage,
         finalImage,
         description || '',
-        parseInt(status, 10) === 0 ? 0 : 1,
+        parseInt(status, 10) === 2 ? 2 : 1,
       ]
     );
     return result.insertId;
@@ -236,34 +221,28 @@ class RfidCardMasterModel {
     if (updates.length === 0) return false;
 
     params.push(id);
-    const query = `UPDATE rfid_card_master SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ?`;
+    const query = `UPDATE rfid_card_master SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ? AND status != 4`;
     const [result] = await pool.query(query, params);
     return result.affectedRows > 0;
   }
 
   /**
-   * Delete an RFID card item
+   * Soft delete an RFID card item (status = 4)
    */
   static async delete(id) {
-    // Check if card is referenced in school_rfid_orders
-    const [orders] = await pool.query(
-      'SELECT COUNT(*) AS count FROM school_rfid_orders WHERE rfid_card_id = ?',
+    const [result] = await pool.query(
+      'UPDATE rfid_card_master SET status = 4, updated_at = NOW() WHERE id = ? AND status != 4',
       [id]
     );
-    if (orders[0].count > 0) {
-      throw new Error('Cannot delete this RFID card because school orders are associated with it. Please deactivate it instead.');
-    }
-
-    const [result] = await pool.query('DELETE FROM rfid_card_master WHERE id = ?', [id]);
     return result.affectedRows > 0;
   }
 
   /**
-   * Toggle status
+   * Toggle status (1 = Active, 2 = Inactive)
    */
   static async toggleStatus(id, status) {
     const [result] = await pool.query(
-      'UPDATE rfid_card_master SET status = ?, updated_at = NOW() WHERE id = ?',
+      'UPDATE rfid_card_master SET status = ?, updated_at = NOW() WHERE id = ? AND status != 4',
       [parseInt(status, 10), id]
     );
     return result.affectedRows > 0;

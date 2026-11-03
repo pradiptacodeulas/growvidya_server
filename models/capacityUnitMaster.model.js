@@ -5,7 +5,7 @@ class CapacityUnitMasterModel {
    * Fetch all capacity units
    */
   static async getAll({ status = '' } = {}) {
-    let conditions = [];
+    let conditions = ['status IN (1, 2)'];
     let params = [];
 
     if (status !== '' && status !== undefined && status !== 'all') {
@@ -39,7 +39,7 @@ class CapacityUnitMasterModel {
    */
   static async getById(id) {
     const [rows] = await pool.query(
-      'SELECT * FROM capacity_unit_master WHERE id = ? LIMIT 1',
+      'SELECT * FROM capacity_unit_master WHERE id = ? AND status IN (1, 2) LIMIT 1',
       [id]
     );
     return rows[0] || null;
@@ -51,7 +51,7 @@ class CapacityUnitMasterModel {
   static async getByCode(code) {
     if (!code) return null;
     const [rows] = await pool.query(
-      'SELECT * FROM capacity_unit_master WHERE unit_code = ? LIMIT 1',
+      'SELECT * FROM capacity_unit_master WHERE unit_code = ? AND status IN (1, 2) LIMIT 1',
       [code.trim().toUpperCase()]
     );
     return rows[0] || null;
@@ -68,7 +68,7 @@ class CapacityUnitMasterModel {
         unit_name.trim(),
         unit_code.trim().toUpperCase(),
         parseInt(factor_in_mb, 10) || 1,
-        parseInt(status, 10) === 0 ? 0 : 1,
+        parseInt(status, 10) === 2 ? 2 : 1,
       ]
     );
     return result.insertId;
@@ -101,7 +101,7 @@ class CapacityUnitMasterModel {
     if (updates.length === 0) return false;
 
     params.push(id);
-    const query = `UPDATE capacity_unit_master SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ?`;
+    const query = `UPDATE capacity_unit_master SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ? AND status != 4`;
     const [result] = await pool.query(query, params);
     return result.affectedRows > 0;
   }

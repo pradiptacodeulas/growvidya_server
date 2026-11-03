@@ -3,47 +3,6 @@ const { getTodayIST, parseDateParts, formatDateParts } = require('../constants/s
 
 class CouponModel {
   /**
-   * Ensure max_uses_per_user and applicable_scope columns exist on coupons
-   */
-  static async initTable() {
-    try {
-      const [cols] = await pool.query(
-        `SELECT COLUMN_NAME, IS_NULLABLE
-         FROM INFORMATION_SCHEMA.COLUMNS
-         WHERE TABLE_SCHEMA = DATABASE()
-           AND TABLE_NAME = 'coupons'`
-      );
-      const colMap = new Map(cols.map((c) => [c.COLUMN_NAME, c]));
-
-      if (!colMap.has('max_uses_per_user')) {
-        await pool.query(
-          `ALTER TABLE coupons
-           ADD COLUMN max_uses_per_user INT UNSIGNED NOT NULL DEFAULT 1 AFTER max_uses`
-        );
-      } else {
-        await pool.query(
-          `UPDATE coupons SET max_uses_per_user = 1 WHERE max_uses_per_user IS NULL OR max_uses_per_user < 1`
-        );
-        if (colMap.get('max_uses_per_user').IS_NULLABLE === 'YES') {
-          await pool.query(
-            `ALTER TABLE coupons
-             MODIFY COLUMN max_uses_per_user INT UNSIGNED NOT NULL DEFAULT 1`
-          );
-        }
-      }
-
-      if (!colMap.has('applicable_scope')) {
-        await pool.query(
-          `ALTER TABLE coupons
-           ADD COLUMN applicable_scope ENUM('plan_only','software_and_storage','all') NOT NULL DEFAULT 'plan_only' AFTER discount_value`
-        );
-      }
-    } catch (err) {
-      console.error('Error initializing coupons table columns:', err.message);
-    }
-  }
-
-  /**
    * Fetch paginated list of coupons with optional search and filters
    */
   static async getAll({ search = '', status = '', discount_type = '', page = 1, limit = 10 } = {}) {
@@ -51,7 +10,7 @@ class CouponModel {
     const limitNum = Math.max(1, parseInt(limit, 10) || 10);
     const offset = (pageNum - 1) * limitNum;
 
-    let conditions = [];
+    let conditions = ['c.status IN (1, 2)'];
     let params = [];
 
     if (status !== '' && status !== undefined && status !== 'all') {
@@ -120,7 +79,7 @@ class CouponModel {
          GREATEST(c.used_count, (SELECT COUNT(*) FROM coupon_usages cu WHERE cu.coupon_id = c.id)) AS total_redemptions,
          (SELECT IFNULL(SUM(discount_amount), 0.00) FROM coupon_usages cu WHERE cu.coupon_id = c.id) AS total_discount_given
        FROM coupons c
-       WHERE c.id = ?
+       WHERE c.id = ? AND c.status IN (1, 2)
        LIMIT 1`,
       [id]
     );
@@ -153,9 +112,10 @@ class CouponModel {
    */
   static async getByCode(code) {
     if (!code) return null;
-    const [rows] = await pool.query('SELECT * FROM coupons WHERE code = ? LIMIT 1', [
-      code.trim().toUpperCase(),
-    ]);
+    const [rows] = await pool.query(
+      'SELECT * FROM coupons WHERE code = ? AND status IN (1, 2) LIMIT 1',
+      [code.trim().toUpperCase()]
+    );
     return rows[0] || null;
   }
 
@@ -196,7 +156,7 @@ class CouponModel {
         end_date || null,
         max_uses ? parseInt(max_uses, 10) : null,
         perUserLimit,
-        parseInt(status, 10) === 0 ? 0 : 1,
+        parseInt(status, 10) === 2 ? 2 : 1,
       ]
     );
     return result.insertId;
@@ -264,25 +224,28 @@ class CouponModel {
     if (updates.length === 0) return false;
 
     params.push(id);
-    const query = `UPDATE coupons SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ?`;
+    const query = `UPDATE coupons SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ? AND status != 4`;
     const [result] = await pool.query(query, params);
     return result.affectedRows > 0;
   }
 
   /**
-   * Delete a coupon
+   * Soft delete a coupon (status = 4)
    */
   static async delete(id) {
-    const [result] = await pool.query('DELETE FROM coupons WHERE id = ?', [id]);
+    const [result] = await pool.query(
+      'UPDATE coupons SET status = 4, updated_at = NOW() WHERE id = ? AND status != 4',
+      [id]
+    );
     return result.affectedRows > 0;
   }
 
   /**
-   * Toggle status
+   * Toggle status (1 = Active, 2 = Inactive)
    */
   static async toggleStatus(id, status) {
     const [result] = await pool.query(
-      'UPDATE coupons SET status = ?, updated_at = NOW() WHERE id = ?',
+      'UPDATE coupons SET status = ?, updated_at = NOW() WHERE id = ? AND status != 4',
       [parseInt(status, 10), id]
     );
     return result.affectedRows > 0;
@@ -304,7 +267,7 @@ class CouponModel {
     const totalOrderAmount = parseFloat(orderAmount) || 0;
 
     const [rows] = await db.query(
-      `SELECT * FROM coupons WHERE code = ? LIMIT 1${forUpdate ? ' FOR UPDATE' : ''}`,
+      `SELECT * FROM coupons WHERE code = ? AND status IN (1, 2) LIMIT 1${forUpdate ? ' FOR UPDATE' : ''}`,
       [cleanCode]
     );
     if (rows.length === 0) {
@@ -578,7 +541,7 @@ class CouponModel {
     const db = connection || pool;
     const cleanCode = String(code).trim().toUpperCase();
 
-    const [rows] = await db.query('SELECT id, used_count FROM coupons WHERE code = ? LIMIT 1', [
+    const [rows] = await db.query('SELECT id, used_count FROM coupons WHERE code = ? AND status IN (1, 2) LIMIT 1', [
       cleanCode,
     ]);
     if (rows.length === 0) return false;

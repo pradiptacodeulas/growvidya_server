@@ -1,24 +1,25 @@
 const crypto = require('crypto');
 const { pool } = require('../config/db.config');
-const { hashPassword, comparePassword } = require('../utils/password.util');
+const EmailCredentialModel = require('../models/emailCredential.model');
+const EmailService = require('./email.service');
 
 class PasscodeService {
   /**
-   * Generates a secure random 6-digit numeric passcode
+   * Generates a secure random 6-digit numeric OTP
    */
   static generatePasscode() {
     return String(crypto.randomInt(100000, 1000000));
   }
 
   /**
-   * Check if test mode is enabled (default true unless explicitly set to 'false')
+   * Get current OTP mode ('test' | 'production') from email_credentials table
    */
-  static isTestMode() {
-    return process.env.PASSCODE_TEST_MODE !== 'false';
+  static async getOtpMode() {
+    return await EmailCredentialModel.getOtpMode();
   }
 
   /**
-   * Mask an identifier for display (e.g. 98****3210 or j***@domain.com)
+   * Mask an identifier for display
    */
   static maskIdentifier(identifier) {
     if (!identifier) return '';
@@ -38,78 +39,103 @@ class PasscodeService {
   }
 
   /**
-   * Store the generated passcode in the specified table
+   * Store the generated 6-digit OTP and expiry timestamp in the specified table (does not touch passcode column)
    */
-  static async storePasscode(tableName, recordId, passcode, expiresInMinutes = 10) {
-    try {
-      const hashedPasscode = await hashPassword(passcode);
-      await pool.query(
-        `UPDATE ${tableName} 
-         SET otp = ?, passcode = ?, otp_expires_at = DATE_ADD(NOW(), INTERVAL ? MINUTE)
-         WHERE id = ?`,
-        [passcode, hashedPasscode, expiresInMinutes, recordId]
-      );
-      return true;
-    } catch (error) {
-      console.error(`[PasscodeService.storePasscode Error - ${tableName}]:`, error.message);
-      throw error;
-    }
+  static async storePasscode(tableName, recordId, otpCode, expiresInMinutes = 10) {
+    await pool.query(
+      `UPDATE ${tableName}
+       SET otp = ?, otp_expires_at = DATE_ADD(NOW(), INTERVAL ? MINUTE)
+       WHERE id = ?`,
+      [otpCode, expiresInMinutes, recordId]
+    );
+    return true;
   }
 
   /**
-   * Verify the 6-digit passcode against DB records and check expiry
+   * Send the 6-digit OTP email using the active Default Email Provider (Mailjet or SMTP)
    */
-  static async verifyPasscode(tableName, recordId, inputPasscode) {
-    try {
-      const [rows] = await pool.query(
-        `SELECT id, otp, passcode, otp_expires_at,
-                (otp_expires_at IS NOT NULL AND otp_expires_at >= NOW()) AS is_valid_time
-         FROM ${tableName}
-         WHERE id = ?`,
-        [recordId]
-      );
-
-      const record = rows && rows.length > 0 ? rows[0] : null;
-      if (!record) {
-        return { valid: false, message: 'Account not found or inactive.' };
-      }
-
-      if (!record.otp && !record.passcode) {
-        return { valid: false, message: 'No active passcode request found. Please request a new code.' };
-      }
-
-      if (!record.is_valid_time) {
-        return { valid: false, message: 'Passcode has expired. Please request a new 6-digit code.' };
-      }
-
-      const cleanInput = String(inputPasscode || '').trim();
-      let isMatch = false;
-
-      // 1. Direct comparison against plain OTP stored in DB
-      if (record.otp && String(record.otp).trim() === cleanInput) {
-        isMatch = true;
-      }
-
-      // 2. Fallback: bcrypt comparison against passcode column
-      if (!isMatch && record.passcode) {
-        isMatch = await comparePassword(cleanInput, record.passcode);
-      }
-
-      if (!isMatch) {
-        return { valid: false, message: 'Invalid 6-digit passcode. Please try again.' };
-      }
-
-      // Invalidate the passcode to prevent replay attacks
-      await pool.query(
-        `UPDATE ${tableName} SET otp = NULL, otp_expires_at = NULL WHERE id = ?`,
-        [recordId]
-      );
-
-      return { valid: true };
-    } catch (error) {
-      console.error(`[PasscodeService.verifyPasscode Error - ${tableName}]:`, error.message);
-      throw error;
+  static async sendOtpEmail({ toEmail, toName, otpCode, portalName, expiresInMinutes = 10 }) {
+    const cleanEmail = String(toEmail || '').trim();
+    if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      const err = new Error('No valid email address is registered for this account to receive the OTP.');
+      err.statusCode = 400;
+      throw err;
     }
+
+    const subject = `${portalName ? `${portalName} — ` : ''}Your 6-Digit Sign-In OTP`;
+    const text = `Hello ${toName || ''},\n\nYour 6-digit sign-in OTP is: ${otpCode}\n\nThis OTP is valid for ${expiresInMinutes} minutes. Do not share this code with anyone.\n\nDisclaimer: Please do not reply back to this mail.`;
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 540px; margin: 0 auto; padding: 28px; border: 1px solid #e5e7eb; border-radius: 12px;">
+        <div style="text-align: center; margin-bottom: 22px;">
+          <img
+            src="https://growvidya.in/vidya_assets/images/logo.png"
+            alt="Growvidya"
+            width="180"
+            style="max-width: 180px; width: 180px; height: auto; display: inline-block; border: 0; outline: none; text-decoration: none;"
+          />
+        </div>
+        <h2 style="margin-top: 0; color: #111827; font-size: 24px;">Sign-In Verification Code</h2>
+        <p style="color: #374151; font-size: 16px; line-height: 1.6;">
+          Hello${toName ? ` <strong>${toName}</strong>` : ''}, use the following 6-digit OTP to complete your sign-in${portalName ? ` to <strong>${portalName}</strong>` : ''}:
+        </p>
+        <div style="background: #f3f4f6; padding: 18px; border-radius: 8px; text-align: center; margin: 22px 0;">
+          <span style="font-size: 34px; font-weight: bold; letter-spacing: 6px; color: #111827; font-family: monospace;">${otpCode}</span>
+        </div>
+        <p style="color: #6b7280; font-size: 14px; line-height: 1.5; margin-bottom: 16px;">
+          This code is valid for ${expiresInMinutes} minutes. If you did not request this code, you can safely ignore this email.
+        </p>
+        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 16px 0;" />
+        <p style="color: #6b7280; font-size: 13px; margin-bottom: 0;">
+          <strong>Disclaimer:</strong> This is an automated email. Please do not reply back to this mail.
+        </p>
+      </div>
+    `;
+
+    return await EmailService.sendEmail({
+      to: cleanEmail,
+      toName: toName || cleanEmail,
+      subject,
+      text,
+      html,
+    });
+  }
+
+  /**
+   * Verify the 6-digit OTP against the otp column and check otp_expires_at (does not use passcode column)
+   */
+  static async verifyPasscode(tableName, recordId, inputOtp) {
+    const [rows] = await pool.query(
+      `SELECT id, otp, otp_expires_at,
+              (otp_expires_at IS NOT NULL AND otp_expires_at >= NOW()) AS is_valid_time
+       FROM ${tableName}
+       WHERE id = ?`,
+      [recordId]
+    );
+
+    const record = rows && rows.length > 0 ? rows[0] : null;
+    if (!record) {
+      return { valid: false, message: 'Account not found or inactive.' };
+    }
+
+    if (!record.otp) {
+      return { valid: false, message: 'No active OTP request found. Please request a new code.' };
+    }
+
+    if (!record.is_valid_time) {
+      return { valid: false, message: 'OTP has expired. Please request a new 6-digit code.' };
+    }
+
+    const cleanInput = String(inputOtp || '').trim();
+    if (String(record.otp).trim() !== cleanInput) {
+      return { valid: false, message: 'Invalid 6-digit OTP. Please try again.' };
+    }
+
+    await pool.query(
+      `UPDATE ${tableName} SET otp = NULL, otp_expires_at = NULL WHERE id = ?`,
+      [recordId]
+    );
+
+    return { valid: true };
   }
 }
 

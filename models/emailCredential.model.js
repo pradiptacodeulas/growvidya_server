@@ -61,42 +61,6 @@ function createValidationError(message) {
 }
 
 class EmailCredentialModel {
-  static _initialized = false;
-
-  /**
-   * Ensure email_credentials table exists with all required columns for Mailjet and SMTP
-   */
-  static async initTable() {
-    if (EmailCredentialModel._initialized) return;
-    try {
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS email_credentials (
-          id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
-          provider ENUM('mailjet', 'smtp') NOT NULL COMMENT 'Email provider: mailjet or smtp',
-          from_name VARCHAR(150) NOT NULL COMMENT 'Sender display name',
-          from_email VARCHAR(150) NOT NULL COMMENT 'Sender email address',
-          api_key VARCHAR(255) DEFAULT NULL COMMENT 'Mailjet API Key (Public Key)',
-          api_secret TEXT DEFAULT NULL COMMENT 'AES-256-GCM encrypted Mailjet Secret Key',
-          smtp_host VARCHAR(255) DEFAULT NULL COMMENT 'SMTP server hostname',
-          smtp_port INT(11) DEFAULT 587 COMMENT 'SMTP server port (587, 465, 25)',
-          smtp_username VARCHAR(255) DEFAULT NULL COMMENT 'SMTP authentication username',
-          smtp_password TEXT DEFAULT NULL COMMENT 'AES-256-GCM encrypted SMTP password',
-          smtp_encryption ENUM('tls', 'ssl', 'none') NOT NULL DEFAULT 'tls' COMMENT 'SMTP encryption protocol',
-          is_default TINYINT(1) NOT NULL DEFAULT 0 COMMENT '1 = Active default email provider',
-          status TINYINT(1) NOT NULL DEFAULT 1 COMMENT '1 = Active, 0 = Inactive',
-          created_on TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-          updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-          UNIQUE KEY uq_email_provider (provider),
-          KEY idx_email_default (is_default, status)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-      `);
-
-      EmailCredentialModel._initialized = true;
-    } catch (err) {
-      console.error('[EmailCredentialModel] Table initialization error:', err.message);
-    }
-  }
-
   /**
    * Validate Mailjet or SMTP payload
    */
@@ -208,21 +172,36 @@ class EmailCredentialModel {
   static sanitizeRecord(row) {
     if (!row) return null;
     const isMailjet = row.provider === 'mailjet';
+    let decryptedApiSecret = '';
+    let decryptedSmtpPassword = '';
+    try {
+      if (isMailjet && row.api_secret) {
+        decryptedApiSecret = decryptSecret(row.api_secret) || '';
+      }
+      if (!isMailjet && row.smtp_password) {
+        decryptedSmtpPassword = decryptSecret(row.smtp_password) || '';
+      }
+    } catch (e) {
+      // fallback to empty string if decryption fails
+    }
     return {
       id: row.id,
       provider: row.provider,
       from_name: row.from_name || '',
       from_email: row.from_email || '',
       api_key: isMailjet ? (row.api_key || '') : null,
+      api_secret: isMailjet ? decryptedApiSecret : null,
       api_secret_masked: isMailjet && row.api_secret ? MASKED_SECRET : null,
       has_api_secret: Boolean(isMailjet && row.api_secret),
       smtp_host: !isMailjet ? (row.smtp_host || '') : null,
       smtp_port: !isMailjet ? (row.smtp_port ? Number(row.smtp_port) : 587) : null,
       smtp_username: !isMailjet ? (row.smtp_username || '') : null,
+      smtp_password: !isMailjet ? decryptedSmtpPassword : null,
       smtp_password_masked: !isMailjet && row.smtp_password ? MASKED_SECRET : null,
       has_smtp_password: Boolean(!isMailjet && row.smtp_password),
       smtp_encryption: !isMailjet ? (row.smtp_encryption || 'tls') : null,
       is_default: Number(row.is_default) === 1 ? 1 : 0,
+      otp_mode: row.otp_mode === 'production' ? 'production' : 'test',
       status: row.status !== undefined && row.status !== null ? Number(row.status) : 1,
       created_on: row.created_on,
       created_at: row.created_on,
@@ -234,9 +213,8 @@ class EmailCredentialModel {
    * Retrieve all configured email providers (Mailjet & SMTP)
    */
   static async getAll() {
-    await EmailCredentialModel.initTable();
     const [rows] = await pool.query(
-      `SELECT * FROM email_credentials ORDER BY is_default DESC, FIELD(provider, 'mailjet', 'smtp'), id ASC`
+      `SELECT * FROM email_credentials WHERE status IN (1, 2) ORDER BY is_default DESC, FIELD(provider, 'mailjet', 'smtp'), id ASC`
     );
     return rows.map((r) => EmailCredentialModel.sanitizeRecord(r));
   }
@@ -245,9 +223,8 @@ class EmailCredentialModel {
    * Retrieve a specific email provider configuration by ID
    */
   static async getById(id) {
-    await EmailCredentialModel.initTable();
     const [rows] = await pool.query(
-      `SELECT * FROM email_credentials WHERE id = ? LIMIT 1`,
+      `SELECT * FROM email_credentials WHERE id = ? AND status IN (1, 2) LIMIT 1`,
       [id]
     );
     return rows.length > 0 ? EmailCredentialModel.sanitizeRecord(rows[0]) : null;
@@ -257,9 +234,8 @@ class EmailCredentialModel {
    * Retrieve a specific email provider configuration by provider name ('mailjet' | 'smtp')
    */
   static async getByProvider(provider) {
-    await EmailCredentialModel.initTable();
     const [rows] = await pool.query(
-      `SELECT * FROM email_credentials WHERE provider = ? LIMIT 1`,
+      `SELECT * FROM email_credentials WHERE provider = ? AND status IN (1, 2) LIMIT 1`,
       [String(provider).toLowerCase()]
     );
     return rows.length > 0 ? EmailCredentialModel.sanitizeRecord(rows[0]) : null;
@@ -269,7 +245,6 @@ class EmailCredentialModel {
    * Create or replace credentials for a provider ('mailjet' or 'smtp')
    */
   static async save(data) {
-    await EmailCredentialModel.initTable();
 
     const [existingRows] = await pool.query(
       `SELECT * FROM email_credentials WHERE provider = ? LIMIT 1`,
@@ -290,16 +265,16 @@ class EmailCredentialModel {
 
     const normalizedStatus =
       data.status !== undefined && data.status !== null
-        ? Number(data.status) === 0
-          ? 0
+        ? Number(data.status) === 2
+          ? 2
           : 1
-        : existing
-          ? Number(existing.status)
+        : existing && Number(existing.status) === 2
+          ? 2
           : 1;
 
     // Check if any default exists at all
     const [defaultRows] = await pool.query(
-      `SELECT id FROM email_credentials WHERE is_default = 1 LIMIT 1`
+      `SELECT id FROM email_credentials WHERE is_default = 1 AND status IN (1, 2) LIMIT 1`
     );
     const hasAnyDefault = defaultRows.length > 0;
 
@@ -368,11 +343,12 @@ class EmailCredentialModel {
           validated.provider === 'mailjet' ? encryptSecret(validated.api_secret) : null;
         const encryptedSmtpPassword =
           validated.provider === 'smtp' ? encryptSecret(validated.smtp_password) : null;
+        const currentOtpMode = await EmailCredentialModel.getOtpMode();
 
         const [result] = await conn.query(
           `INSERT INTO email_credentials
-           (provider, from_name, from_email, api_key, api_secret, smtp_host, smtp_port, smtp_username, smtp_password, smtp_encryption, is_default, status)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (provider, from_name, from_email, api_key, api_secret, smtp_host, smtp_port, smtp_username, smtp_password, smtp_encryption, is_default, otp_mode, status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             validated.provider,
             validated.from_name,
@@ -385,6 +361,7 @@ class EmailCredentialModel {
             encryptedSmtpPassword,
             validated.smtp_encryption,
             normalizedDefault,
+            currentOtpMode,
             finalStatus,
           ]
         );
@@ -405,9 +382,8 @@ class EmailCredentialModel {
    * Update an existing email credential configuration by ID
    */
   static async update(id, data) {
-    await EmailCredentialModel.initTable();
 
-    const [rows] = await pool.query(`SELECT * FROM email_credentials WHERE id = ? LIMIT 1`, [id]);
+    const [rows] = await pool.query(`SELECT * FROM email_credentials WHERE id = ? AND status IN (1, 2) LIMIT 1`, [id]);
     if (rows.length === 0) return null;
 
     const existing = rows[0];
@@ -421,9 +397,8 @@ class EmailCredentialModel {
    * Set a specific provider record as Default (and unset the other)
    */
   static async setDefault(id) {
-    await EmailCredentialModel.initTable();
 
-    const [rows] = await pool.query(`SELECT * FROM email_credentials WHERE id = ? LIMIT 1`, [id]);
+    const [rows] = await pool.query(`SELECT * FROM email_credentials WHERE id = ? AND status IN (1, 2) LIMIT 1`, [id]);
     if (rows.length === 0) return null;
 
     const conn = await pool.getConnection();
@@ -445,20 +420,19 @@ class EmailCredentialModel {
   }
 
   /**
-   * Toggle status (Active = 1, Inactive = 0)
+   * Toggle status (Active = 1, Inactive = 2)
    */
   static async toggleStatus(id, status) {
-    await EmailCredentialModel.initTable();
 
-    const [rows] = await pool.query(`SELECT * FROM email_credentials WHERE id = ? LIMIT 1`, [id]);
+    const [rows] = await pool.query(`SELECT * FROM email_credentials WHERE id = ? AND status IN (1, 2) LIMIT 1`, [id]);
     if (rows.length === 0) return null;
 
-    const normalizedStatus = Number(status) === 0 ? 0 : 1;
+    const normalizedStatus = Number(status) === 2 ? 2 : 1;
     // If deactivating the default provider, unset is_default on it
-    const nextDefault = normalizedStatus === 0 ? 0 : Number(rows[0].is_default);
+    const nextDefault = normalizedStatus === 2 ? 0 : Number(rows[0].is_default);
 
     await pool.query(
-      `UPDATE email_credentials SET status = ?, is_default = ?, updated_at = NOW() WHERE id = ?`,
+      `UPDATE email_credentials SET status = ?, is_default = ?, updated_at = NOW() WHERE id = ? AND status != 4`,
       [normalizedStatus, nextDefault, id]
     );
 
@@ -466,12 +440,53 @@ class EmailCredentialModel {
   }
 
   /**
-   * Delete an email credential record
+   * Soft delete an email credential record (status = 4)
    */
   static async delete(id) {
-    await EmailCredentialModel.initTable();
-    const [res] = await pool.query(`DELETE FROM email_credentials WHERE id = ?`, [id]);
+    const [res] = await pool.query(
+      `UPDATE email_credentials SET status = 4, is_default = 0, updated_at = NOW() WHERE id = ? AND status != 4`,
+      [id]
+    );
     return res.affectedRows > 0;
+  }
+
+  /**
+   * Get current Portal Sign-In OTP mode ('test' | 'production') from email_credentials
+   */
+  static async getOtpMode() {
+    const [rows] = await pool.query(
+      `SELECT otp_mode FROM email_credentials WHERE status IN (1, 2) ORDER BY is_default DESC, id ASC LIMIT 1`
+    );
+    if (rows.length > 0 && rows[0].otp_mode === 'production') {
+      return 'production';
+    }
+    return 'test';
+  }
+
+  /**
+   * Update Portal Sign-In OTP mode ('test' | 'production') across email_credentials
+   */
+  static async updateOtpMode(mode) {
+    const normalizedMode = String(mode || '').trim().toLowerCase();
+    if (!['test', 'production'].includes(normalizedMode)) {
+      throw createValidationError('OTP mode must be either "test" or "production".');
+    }
+
+    if (normalizedMode === 'production') {
+      const activeDefault = await EmailCredentialModel.getActiveCredentials();
+      if (!activeDefault) {
+        throw createValidationError(
+          'Please configure and activate a Default Email Provider (Mailjet or SMTP) before switching to Production Mode.'
+        );
+      }
+    }
+
+    await pool.query(
+      `UPDATE email_credentials SET otp_mode = ?, updated_at = NOW() WHERE status IN (1, 2)`,
+      [normalizedMode]
+    );
+
+    return normalizedMode;
   }
 
   /**
@@ -479,11 +494,9 @@ class EmailCredentialModel {
    * Never expose the return value of this method in any API response.
    */
   static async getActiveCredentials(specificId = null) {
-    await EmailCredentialModel.initTable();
-
     let rows;
     if (specificId) {
-      [rows] = await pool.query(`SELECT * FROM email_credentials WHERE id = ? LIMIT 1`, [specificId]);
+      [rows] = await pool.query(`SELECT * FROM email_credentials WHERE id = ? AND status IN (1, 2) LIMIT 1`, [specificId]);
     } else {
       [rows] = await pool.query(
         `SELECT * FROM email_credentials
@@ -491,15 +504,6 @@ class EmailCredentialModel {
          ORDER BY id DESC
          LIMIT 1`
       );
-      // Fallback to any active provider if none is explicitly marked default
-      if (rows.length === 0) {
-        [rows] = await pool.query(
-          `SELECT * FROM email_credentials
-           WHERE status = 1
-           ORDER BY id DESC
-           LIMIT 1`
-        );
-      }
     }
 
     if (!rows || rows.length === 0) {

@@ -98,14 +98,7 @@ async function verifyStudentCredential(candidatePassword, student) {
     }
   }
 
-  // 3. Passcode match
-  if (student.passcode) {
-    if (cleanInput === String(student.passcode).trim() || (await comparePassword(cleanInput, student.passcode))) {
-      return true;
-    }
-  }
-
-  // 4. Contact or admission number match if no password is set
+  // 3. Contact or admission number match if no password is set
   if (!student.password) {
     if (
       (student.admission_number && cleanInput === String(student.admission_number).trim()) ||
@@ -278,18 +271,42 @@ class StudentAuthController {
         return ApiResponse.error(res, 'Student account not found with this identifier or is inactive.', null, 404);
       }
 
+      const otpMode = await PasscodeService.getOtpMode();
+      const isTest = otpMode === 'test';
       const passcode = PasscodeService.generatePasscode();
-      await PasscodeService.storePasscode('student_master', student.id, passcode, 10);
+      const expiresInMinutes = 10;
 
-      const isTest = PasscodeService.isTestMode();
+      if (!isTest) {
+        const targetEmail = String(student.email_address || '').trim();
+        if (!targetEmail) {
+          return ApiResponse.error(res, 'No email address is registered for this account to receive the OTP.', null, 400);
+        }
+        await PasscodeService.storePasscode('student_master', student.id, passcode, expiresInMinutes);
+        const studentName = [student.first_name, student.last_name].filter(Boolean).join(' ');
+        await PasscodeService.sendOtpEmail({
+          toEmail: targetEmail,
+          toName: studentName,
+          otpCode: passcode,
+          portalName: 'Student Portal',
+          expiresInMinutes,
+        });
+        return ApiResponse.success(res, 'A 6-digit OTP has been sent to your registered email address.', {
+          identifier: cleanIdent,
+          maskedIdentifier: PasscodeService.maskIdentifier(targetEmail),
+          testMode: false,
+          expiresInMinutes,
+        });
+      }
+
+      await PasscodeService.storePasscode('student_master', student.id, passcode, expiresInMinutes);
       const maskedIdentifier = PasscodeService.maskIdentifier(student.primary_contact_number || student.email_address || student.admission_number || cleanIdent);
 
-      return ApiResponse.success(res, 'A 6-digit passcode has been generated.', {
+      return ApiResponse.success(res, 'A 6-digit OTP has been generated.', {
         identifier: cleanIdent,
         maskedIdentifier,
-        testMode: isTest,
-        testPasscode: isTest ? passcode : undefined,
-        expiresInMinutes: 10,
+        testMode: true,
+        testPasscode: passcode,
+        expiresInMinutes,
       });
     } catch (error) {
       console.error('Error in StudentAuthController.requestPasscode:', error);
@@ -309,7 +326,7 @@ class StudentAuthController {
         return ApiResponse.error(res, 'Admission number, email or phone number is required.', null, 400);
       }
       if (!passcode || !String(passcode).trim()) {
-        return ApiResponse.error(res, '6-digit passcode is required.', null, 400);
+        return ApiResponse.error(res, '6-digit OTP is required.', null, 400);
       }
 
       const cleanIdent = String(emailOrAdmNo).trim();
@@ -345,7 +362,7 @@ class StudentAuthController {
         return ApiResponse.error(res, verifyResult.message, null, 401);
       }
 
-      return await StudentAuthController._issueSession(student, res, 'Student login successful via passcode.');
+      return await StudentAuthController._issueSession(student, res, 'Student login successful via OTP.');
     } catch (error) {
       console.error('Error in StudentAuthController.verifyPasscode:', error);
       next(error);

@@ -196,7 +196,7 @@ class RfidCardMasterController {
 
       const name = card_name || cardName;
       const code = card_code || cardCode;
-      const type = card_type || cardType || 'pvc_card';
+      const type = card_type || cardType || null;
       const freq = frequency;
       const range = read_range || readRange;
       const price = unit_price !== undefined ? unit_price : unitPrice;
@@ -488,12 +488,6 @@ class RfidCardMasterController {
       }
 
       await RfidCardMasterModel.delete(Number(id));
-      if (existing.card_image) {
-        deleteLocalRfidImage(existing.card_image);
-      }
-      if (existing.rfid_image && existing.rfid_image !== existing.card_image) {
-        deleteLocalRfidImage(existing.rfid_image);
-      }
       return ApiResponse.success(res, 'RFID card deleted successfully.');
     } catch (error) {
       if (error.message.includes('associated with it')) {
@@ -516,8 +510,8 @@ class RfidCardMasterController {
         return ApiResponse.badRequest(res, 'Valid RFID card ID is required.');
       }
 
-      if (status === undefined || (parseInt(status, 10) !== 0 && parseInt(status, 10) !== 1)) {
-        return ApiResponse.badRequest(res, 'Status must be 0 (inactive) or 1 (active).');
+      if (status === undefined || (parseInt(status, 10) !== 1 && parseInt(status, 10) !== 2)) {
+        return ApiResponse.badRequest(res, 'Status must be 1 (active) or 2 (inactive).');
       }
 
       const existing = await RfidCardMasterModel.getById(Number(id));

@@ -195,14 +195,6 @@ server.listen(config.port, async () => {
   await BranchModel.initTable();
   await TeacherSelfAttendanceModel.initTable();
   await MessageModel.initTable();
-  await RazorpayCredentialModel.initTable();
-  await EmailCredentialModel.initTable();
-  await SaasRoleModel.initTable();
-  await AttendanceMachineMasterModel.initTable();
-  await RfidCardMasterModel.initTable();
-  await StorageMasterModel.initTable();
-  await CouponModel.initTable();
-  await SubscriptionSchemaModel.initTable();
   await SupportTicketModel.initTable();
   await DeviceTokenModel.initTable();
   SubscriptionLifecycleJob.start();

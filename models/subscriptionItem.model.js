@@ -12,7 +12,7 @@ class SubscriptionItemModel {
    * Fetch all items belonging to a subscription plan
    */
   static async getByPlanId(subId, { status = '' } = {}) {
-    const conditions = ['sub_id = ?'];
+    const conditions = ['sub_id = ?', 'status IN (1, 2)'];
     const params = [subId];
 
     if (status !== '' && status !== undefined && status !== 'all') {
@@ -41,11 +41,11 @@ class SubscriptionItemModel {
   }
 
   /**
-   * Get single item by ID
+   * Get single item by ID (excludes soft-deleted status = 4)
    */
   static async getById(id) {
     const [rows] = await pool.query(
-      'SELECT * FROM subscription_items WHERE id = ? LIMIT 1',
+      'SELECT * FROM subscription_items WHERE id = ? AND status IN (1, 2) LIMIT 1',
       [id]
     );
     return rows[0] || null;
@@ -75,7 +75,7 @@ class SubscriptionItemModel {
         cleanCode,
         resolvedType,
         description || '',
-        parseInt(status, 10) === 0 ? 0 : 1,
+        parseInt(status, 10) === 2 ? 2 : 1,
       ]
     );
     return result.insertId;
@@ -112,42 +112,46 @@ class SubscriptionItemModel {
     if (updates.length === 0) return false;
 
     params.push(id);
-    const query = `UPDATE subscription_items SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ?`;
+    const query = `UPDATE subscription_items SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ? AND status != 4`;
     const [result] = await pool.query(query, params);
     return result.affectedRows > 0;
   }
 
   /**
-   * Delete a subscription item
+   * Soft delete a subscription item (status = 4)
    */
   static async delete(id) {
-    const [result] = await pool.query('DELETE FROM subscription_items WHERE id = ?', [id]);
+    const [result] = await pool.query(
+      'UPDATE subscription_items SET status = 4, updated_at = NOW() WHERE id = ? AND status != 4',
+      [id]
+    );
     return result.affectedRows > 0;
   }
 
   /**
-   * Toggle status
+   * Toggle status (1 = Active, 2 = Inactive)
    */
   static async toggleStatus(id, status) {
     const [result] = await pool.query(
-      'UPDATE subscription_items SET status = ?, updated_at = NOW() WHERE id = ?',
+      'UPDATE subscription_items SET status = ?, updated_at = NOW() WHERE id = ? AND status != 4',
       [parseInt(status, 10), id]
     );
     return result.affectedRows > 0;
   }
 
   /**
-   * Bulk sync / replace items for a subscription plan (including gated modules + display features)
+   * Bulk sync / replace items for a subscription plan (soft-deleting removed items instead of hard DELETE)
    */
   static async syncItemsForPlan(subId, items = []) {
     if (!Array.isArray(items)) return;
 
-    await pool.query('DELETE FROM subscription_items WHERE sub_id = ?', [subId]);
+    await pool.query(
+      'UPDATE subscription_items SET status = 4, updated_at = NOW() WHERE sub_id = ? AND status != 4',
+      [subId]
+    );
 
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
+    for (const item of items) {
       if (!item || !item.item_name || !String(item.item_name).trim()) continue;
-
       await this.create({
         sub_id: subId,
         item_name: item.item_name,

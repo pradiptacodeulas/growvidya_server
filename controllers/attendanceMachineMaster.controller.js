@@ -217,11 +217,11 @@ class AttendanceMachineMasterController {
       const name = machine_name || machineName;
       const model = model_number || modelNumber;
       const brandName = brand;
-      const type = machine_type || machineType || 'hybrid';
-      const conn = connectivity || 'LAN, Wi-Fi';
+      const type = machine_type || machineType || null;
+      const conn = connectivity || null;
       const uCap = user_capacity !== undefined ? user_capacity : userCapacity;
       const lCap = log_capacity !== undefined ? log_capacity : logCapacity;
-      const protocol = push_protocol || pushProtocol || 'Cloud Push';
+      const protocol = push_protocol || pushProtocol || null;
       const price = unit_price !== undefined ? unit_price : unitPrice;
       const amc = amc_price !== undefined ? amc_price : amcPrice;
       const image = req.file
@@ -261,8 +261,8 @@ class AttendanceMachineMasterController {
         brand: brandName,
         machine_type: type,
         connectivity: conn,
-        user_capacity: uCap !== undefined ? uCap : 1000,
-        log_capacity: lCap !== undefined ? lCap : 100000,
+        user_capacity: uCap,
+        log_capacity: lCap,
         push_protocol: protocol,
         unit_price: price,
         amc_price: amc !== undefined ? amc : 0.00,
@@ -527,9 +527,6 @@ class AttendanceMachineMasterController {
       }
 
       await AttendanceMachineMasterModel.delete(Number(id));
-      if (existing.machine_image) {
-        deleteLocalMachineImage(existing.machine_image);
-      }
       return ApiResponse.success(res, 'Attendance machine deleted successfully.');
     } catch (error) {
       if (error.message.includes('assigned to school campuses')) {
@@ -552,8 +549,8 @@ class AttendanceMachineMasterController {
         return ApiResponse.badRequest(res, 'Valid attendance machine ID is required.');
       }
 
-      if (status === undefined || (parseInt(status, 10) !== 0 && parseInt(status, 10) !== 1)) {
-        return ApiResponse.badRequest(res, 'Status must be 0 (inactive) or 1 (active).');
+      if (status === undefined || (parseInt(status, 10) !== 1 && parseInt(status, 10) !== 2)) {
+        return ApiResponse.badRequest(res, 'Status must be 1 (active) or 2 (inactive).');
       }
 
       const existing = await AttendanceMachineMasterModel.getById(Number(id));

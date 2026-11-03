@@ -3,67 +3,12 @@ const { parsePagination, buildPagination } = require('../utils/pagination.util')
 
 class AttendanceMachineMasterModel {
   /**
-   * Ensure school_attendance_machines has order-tracking columns and backfill existing rows
-   */
-  static async initTable() {
-    try {
-      const [cols] = await pool.query('SHOW COLUMNS FROM school_attendance_machines');
-      const existingCols = new Set(cols.map((c) => c.Field));
-
-      const alterParts = [];
-      if (!existingCols.has('order_no')) {
-        alterParts.push('ADD COLUMN order_no VARCHAR(100) DEFAULT NULL AFTER id');
-      }
-      if (!existingCols.has('quantity')) {
-        alterParts.push('ADD COLUMN quantity INT NOT NULL DEFAULT 1 AFTER machine_master_id');
-      }
-      if (!existingCols.has('unit_price')) {
-        alterParts.push('ADD COLUMN unit_price DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER quantity');
-      }
-      if (!existingCols.has('total_amount')) {
-        alterParts.push('ADD COLUMN total_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER unit_price');
-      }
-      if (!existingCols.has('order_status')) {
-        alterParts.push("ADD COLUMN order_status ENUM('pending','approved','dispatched','delivered','cancelled') NOT NULL DEFAULT 'pending' AFTER status");
-      }
-      if (!existingCols.has('payment_transaction_id')) {
-        alterParts.push('ADD COLUMN payment_transaction_id VARCHAR(150) DEFAULT NULL AFTER order_status');
-      }
-      if (!existingCols.has('shipping_address')) {
-        alterParts.push('ADD COLUMN shipping_address TEXT DEFAULT NULL AFTER payment_transaction_id');
-      }
-      if (!existingCols.has('remarks')) {
-        alterParts.push('ADD COLUMN remarks TEXT DEFAULT NULL AFTER shipping_address');
-      }
-
-      if (alterParts.length > 0) {
-        await pool.query(`ALTER TABLE school_attendance_machines ${alterParts.join(', ')}`);
-      }
-
-      // Backfill order_no, unit_price, total_amount, and shipping_address for existing records
-      await pool.query(`
-        UPDATE school_attendance_machines sam
-        JOIN attendance_machine_master amm ON sam.machine_master_id = amm.id
-        LEFT JOIN school_master sm ON sam.school_id = sm.id
-        SET
-          sam.order_no = COALESCE(sam.order_no, CONCAT('MACH_', sam.school_id, '_', sam.id)),
-          sam.unit_price = CASE WHEN sam.unit_price = 0 THEN amm.unit_price ELSE sam.unit_price END,
-          sam.total_amount = CASE WHEN sam.total_amount = 0 THEN (amm.unit_price * sam.quantity) ELSE sam.total_amount END,
-          sam.shipping_address = COALESCE(sam.shipping_address, sm.address)
-        WHERE sam.order_no IS NULL OR sam.unit_price = 0
-      `);
-    } catch (error) {
-      console.error('Error initializing school_attendance_machines columns:', error.message);
-    }
-  }
-
-  /**
    * Fetch a page of attendance machines (with search, status, machine_type, brand filters)
    * Returns { machines, pagination, counts }
    */
   static async getAll({ search = '', status = '', machine_type = '', brand = '', page, limit } = {}) {
     const { page: pageNum, limit: pageSize, offset } = parsePagination({ page, limit });
-    let conditions = [];
+    let conditions = ['status IN (1, 2)'];
     let params = [];
 
     if (status !== '' && status !== undefined && status !== 'all') {
@@ -133,12 +78,15 @@ class AttendanceMachineMasterModel {
     const [[row]] = await pool.query(`
       SELECT
         COUNT(*) AS total,
-        COALESCE(SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END), 0) AS active
+        COALESCE(SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END), 0) AS active,
+        COALESCE(SUM(CASE WHEN status = 2 THEN 1 ELSE 0 END), 0) AS inactive
       FROM attendance_machine_master
+      WHERE status IN (1, 2)
     `);
     const total = Number(row.total) || 0;
     const active = Number(row.active) || 0;
-    return { total, active, inactive: total - active };
+    const inactive = Number(row.inactive) || 0;
+    return { total, active, inactive };
   }
 
   /**
@@ -174,7 +122,7 @@ class AttendanceMachineMasterModel {
    */
   static async getById(id) {
     const [rows] = await pool.query(
-      'SELECT * FROM attendance_machine_master WHERE id = ? LIMIT 1',
+      'SELECT * FROM attendance_machine_master WHERE id = ? AND status IN (1, 2) LIMIT 1',
       [id]
     );
     return rows[0] || null;
@@ -186,7 +134,7 @@ class AttendanceMachineMasterModel {
   static async getByModelNumber(modelNumber) {
     if (!modelNumber) return null;
     const [rows] = await pool.query(
-      'SELECT * FROM attendance_machine_master WHERE model_number = ? LIMIT 1',
+      'SELECT * FROM attendance_machine_master WHERE model_number = ? AND status IN (1, 2) LIMIT 1',
       [modelNumber.trim()]
     );
     return rows[0] || null;
@@ -199,11 +147,11 @@ class AttendanceMachineMasterModel {
     machine_name,
     model_number,
     brand,
-    machine_type = 'hybrid',
-    connectivity = 'LAN, Wi-Fi',
-    user_capacity = 1000,
-    log_capacity = 100000,
-    push_protocol = 'Cloud Push',
+    machine_type,
+    connectivity = null,
+    user_capacity = 0,
+    log_capacity = 0,
+    push_protocol = null,
     unit_price = 0,
     amc_price = 0,
     machine_image = null,
@@ -218,16 +166,16 @@ class AttendanceMachineMasterModel {
         machine_name.trim(),
         model_number.trim().toUpperCase(),
         brand.trim(),
-        machine_type || 'hybrid',
-        connectivity ? connectivity.trim() : 'LAN, Wi-Fi',
-        parseInt(user_capacity, 10) || 1000,
-        parseInt(log_capacity, 10) || 100000,
-        push_protocol ? push_protocol.trim() : 'Cloud Push',
+        machine_type,
+        connectivity ? connectivity.trim() : null,
+        parseInt(user_capacity, 10) || 0,
+        parseInt(log_capacity, 10) || 0,
+        push_protocol ? push_protocol.trim() : null,
         parseFloat(unit_price) || 0.00,
         parseFloat(amc_price) || 0.00,
         machine_image || null,
         specifications || '',
-        parseInt(status, 10) === 0 ? 0 : 1,
+        parseInt(status, 10) === 2 ? 2 : 1,
       ]
     );
     return result.insertId;
@@ -296,34 +244,28 @@ class AttendanceMachineMasterModel {
     if (updates.length === 0) return false;
 
     params.push(id);
-    const query = `UPDATE attendance_machine_master SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ?`;
+    const query = `UPDATE attendance_machine_master SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ? AND status != 4`;
     const [result] = await pool.query(query, params);
     return result.affectedRows > 0;
   }
 
   /**
-   * Delete an attendance machine
+   * Soft delete an attendance machine (status = 4)
    */
   static async delete(id) {
-    // Check if machine is linked to any schools
-    const [schoolMachines] = await pool.query(
-      'SELECT COUNT(*) AS count FROM school_attendance_machines WHERE machine_master_id = ?',
+    const [result] = await pool.query(
+      'UPDATE attendance_machine_master SET status = 4, updated_at = NOW() WHERE id = ? AND status != 4',
       [id]
     );
-    if (schoolMachines[0].count > 0) {
-      throw new Error('Cannot delete this machine model because it is assigned to school campuses. Please deactivate it instead.');
-    }
-
-    const [result] = await pool.query('DELETE FROM attendance_machine_master WHERE id = ?', [id]);
     return result.affectedRows > 0;
   }
 
   /**
-   * Toggle status
+   * Toggle status (1 = Active, 2 = Inactive)
    */
   static async toggleStatus(id, status) {
     const [result] = await pool.query(
-      'UPDATE attendance_machine_master SET status = ?, updated_at = NOW() WHERE id = ?',
+      'UPDATE attendance_machine_master SET status = ?, updated_at = NOW() WHERE id = ? AND status != 4',
       [parseInt(status, 10), id]
     );
     return result.affectedRows > 0;
@@ -339,7 +281,7 @@ class AttendanceMachineMasterModel {
     const params = [];
 
     if (status && status !== 'all') {
-      if (status === '1' || status === '0') {
+      if (status === '1' || status === '2') {
         conditions.push('sam.status = ?');
         params.push(parseInt(status, 10));
       } else {
@@ -536,7 +478,7 @@ class AttendanceMachineMasterModel {
     }
     if (data.status !== undefined) {
       updates.push('status = ?');
-      params.push(parseInt(data.status, 10) === 1 ? 1 : 0);
+      params.push(parseInt(data.status, 10) === 1 ? 1 : 2);
     }
     if (data.device_serial_number !== undefined && String(data.device_serial_number).trim() !== '') {
       updates.push('device_serial_number = ?');

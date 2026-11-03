@@ -8,19 +8,10 @@ const EmailService = require('./email.service');
  */
 class SubscriptionAlertService {
   static async getSettings() {
-    try {
-      const [rows] = await pool.query(
-        'SELECT * FROM saas_communication_settings WHERE id = 1 LIMIT 1'
-      );
-      if (rows.length > 0) return rows[0];
-    } catch (_) {}
-    return {
-      email_alerts_enabled: 0,
-      sms_alerts_enabled: 0,
-      notify_on_payment_success: 1,
-      notify_on_offline_decision: 1,
-      notify_on_expiry_reminder: 1,
-    };
+    const [rows] = await pool.query(
+      'SELECT * FROM saas_communication_settings WHERE id = 1 LIMIT 1'
+    );
+    return rows[0] || null;
   }
 
   static async updateSettings(payload = {}, actorId = null) {
@@ -121,8 +112,8 @@ class SubscriptionAlertService {
       const targetEmail = contact.admin_email || contact.school_email;
       const targetName = [contact.first_name, contact.last_name].filter(Boolean).join(' ') || contact.school_name;
 
-      // 1. Optional Email via Mailjet / SMTP (only when Super Admin turned ON email_alerts_enabled)
-      if (Number(settings.email_alerts_enabled) === 1 && targetEmail) {
+      // Optional Email via Mailjet / SMTP (when Super Admin turned ON email_alerts_enabled)
+      if (settings && Number(settings.email_alerts_enabled) === 1 && targetEmail) {
         try {
           await EmailService.sendEmail({
             to: targetEmail,
@@ -135,12 +126,6 @@ class SubscriptionAlertService {
         } catch (emailErr) {
           result.email = { status: 'skipped_provider_unavailable', detail: emailErr.message };
         }
-      }
-
-      // 2. Optional SMS alert (only when Super Admin turned ON sms_alerts_enabled)
-      const targetPhone = contact.admin_phone || contact.school_phone;
-      if (Number(settings.sms_alerts_enabled) === 1 && targetPhone && smsText) {
-        result.sms = { status: 'queued_if_gateway_configured', to: targetPhone };
       }
     } catch (_) {
       // Never throw

@@ -52,66 +52,6 @@ function decryptSecret(storedValue) {
 }
 
 class RazorpayCredentialModel {
-  static _initialized = false;
-
-  /**
-   * Ensure payment_credentials table has all required columns for dynamic Razorpay credentials
-   */
-  static async initTable() {
-    if (RazorpayCredentialModel._initialized) return;
-    try {
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS payment_credentials (
-          id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
-          method VARCHAR(255) DEFAULT 'razorpay',
-          key_id VARCHAR(255) DEFAULT NULL,
-          key_secret TEXT DEFAULT NULL,
-          webhook_secret TEXT DEFAULT NULL,
-          status INT(11) DEFAULT 1,
-          created_on TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-          updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-      `);
-
-      const [cols] = await pool.query(`SHOW COLUMNS FROM \`payment_credentials\``);
-      const colNames = cols.map((c) => c.Field);
-
-      if (!colNames.includes('key_id')) {
-        await pool.query(
-          `ALTER TABLE \`payment_credentials\` ADD COLUMN \`key_id\` VARCHAR(255) DEFAULT NULL AFTER \`method\``
-        );
-      }
-
-      if (!colNames.includes('key_secret')) {
-        await pool.query(
-          `ALTER TABLE \`payment_credentials\` ADD COLUMN \`key_secret\` TEXT DEFAULT NULL AFTER \`key_id\``
-        );
-      }
-
-      if (!colNames.includes('webhook_secret')) {
-        await pool.query(
-          `ALTER TABLE \`payment_credentials\` ADD COLUMN \`webhook_secret\` TEXT DEFAULT NULL AFTER \`key_secret\``
-        );
-      }
-
-      if (colNames.includes('description')) {
-        await pool.query(
-          `ALTER TABLE \`payment_credentials\` DROP COLUMN \`description\``
-        );
-      }
-
-      if (!colNames.includes('updated_at')) {
-        await pool.query(
-          `ALTER TABLE \`payment_credentials\` ADD COLUMN \`updated_at\` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER \`created_on\``
-        );
-      }
-
-      RazorpayCredentialModel._initialized = true;
-    } catch (err) {
-      console.error('[RazorpayCredentialModel] Table initialization error:', err.message);
-    }
-  }
-
   /**
    * Validate key_id and key_secret format and security constraints
    */
@@ -194,12 +134,11 @@ class RazorpayCredentialModel {
    * Retrieve the current Razorpay credentials (sanitized for API/UI)
    */
   static async getCurrent() {
-    await RazorpayCredentialModel.initTable();
     const [rows] = await pool.query(
       `SELECT id, method, key_id, key_secret, webhook_secret, status, created_on, updated_at
        FROM payment_credentials
-       WHERE method = 'razorpay'
-       ORDER BY status DESC, id DESC
+       WHERE method = 'razorpay' AND status IN (1, 2)
+       ORDER BY FIELD(status, 1, 2), id DESC
        LIMIT 1`
     );
     return rows.length > 0 ? RazorpayCredentialModel.sanitizeRecord(rows[0]) : null;
@@ -209,12 +148,11 @@ class RazorpayCredentialModel {
    * Retrieve all Razorpay credentials (sanitized for API/UI)
    */
   static async getAll() {
-    await RazorpayCredentialModel.initTable();
     const [rows] = await pool.query(
       `SELECT id, method, key_id, key_secret, webhook_secret, status, created_on, updated_at
        FROM payment_credentials
-       WHERE method = 'razorpay'
-       ORDER BY status DESC, id DESC`
+       WHERE method = 'razorpay' AND status IN (1, 2)
+       ORDER BY FIELD(status, 1, 2), id DESC`
     );
     return rows.map((r) => RazorpayCredentialModel.sanitizeRecord(r));
   }
@@ -223,11 +161,10 @@ class RazorpayCredentialModel {
    * Retrieve a specific Razorpay credential by ID (sanitized for API/UI)
    */
   static async getById(id) {
-    await RazorpayCredentialModel.initTable();
     const [rows] = await pool.query(
       `SELECT id, method, key_id, key_secret, webhook_secret, status, created_on, updated_at
        FROM payment_credentials
-       WHERE id = ? AND method = 'razorpay'
+       WHERE id = ? AND method = 'razorpay' AND status IN (1, 2)
        LIMIT 1`,
       [id]
     );
@@ -238,7 +175,6 @@ class RazorpayCredentialModel {
    * Create or replace Razorpay credentials
    */
   static async create({ key_id, key_secret, webhook_secret, status = 1 }) {
-    await RazorpayCredentialModel.initTable();
 
     const validated = RazorpayCredentialModel.validateCredentials({
       key_id,
@@ -256,11 +192,11 @@ class RazorpayCredentialModel {
 
     const encryptedSecret = encryptSecret(validated.key_secret);
     const encryptedWebhook = cleanWebhook ? encryptSecret(cleanWebhook) : null;
-    const normalizedStatus = status !== undefined && status !== null ? (Number(status) === 0 ? 0 : 1) : 1;
+    const normalizedStatus = status !== undefined && status !== null ? (Number(status) === 2 ? 2 : 1) : 1;
 
-    // Check if a Razorpay credential record already exists; if so, update it
+    // Check if an active/inactive Razorpay credential record already exists; if so, update it
     const [existing] = await pool.query(
-      `SELECT id, webhook_secret FROM payment_credentials WHERE method = 'razorpay' ORDER BY id DESC LIMIT 1`
+      `SELECT id, webhook_secret FROM payment_credentials WHERE method = 'razorpay' AND status IN (1, 2) ORDER BY id DESC LIMIT 1`
     );
 
     if (existing.length > 0) {
@@ -273,7 +209,7 @@ class RazorpayCredentialModel {
         [validated.key_id, encryptedSecret, nextWebhook, normalizedStatus, targetId]
       );
       await pool.query(
-        `DELETE FROM payment_credentials WHERE method = 'razorpay' AND id != ?`,
+        `UPDATE payment_credentials SET status = 4, updated_at = NOW() WHERE method = 'razorpay' AND id != ? AND status != 4`,
         [targetId]
       );
       return await RazorpayCredentialModel.getById(targetId);
@@ -292,18 +228,17 @@ class RazorpayCredentialModel {
    * Update existing Razorpay credentials
    */
   static async update(id, { key_id, key_secret, webhook_secret, clear_webhook_secret = false, status }) {
-    await RazorpayCredentialModel.initTable();
 
     let targetRow = null;
     if (id) {
       const [rows] = await pool.query(
-        `SELECT * FROM payment_credentials WHERE id = ? AND method = 'razorpay' LIMIT 1`,
+        `SELECT * FROM payment_credentials WHERE id = ? AND method = 'razorpay' AND status IN (1, 2) LIMIT 1`,
         [id]
       );
       targetRow = rows[0] || null;
     } else {
       const [rows] = await pool.query(
-        `SELECT * FROM payment_credentials WHERE method = 'razorpay' ORDER BY id DESC LIMIT 1`
+        `SELECT * FROM payment_credentials WHERE method = 'razorpay' AND status IN (1, 2) ORDER BY id DESC LIMIT 1`
       );
       targetRow = rows[0] || null;
     }
@@ -346,13 +281,13 @@ class RazorpayCredentialModel {
 
     if (status !== undefined && status !== null) {
       updates.push('status = ?');
-      params.push(Number(status) === 0 ? 0 : 1);
+      params.push(Number(status) === 2 ? 2 : 1);
     }
 
     params.push(targetRow.id);
 
     await pool.query(
-      `UPDATE payment_credentials SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ?`,
+      `UPDATE payment_credentials SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ? AND status != 4`,
       params
     );
 
@@ -360,20 +295,21 @@ class RazorpayCredentialModel {
   }
 
   /**
-   * Delete Razorpay credentials
+   * Soft delete Razorpay credentials (status = 4)
    */
   static async delete(id = null) {
-    await RazorpayCredentialModel.initTable();
 
     if (id) {
       const [res] = await pool.query(
-        `DELETE FROM payment_credentials WHERE id = ? AND method = 'razorpay'`,
+        `UPDATE payment_credentials SET status = 4, updated_at = NOW() WHERE id = ? AND method = 'razorpay' AND status != 4`,
         [id]
       );
       return res.affectedRows > 0;
     }
 
-    const [res] = await pool.query(`DELETE FROM payment_credentials WHERE method = 'razorpay'`);
+    const [res] = await pool.query(
+      `UPDATE payment_credentials SET status = 4, updated_at = NOW() WHERE method = 'razorpay' AND status != 4`
+    );
     return res.affectedRows > 0;
   }
 
@@ -382,7 +318,6 @@ class RazorpayCredentialModel {
    * Never expose the return value of this method in any API response.
    */
   static async getActiveCredentials() {
-    await RazorpayCredentialModel.initTable();
 
     const [rows] = await pool.query(
       `SELECT id, key_id, key_secret, webhook_secret, status

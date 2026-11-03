@@ -1,26 +1,6 @@
 const { pool } = require('../config/db.config');
 const { hashPassword } = require('../utils/password.util');
 
-const DEFAULT_SAAS_MODULES = [
-  { key: 'dashboard', name: 'Dashboard & Analytics', desc: 'Overview metrics, registration statistics, and revenue insights', order: 1 },
-  { key: 'schools', name: 'School Management', desc: 'Registered schools, approvals, and school account status', order: 2 },
-  { key: 'subscriptions', name: 'Subscriptions & Payments', desc: 'School subscriptions, manual payment verification, and extensions', order: 3 },
-  { key: 'packages', name: 'Packages & Pricing', desc: 'Subscription pricing tiers, package items, features, and plan limits', order: 4 },
-  { key: 'attendance_machines', name: 'Attendance Machines', desc: 'Biometric and RFID attendance hardware catalog and pricing', order: 5 },
-  { key: 'machines_buyers', name: 'Machines Buyers', desc: 'Biometric and RFID attendance hardware orders and buyer details', order: 6 },
-  { key: 'rfid_cards', name: 'RFID Cards', desc: 'Smart RFID card inventory, pricing, and specifications', order: 7 },
-  { key: 'rfid_buyers', name: 'RFID Buyers', desc: 'Smart RFID card buyers and order details', order: 8 },
-  { key: 'storage_plans', name: 'Storage Plans', desc: 'Cloud storage add-on packages and capacity units', order: 9 },
-  { key: 'storage_buyers', name: 'Storage Buyers', desc: 'Cloud storage buyers and add-on purchase details', order: 10 },
-  { key: 'coupons', name: 'Coupons & Discounts', desc: 'Promo codes, discounts, and redemption limits', order: 11 },
-  { key: 'bank_accounts', name: 'Bank Accounts', desc: 'Platform bank accounts and UPI/QR payment details', order: 12 },
-  { key: 'roles', name: 'Roles & Permissions', desc: 'Manage SaaS roles and granular module permissions', order: 13 },
-  { key: 'sub_admins', name: 'Users & Sub-Admins', desc: 'Manage sub-admin staff accounts and role assignments', order: 14 },
-  { key: 'payment_gateway', name: 'Payment Gateway Settings', desc: 'Razorpay payment gateway credentials, status, and environment mode', order: 15 },
-  { key: 'email_delivery', name: 'Email Delivery Settings', desc: 'Mailjet API and SMTP server credentials, default mailer, and test email delivery', order: 16 },
-  { key: 'support_tickets', name: 'Help & Support Tickets', desc: 'View, reply to, assign, and update status of school support tickets', order: 17 },
-];
-
 class SaasRoleModel {
   /**
    * Generate URL-safe slug from role name
@@ -31,157 +11,6 @@ class SaasRoleModel {
       .trim()
       .replace(/[^a-z0-9]+/g, '_')
       .replace(/^_+|_+$/g, '');
-  }
-
-  /**
-   * Initialize and verify RBAC tables, columns, and default SaaS modules
-   */
-  static async initTable() {
-    try {
-      // 1. Ensure saas_roles table exists
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS saas_roles (
-          id INT AUTO_INCREMENT PRIMARY KEY,
-          role_name VARCHAR(100) NOT NULL UNIQUE,
-          slug VARCHAR(100) DEFAULT NULL,
-          description TEXT DEFAULT NULL,
-          is_system TINYINT(1) NOT NULL DEFAULT 0,
-          status TINYINT(1) NOT NULL DEFAULT 1,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-      `);
-
-      // Ensure slug column exists on saas_roles
-      const [roleCols] = await pool.query(`
-        SELECT COLUMN_NAME
-        FROM information_schema.COLUMNS
-        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'saas_roles' AND COLUMN_NAME = 'slug'
-      `);
-      if (roleCols.length === 0) {
-        await pool.query('ALTER TABLE saas_roles ADD COLUMN slug VARCHAR(100) DEFAULT NULL AFTER role_name');
-      }
-
-      // Backfill missing slugs on existing roles
-      const [existingRoles] = await pool.query('SELECT id, role_name, slug FROM saas_roles');
-      for (const r of existingRoles) {
-        if (!r.slug) {
-          const generatedSlug = SaasRoleModel.slugify(r.role_name);
-          await pool.query('UPDATE saas_roles SET slug = ? WHERE id = ?', [generatedSlug, r.id]);
-        }
-      }
-
-      // 2. Ensure saas_modules table exists
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS saas_modules (
-          id INT AUTO_INCREMENT PRIMARY KEY,
-          module_key VARCHAR(50) NOT NULL UNIQUE,
-          module_name VARCHAR(100) NOT NULL,
-          description VARCHAR(255) DEFAULT NULL,
-          display_order INT DEFAULT 0,
-          status TINYINT(1) NOT NULL DEFAULT 1,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-      `);
-
-      // 3. Ensure saas_role_permissions table exists
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS saas_role_permissions (
-          id INT AUTO_INCREMENT PRIMARY KEY,
-          role_id INT NOT NULL,
-          module_key VARCHAR(50) NOT NULL,
-          can_view TINYINT(1) NOT NULL DEFAULT 0,
-          can_add TINYINT(1) NOT NULL DEFAULT 0,
-          can_edit TINYINT(1) NOT NULL DEFAULT 0,
-          can_delete TINYINT(1) NOT NULL DEFAULT 0,
-          can_manage TINYINT(1) NOT NULL DEFAULT 0,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-          CONSTRAINT fk_saas_role_perm_role FOREIGN KEY (role_id) REFERENCES saas_roles(id) ON DELETE CASCADE,
-          UNIQUE KEY uq_saas_role_module (role_id, module_key)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-      `);
-
-      // 4. Upsert all SaaS modules
-      for (const m of DEFAULT_SAAS_MODULES) {
-        await pool.query(`
-          INSERT INTO saas_modules (module_key, module_name, description, display_order, status)
-          VALUES (?, ?, ?, ?, 1)
-          ON DUPLICATE KEY UPDATE
-            module_name = VALUES(module_name),
-            description = VALUES(description),
-            display_order = VALUES(display_order),
-            status = 1
-        `, [m.key, m.name, m.desc, m.order]);
-      }
-
-      // Deactivate legacy combined modules so they do not duplicate in UI
-      await pool.query("UPDATE saas_modules SET status = 0 WHERE module_key IN ('settings', 'email_settings')");
-
-      // Migrate existing permissions from legacy 'settings' or 'email_settings' to 'payment_gateway' and 'email_delivery'
-      await pool.query(`
-        INSERT INTO saas_role_permissions (role_id, module_key, can_view, can_add, can_edit, can_delete, can_manage)
-        SELECT srp.role_id, 'payment_gateway', srp.can_view, srp.can_add, srp.can_edit, srp.can_delete, srp.can_manage
-        FROM saas_role_permissions srp
-        WHERE srp.module_key = 'settings'
-        ON DUPLICATE KEY UPDATE
-          can_view = IF(saas_role_permissions.can_view = 0 AND saas_role_permissions.can_edit = 0, VALUES(can_view), saas_role_permissions.can_view),
-          can_edit = IF(saas_role_permissions.can_edit = 0, VALUES(can_edit), saas_role_permissions.can_edit)
-      `);
-
-      await pool.query(`
-        INSERT INTO saas_role_permissions (role_id, module_key, can_view, can_add, can_edit, can_delete, can_manage)
-        SELECT srp.role_id, 'email_delivery', srp.can_view, srp.can_add, srp.can_edit, srp.can_delete, srp.can_manage
-        FROM saas_role_permissions srp
-        WHERE srp.module_key IN ('email_settings', 'settings')
-        ON DUPLICATE KEY UPDATE
-          can_view = IF(saas_role_permissions.can_view = 0 AND saas_role_permissions.can_edit = 0, VALUES(can_view), saas_role_permissions.can_view),
-          can_edit = IF(saas_role_permissions.can_edit = 0, VALUES(can_edit), saas_role_permissions.can_edit)
-      `);
-
-      // 5. Ensure Super Admin system role exists and has full permissions on all modules
-      const [superAdminRows] = await pool.query('SELECT id FROM saas_roles WHERE is_system = 1 OR LOWER(role_name) = "super admin" ORDER BY is_system DESC, id ASC LIMIT 1');
-      let superAdminRoleId;
-      if (superAdminRows.length === 0) {
-        const [ins] = await pool.query(
-          'INSERT INTO saas_roles (role_name, slug, description, is_system, status) VALUES (?, ?, ?, 1, 1)',
-          ['Super Admin', 'super_admin', 'Full unrestricted platform access to all modules and settings']
-        );
-        superAdminRoleId = ins.insertId;
-      } else {
-        superAdminRoleId = superAdminRows[0].id;
-        await pool.query('UPDATE saas_roles SET is_system = 1, status = 1, slug = COALESCE(slug, "super_admin") WHERE id = ?', [superAdminRoleId]);
-      }
-
-      for (const m of DEFAULT_SAAS_MODULES) {
-        await pool.query(`
-          INSERT INTO saas_role_permissions (role_id, module_key, can_view, can_add, can_edit, can_delete, can_manage)
-          VALUES (?, ?, 1, 1, 1, 1, 1)
-          ON DUPLICATE KEY UPDATE
-            can_view = 1, can_add = 1, can_edit = 1, can_delete = 1, can_manage = 1
-        `, [superAdminRoleId, m.key]);
-      }
-
-      // 6. Ensure all existing non-system roles have rows for every module (defaulting missing rows to 0)
-      const [nonSystemRoles] = await pool.query('SELECT id FROM saas_roles WHERE is_system = 0');
-      for (const roleRow of nonSystemRoles) {
-        for (const m of DEFAULT_SAAS_MODULES) {
-          await pool.query(`
-            INSERT IGNORE INTO saas_role_permissions (role_id, module_key, can_view, can_add, can_edit, can_delete, can_manage)
-            VALUES (?, ?, 0, 0, 0, 0, 0)
-          `, [roleRow.id, m.key]);
-        }
-      }
-
-      // 7. Ensure superadmin users have role_id linked to Super Admin role
-      await pool.query(
-        'UPDATE saas_admin_users SET role_id = ? WHERE role = "superadmin" AND (role_id IS NULL OR role_id = 0)',
-        [superAdminRoleId]
-      );
-    } catch (error) {
-      console.error('SaasRoleModel.initTable error:', error.message);
-    }
   }
 
   // ========================================================
@@ -288,7 +117,7 @@ class SaasRoleModel {
    * List all SaaS roles with assigned user count
    */
   static async getAllRoles({ search = '', status = '' } = {}) {
-    let conditions = [];
+    let conditions = ['r.status IN (1, 2)'];
     let params = [];
 
     if (status !== '' && status !== undefined && status !== 'all') {
@@ -314,7 +143,7 @@ class SaasRoleModel {
         r.status,
         r.created_at,
         r.updated_at,
-        (SELECT COUNT(*) FROM saas_admin_users sau WHERE sau.role_id = r.id) AS assigned_users_count,
+        (SELECT COUNT(*) FROM saas_admin_users sau WHERE sau.role_id = r.id AND sau.status IN (1, 2)) AS assigned_users_count,
         CASE
           WHEN r.is_system = 1 THEN (SELECT COUNT(*) FROM saas_modules sm WHERE sm.status = 1)
           ELSE (
@@ -342,7 +171,7 @@ class SaasRoleModel {
    * Get role by ID with all module permissions
    */
   static async getRoleById(id) {
-    const [roles] = await pool.query('SELECT * FROM saas_roles WHERE id = ? LIMIT 1', [id]);
+    const [roles] = await pool.query('SELECT * FROM saas_roles WHERE id = ? AND status IN (1, 2) LIMIT 1', [id]);
     if (roles.length === 0) return null;
 
     const role = roles[0];
@@ -393,7 +222,10 @@ class SaasRoleModel {
     });
 
     // Count assigned users
-    const [userCount] = await pool.query('SELECT COUNT(*) AS total FROM saas_admin_users WHERE role_id = ?', [id]);
+    const [userCount] = await pool.query(
+      'SELECT COUNT(*) AS total FROM saas_admin_users WHERE role_id = ? AND status IN (1, 2)',
+      [id]
+    );
     role.assigned_users_count = Number(userCount[0]?.total || 0);
     role.active_modules_count = role.permissions.filter(
       p => p.can_view === 1 || p.can_add === 1 || p.can_edit === 1 || p.can_delete === 1 || p.can_manage === 1
@@ -425,7 +257,7 @@ class SaasRoleModel {
 
     // Check unique role name or slug
     const [existing] = await pool.query(
-      'SELECT id, role_name, slug FROM saas_roles WHERE LOWER(role_name) = LOWER(?) OR (slug IS NOT NULL AND LOWER(slug) = LOWER(?)) LIMIT 1',
+      'SELECT id, role_name, slug FROM saas_roles WHERE (LOWER(role_name) = LOWER(?) OR (slug IS NOT NULL AND LOWER(slug) = LOWER(?))) AND status != 4 LIMIT 1',
       [trimmedName, roleSlug]
     );
     if (existing.length > 0) {
@@ -457,7 +289,7 @@ class SaasRoleModel {
       }
     }
 
-    const roleStatus = status !== undefined && Number(status) === 0 ? 0 : 1;
+    const roleStatus = status !== undefined && Number(status) === 2 ? 2 : 1;
     const connection = await pool.getConnection();
     let roleId;
 
@@ -522,7 +354,7 @@ class SaasRoleModel {
       }
 
       const [existing] = await pool.query(
-        'SELECT id FROM saas_roles WHERE LOWER(role_name) = LOWER(?) AND id != ? LIMIT 1',
+        'SELECT id FROM saas_roles WHERE LOWER(role_name) = LOWER(?) AND id != ? AND status != 4 LIMIT 1',
         [trimmedName, id]
       );
       if (existing.length > 0) {
@@ -540,7 +372,7 @@ class SaasRoleModel {
           : SaasRoleModel.slugify(trimmedName);
         if (nextSlug) {
           const [slugCheck] = await pool.query(
-            'SELECT id FROM saas_roles WHERE LOWER(slug) = LOWER(?) AND id != ? LIMIT 1',
+            'SELECT id FROM saas_roles WHERE LOWER(slug) = LOWER(?) AND id != ? AND status != 4 LIMIT 1',
             [nextSlug, id]
           );
           if (slugCheck.length > 0) {
@@ -555,7 +387,7 @@ class SaasRoleModel {
     } else if (slug !== undefined && String(slug).trim() && !isSystem) {
       const nextSlug = SaasRoleModel.slugify(slug);
       const [slugCheck] = await pool.query(
-        'SELECT id FROM saas_roles WHERE LOWER(slug) = LOWER(?) AND id != ? LIMIT 1',
+        'SELECT id FROM saas_roles WHERE LOWER(slug) = LOWER(?) AND id != ? AND status != 4 LIMIT 1',
         [nextSlug, id]
       );
       if (slugCheck.length > 0) {
@@ -579,7 +411,7 @@ class SaasRoleModel {
         throw err;
       }
       updates.push('status = ?');
-      params.push(Number(status) === 0 ? 0 : 1);
+      params.push(Number(status) === 2 ? 2 : 1);
     }
 
     const modules = await SaasRoleModel.getModules();
@@ -602,7 +434,7 @@ class SaasRoleModel {
       if (updates.length > 0) {
         params.push(id);
         await connection.query(
-          `UPDATE saas_roles SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ?`,
+          `UPDATE saas_roles SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ? AND status != 4`,
           params
         );
       }
@@ -650,7 +482,7 @@ class SaasRoleModel {
   }
 
   /**
-   * Toggle role active/inactive status
+   * Toggle role active/inactive status (1 = Active, 2 = Inactive)
    */
   static async toggleRoleStatus(id, status) {
     const role = await SaasRoleModel.getRoleById(id);
@@ -662,9 +494,9 @@ class SaasRoleModel {
       throw err;
     }
 
-    const nextStatus = Number(status) === 1 ? 1 : 0;
+    const nextStatus = Number(status) === 1 ? 1 : 2;
     await pool.query(
-      'UPDATE saas_roles SET status = ?, updated_at = NOW() WHERE id = ?',
+      'UPDATE saas_roles SET status = ?, updated_at = NOW() WHERE id = ? AND status != 4',
       [nextStatus, id]
     );
 
@@ -672,7 +504,7 @@ class SaasRoleModel {
   }
 
   /**
-   * Delete a role (cannot delete system roles or roles in use)
+   * Soft delete a role (status = 4; cannot delete system roles or roles in use)
    */
   static async deleteRole(id) {
     const role = await SaasRoleModel.getRoleById(id);
@@ -685,15 +517,20 @@ class SaasRoleModel {
     }
 
     // Check if any admin user has this role
-    const [assigned] = await pool.query('SELECT COUNT(*) AS total FROM saas_admin_users WHERE role_id = ?', [id]);
+    const [assigned] = await pool.query(
+      'SELECT COUNT(*) AS total FROM saas_admin_users WHERE role_id = ? AND status IN (1, 2)',
+      [id]
+    );
     if (assigned[0]?.total > 0) {
       const err = new Error(`Cannot delete role '${role.role_name}' because it is assigned to ${assigned[0].total} admin user(s). Reassign them first.`);
       err.statusCode = 400;
       throw err;
     }
 
-    // Foreign key deletes from saas_role_permissions CASCADE
-    const [res] = await pool.query('DELETE FROM saas_roles WHERE id = ?', [id]);
+    const [res] = await pool.query(
+      'UPDATE saas_roles SET status = 4, updated_at = NOW() WHERE id = ? AND status != 4',
+      [id]
+    );
     return { success: res.affectedRows > 0 };
   }
 
@@ -809,7 +646,7 @@ class SaasRoleModel {
     const limitNum = Math.max(1, parseInt(limit, 10) || 10);
     const offset = (pageNum - 1) * limitNum;
 
-    let conditions = ["sau.role = 'subadmin'"];
+    let conditions = ["sau.role = 'subadmin'", 'sau.status IN (1, 2)'];
     let params = [];
 
     if (status !== '' && status !== undefined && status !== 'all') {
@@ -833,7 +670,7 @@ class SaasRoleModel {
     const countQuery = `
       SELECT COUNT(*) AS total
       FROM saas_admin_users sau
-      LEFT JOIN saas_roles sr ON sau.role_id = sr.id
+      LEFT JOIN saas_roles sr ON sau.role_id = sr.id AND sr.status IN (1, 2)
       ${where}
     `;
     const [countRows] = await pool.query(countQuery, params);
@@ -859,7 +696,7 @@ class SaasRoleModel {
         sau.updated_at
       FROM saas_admin_users sau
       LEFT JOIN gender_master gm ON sau.gender = gm.id
-      LEFT JOIN saas_roles sr ON sau.role_id = sr.id
+      LEFT JOIN saas_roles sr ON sau.role_id = sr.id AND sr.status IN (1, 2)
       ${where}
       ORDER BY sau.id DESC
       LIMIT ? OFFSET ?
@@ -906,8 +743,8 @@ class SaasRoleModel {
         sau.updated_at
       FROM saas_admin_users sau
       LEFT JOIN gender_master gm ON sau.gender = gm.id
-      LEFT JOIN saas_roles sr ON sau.role_id = sr.id
-      WHERE sau.id = ? AND sau.role = 'subadmin'
+      LEFT JOIN saas_roles sr ON sau.role_id = sr.id AND sr.status IN (1, 2)
+      WHERE sau.id = ? AND sau.role = 'subadmin' AND sau.status IN (1, 2)
       LIMIT 1
     `, [id]);
 
@@ -954,7 +791,10 @@ class SaasRoleModel {
     }
 
     // Check unique email
-    const [existing] = await pool.query('SELECT id FROM saas_admin_users WHERE LOWER(email) = LOWER(?) LIMIT 1', [email.trim()]);
+    const [existing] = await pool.query(
+      'SELECT id FROM saas_admin_users WHERE LOWER(email) = LOWER(?) AND status != 4 LIMIT 1',
+      [email.trim()]
+    );
     if (existing.length > 0) {
       const err = new Error(`An admin user with email '${email.trim()}' already exists.`);
       err.statusCode = 400;
@@ -1009,7 +849,7 @@ class SaasRoleModel {
       phone_number ? String(phone_number).trim() : null,
       imagePath || null,
       Number(role_id),
-      status !== undefined ? parseInt(status, 10) : 1,
+      status !== undefined ? (parseInt(status, 10) === 2 ? 2 : 1) : 1,
     ]);
 
     return await SaasRoleModel.getSubAdminById(res.insertId);
@@ -1032,7 +872,10 @@ class SaasRoleModel {
     actor = null,
   }) {
     // Check if subadmin exists
-    const [existing] = await pool.query('SELECT * FROM saas_admin_users WHERE id = ? AND role = "subadmin" LIMIT 1', [id]);
+    const [existing] = await pool.query(
+      'SELECT * FROM saas_admin_users WHERE id = ? AND role = "subadmin" AND status IN (1, 2) LIMIT 1',
+      [id]
+    );
     if (existing.length === 0) {
       return null;
     }
@@ -1080,7 +923,7 @@ class SaasRoleModel {
       }
       // Check unique
       const [emailCheck] = await pool.query(
-        'SELECT id FROM saas_admin_users WHERE LOWER(email) = ? AND id != ? LIMIT 1',
+        'SELECT id FROM saas_admin_users WHERE LOWER(email) = ? AND id != ? AND status != 4 LIMIT 1',
         [cleanEmail, id]
       );
       if (emailCheck.length > 0) {
@@ -1167,17 +1010,17 @@ class SaasRoleModel {
 
     if (updates.length > 0) {
       params.push(id);
-      await pool.query(`UPDATE saas_admin_users SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ?`, params);
+      await pool.query(`UPDATE saas_admin_users SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ? AND status != 4`, params);
     }
 
     return await SaasRoleModel.getSubAdminById(id);
   }
 
   /**
-   * Delete sub-admin user
+   * Soft delete sub-admin user (status = 4)
    */
   static async deleteSubAdmin(id, actor = null) {
-    const [existing] = await pool.query('SELECT id, role FROM saas_admin_users WHERE id = ? LIMIT 1', [id]);
+    const [existing] = await pool.query('SELECT id, role FROM saas_admin_users WHERE id = ? AND status != 4 LIMIT 1', [id]);
     if (existing.length === 0) return { notFound: true };
 
     if (existing[0].role !== 'subadmin') {
@@ -1192,15 +1035,18 @@ class SaasRoleModel {
       throw err;
     }
 
-    const [res] = await pool.query('DELETE FROM saas_admin_users WHERE id = ?', [id]);
+    const [res] = await pool.query(
+      'UPDATE saas_admin_users SET status = 4, updated_at = NOW() WHERE id = ? AND status != 4',
+      [id]
+    );
     return { success: res.affectedRows > 0 };
   }
 
   /**
-   * Toggle sub-admin active/inactive status
+   * Toggle sub-admin active/inactive status (1 = Active, 2 = Inactive)
    */
   static async toggleSubAdminStatus(id, status, actor = null) {
-    const [existing] = await pool.query('SELECT id, role FROM saas_admin_users WHERE id = ? LIMIT 1', [id]);
+    const [existing] = await pool.query('SELECT id, role FROM saas_admin_users WHERE id = ? AND status != 4 LIMIT 1', [id]);
     if (existing.length === 0) return null;
 
     if (existing[0].role !== 'subadmin') {
@@ -1216,13 +1062,11 @@ class SaasRoleModel {
     }
 
     const [res] = await pool.query(
-      'UPDATE saas_admin_users SET status = ?, updated_at = NOW() WHERE id = ?',
+      'UPDATE saas_admin_users SET status = ?, updated_at = NOW() WHERE id = ? AND status != 4',
       [parseInt(status, 10), id]
     );
     return res.affectedRows > 0;
   }
 }
-
-SaasRoleModel.DEFAULT_SAAS_MODULES = DEFAULT_SAAS_MODULES;
 
 module.exports = SaasRoleModel;

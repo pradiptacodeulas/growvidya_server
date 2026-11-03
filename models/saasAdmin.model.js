@@ -85,7 +85,7 @@ class SaasAdminModel {
       FROM saas_admin_users sau 
       LEFT JOIN gender_master gm ON sau.gender = gm.id 
       LEFT JOIN saas_roles sr ON sau.role_id = sr.id
-      WHERE sau.email = ? 
+      WHERE sau.email = ? AND sau.status != 4
       LIMIT 1`,
       [email.toLowerCase().trim()]
     );
@@ -116,7 +116,7 @@ class SaasAdminModel {
       FROM saas_admin_users sau 
       LEFT JOIN gender_master gm ON sau.gender = gm.id 
       LEFT JOIN saas_roles sr ON sau.role_id = sr.id
-      WHERE sau.id = ? 
+      WHERE sau.id = ? AND sau.status != 4
       LIMIT 1`,
       [id]
     );
@@ -246,9 +246,10 @@ class SaasAdminModel {
         SELECT 
           COUNT(*) AS total_schools,
           COALESCE(SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END), 0) AS active_schools,
-          COALESCE(SUM(CASE WHEN status != 1 THEN 1 ELSE 0 END), 0) AS inactive_schools,
+          COALESCE(SUM(CASE WHEN status = 2 THEN 1 ELSE 0 END), 0) AS inactive_schools,
           COALESCE(SUM(CASE WHEN YEAR(created_at) = YEAR(CURDATE()) AND MONTH(created_at) = MONTH(CURDATE()) THEN 1 ELSE 0 END), 0) AS this_month_schools
         FROM school_master
+        WHERE status IN (1, 2)
       `),
 
       // Software subscription revenue uses plan_amount when linked to payment_order_id so bundled add-ons are NEVER double-counted!
@@ -270,6 +271,7 @@ class SaasAdminModel {
       pool.query(`
         SELECT COUNT(*) AS total_packages, COALESCE(SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END), 0) AS active_packages
         FROM subscription_plans
+        WHERE status IN (1, 2)
       `),
 
       pool.query(`
@@ -278,26 +280,31 @@ class SaasAdminModel {
           COALESCE(SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END), 0) AS active_coupons,
           COALESCE(SUM(used_count), 0) AS total_usages
         FROM coupons
+        WHERE status IN (1, 2)
       `),
 
       pool.query(`
         SELECT COUNT(*) AS total_storage, COALESCE(SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END), 0) AS active_storage
         FROM storage_master
+        WHERE status IN (1, 2)
       `),
 
       pool.query(`
         SELECT COUNT(*) AS total_machines, COALESCE(SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END), 0) AS active_machines
         FROM attendance_machine_master
+        WHERE status IN (1, 2)
       `),
 
       pool.query(`
         SELECT COUNT(*) AS total_rfid, COALESCE(SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END), 0) AS active_rfid
         FROM rfid_card_master
+        WHERE status IN (1, 2)
       `),
 
       pool.query(`
         SELECT COUNT(*) AS total_banks, COALESCE(SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END), 0) AS active_banks
         FROM bank_account_master
+        WHERE status IN (1, 2)
       `),
 
       pool.query(`
@@ -376,6 +383,7 @@ class SaasAdminModel {
           COALESCE(SUM(CASE WHEN ss.payment_status = 'completed' THEN (CASE WHEN ss.payment_order_id IS NOT NULL THEN ss.plan_amount ELSE ss.amount_paid END) ELSE 0 END), 0) AS total_revenue
         FROM subscription_plans sp
         LEFT JOIN school_subscriptions ss ON ss.plan_id = sp.id AND ss.status != 'rejected'
+        WHERE sp.status IN (1, 2)
         GROUP BY sp.id, sp.plan_name, sp.plan_code, sp.billing_cycle, sp.tier_rank, sp.price
         ORDER BY total_revenue DESC, total_subscribers DESC, sp.id ASC
       `),
@@ -431,7 +439,7 @@ class SaasAdminModel {
           DATE_FORMAT(created_at, '%Y-%m') AS ym,
           COUNT(*) AS new_schools
         FROM school_master
-        WHERE created_at >= DATE_SUB(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 5 MONTH)
+        WHERE status IN (1, 2) AND created_at >= DATE_SUB(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 5 MONTH)
         GROUP BY DATE_FORMAT(created_at, '%Y-%m')
       `),
 
@@ -447,6 +455,7 @@ class SaasAdminModel {
           LIMIT 1
         )
         LEFT JOIN subscription_plans sp ON ss.plan_id = sp.id
+        WHERE s.status IN (1, 2)
         ORDER BY s.id DESC
         LIMIT 5
       `),
@@ -659,7 +668,7 @@ class SaasAdminModel {
     const limitNum = Math.max(1, parseInt(limit, 10) || 10);
     const offset = (pageNum - 1) * limitNum;
 
-    const whereConditions = [];
+    const whereConditions = ['s.status IN (1, 2)'];
     const params = [];
 
     if (status !== '' && status !== undefined && status !== 'all') {
@@ -751,7 +760,7 @@ class SaasAdminModel {
               (SELECT COUNT(*) FROM class_master cm WHERE cm.school_id = s.id AND cm.status = 1) AS total_classes,
               (SELECT COUNT(*) FROM branch_master bm WHERE bm.school_id = s.id AND bm.status = 1) AS total_branches
        FROM school_master s
-       WHERE s.id = ? LIMIT 1`,
+       WHERE s.id = ? AND s.status IN (1, 2) LIMIT 1`,
       [id]
     );
 
@@ -759,13 +768,13 @@ class SaasAdminModel {
     const school = rows[0];
 
     const [adminRows] = await pool.query(
-      'SELECT id, first_name, last_name, email, phone, status, date AS created_at, date FROM user_master WHERE school_id = ? AND admin_type = 1 LIMIT 1',
+      'SELECT id, first_name, last_name, email, phone, status, date AS created_at, date FROM user_master WHERE school_id = ? AND admin_type = 1 AND status != 4 LIMIT 1',
       [id]
     );
     school.admin_user = adminRows[0] || null;
 
     const [branches] = await pool.query(
-      'SELECT * FROM branch_master WHERE school_id = ? ORDER BY id ASC',
+      'SELECT * FROM branch_master WHERE school_id = ? AND status != 4 ORDER BY id ASC',
       [id]
     );
     school.branches = branches;
@@ -812,13 +821,13 @@ class SaasAdminModel {
   }
 
   static async updateSchoolStatus(id, status) {
-    const numStatus = parseInt(status, 10) === 1 ? 1 : 0;
+    const numStatus = parseInt(status, 10);
     const [result] = await pool.query(
-      'UPDATE school_master SET status = ?, updated_at = NOW() WHERE id = ?',
+      'UPDATE school_master SET status = ?, updated_at = NOW() WHERE id = ? AND status != 4',
       [numStatus, id]
     );
     await pool.query(
-      'UPDATE user_master SET status = ? WHERE school_id = ? AND admin_type = 1',
+      'UPDATE user_master SET status = ? WHERE school_id = ? AND admin_type = 1 AND status != 4',
       [numStatus, id]
     );
     return result.affectedRows > 0;
@@ -1257,21 +1266,21 @@ class SaasAdminModel {
   // ========================================================
   static async getAllPackages({ search = '', status = '', billing_cycle = '', page, limit } = {}) {
     const { page: pageNum, limit: pageSize, offset } = parsePagination({ page, limit });
-    const conditions = [];
+    const conditions = ['sp.status IN (1, 2)'];
     const params = [];
 
     if (status !== '' && status !== undefined && status !== 'all') {
-      conditions.push('status = ?');
+      conditions.push('sp.status = ?');
       params.push(parseInt(status, 10));
     }
 
     if (billing_cycle && billing_cycle !== 'all') {
-      conditions.push('billing_cycle = ?');
+      conditions.push('sp.billing_cycle = ?');
       params.push(billing_cycle.trim());
     }
 
     if (search && search.trim()) {
-      conditions.push('(plan_name LIKE ? OR plan_code LIKE ? OR description LIKE ?)');
+      conditions.push('(sp.plan_name LIKE ? OR sp.plan_code LIKE ? OR sp.description LIKE ?)');
       const term = `%${search.trim()}%`;
       params.push(term, term, term);
     }
@@ -1298,7 +1307,7 @@ class SaasAdminModel {
     if (rows.length > 0) {
       const ids = rows.map((pkg) => pkg.id);
       const [items] = await pool.query(
-        'SELECT * FROM subscription_items WHERE sub_id IN (?) ORDER BY FIELD(item_type, "module", "feature"), id ASC',
+        'SELECT * FROM subscription_items WHERE sub_id IN (?) AND status IN (1, 2) ORDER BY FIELD(item_type, "module", "feature"), id ASC',
         [ids]
       );
       const itemsByPackage = new Map();
@@ -1328,22 +1337,26 @@ class SaasAdminModel {
       pool.query(`
         SELECT
           COUNT(*) AS total,
-          COALESCE(SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END), 0) AS active
+          COALESCE(SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END), 0) AS active,
+          COALESCE(SUM(CASE WHEN status = 2 THEN 1 ELSE 0 END), 0) AS inactive
         FROM subscription_plans
+        WHERE status IN (1, 2)
       `),
       pool.query(`
         SELECT
           COUNT(*) AS total_items,
           COALESCE(SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END), 0) AS active_items
         FROM subscription_items
+        WHERE status IN (1, 2)
       `),
     ]);
     const total = Number(planRow.total) || 0;
     const active = Number(planRow.active) || 0;
+    const inactive = Number(planRow.inactive) || 0;
     return {
       total,
       active,
-      inactive: total - active,
+      inactive,
       total_items: Number(itemRow.total_items) || 0,
       active_items: Number(itemRow.active_items) || 0,
     };
@@ -1354,13 +1367,13 @@ class SaasAdminModel {
       `SELECT sp.*,
               (SELECT COUNT(*) FROM school_subscriptions ss WHERE ss.plan_id = sp.id AND ss.status != 'rejected') AS subscriber_count
        FROM subscription_plans sp
-       WHERE sp.id = ? LIMIT 1`,
+       WHERE sp.id = ? AND sp.status IN (1, 2) LIMIT 1`,
       [id]
     );
     if (!rows[0]) return null;
     const pkg = rows[0];
     const [items] = await pool.query(
-      'SELECT * FROM subscription_items WHERE sub_id = ? ORDER BY FIELD(item_type, "module", "feature"), id ASC',
+      'SELECT * FROM subscription_items WHERE sub_id = ? AND status IN (1, 2) ORDER BY FIELD(item_type, "module", "feature"), id ASC',
       [id]
     );
     pkg.items = items || [];
@@ -1427,7 +1440,7 @@ class SaasAdminModel {
         Math.max(0, parseInt(max_students, 10) || 0),
         Math.max(0, parseInt(included_storage_gb, 10) || 0),
         Number(is_popular) ? 1 : 0,
-        parseInt(status, 10) === 0 ? 0 : 1,
+        parseInt(status, 10) === 2 ? 2 : 1,
       ]
     );
     const newId = result.insertId;
@@ -1507,14 +1520,17 @@ class SaasAdminModel {
     if (max_students !== undefined) { updates.push('max_students = ?'); params.push(Math.max(0, parseInt(max_students, 10) || 0)); }
     if (included_storage_gb !== undefined) { updates.push('included_storage_gb = ?'); params.push(Math.max(0, parseInt(included_storage_gb, 10) || 0)); }
     if (is_popular !== undefined) { updates.push('is_popular = ?'); params.push(Number(is_popular) ? 1 : 0); }
-    if (status !== undefined) { updates.push('status = ?'); params.push(parseInt(status, 10)); }
+    if (status !== undefined) {
+      updates.push('status = ?');
+      params.push(parseInt(status, 10));
+    }
 
     const shouldSyncItems = items !== undefined;
     const mergedItemsToSync = shouldSyncItems ? normalizePlanItems(items) : [];
 
     if (updates.length > 0) {
       params.push(id);
-      await pool.query(`UPDATE subscription_plans SET ${updates.join(', ')} WHERE id = ?`, params);
+      await pool.query(`UPDATE subscription_plans SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ? AND status != 4`, params);
     }
 
     if (shouldSyncItems) {
@@ -1525,19 +1541,16 @@ class SaasAdminModel {
   }
 
   static async deletePackage(id) {
-    const [inUse] = await pool.query('SELECT id FROM school_subscriptions WHERE plan_id = ? LIMIT 1', [id]);
-    const [inOrders] = await pool.query('SELECT id FROM subscription_payment_orders WHERE plan_id = ? LIMIT 1', [id]);
-    if (inUse.length > 0 || inOrders.length > 0) {
-      const [res] = await pool.query('UPDATE subscription_plans SET status = 0 WHERE id = ?', [id]);
-      return { softDeleted: true, affectedRows: res.affectedRows };
-    }
-    await pool.query('DELETE FROM subscription_items WHERE sub_id = ?', [id]);
-    const [res] = await pool.query('DELETE FROM subscription_plans WHERE id = ?', [id]);
-    return { hardDeleted: true, affectedRows: res.affectedRows };
+    await pool.query('UPDATE subscription_items SET status = 4, updated_at = NOW() WHERE sub_id = ? AND status != 4', [id]);
+    const [res] = await pool.query('UPDATE subscription_plans SET status = 4, updated_at = NOW() WHERE id = ? AND status != 4', [id]);
+    return { softDeleted: true, affectedRows: res.affectedRows };
   }
 
   static async togglePackageStatus(id, status) {
-    const [result] = await pool.query('UPDATE subscription_plans SET status = ? WHERE id = ?', [parseInt(status, 10), id]);
+    const [result] = await pool.query(
+      'UPDATE subscription_plans SET status = ?, updated_at = NOW() WHERE id = ? AND status != 4',
+      [parseInt(status, 10), id]
+    );
     return result.affectedRows > 0;
   }
 
@@ -1546,7 +1559,7 @@ class SaasAdminModel {
   // ========================================================
   static async getNotificationPricing() {
     const [rows] = await pool.query(
-      'SELECT * FROM notification_pricing_master ORDER BY id ASC'
+      'SELECT * FROM notification_pricing_master WHERE status IN (1, 2) ORDER BY id ASC'
     );
     return rows || [];
   }
@@ -1560,9 +1573,9 @@ class SaasAdminModel {
 
       const unitPrice = Math.max(0, parseFloat(entry.unit_price) || 0);
       const minQty = Math.max(1, parseInt(entry.min_qty, 10) || 1);
-      const packName = entry.pack_name ? String(entry.pack_name).trim() : (ch === 'sms' ? 'SMS Notification Credits' : 'Push Notification Credits');
+      const packName = String(entry.pack_name || '').trim();
       const desc = entry.description !== undefined ? String(entry.description || '') : null;
-      const status = entry.status !== undefined ? (Number(entry.status) ? 1 : 0) : 1;
+      const status = entry.status !== undefined ? (Number(entry.status) === 2 ? 2 : 1) : 1;
 
       await pool.query(
         `INSERT INTO notification_pricing_master (channel, pack_name, unit_price, min_qty, description, status)
@@ -1579,6 +1592,121 @@ class SaasAdminModel {
 
     NotificationRecordModel.invalidateRateCache();
     return await this.getNotificationPricing();
+  }
+
+  static async getNotificationBuyers(options = {}) {
+    const search = options.search ? String(options.search).trim() : '';
+    const page = Math.max(1, parseInt(options.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(options.limit, 10) || 10));
+    const offset = (page - 1) * limit;
+
+    const whereClauses = ['sm.status IN (1, 2)'];
+    const params = [];
+
+    if (search) {
+      whereClauses.push(
+        '(sm.school_name LIKE ? OR sm.email LIKE ? OR sm.phone_number LIKE ? OR sm.school_code LIKE ?)'
+      );
+      const likeTerm = `%${search}%`;
+      params.push(likeTerm, likeTerm, likeTerm, likeTerm);
+    }
+
+    const whereSql = `WHERE ${whereClauses.join(' AND ')}`;
+
+    const [[summary]] = await pool.query(
+      `SELECT
+         COUNT(w.id) AS total_schools,
+         COALESCE(SUM(w.sms_balance), 0) AS total_sms_balance,
+         COALESCE(SUM(w.push_balance), 0) AS total_push_balance,
+         COALESCE(SUM(w.total_sms_purchased), 0) AS total_sms_purchased,
+         COALESCE(SUM(w.total_push_purchased), 0) AS total_push_purchased,
+         COALESCE(SUM(w.total_sms_used), 0) AS total_sms_used,
+         COALESCE(SUM(w.total_push_used), 0) AS total_push_used
+       FROM school_notification_wallets w
+       JOIN school_master sm ON sm.id = w.school_id
+       WHERE sm.status IN (1, 2)`
+    );
+
+    const [[revRow]] = await pool.query(
+      `SELECT COALESCE(SUM(l.total_amount), 0) AS total_revenue
+       FROM school_notification_ledger l
+       JOIN school_master sm ON sm.id = l.school_id
+       WHERE sm.status IN (1, 2) AND l.entry_type = 'credit'`
+    );
+
+    const [[countRow]] = await pool.query(
+      `SELECT COUNT(w.id) AS total
+       FROM school_notification_wallets w
+       JOIN school_master sm ON sm.id = w.school_id
+       ${whereSql}`,
+      params
+    );
+
+    const totalItems = Number(countRow?.total) || 0;
+    const totalPages = Math.max(1, Math.ceil(totalItems / limit));
+
+    const [rows] = await pool.query(
+      `SELECT
+         w.id,
+         w.school_id,
+         sm.school_name,
+         sm.school_code,
+         sm.email AS school_email,
+         sm.phone_number AS school_phone,
+         sm.status AS school_status,
+         w.sms_balance,
+         w.push_balance,
+         w.total_sms_purchased,
+         w.total_push_purchased,
+         w.total_sms_used,
+         w.total_push_used,
+         w.updated_at,
+         COALESCE((
+           SELECT SUM(l.total_amount)
+           FROM school_notification_ledger l
+           WHERE l.school_id = w.school_id AND l.entry_type = 'credit'
+         ), 0) AS total_amount_spent
+       FROM school_notification_wallets w
+       JOIN school_master sm ON sm.id = w.school_id
+       ${whereSql}
+       ORDER BY w.updated_at DESC, w.id DESC
+       LIMIT ? OFFSET ?`,
+      [...params, limit, offset]
+    );
+
+    return {
+      buyers: rows || [],
+      counts: {
+        total_schools: Number(summary?.total_schools) || 0,
+        total_sms_balance: Number(summary?.total_sms_balance) || 0,
+        total_push_balance: Number(summary?.total_push_balance) || 0,
+        total_sms_purchased: Number(summary?.total_sms_purchased) || 0,
+        total_push_purchased: Number(summary?.total_push_purchased) || 0,
+        total_sms_used: Number(summary?.total_sms_used) || 0,
+        total_push_used: Number(summary?.total_push_used) || 0,
+        total_revenue: Number(revRow?.total_revenue) || 0,
+      },
+      pagination: {
+        total_items: totalItems,
+        total_pages: totalPages,
+        current_page: page,
+        per_page: limit,
+        has_next_page: page < totalPages,
+        has_prev_page: page > 1,
+      },
+    };
+  }
+
+  static async getNotificationBuyerLedger(schoolId) {
+    const [rows] = await pool.query(
+      `SELECT id, school_id, channel, entry_type, units, balance_after, unit_price, total_amount, payment_order_id, reference_note, created_at
+       FROM school_notification_ledger
+       WHERE school_id = ?
+       ORDER BY created_at DESC, id DESC
+       LIMIT 50`,
+      [schoolId]
+    );
+    return rows || [];
   }
 
   // ========================================================
