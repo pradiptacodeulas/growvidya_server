@@ -1,7 +1,213 @@
 const LeaveModel = require('../models/leave.model');
+const AnnouncementModel = require('../models/announcement.model');
+const NotificationRecordModel = require('../models/notificationRecord.model');
+const PushNotificationService = require('../services/pushNotification.service');
+const { getIO } = require('../services/socket.service');
 const ApiResponse = require('../utils/api.response');
 
+const formatReadableDate = (ymd) => {
+  if (!ymd) return '';
+  const clean = String(ymd).split('T')[0];
+  const parts = clean.split('-');
+  if (parts.length === 3) {
+    const [y, m, d] = parts.map(Number);
+    const dt = new Date(y, m - 1, d);
+    if (!isNaN(dt.getTime())) {
+      return dt.toLocaleDateString('en-GB', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      });
+    }
+  }
+  return clean;
+};
+
 class AdminLeaveController {
+  /**
+   * Notify applicant when their leave application or individual leave date is Approved (2) or Rejected (3).
+   * - Always creates a targeted in-app Notice so the user sees it in their Notices feed upon reload.
+   * - If the school's Push Notification Quota allows it (balance > 0), dispatches a real-time
+   *   Push Notification + Socket.IO alert and debits the push wallet.
+   * - If Push Notification Quota is exhausted (balance <= 0), skips real-time push/socket delivery
+   *   so the user sees the notice when they reload the page.
+   */
+  static async _notifyApplicantOnLeaveDecision(schoolId, decisionInfo, isSingleDate = false) {
+    try {
+      if (!decisionInfo || !decisionInfo.staff_id) {
+        return { noticeCreated: false, pushSent: false, quotaExhausted: false };
+      }
+
+      const statusNum = Number(decisionInfo.status);
+      if (statusNum !== 2 && statusNum !== 3) {
+        return { noticeCreated: false, pushSent: false, quotaExhausted: false };
+      }
+
+      const isApproved = statusNum === 2;
+      const decisionWord = isApproved ? 'Approved' : 'Rejected';
+      const leaveName = decisionInfo.leave_name ? String(decisionInfo.leave_name).trim() : '';
+      const recipientRole = Number(decisionInfo.role) === 1 ? 'teacher' : 'staff';
+      const staffId = Number(decisionInfo.staff_id);
+      const branchId = decisionInfo.branch_id || null;
+
+      let dateSummary = '';
+      if (isSingleDate && decisionInfo.date) {
+        dateSummary = formatReadableDate(decisionInfo.date);
+      } else if (Array.isArray(decisionInfo.dates) && decisionInfo.dates.length > 0) {
+        if (decisionInfo.dates.length === 1) {
+          dateSummary = formatReadableDate(decisionInfo.dates[0]);
+        } else {
+          const first = formatReadableDate(decisionInfo.dates[0]);
+          const last = formatReadableDate(decisionInfo.dates[decisionInfo.dates.length - 1]);
+          dateSummary = `${first} to ${last} (${decisionInfo.dates.length} days)`;
+        }
+      }
+
+      const title = `Leave Application ${decisionWord}${leaveName ? ` - ${leaveName}` : ''}`;
+      const plainBody = isSingleDate
+        ? `Your ${leaveName ? `"${leaveName}" ` : ''}leave request${dateSummary ? ` for ${dateSummary}` : ''} has been ${decisionWord.toLowerCase()}.`
+        : `Your ${leaveName ? `"${leaveName}" ` : ''}leave application${dateSummary ? ` for ${dateSummary}` : ''} has been ${decisionWord.toLowerCase()}.`;
+
+      const now = new Date();
+      const pad = (n) => String(n).padStart(2, '0');
+      const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+      const publishOnStr = `${todayStr} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+
+      // 1. Always create targeted in-app Notice so the user sees it in Notices / Navbar Bell on reload
+      let noticeId = null;
+      try {
+        noticeId = await AnnouncementModel.createNotice({
+          school_id: schoolId,
+          branch_id: branchId,
+          title,
+          notice_date: todayStr,
+          publish_on: publishOnStr,
+          message: `<p>${plainBody}</p>`,
+          message_to: [recipientRole],
+          status: 1,
+          target_type: 'specific_users',
+          target_classes: [],
+          target_sections: [],
+          target_roles: [recipientRole],
+          target_user_ids: [
+            {
+              id: staffId,
+              role: recipientRole,
+              name: decisionInfo.person_name || '',
+            },
+          ],
+        });
+      } catch (noticeErr) {
+        console.error('[Leave Notice Creation Error]:', noticeErr.message);
+      }
+
+      // 2. Check Push Notification Quota
+      const creditCheck = await NotificationRecordModel.checkWalletCredits(schoolId, 'push', 1);
+      if (!creditCheck.allowed || creditCheck.balance <= 0) {
+        return {
+          noticeCreated: Boolean(noticeId),
+          noticeId,
+          pushSent: false,
+          quotaExhausted: true,
+        };
+      }
+
+      const targetUrl =
+        recipientRole === 'teacher'
+          ? '/teacher/leaves/my-leaves'
+          : '/admin/leaves';
+
+      // 3. Quota allows -> Send real-time Push Notification (debits push wallet)
+      const pushRes = await PushNotificationService.sendToUser({
+        school_id: schoolId,
+        branch_id: branchId,
+        user_id: staffId,
+        role: recipientRole,
+        title,
+        body: plainBody,
+        category: 'leave',
+        billable: true,
+        data: {
+          type: 'leave',
+          category: 'leave',
+          leaveId: String(decisionInfo.leaveId || ''),
+          noticeId: String(noticeId || ''),
+          status: String(statusNum),
+          decision: decisionWord,
+          url: targetUrl,
+        },
+      });
+
+      // If user has no registered browser/mobile push token, log 1 billable push record for real-time socket alert
+      if (!pushRes?.sentCount || pushRes.sentCount === 0) {
+        await NotificationRecordModel.logPush({
+          school_id: schoolId,
+          branch_id: branchId,
+          recipient_device_token: `socket_${recipientRole}_${staffId}`,
+          recipient_device_type: 'web',
+          title,
+          message: plainBody,
+          payload: {
+            type: 'leave',
+            leaveId: decisionInfo.leaveId,
+            noticeId,
+            status: statusNum,
+          },
+          recipient_role: recipientRole,
+          recipient_id: staffId,
+          category: 'leave',
+          status: 'sent',
+          provider: 'webpush',
+          billable: true,
+        }).catch(() => {});
+      }
+
+      // 4. Emit real-time Socket.IO events so the open client tab updates immediately without reload
+      try {
+        const io = getIO();
+        if (io) {
+          const eventPayload = {
+            id: noticeId,
+            noticeId,
+            leaveId: decisionInfo.leaveId,
+            title,
+            message: plainBody,
+            status: statusNum,
+            decision: decisionWord,
+            leave_name: leaveName,
+            date: decisionInfo.date || (decisionInfo.dates && decisionInfo.dates[0]) || todayStr,
+            publish_on: todayStr,
+            notice_date: todayStr,
+            target_type: 'specific_users',
+            url: targetUrl,
+          };
+
+          if (recipientRole === 'teacher') {
+            io.to(`user_teacher_${staffId}`).emit('new_notice', eventPayload);
+            io.to(`user_teacher_${staffId}`).emit('leave_status_updated', eventPayload);
+          } else {
+            io.to(`user_admin_${staffId}`).emit('new_notice', eventPayload);
+            io.to(`user_admin_${staffId}`).emit('leave_status_updated', eventPayload);
+            io.to(`user_staff_${staffId}`).emit('new_notice', eventPayload);
+            io.to(`user_staff_${staffId}`).emit('leave_status_updated', eventPayload);
+          }
+        }
+      } catch (socketErr) {
+        console.error('[Leave Socket Emit Error]:', socketErr.message);
+      }
+
+      return {
+        noticeCreated: Boolean(noticeId),
+        noticeId,
+        pushSent: true,
+        quotaExhausted: false,
+      };
+    } catch (err) {
+      console.error('[Leave Decision Notification Error]:', err.message);
+      return { noticeCreated: false, pushSent: false, quotaExhausted: false };
+    }
+  }
+
   static async getAllLeaves(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
@@ -57,16 +263,13 @@ class AdminLeaveController {
 
       // Duration specific date validation
       if (Number(duration) === 3) {
-        // Multiple days: Start Date must not be earlier than today
         if (firstDate < todayStr) {
           return ApiResponse.error(res, 'Start Date must not be earlier than today.', null, 400);
         }
-        // End Date must not be earlier than Start Date
         if (lastDate < firstDate) {
           return ApiResponse.error(res, 'End Date must not be earlier than the selected Start Date.', null, 400);
         }
       } else {
-        // Single Day / Half Day: Date must not be earlier than today
         if (firstDate < todayStr) {
           return ApiResponse.error(res, 'Leave date must not be earlier than today.', null, 400);
         }
@@ -155,8 +358,22 @@ class AdminLeaveController {
         return ApiResponse.error(res, 'Status is required.', null, 400);
       }
 
-      await LeaveModel.updateLeaveStatus(schoolId, id, Number(status), branchId);
-      return ApiResponse.success(res, 'Leave status updated successfully.');
+      const decisionInfo = await LeaveModel.updateLeaveStatus(schoolId, id, Number(status), branchId);
+      const notificationResult = await AdminLeaveController._notifyApplicantOnLeaveDecision(
+        schoolId,
+        decisionInfo,
+        false
+      );
+
+      const statusLabel = Number(status) === 2 ? 'approved' : Number(status) === 3 ? 'rejected' : 'updated';
+      return ApiResponse.success(
+        res,
+        `Leave application ${statusLabel} successfully.`,
+        {
+          leave: decisionInfo,
+          notification: notificationResult,
+        }
+      );
     } catch (error) {
       if (error.statusCode === 400 || error.message.startsWith('Cannot approve')) {
         return ApiResponse.error(res, error.message, null, 400);
@@ -176,8 +393,22 @@ class AdminLeaveController {
         return ApiResponse.error(res, 'Status is required.', null, 400);
       }
 
-      await LeaveModel.updateLeaveDateStatus(schoolId, dateId, Number(status), branchId);
-      return ApiResponse.success(res, 'Leave date status updated successfully.');
+      const decisionInfo = await LeaveModel.updateLeaveDateStatus(schoolId, dateId, Number(status), branchId);
+      const notificationResult = await AdminLeaveController._notifyApplicantOnLeaveDecision(
+        schoolId,
+        decisionInfo,
+        true
+      );
+
+      const statusLabel = Number(status) === 2 ? 'approved' : Number(status) === 3 ? 'rejected' : 'updated';
+      return ApiResponse.success(
+        res,
+        `Leave date ${statusLabel} successfully.`,
+        {
+          leaveDate: decisionInfo,
+          notification: notificationResult,
+        }
+      );
     } catch (error) {
       if (error.statusCode === 400 || error.message.startsWith('Cannot approve')) {
         return ApiResponse.error(res, error.message, null, 400);

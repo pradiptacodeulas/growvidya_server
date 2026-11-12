@@ -3,12 +3,15 @@ const ApiResponse = require('../utils/api.response');
 
 class AdminSalaryDateController {
   static getSchoolId(req) {
-    return Number(req.user?.schoolId || req.user?.school_id || 1);
+    return Number(req.schoolId || req.user?.schoolId || req.user?.school_id || 0);
   }
 
   static async getSalaryDates(req, res, next) {
     try {
       const schoolId = AdminSalaryDateController.getSchoolId(req);
+      if (!schoolId) {
+        return ApiResponse.error(res, 'School context is required.', 400);
+      }
       const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { page = 1, limit = 10, search = '', salary_month = null } = req.query;
       const offset = (Number(page) - 1) * Number(limit);
@@ -42,6 +45,9 @@ class AdminSalaryDateController {
   static async createSalaryDate(req, res, next) {
     try {
       const schoolId = AdminSalaryDateController.getSchoolId(req);
+      if (!schoolId) {
+        return ApiResponse.error(res, 'School context is required.', 400);
+      }
       const branchId = req.body.branch_id !== undefined ? req.body.branch_id : (req.branchId || req.query.branch_id || req.query.branchId || null);
       const { salary_date, status = 1 } = req.body;
       if (!salary_date) {
@@ -63,6 +69,9 @@ class AdminSalaryDateController {
   static async updateSalaryDate(req, res, next) {
     try {
       const schoolId = AdminSalaryDateController.getSchoolId(req);
+      if (!schoolId) {
+        return ApiResponse.error(res, 'School context is required.', 400);
+      }
       const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { id } = req.params;
       const { salary_date, status = 1, branch_id } = req.body;
@@ -89,6 +98,9 @@ class AdminSalaryDateController {
   static async deleteSalaryDate(req, res, next) {
     try {
       const schoolId = AdminSalaryDateController.getSchoolId(req);
+      if (!schoolId) {
+        return ApiResponse.error(res, 'School context is required.', 400);
+      }
       const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
       const { id } = req.params;
 

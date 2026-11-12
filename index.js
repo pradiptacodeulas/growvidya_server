@@ -4,7 +4,6 @@ const cors = require('cors');
 const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
 const path = require('path');
-const fs = require('fs');
 
 const config = require('./config/app.config');
 const { testConnection } = require('./config/db.config');
@@ -22,12 +21,13 @@ const SupportTicketModel = require('./models/supportTicket.model');
 const DeviceTokenModel = require('./models/deviceToken.model');
 const TeacherSelfAttendanceModel = require('./models/teacherSelfAttendance.model');
 const SubscriptionSchemaModel = require('./models/subscriptionSchema.model');
+const FileStorageLedgerModel = require('./models/fileStorageLedger.model');
 const SubscriptionLifecycleJob = require('./jobs/subscriptionLifecycle.job');
 
 // Middleware & Router Imports
 const errorMiddleware = require('./middlewares/error.middleware');
 const paramsDecoderMiddleware = require('./middlewares/paramsDecoder.middleware');
-const { protectCertificateFiles } = require('./middlewares/certificateAccess.middleware');
+const storageAccessMiddleware = require('./middlewares/storageAccess.middleware');
 const apiRoutes = require('./routes');
 const couponRoutes = require('./routes/coupon.routes');
 const ApiResponse = require('./utils/api.response');
@@ -96,77 +96,15 @@ app.use((req, res, next) => {
 app.use(cookieParser(config.cookie.secret));
 app.use(paramsDecoderMiddleware);
 
-// Intercept & restrict public access to certificate templates & border images
-app.use(protectCertificateFiles);
-
 // ==========================================
-// 2. Static Assets & Uploads
+// 2. Static UI Assets & Authorized B2 Cloud Storage Gateway
 // ==========================================
-const uploadDir = path.join(__dirname, 'public/upload');
 const assetsDir = path.join(__dirname, 'public/assets');
-
-// Primary static uploads & assets
-app.use('/upload', express.static(uploadDir));
-app.use('/api/v1/saas-admin/upload', express.static(uploadDir));
-app.use('/api/saas-admin/upload', express.static(uploadDir));
-app.use('/saas-admin/upload', express.static(uploadDir));
-app.use('/api/v1/upload', express.static(uploadDir));
-app.use('/api/upload', express.static(uploadDir));
-app.use('/vidya_assets', express.static(uploadDir));
 app.use('/assets', express.static(assetsDir));
 app.use('/vidya_assets/images', express.static(assetsDir));
 
-// Optional legacy upload directory from environment
-if (config.legacyUploadPath && fs.existsSync(config.legacyUploadPath)) {
-  app.use('/upload', express.static(config.legacyUploadPath));
-  app.use('/api/v1/saas-admin/upload', express.static(config.legacyUploadPath));
-  app.use('/api/upload', express.static(config.legacyUploadPath));
-}
-
-// Fallback search resolver for nested subdirectories in public/upload
-const uploadSubDirs = [
-  'admin',
-  'admin/profile_pic',
-  'study_material',
-  'general',
-  'leave',
-  'leave/attachment',
-  'teacher/attachment',
-  'teacher',
-  'student/attachment',
-  'student',
-  'staff',
-];
-
-app.use(async (req, res, next) => {
-  if (req.method === 'GET') {
-    const uploadIndex = req.path.indexOf('/upload/');
-    if (uploadIndex !== -1) {
-      const relPath = req.path.substring(uploadIndex + '/upload/'.length);
-      const directCandidate = path.join(uploadDir, relPath);
-      try {
-        const stat = await fs.promises.stat(directCandidate);
-        if (stat.isFile()) return res.sendFile(directCandidate);
-      } catch (_) {}
-
-      // Fallback search in subdirectories or extension swap (.png <-> .jpg)
-      const filename = path.basename(req.path);
-      const nameWithoutExt = path.parse(filename).name;
-      const exts = ['.png', '.jpg', '.jpeg', '.webp'];
-
-      for (const sub of ['', ...uploadSubDirs]) {
-        for (const ext of exts) {
-          const candidate = path.join(uploadDir, sub, nameWithoutExt + ext);
-          try {
-            const stat = await fs.promises.stat(candidate);
-            if (stat.isFile()) return res.sendFile(candidate);
-          } catch (_) {}
-        }
-      }
-    }
-  }
-  next();
-});
+// Intercept all /upload/* requests: enforce JWT auth + tenant isolation and stream from Backblaze B2
+app.use(storageAccessMiddleware);
 
 // ==========================================
 // 3. API Routes Mount
@@ -192,6 +130,8 @@ initSocket(server, config);
 
 server.listen(config.port, async () => {
   const dbStatus = await testConnection();
+  await SubscriptionSchemaModel.initTable();
+  await FileStorageLedgerModel.initTable();
   await BranchModel.initTable();
   await TeacherSelfAttendanceModel.initTable();
   await MessageModel.initTable();

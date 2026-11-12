@@ -831,7 +831,9 @@ class SaasRoleModel {
     let imagePath = profile_image;
     if (imagePath && imagePath.startsWith('data:')) {
       const { saveBase64File } = require('../utils/file.util');
-      imagePath = saveBase64File(imagePath, 'admin/profile_pic', 'SubAdmin');
+      imagePath = await saveBase64File(imagePath, 'admin/profile_pic', 'SubAdmin', {
+        skipQuotaCheck: true,
+      });
     }
 
     const hashedPassword = await hashPassword(password);
@@ -981,7 +983,9 @@ class SaasRoleModel {
       let imagePath = profile_image;
       if (imagePath && imagePath.startsWith('data:')) {
         const { saveBase64File } = require('../utils/file.util');
-        imagePath = saveBase64File(imagePath, 'admin/profile_pic', 'SubAdmin');
+        imagePath = await saveBase64File(imagePath, 'admin/profile_pic', 'SubAdmin', {
+          skipQuotaCheck: true,
+        });
       }
       updates.push('profile_image = ?');
       params.push(imagePath || null);

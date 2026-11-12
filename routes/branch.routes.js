@@ -37,7 +37,10 @@ router.patch('/:id/set-main', rbacMiddleware('settings/branches', 'edit'), multi
 // Update attendance location / geofence for Teacher App attendance (Super Admin campus management)
 router.patch('/:id/attendance-location', rbacMiddleware('settings/branches', 'edit'), BranchController.updateAttendanceLocation);
 
-// Delete branch (Super Admin campus management)
-router.delete('/:id', rbacMiddleware('settings/branches', 'delete'), BranchController.deleteBranch);
+// Request 6-digit OTP after password verification for permanent branch deletion (Super Admin only)
+router.post('/:id/request-delete-otp', rbacMiddleware('settings/branches', 'delete'), multiBranchGuard, BranchController.requestDeleteBranchOtp);
+
+// Delete branch after 6-digit OTP verification (Super Admin only)
+router.delete('/:id', rbacMiddleware('settings/branches', 'delete'), multiBranchGuard, BranchController.deleteBranch);
 
 module.exports = router;

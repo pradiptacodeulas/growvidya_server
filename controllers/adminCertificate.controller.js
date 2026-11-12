@@ -460,17 +460,17 @@ exports.getBorderById = async (req, res) => {
 
 exports.createBorder = async (req, res) => {
   try {
+    const CloudStorageService = require('../services/cloudStorage.service');
     const schoolId = getSchoolId(req);
     let imagePath = '';
     const status = req.body.status !== undefined && req.body.status !== null ? Number(req.body.status) : 1;
 
-    if (req.file) {
+    if (req.file && req.file.buffer) {
       // Strict A4 Portrait Dimension Validation on Server
-      const buffer = fs.readFileSync(req.file.path);
+      const buffer = req.file.buffer;
       const dims = getJpegDimensions(buffer);
 
       if (!dims || !dims.width || !dims.height) {
-        if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
         return ApiResponse.error(res, 'Invalid JPEG image or corrupted header.', null, 400);
       }
 
@@ -479,7 +479,6 @@ exports.createBorder = async (req, res) => {
 
       // 1. Must be Portrait orientation (Height > Width)
       if (height <= width) {
-        if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
         return ApiResponse.error(
           res,
           `Strict A4 Portrait requirement: Image must be in Portrait orientation (Height > Width). Uploaded image is ${width} × ${height} px.`,
@@ -490,7 +489,6 @@ exports.createBorder = async (req, res) => {
 
       // 2. Minimum resolution check for clear printing
       if (height < 1000 || width < 700) {
-        if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
         return ApiResponse.error(
           res,
           `Image resolution too low (${width} × ${height} px)! Minimum required is 794 × 1123 px (Standard A4 Portrait is 2480 × 3508 px or 1240 × 1754 px).`,
@@ -501,7 +499,6 @@ exports.createBorder = async (req, res) => {
 
       // 3. Strict A4 Portrait Aspect Ratio (210/297 ≈ 0.70707)
       if (Math.abs(ratio - (210 / 297)) > 0.05) {
-        if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
         return ApiResponse.error(
           res,
           `Dimension mismatch! Image must strictly follow A4 Portrait proportions (Aspect ratio 0.707 : 1, e.g. 2480 × 3508 px, 1240 × 1754 px, or 794 × 1123 px). Uploaded image is ${width} × ${height} px (Ratio: ${ratio.toFixed(2)} : 1).`,
@@ -510,13 +507,12 @@ exports.createBorder = async (req, res) => {
         );
       }
 
-      const uploadRoot = path.join(__dirname, '../public/upload');
-      let folderRel = '';
-      if (req.file.destination) {
-        folderRel = path.relative(uploadRoot, req.file.destination).replace(/\\/g, '/');
-      }
-      const cleanFolder = folderRel && folderRel !== '.' ? `${folderRel}/` : 'template/';
-      imagePath = `upload/${cleanFolder}${req.file.filename}`;
+      const uploaded = await CloudStorageService.uploadMulterFile(req, req.file, {
+        folder: 'template',
+        prefix: 'border',
+        schoolId,
+      });
+      imagePath = uploaded.file_path;
     } else if (req.body.image) {
       imagePath = req.body.image.trim();
     } else {
@@ -541,6 +537,7 @@ exports.createBorder = async (req, res) => {
 
 exports.updateBorder = async (req, res) => {
   try {
+    const CloudStorageService = require('../services/cloudStorage.service');
     const schoolId = getSchoolId(req);
     const { id } = req.params;
     let imagePath = undefined;
@@ -548,17 +545,15 @@ exports.updateBorder = async (req, res) => {
 
     const existing = await CertificateModel.getBorderById(id, schoolId);
     if (!existing) {
-      if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
       return ApiResponse.error(res, 'Border not found', null, 404);
     }
 
-    if (req.file) {
+    if (req.file && req.file.buffer) {
       // Strict A4 Portrait Dimension Validation on Server
-      const buffer = fs.readFileSync(req.file.path);
+      const buffer = req.file.buffer;
       const dims = getJpegDimensions(buffer);
 
       if (!dims || !dims.width || !dims.height) {
-        if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
         return ApiResponse.error(res, 'Invalid JPEG image or corrupted header.', null, 400);
       }
 
@@ -566,7 +561,6 @@ exports.updateBorder = async (req, res) => {
       const ratio = width / height;
 
       if (height <= width) {
-        if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
         return ApiResponse.error(
           res,
           `Strict A4 Portrait requirement: Image must be in Portrait orientation (Height > Width). Uploaded image is ${width} × ${height} px.`,
@@ -576,7 +570,6 @@ exports.updateBorder = async (req, res) => {
       }
 
       if (height < 1000 || width < 700) {
-        if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
         return ApiResponse.error(
           res,
           `Image resolution too low (${width} × ${height} px)! Minimum required is 794 × 1123 px (Standard A4 Portrait is 2480 × 3508 px or 1240 × 1754 px).`,
@@ -586,7 +579,6 @@ exports.updateBorder = async (req, res) => {
       }
 
       if (Math.abs(ratio - (210 / 297)) > 0.05) {
-        if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
         return ApiResponse.error(
           res,
           `Dimension mismatch! Image must strictly follow A4 Portrait proportions (Aspect ratio 0.707 : 1, e.g. 2480 × 3508 px, 1240 × 1754 px, or 794 × 1123 px). Uploaded image is ${width} × ${height} px (Ratio: ${ratio.toFixed(2)} : 1).`,
@@ -595,25 +587,16 @@ exports.updateBorder = async (req, res) => {
         );
       }
 
-      const uploadRoot = path.join(__dirname, '../public/upload');
-      let folderRel = '';
-      if (req.file.destination) {
-        folderRel = path.relative(uploadRoot, req.file.destination).replace(/\\/g, '/');
-      }
-      const cleanFolder = folderRel && folderRel !== '.' ? `${folderRel}/` : 'template/';
-      imagePath = `upload/${cleanFolder}${req.file.filename}`;
+      const uploaded = await CloudStorageService.uploadMulterFile(req, req.file, {
+        folder: 'template',
+        prefix: 'border',
+        schoolId,
+      });
+      imagePath = uploaded.file_path;
 
-      // Hard delete replaced old file from disk
+      // Hard delete replaced old file from Backblaze B2 & ledger
       if (existing.image && existing.image !== imagePath) {
-        const oldClean = String(existing.image).replace(/^[\\/]+/, '');
-        const oldFilePath = path.join(__dirname, '../public', oldClean);
-        if (fs.existsSync(oldFilePath)) {
-          try {
-            fs.unlinkSync(oldFilePath);
-          } catch (err) {
-            console.error('Failed to unlink old border image:', err.message);
-          }
-        }
+        await CloudStorageService.deleteFile(existing.image);
       }
     } else if (req.body.image) {
       imagePath = req.body.image.trim();
@@ -634,6 +617,7 @@ exports.updateBorder = async (req, res) => {
 
 exports.deleteBorder = async (req, res) => {
   try {
+    const CloudStorageService = require('../services/cloudStorage.service');
     const schoolId = getSchoolId(req);
     const { id } = req.params;
 
@@ -643,23 +627,15 @@ exports.deleteBorder = async (req, res) => {
       return ApiResponse.error(res, 'Border not found', null, 404);
     }
 
-    // 2. Hard delete database record (no soft delete for files and images)
+    // 2. Hard delete database record
     const success = await CertificateModel.deleteBorder(id, schoolId);
     if (!success) {
       return ApiResponse.error(res, 'Border not found or delete failed', null, 404);
     }
 
-    // 3. Hard delete physical image file from server disk
+    // 3. Delete image file from Backblaze B2 & ledger
     if (border.image) {
-      const cleanPath = String(border.image).replace(/^[\\/]+/, '');
-      const filePath = path.join(__dirname, '../public', cleanPath);
-      if (fs.existsSync(filePath)) {
-        try {
-          fs.unlinkSync(filePath);
-        } catch (fileErr) {
-          console.error('Failed to unlink border file from disk:', fileErr.message);
-        }
-      }
+      await CloudStorageService.deleteFile(border.image);
     }
 
     return ApiResponse.success(res, 'Certificate border deleted successfully');

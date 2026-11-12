@@ -254,17 +254,17 @@ class StaffModel {
       }
     }
 
+    // Resolve branch_id strictly if provided
+    let branchId = data.branch_id ? Number(data.branch_id) : (data.branchId ? Number(data.branchId) : null);
+
     let picturePath = null;
     if (data.picture && data.picture.startsWith('data:image')) {
-      picturePath = saveBase64File(data.picture, 'public/upload/staff');
+      picturePath = await saveBase64File(data.picture, 'staff', 'Staff', { schoolId, branchId });
     } else if (data.picture && !data.picture.startsWith('data:')) {
       picturePath = data.picture;
     }
 
     const hashedPassword = data.password ? await hashPassword(data.password) : null;
-
-    // Resolve branch_id strictly if provided
-    let branchId = data.branch_id ? Number(data.branch_id) : (data.branchId ? Number(data.branchId) : null);
 
     const sql = `
       INSERT INTO user_master (
@@ -380,7 +380,7 @@ class StaffModel {
       for (const doc of data.documents) {
         let docPath = null;
         if (doc.file && doc.file.startsWith('data:')) {
-          docPath = saveBase64File(doc.file, 'public/upload/staff/documents');
+          docPath = await saveBase64File(doc.file, 'staff/documents', 'StaffDoc', { schoolId, branchId });
         } else if (doc.file) {
           docPath = doc.file;
         }
@@ -438,7 +438,10 @@ class StaffModel {
 
     let picturePath = existing.picture;
     if (data.picture && data.picture.startsWith('data:image')) {
-      picturePath = saveBase64File(data.picture, 'public/upload/staff');
+      picturePath = await saveBase64File(data.picture, 'staff', 'Staff', {
+        schoolId,
+        branchId: resolvedBranchId || existing.branch_id,
+      });
     } else if (data.picture && !data.picture.startsWith('data:')) {
       picturePath = data.picture;
     }

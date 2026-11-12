@@ -1,220 +1,20 @@
-const fs = require('fs');
-const path = require('path');
 const { pool } = require('../config/db.config');
 const SubscriptionModel = require('./subscription.model');
+const FileStorageLedgerModel = require('./fileStorageLedger.model');
 
 class SuperAdminModel {
   /**
    * Format bytes to human readable format (e.g. 14.6 KB, 1.2 GB)
    */
   static formatBytes(bytes, decimals = 2) {
-    const num = Number(bytes);
-    if (!num || num <= 0) return '0 B';
-    const k = 1024;
-    const dm = decimals < 0 ? 0 : decimals;
-    const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
-    const i = Math.floor(Math.log(num) / Math.log(k));
-    return `${parseFloat((num / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+    return FileStorageLedgerModel.formatBytes(bytes, decimals);
   }
 
   /**
-   * Real file size checker on disk
-   */
-  static getFileSizeOnDisk(relativePath) {
-    if (!relativePath || typeof relativePath !== 'string') return 0;
-    try {
-      const cleanPath = relativePath.startsWith('/') ? relativePath.slice(1) : relativePath;
-      const baseDir = path.resolve(__dirname, '..', 'public');
-      const fullPath = path.join(baseDir, cleanPath);
-      if (fs.existsSync(fullPath)) {
-        const stat = fs.statSync(fullPath);
-        return stat.isFile() ? stat.size : 0;
-      }
-    } catch (e) {
-      // Ignore missing files or permission errors
-    }
-    return 0;
-  }
-
-  /**
-   * Calculate real storage used by school and branches
+   * Calculate real Backblaze B2 storage used by school and branches from file_storage_ledger
    */
   static async calculateRealStorage(schoolId, branchId = null) {
-    const parsedSchoolId = Number(schoolId);
-    let totalBytes = 0;
-    const branchBytesMap = {};
-
-    // Initialize branchBytesMap for active branches
-    const [branches] = await pool.query(
-      `SELECT id, branch_name, branch_code, is_main_branch FROM branch_master WHERE school_id = ? AND status IN (1, 2)`,
-      [parsedSchoolId]
-    );
-    branches.forEach((b) => {
-      branchBytesMap[b.id] = {
-        branch_id: b.id,
-        branch_name: b.branch_name,
-        branch_code: b.branch_code,
-        is_main_branch: b.is_main_branch,
-        bytes: 0,
-        materials_count: 0,
-        documents_count: 0,
-      };
-    });
-
-    // 1. Study Materials (has attachment_size & attachment)
-    const [materials] = await pool.query(
-      `SELECT id, branch_id, attachment, attachment_size FROM study_materials WHERE school_id = ? AND status != 4`,
-      [parsedSchoolId]
-    );
-    materials.forEach((m) => {
-      let size = Number(m.attachment_size) || 0;
-      if (size <= 0 && m.attachment) {
-        size = SuperAdminModel.getFileSizeOnDisk(m.attachment);
-      }
-      totalBytes += size;
-      const bId = m.branch_id || (branches[0] ? branches[0].id : null);
-      if (bId && branchBytesMap[bId]) {
-        branchBytesMap[bId].bytes += size;
-        branchBytesMap[bId].materials_count += 1;
-      }
-    });
-
-    // 2. Student Documents
-    const [studentDocs] = await pool.query(
-      `SELECT sd.id, sd.attachments, sm.branch_id 
-       FROM student_document sd 
-       JOIN student_master sm ON sd.student_id = sm.id 
-       WHERE sd.school_id = ? AND sd.status != 4`,
-      [parsedSchoolId]
-    );
-    studentDocs.forEach((sd) => {
-      const size = SuperAdminModel.getFileSizeOnDisk(sd.attachments);
-      totalBytes += size;
-      const bId = sd.branch_id || (branches[0] ? branches[0].id : null);
-      if (bId && branchBytesMap[bId]) {
-        branchBytesMap[bId].bytes += size;
-        branchBytesMap[bId].documents_count += 1;
-      }
-    });
-
-    // 3. Teacher Documents
-    const [teacherDocs] = await pool.query(
-      `SELECT td.id, td.attachments, tm.branch_id 
-       FROM teacher_document td 
-       JOIN teacher_master tm ON td.teacher_id = tm.id 
-       WHERE td.school_id = ? AND td.status != 4`,
-      [parsedSchoolId]
-    );
-    teacherDocs.forEach((td) => {
-      const size = SuperAdminModel.getFileSizeOnDisk(td.attachments);
-      totalBytes += size;
-      const bId = td.branch_id || (branches[0] ? branches[0].id : null);
-      if (bId && branchBytesMap[bId]) {
-        branchBytesMap[bId].bytes += size;
-        branchBytesMap[bId].documents_count += 1;
-      }
-    });
-
-    // 4. Staff / User Documents
-    const [userDocs] = await pool.query(
-      `SELECT ud.id, ud.attachments, um.branch_id 
-       FROM user_document ud 
-       JOIN user_master um ON ud.user_id = um.id 
-       WHERE ud.school_id = ? AND ud.status != 4`,
-      [parsedSchoolId]
-    );
-    userDocs.forEach((ud) => {
-      const size = SuperAdminModel.getFileSizeOnDisk(ud.attachments);
-      totalBytes += size;
-      const bId = ud.branch_id || (branches[0] ? branches[0].id : null);
-      if (bId && branchBytesMap[bId]) {
-        branchBytesMap[bId].bytes += size;
-        branchBytesMap[bId].documents_count += 1;
-      }
-    });
-
-    // 5. School Logo & Branding
-    const [sch] = await pool.query(`SELECT school_logo FROM school_master WHERE id = ?`, [parsedSchoolId]);
-    if (sch[0]?.school_logo) {
-      const logoSize = SuperAdminModel.getFileSizeOnDisk(sch[0].school_logo);
-      totalBytes += logoSize;
-      const mainB = branches.find((b) => b.is_main_branch === 1) || branches[0];
-      if (mainB && branchBytesMap[mainB.id]) {
-        branchBytesMap[mainB.id].bytes += logoSize;
-      }
-    }
-
-    // 6. User and Student Profile Pictures
-    const [pics] = await pool.query(
-      `SELECT picture, branch_id FROM student_master WHERE school_id = ? AND picture IS NOT NULL AND status != 4`,
-      [parsedSchoolId]
-    );
-    pics.forEach((p) => {
-      const size = SuperAdminModel.getFileSizeOnDisk(p.picture);
-      totalBytes += size;
-      if (p.branch_id && branchBytesMap[p.branch_id]) {
-        branchBytesMap[p.branch_id].bytes += size;
-      }
-    });
-
-    // 7. Transport / Bus Images
-    const [busImages] = await pool.query(
-      `SELECT image, branch_id FROM bus_master WHERE school_id = ? AND image IS NOT NULL AND status != 4`,
-      [parsedSchoolId]
-    );
-    busImages.forEach((b) => {
-      const size = SuperAdminModel.getFileSizeOnDisk(b.image);
-      totalBytes += size;
-      const bId = b.branch_id || (branches[0] ? branches[0].id : null);
-      if (bId && branchBytesMap[bId]) {
-        branchBytesMap[bId].bytes += size;
-      }
-    });
-
-    // 8. Operator Documents - Driver & Helper (License & ID Proof)
-    const [operatorDocs] = await pool.query(
-      `SELECT lisence_doc, id_proof_doc, branch_id FROM operator_master WHERE school_id = ? AND (type = 1 OR type = 2) AND status != 4`,
-      [parsedSchoolId]
-    );
-    operatorDocs.forEach((d) => {
-      const bId = d.branch_id || (branches[0] ? branches[0].id : null);
-      if (d.lisence_doc) {
-        const size = SuperAdminModel.getFileSizeOnDisk(d.lisence_doc);
-        totalBytes += size;
-        if (bId && branchBytesMap[bId]) {
-          branchBytesMap[bId].bytes += size;
-          branchBytesMap[bId].documents_count += 1;
-        }
-      }
-      if (d.id_proof_doc) {
-        const size = SuperAdminModel.getFileSizeOnDisk(d.id_proof_doc);
-        totalBytes += size;
-        if (bId && branchBytesMap[bId]) {
-          branchBytesMap[bId].bytes += size;
-          branchBytesMap[bId].documents_count += 1;
-        }
-      }
-    });
-
-    // If specific branch requested, return branch's storage
-    if (branchId) {
-      const bInfo = branchBytesMap[Number(branchId)] || { bytes: 0, materials_count: 0, documents_count: 0 };
-      return {
-        usedBytes: bInfo.bytes,
-        usedFormatted: SuperAdminModel.formatBytes(bInfo.bytes),
-        materialsCount: bInfo.materials_count,
-        documentsCount: bInfo.documents_count,
-      };
-    }
-
-    return {
-      totalBytes,
-      totalFormatted: SuperAdminModel.formatBytes(totalBytes),
-      branchesUsage: Object.values(branchBytesMap).map((b) => ({
-        ...b,
-        formatted: SuperAdminModel.formatBytes(b.bytes),
-      })),
-    };
+    return await FileStorageLedgerModel.calculateSchoolStorage(schoolId, branchId);
   }
 
   /**
@@ -257,6 +57,15 @@ class SuperAdminModel {
     const totalBranches = Number(branchStats[0]?.total_branches || 0);
     const activeBranches = Number(branchStats[0]?.active_branches || 0);
     const inactiveBranches = Number(branchStats[0]?.inactive_branches || 0);
+
+    let selectedBranchInfo = null;
+    if (parsedBranchId) {
+      const [selBranchRows] = await pool.query(
+        `SELECT id, branch_name, branch_code, is_main_branch FROM branch_master WHERE id = ? AND school_id = ? LIMIT 1`,
+        [parsedBranchId, parsedSchoolId]
+      );
+      selectedBranchInfo = selBranchRows[0] || null;
+    }
 
     // 3. Students Count
     let stuSql = `SELECT status, COUNT(*) as count FROM student_master WHERE school_id = ? AND status != 4`;
@@ -339,6 +148,29 @@ class SuperAdminModel {
     const totalFeesCollected = Number(feeRows[0]?.total_paid || 0);
     const totalOutstandingFees = Number(feeRows[0]?.total_due || 0);
 
+    // 7b. Class-wise Fee Breakdown
+    let feeClassSql = `SELECT 
+       COALESCE(cm.class_name, 'General') AS class_name,
+       COALESCE(SUM(fi.total_amount), 0) AS total,
+       COALESCE(SUM(fi.paid_amount), 0) AS paid,
+       COALESCE(SUM(fi.due_amount), 0) AS due
+     FROM fee_invoices fi
+     LEFT JOIN class_master cm ON fi.class_id = cm.id
+     WHERE fi.school_id = ? AND fi.status != 4`;
+    const feeClassParams = [parsedSchoolId];
+    if (parsedBranchId) {
+      feeClassSql += ` AND fi.branch_id = ?`;
+      feeClassParams.push(parsedBranchId);
+    }
+    feeClassSql += ` GROUP BY fi.class_id, cm.class_name ORDER BY cm.class_name ASC`;
+    const [feeClassRows] = await pool.query(feeClassSql, feeClassParams);
+    const feesByClass = (feeClassRows || []).map((row) => ({
+      className: row.class_name || 'General',
+      total: Number(row.total || 0),
+      paid: Number(row.paid || 0),
+      due: Number(row.due || 0),
+    }));
+
     // 8. Salary & Payroll Summary (from employee_salary)
     let salSql = `SELECT 
        COALESCE(SUM(basic_salary), 0) AS total_basic,
@@ -356,7 +188,46 @@ class SuperAdminModel {
     const totalDeductions = Number(salRows[0]?.total_deductions || 0);
     const totalSalaryPayout = Number(salRows[0]?.total_net || 0);
 
-    // 9. Real Storage Metrics
+    // 8b. Today's Attendance Summary (Students, Teachers, Staff)
+    const parseAtt = (rows) => {
+      const out = { present: 0, absent: 0, late: 0, halfday: 0 };
+      (rows || []).forEach((r) => {
+        const c = Number(r.count || 0);
+        if (r.attendance === 1) out.present += c;
+        else if (r.attendance === 0) out.absent += c;
+        else if (r.attendance === 2) out.late += c;
+        else if (r.attendance === 3) out.halfday += c;
+      });
+      return out;
+    };
+
+    const attParams = [parsedSchoolId];
+    let stuAttSql = `SELECT attendance, COUNT(*) as count FROM student_attendance WHERE school_id = ? AND date = CURDATE() AND status != 4`;
+    let tchAttSql = `SELECT attendance, COUNT(*) as count FROM teacher_attendance WHERE school_id = ? AND date = CURDATE() AND status != 4`;
+    let stfAttSql = `SELECT attendance, COUNT(*) as count FROM user_master_attendance WHERE school_id = ? AND date = CURDATE() AND status != 4`;
+    if (parsedBranchId) {
+      stuAttSql += ` AND branch_id = ?`;
+      tchAttSql += ` AND branch_id = ?`;
+      stfAttSql += ` AND branch_id = ?`;
+      attParams.push(parsedBranchId);
+    }
+    stuAttSql += ` GROUP BY attendance`;
+    tchAttSql += ` GROUP BY attendance`;
+    stfAttSql += ` GROUP BY attendance`;
+
+    const [[stuAttRows], [tchAttRows], [stfAttRows]] = await Promise.all([
+      pool.query(stuAttSql, attParams),
+      pool.query(tchAttSql, attParams),
+      pool.query(stfAttSql, attParams),
+    ]);
+
+    const attendanceSummary = {
+      students: parseAtt(stuAttRows),
+      teachers: parseAtt(tchAttRows),
+      staff: parseAtt(stfAttRows),
+    };
+
+    // 9. Real Storage Metrics (with exact MB values & category breakdown)
     const storageData = await SuperAdminModel.calculateRealStorage(parsedSchoolId, parsedBranchId);
     const allocationData = await SuperAdminModel.getStorageAllocation(parsedSchoolId);
 
@@ -364,6 +235,10 @@ class SuperAdminModel {
     const allocatedBytes = allocationData.allocatedBytes;
     const availableBytes = Math.max(0, allocatedBytes - usedBytes);
     const storagePercentage = allocatedBytes > 0 ? parseFloat(((usedBytes / allocatedBytes) * 100).toFixed(2)) : 0;
+
+    const usedMB = Number((usedBytes / (1024 * 1024)).toFixed(4));
+    const allocatedMB = Number((allocatedBytes / (1024 * 1024)).toFixed(2));
+    const availableMB = Number((availableBytes / (1024 * 1024)).toFixed(2));
 
     let warningLevel = 'normal';
     if (storagePercentage >= 100) {
@@ -418,6 +293,7 @@ class SuperAdminModel {
         totalInvoiced: totalFeesInvoiced,
         collected: totalFeesCollected,
         outstanding: totalOutstandingFees,
+        byClass: feesByClass,
       },
       salary: {
         basic: totalBasicSalary,
@@ -425,16 +301,24 @@ class SuperAdminModel {
         payout: totalSalaryPayout,
         netSalary: totalSalaryPayout,
       },
+      attendance: attendanceSummary,
       storage: {
         usedBytes,
+        usedMB,
+        usedMBFormatted: FileStorageLedgerModel.formatMB(usedBytes),
         usedFormatted: SuperAdminModel.formatBytes(usedBytes),
         allocatedBytes,
+        allocatedMB,
+        allocatedMBFormatted: FileStorageLedgerModel.formatMB(allocatedBytes),
         allocatedFormatted: allocationData.allocatedFormatted,
         availableBytes,
+        availableMB,
+        availableMBFormatted: FileStorageLedgerModel.formatMB(availableBytes),
         availableFormatted: SuperAdminModel.formatBytes(availableBytes),
         percentage: storagePercentage,
         warningLevel,
         planName: allocationData.planName,
+        categoriesBreakdown: storageData.categoriesBreakdown || [],
         branchesBreakdown: parsedBranchId ? [] : storageData.branchesUsage || [],
       },
       subscription: {
@@ -455,6 +339,8 @@ class SuperAdminModel {
       filter: {
         isFiltered: Boolean(parsedBranchId),
         branchId: parsedBranchId,
+        branchName: selectedBranchInfo?.branch_name || null,
+        branchCode: selectedBranchInfo?.branch_code || null,
       },
     };
   }
@@ -907,7 +793,7 @@ class SuperAdminModel {
     const parsedSchoolId = Number(schoolId);
     const subscription = await SubscriptionModel.getSchoolSubscription(parsedSchoolId);
     const [stuCount] = await pool.query(
-      `SELECT COUNT(*) as count FROM student_master WHERE school_id = ? AND status = 1`,
+      `SELECT COUNT(*) as count FROM student_master WHERE school_id = ? AND status IN (1, 2)`,
       [parsedSchoolId]
     );
     const [branchCount] = await pool.query(

@@ -329,7 +329,12 @@ class ParentModel {
       }
     }
 
-    const savedPic = picture ? saveBase64File(picture, 'parent/profile', 'Parent-Profile') : null;
+    const savedPic = picture
+      ? await saveBase64File(picture, 'parent/profile', 'Parent-Profile', {
+          schoolId,
+          branchId: finalBranchId ? Number(finalBranchId) : null,
+        })
+      : null;
 
     // Use parent's phone number as the default password if no explicit password provided
     const plainPassword = data.password && String(data.password).trim()
@@ -425,7 +430,12 @@ class ParentModel {
     }
 
     if (picture !== undefined) {
-      const savedPic = picture ? saveBase64File(picture, 'parent/profile', 'Parent-Profile') : null;
+      const savedPic = picture
+      ? await saveBase64File(picture, 'parent/profile', 'Parent-Profile', {
+          schoolId,
+          branchId: finalBranchId ? Number(finalBranchId) : null,
+        })
+      : null;
       sql += `, picture = ?`;
       params.push(savedPic);
     }
@@ -1571,7 +1581,9 @@ class ParentModel {
       }
       if (picture !== undefined && picture) {
         if (String(picture).startsWith('data:image')) {
-          const savedPic = saveBase64File(picture, 'student/student_pic', 'Profile');
+          const savedPic = await saveBase64File(picture, 'student/student_pic', 'Profile', {
+            schoolId,
+          });
           if (savedPic) {
             updates.push('picture = ?');
             params.push(savedPic);

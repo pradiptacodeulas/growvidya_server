@@ -8,7 +8,7 @@ const EmailCredentialModel = require('../models/emailCredential.model');
 const EmailService = require('../services/email.service');
 const SubscriptionFulfillmentService = require('../services/subscriptionFulfillment.service');
 const SubscriptionAlertService = require('../services/subscriptionAlert.service');
-const { BILLING_CYCLES } = require('../constants/subscriptionModules.constant');
+const { BILLING_CYCLES, getActiveBillingCycles } = require('../constants/subscriptionModules.constant');
 const ApiResponse = require('../utils/api.response');
 const { generateToken } = require('../utils/jwt.util');
 const { comparePassword } = require('../utils/password.util');
@@ -123,13 +123,7 @@ class SaasAdminController {
       const body = req.body || {};
       let profile_image = body.profile_image;
       if (req.file) {
-        const uploadRoot = path.join(__dirname, '../public/upload');
-        let folderRel = '';
-        if (req.file.destination) {
-          folderRel = path.relative(uploadRoot, req.file.destination).replace(/\\/g, '/');
-        }
-        const cleanFolder = folderRel && folderRel !== '.' ? `${folderRel.replace(/^\/+|\/+$/g, '')}/` : '';
-        profile_image = `/upload/${cleanFolder}${req.file.filename}`;
+        profile_image = `/${req.file.filePath.replace(/^\/+/, '')}`;
       }
 
       const { first_name, last_name, gender, gender_id, phone_number, email, name } = body;
@@ -518,7 +512,7 @@ class SaasAdminController {
   static async getPackageMeta(req, res, next) {
     try {
       return ApiResponse.success(res, 'Package configuration metadata retrieved successfully.', {
-        billing_cycles: Object.values(BILLING_CYCLES),
+        billing_cycles: getActiveBillingCycles(),
         unlimited_quotas: ['max_teachers', 'max_branches'],
       });
     } catch (error) {
@@ -564,6 +558,8 @@ class SaasAdminController {
         free_trial_days,
         max_students,
         included_storage_gb,
+        included_push_credits,
+        included_sms_credits,
         is_popular,
         status,
         items,
@@ -605,6 +601,8 @@ class SaasAdminController {
         free_trial_days,
         max_students,
         included_storage_gb,
+        included_push_credits,
+        included_sms_credits,
         is_popular,
         status: status !== undefined ? status : 1,
         items: items || [],
@@ -1287,13 +1285,7 @@ class SaasAdminController {
       const body = req.body || {};
       let profile_image = body.profile_image;
       if (req.file) {
-        const uploadRoot = path.join(__dirname, '../public/upload');
-        let folderRel = '';
-        if (req.file.destination) {
-          folderRel = path.relative(uploadRoot, req.file.destination).replace(/\\/g, '/');
-        }
-        const cleanFolder = folderRel && folderRel !== '.' ? `${folderRel.replace(/^\/+|\/+$/g, '')}/` : '';
-        profile_image = `/upload/${cleanFolder}${req.file.filename}`;
+        profile_image = `/${req.file.filePath.replace(/^\/+/, '')}`;
       }
 
       const {
@@ -1353,13 +1345,7 @@ class SaasAdminController {
       const body = req.body || {};
       let profile_image = body.profile_image;
       if (req.file) {
-        const uploadRoot = path.join(__dirname, '../public/upload');
-        let folderRel = '';
-        if (req.file.destination) {
-          folderRel = path.relative(uploadRoot, req.file.destination).replace(/\\/g, '/');
-        }
-        const cleanFolder = folderRel && folderRel !== '.' ? `${folderRel.replace(/^\/+|\/+$/g, '')}/` : '';
-        profile_image = `/upload/${cleanFolder}${req.file.filename}`;
+        profile_image = `/${req.file.filePath.replace(/^\/+/, '')}`;
       }
 
       const {
@@ -1604,6 +1590,46 @@ class SaasAdminController {
       const ledger = await SaasAdminModel.getNotificationBuyerLedger(schoolId);
       return ApiResponse.success(res, 'Notification wallet ledger retrieved successfully.', ledger);
     } catch (error) {
+      next(error);
+    }
+  }
+
+  static async approveAddonOrder(req, res, next) {
+    try {
+      const orderId = parseInt(req.params.orderId || req.params.id, 10);
+      if (isNaN(orderId) || orderId <= 0) {
+        return ApiResponse.error(res, 'Valid order ID is required.', null, 400);
+      }
+      const { verification_notes, verificationNotes, notes } = req.body || {};
+      const result = await SaasAdminModel.approveAddonOrder(orderId, {
+        verifiedBy: req.saasAdmin?.id || null,
+        verificationNotes: verification_notes || verificationNotes || notes || 'Verified and approved by Super Admin',
+      });
+      return ApiResponse.success(res, 'Offline add-on order approved and fulfilled successfully.', result);
+    } catch (error) {
+      if (error.statusCode) {
+        return ApiResponse.error(res, error.message, null, error.statusCode);
+      }
+      next(error);
+    }
+  }
+
+  static async rejectAddonOrder(req, res, next) {
+    try {
+      const orderId = parseInt(req.params.orderId || req.params.id, 10);
+      if (isNaN(orderId) || orderId <= 0) {
+        return ApiResponse.error(res, 'Valid order ID is required.', null, 400);
+      }
+      const { rejection_reason, rejectionReason, reason, notes } = req.body || {};
+      await SaasAdminModel.rejectAddonOrder(orderId, {
+        verifiedBy: req.saasAdmin?.id || null,
+        rejectionReason: rejection_reason || rejectionReason || reason || notes || 'Rejected by Super Admin',
+      });
+      return ApiResponse.success(res, 'Offline add-on order rejected.', null);
+    } catch (error) {
+      if (error.statusCode) {
+        return ApiResponse.error(res, error.message, null, error.statusCode);
+      }
       next(error);
     }
   }

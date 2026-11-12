@@ -1,4 +1,7 @@
 const crypto = require('crypto');
+const { pool } = require('../config/db.config');
+const { hashPassword } = require('../utils/password.util');
+const { saveBase64File } = require('../utils/file.util');
 const SaasModel = require('../models/saas.model');
 const SubscriptionModel = require('../models/subscription.model');
 const CouponModel = require('../models/coupon.model');
@@ -180,6 +183,45 @@ class SaasController {
       const orderType = isTrialReq ? 'trial_with_addons' : 'onboarding';
       const actionType = isTrialReq ? 'trial' : 'onboarding';
 
+      // Build pre-hashed onboarding registration snapshot so Razorpay webhooks can auto-provision the school if browser disconnects
+      let onboardingRegistrationSnapshot = null;
+      if (req.body.school && req.body.school.school_name && req.body.admin && req.body.admin.email) {
+        const rawSchool = { ...req.body.school };
+        if (rawSchool.school_logo && String(rawSchool.school_logo).startsWith('data:')) {
+          rawSchool.school_logo = await saveBase64File(rawSchool.school_logo, 'school', 'Logo', {
+            skipQuotaCheck: true,
+          });
+        }
+        const rawAdmin = { ...req.body.admin };
+        if (rawAdmin.picture && String(rawAdmin.picture).startsWith('data:')) {
+          rawAdmin.picture = await saveBase64File(rawAdmin.picture, 'staff', 'Admin', {
+            skipQuotaCheck: true,
+          });
+        }
+        const passwordHash = rawAdmin.password
+          ? await hashPassword(String(rawAdmin.password))
+          : rawAdmin.password_hash || null;
+        delete rawAdmin.password;
+        if (passwordHash) {
+          rawAdmin.password_hash = passwordHash;
+        }
+        onboardingRegistrationSnapshot = {
+          is_trial: isTrialReq,
+          school: rawSchool,
+          academic_year: req.body.academic_year || req.body.academicYear || {},
+          admin: rawAdmin,
+        };
+      }
+
+      const extraMetadataPayload = {
+        school_name: schoolName,
+        email: adminEmail || schoolEmail,
+        phone: adminPhone || schoolPhone,
+        ...(onboardingRegistrationSnapshot
+          ? { onboarding_registration: onboardingRegistrationSnapshot }
+          : {}),
+      };
+
       // Handle ₹0 total (e.g., 100% coupon discount or pure free trial) cleanly without failing!
       if (verifiedCalc.grandTotal <= 0) {
         const orderIntent = await SubscriptionFulfillmentService.createOrderIntent({
@@ -190,11 +232,7 @@ class SaasController {
           verifiedCalc,
           paymentMethod: isTrialReq ? 'free_trial' : 'coupon_100',
           shippingAddress,
-          extraMetadata: {
-            school_name: schoolName,
-            email: adminEmail || schoolEmail,
-            phone: adminPhone || schoolPhone,
-          },
+          extraMetadata: extraMetadataPayload,
         });
 
         return ApiResponse.success(res, 'Zero-amount checkout order prepared for instant activation.', {
@@ -262,11 +300,7 @@ class SaasController {
         paymentMethod: 'razorpay',
         razorpayOrderId: rzpOrder.id,
         shippingAddress,
-        extraMetadata: {
-          school_name: schoolName,
-          email: adminEmail || schoolEmail,
-          phone: adminPhone || schoolPhone,
-        },
+        extraMetadata: extraMetadataPayload,
       });
 
       return ApiResponse.success(res, 'Registration payment order created successfully.', {
@@ -329,18 +363,11 @@ class SaasController {
       if (!admin.phone || !admin.phone.trim()) {
         return ApiResponse.error(res, 'Super Admin Phone number is required.', null, 400);
       }
-      if (!admin.password || admin.password.length < 6) {
-        return ApiResponse.error(res, 'Password must be at least 6 characters.', null, 400);
+      if (!admin.password && !admin.password_hash) {
+        return ApiResponse.error(res, 'Password is required.', null, 400);
       }
-
-      const availability = await SaasModel.checkAvailability({
-        adminEmail: admin.email,
-        adminPhone: admin.phone,
-        schoolEmail: school.email,
-        schoolPhone: school.phone_number,
-      });
-      if (!availability.available) {
-        return ApiResponse.error(res, availability.message, { field: availability.field }, 400);
+      if (admin.password && admin.password.length < 6) {
+        return ApiResponse.error(res, 'Password must be at least 6 characters.', null, 400);
       }
 
       const targetPlan = await SubscriptionModel.getPlanById(selectedPlanId);
@@ -352,15 +379,42 @@ class SaasController {
         Boolean(req.body.is_trial !== undefined ? req.body.is_trial : req.body.isTrial) ||
         String(targetPlan.billing_cycle).toLowerCase() === 'trial';
 
-      if (isTrialRequested) {
-        const eligibility = await SaasModel.checkTrialEligibility({
-          planId: targetPlan.id,
-          email: admin.email,
-          schoolCode: school.school_code,
-          phone: school.phone_number || admin.phone,
+      let paymentOrderId = req.body.payment_order_id || req.body.paymentOrderId || null;
+      const razorpayOrderId = req.body.razorpay_order_id || req.body.razorpayOrderId || null;
+      const existingOrderNo = req.body.order_no || req.body.orderNo || null;
+
+      // Check if the referenced payment order was already auto-provisioned by a Razorpay webhook
+      let preProvisionedOrder = null;
+      if (razorpayOrderId || existingOrderNo || paymentOrderId) {
+        preProvisionedOrder = await SubscriptionFulfillmentService.getOrderWithInvoice(
+          razorpayOrderId || existingOrderNo || paymentOrderId
+        );
+      }
+      const isAlreadyProvisionedByWebhook = Boolean(
+        preProvisionedOrder && preProvisionedOrder.status === 'paid' && preProvisionedOrder.school_id
+      );
+
+      if (!isAlreadyProvisionedByWebhook) {
+        const availability = await SaasModel.checkAvailability({
+          adminEmail: admin.email,
+          adminPhone: admin.phone,
+          schoolEmail: school.email,
+          schoolPhone: school.phone_number,
         });
-        if (!eligibility.is_eligible) {
-          return ApiResponse.error(res, eligibility.reason, { eligibility }, 403);
+        if (!availability.available) {
+          return ApiResponse.error(res, availability.message, { field: availability.field }, 400);
+        }
+
+        if (isTrialRequested) {
+          const eligibility = await SaasModel.checkTrialEligibility({
+            planId: targetPlan.id,
+            email: admin.email,
+            schoolCode: school.school_code,
+            phone: school.phone_number || admin.phone,
+          });
+          if (!eligibility.is_eligible) {
+            return ApiResponse.error(res, eligibility.reason, { eligibility }, 403);
+          }
         }
       }
 
@@ -376,13 +430,12 @@ class SaasController {
         selected_cards: req.body.selected_cards || req.body.selectedCards || [],
         selected_notifications: req.body.selected_notifications || req.body.selectedNotifications || [],
         coupon_code: req.body.coupon_code || req.body.couponCode || null,
-        school_id: null,
-        email: admin.email,
-        phone: admin.phone,
+        school_id: isAlreadyProvisionedByWebhook ? preProvisionedOrder.school_id : null,
+        email: isAlreadyProvisionedByWebhook ? null : admin.email,
+        phone: isAlreadyProvisionedByWebhook ? null : admin.phone,
+        exclude_order_id: preProvisionedOrder ? preProvisionedOrder.id : null,
       });
 
-      let paymentOrderId = req.body.payment_order_id || req.body.paymentOrderId || null;
-      const razorpayOrderId = req.body.razorpay_order_id || req.body.razorpayOrderId || null;
       const razorpayPaymentId =
         req.body.razorpay_payment_id ||
         req.body.razorpayPaymentId ||
@@ -420,7 +473,7 @@ class SaasController {
           );
         }
 
-        const persistedOrder = await SubscriptionFulfillmentService.getOrderWithInvoice(razorpayOrderId);
+        const persistedOrder = preProvisionedOrder || (await SubscriptionFulfillmentService.getOrderWithInvoice(razorpayOrderId));
         if (!persistedOrder) {
           return ApiResponse.error(
             res,
@@ -439,13 +492,44 @@ class SaasController {
           );
         }
 
+        const persistedPaise = Math.round((parseFloat(persistedOrder.grand_total) || 0) * 100);
+        const expectedPaise = Math.round(verifiedCalc.grandTotal * 100);
+        if (persistedPaise !== expectedPaise) {
+          return ApiResponse.error(
+            res,
+            'Order amount mismatch detected between verified payment order and registration request.',
+            { code: 'AMOUNT_MISMATCH' },
+            400
+          );
+        }
+
+        if (razorpayConfig.razorpayInstance?.orders?.fetch) {
+          try {
+            const remoteOrder = await razorpayConfig.razorpayInstance.orders.fetch(razorpayOrderId);
+            const remoteCurrency = String(remoteOrder?.currency || 'INR').toUpperCase();
+            if (remoteOrder && (Number(remoteOrder.amount) !== persistedPaise || remoteCurrency !== 'INR')) {
+              return ApiResponse.error(
+                res,
+                'Gateway order amount or currency mismatch detected during verification.',
+                { code: 'AMOUNT_MISMATCH' },
+                400
+              );
+            }
+          } catch (_) {
+            // Transient gateway fetch error; HMAC signature + DB-bound order_id already verified
+          }
+        }
+
         paymentOrderId = persistedOrder.id;
       } else {
         // ₹0 total (pure Free Trial with no paid add-ons OR 100%-Discount Coupon)
-        const existingOrderNo = req.body.order_no || req.body.orderNo || null;
         if (existingOrderNo) {
-          const existingZero = await SubscriptionFulfillmentService.getOrderWithInvoice(existingOrderNo);
-          if (existingZero && existingZero.grand_total <= 0 && !existingZero.school_id) {
+          const existingZero = preProvisionedOrder || (await SubscriptionFulfillmentService.getOrderWithInvoice(existingOrderNo));
+          if (
+            existingZero &&
+            parseFloat(existingZero.grand_total) <= 0 &&
+            Number(existingZero.plan_id) === Number(targetPlan.id)
+          ) {
             paymentOrderId = existingZero.id;
           }
         }
@@ -481,10 +565,38 @@ class SaasController {
       });
 
       const { generateToken } = require('../utils/jwt.util');
+      const handoverJti = crypto.randomBytes(16).toString('hex');
+      if (result.orderNo) {
+        try {
+          const [ordRows] = await pool.query(
+            'SELECT id, payload_snapshot_json FROM subscription_payment_orders WHERE order_no = ? AND school_id = ? LIMIT 1',
+            [result.orderNo, result.schoolId]
+          );
+          if (ordRows.length > 0) {
+            let snap = {};
+            try {
+              snap = ordRows[0].payload_snapshot_json ? JSON.parse(ordRows[0].payload_snapshot_json) : {};
+            } catch (_) {}
+            snap.extra = {
+              ...(snap.extra || {}),
+              handover_jti: handoverJti,
+              handover_consumed_at: null,
+            };
+            await pool.query(
+              'UPDATE subscription_payment_orders SET payload_snapshot_json = ? WHERE id = ?',
+              [JSON.stringify(snap), ordRows[0].id]
+            );
+          }
+        } catch (_) {}
+      }
+
       const handoverToken = generateToken(
         {
           schoolId: result.schoolId,
+          userId: result.adminUserId,
           email: result.adminEmail,
+          orderNo: result.orderNo || null,
+          jti: handoverJti,
           type: 'onboarding_handover',
         },
         { expiresIn: '15m' }
@@ -662,15 +774,67 @@ class SaasController {
 
       const { verifyToken, generateToken } = require('../utils/jwt.util');
       const decoded = verifyToken(token);
-      if (!decoded || decoded.type !== 'onboarding_handover' || !decoded.email) {
+      if (!decoded || decoded.type !== 'onboarding_handover' || !decoded.email || !decoded.schoolId) {
         return ApiResponse.error(res, 'Invalid or expired onboarding handover token.', null, 401);
+      }
+
+      // Enforce strictly single-use handover token via row lock on the onboarding order
+      if (decoded.orderNo || decoded.schoolId) {
+        const conn = await pool.getConnection();
+        try {
+          await conn.beginTransaction();
+          const [orderRows] = await conn.query(
+            `SELECT id, payload_snapshot_json
+             FROM subscription_payment_orders
+             WHERE school_id = ?
+               AND (? IS NULL OR order_no = ?)
+             ORDER BY id DESC
+             LIMIT 1 FOR UPDATE`,
+            [decoded.schoolId, decoded.orderNo || null, decoded.orderNo || null]
+          );
+          if (orderRows.length > 0) {
+            let snap = {};
+            try {
+              snap = orderRows[0].payload_snapshot_json
+                ? JSON.parse(orderRows[0].payload_snapshot_json)
+                : {};
+            } catch (_) {}
+            const extra = snap.extra || {};
+            if (
+              extra.handover_consumed_at ||
+              (extra.handover_jti && decoded.jti && extra.handover_jti !== decoded.jti)
+            ) {
+              await conn.rollback();
+              return ApiResponse.error(
+                res,
+                'This onboarding handover token has already been used. Please log in with your credentials.',
+                null,
+                401
+              );
+            }
+            snap.extra = {
+              ...extra,
+              handover_consumed_at: new Date().toISOString(),
+            };
+            await conn.query(
+              'UPDATE subscription_payment_orders SET payload_snapshot_json = ? WHERE id = ?',
+              [JSON.stringify(snap), orderRows[0].id]
+            );
+          }
+          await conn.commit();
+        } catch (lockErr) {
+          await conn.rollback();
+          throw lockErr;
+        } finally {
+          conn.release();
+        }
       }
 
       const AdminUserModel = require('../models/adminUser.model');
       const PermissionModel = require('../models/permission.model');
       const config = require('../config/app.config');
 
-      const user = await AdminUserModel.findByEmail(decoded.email.trim());
+      const user = await AdminUserModel.findByEmail(decoded.email.trim(), decoded.schoolId);
       if (!user) {
         return ApiResponse.error(res, 'User record not found.', null, 404);
       }

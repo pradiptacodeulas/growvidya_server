@@ -1,5 +1,6 @@
 const StorageMasterModel = require('../models/storageMaster.model');
 const CapacityUnitMasterModel = require('../models/capacityUnitMaster.model');
+const FileStorageLedgerModel = require('../models/fileStorageLedger.model');
 const ApiResponse = require('../utils/api.response');
 const { parsePagination } = require('../utils/pagination.util');
 
@@ -78,6 +79,19 @@ class StorageMasterController {
         limit,
       });
       return ApiResponse.success(res, 'Storage plan buyers retrieved successfully.', result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /storage-plans/analytics
+   * Platform-wide and per-school Backblaze B2 storage usage analytics
+   */
+  static async getStorageAnalytics(req, res, next) {
+    try {
+      const overview = await FileStorageLedgerModel.getAdminStorageOverview();
+      return ApiResponse.success(res, 'Cloud storage analytics retrieved successfully.', overview);
     } catch (error) {
       next(error);
     }

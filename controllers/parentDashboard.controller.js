@@ -44,6 +44,8 @@ class ParentDashboardController {
       // 3. Child's Full Profile
       const fullChild = await ParentModel.getChildFullProfile(activeChild.id, schoolId);
       const childBranchId = fullChild?.branch_id || activeChild?.branch_id || req.branchId || req.user?.branch_id || null;
+      const studentClass = Number(activeChild.class_id || fullChild?.class || 0) || null;
+      const studentSection = Number(activeChild.section_id || fullChild?.section || 0) || null;
 
       // 4. Attendance Summary
       const attendanceData = await ParentModel.getChildAttendance(activeChild.id, schoolId);
@@ -77,9 +79,9 @@ class ParentDashboardController {
             AND (LOWER(d.day_name) = LOWER(?) OR d.id = ? OR r.day = ?)
             AND (r.status != 4 OR r.status IS NULL)`;
         const routineParams = [
-          activeChild.class_id || fullChild.class,
-          activeChild.section_id || fullChild.section,
-          activeChild.section_id || fullChild.section,
+          studentClass,
+          studentSection,
+          studentSection,
           schoolId,
           schoolId,
           todayDayName,
@@ -98,14 +100,55 @@ class ParentDashboardController {
         console.error('Error fetching child todayClasses:', err.message);
       }
 
-      // 7. Recent Notices & Announcements
+      // 7. Recent Notices & Announcements (Filtered for Parent & Active Child)
       let notices = [];
       let events = [];
       let holidays = [];
       try {
-        notices = await AnnouncementModel.getAllNotices(schoolId, childBranchId);
-        events = await AnnouncementModel.getAllEvents(schoolId, childBranchId);
-        holidays = await AnnouncementModel.getAllHolidays(schoolId, childBranchId);
+        const allNotices = await AnnouncementModel.getAllNotices(schoolId, childBranchId, true);
+        notices = (allNotices || []).filter((n) => {
+          if (Number(n.status ?? 1) !== 1) return false;
+          const type = n.target_type || 'all';
+          if (type === 'class_section') {
+            const roles = (n.target_roles || []).map((r) => String(r).toLowerCase());
+            const isTargetedRole = roles.length === 0 || roles.includes('student') || roles.includes('parent');
+            if (!isTargetedRole) return false;
+            const noticeClasses = (n.target_classes || []).map(Number);
+            const noticeSections = (n.target_sections || []).map(Number);
+            if (noticeClasses.length > 0 && (!studentClass || !noticeClasses.includes(studentClass))) return false;
+            if (noticeSections.length > 0 && (!studentSection || !noticeSections.includes(studentSection))) return false;
+            return true;
+          }
+          if (type === 'specific_users') {
+            return (n.target_user_ids || []).some((u) => {
+              if (typeof u === 'object' && u !== null) {
+                const uRole = String(u.role || '').toLowerCase();
+                const uId = Number(u.id);
+                if (uRole === 'parent') return Boolean(parentId && uId === Number(parentId));
+                if (uRole === 'student') return Boolean(activeChild.id && uId === Number(activeChild.id));
+                return false;
+              }
+              return false;
+            });
+          }
+          const roles = (n.target_roles || []).map((r) => String(r).toLowerCase());
+          const msgTo = (n.message_to || []).map((m) => String(m).toLowerCase());
+          if (roles.length === 0 && msgTo.length === 0) return true;
+          return (
+            roles.includes('student') ||
+            roles.includes('parent') ||
+            roles.includes('all') ||
+            msgTo.includes('student') ||
+            msgTo.includes('parent') ||
+            msgTo.includes('1') ||
+            msgTo.includes('2') ||
+            msgTo.includes('all')
+          );
+        });
+        const allEvents = await AnnouncementModel.getAllEvents(schoolId, childBranchId);
+        events = (allEvents || []).filter((e) => Number(e.status ?? 1) === 1);
+        const allHolidays = await AnnouncementModel.getAllHolidays(schoolId, childBranchId);
+        holidays = (allHolidays || []).filter((h) => Number(h.status ?? 1) === 1);
       } catch (err) {
         console.error('Error fetching announcements:', err.message);
       }

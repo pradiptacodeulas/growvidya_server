@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const puppeteer = require('puppeteer');
+const CloudStorageService = require('./cloudStorage.service');
 
 // Cache template HTML in memory
 let cachedTemplate = null;
@@ -17,33 +18,27 @@ const getTemplateHtml = () => {
 };
 
 /**
- * Converts a local file path or public upload path to a base64 Data URI
+ * Converts a Backblaze B2 upload path to a base64 Data URI
  * so Puppeteer can embed it reliably without network or CORS latency.
  */
-const toBase64DataUri = (imgUrlOrPath) => {
+const toBase64DataUri = async (imgUrlOrPath) => {
   if (!imgUrlOrPath) return '';
   if (typeof imgUrlOrPath !== 'string') return '';
   if (imgUrlOrPath.startsWith('data:')) return imgUrlOrPath;
 
   try {
-    let cleanPath = imgUrlOrPath.replace(/^https?:\/\/[^\/]+/i, ''); // Strip domain if present
+    let cleanPath = imgUrlOrPath.replace(/^https?:\/\/[^\/]+/i, '').split('?')[0];
     if (cleanPath.startsWith('/')) cleanPath = cleanPath.substring(1);
 
-    const fullPath = path.isAbsolute(imgUrlOrPath)
-      ? imgUrlOrPath
-      : path.join(__dirname, '../public', cleanPath);
-
-    if (fs.existsSync(fullPath)) {
-      const ext = path.extname(fullPath).toLowerCase().replace('.', '') || 'jpeg';
-      const mime = ext === 'png' ? 'image/png' : ext === 'svg' ? 'image/svg+xml' : 'image/jpeg';
-      const data = fs.readFileSync(fullPath).toString('base64');
-      return `data:${mime};base64,${data}`;
+    const { buffer, mimeType } = await CloudStorageService.getFileBuffer(cleanPath);
+    if (buffer && buffer.length > 0) {
+      return `data:${mimeType || 'image/jpeg'};base64,${buffer.toString('base64')}`;
     }
   } catch (err) {
-    console.warn('[certificatePdf.service] Failed to convert image to base64:', err.message);
+    console.warn('[certificatePdf.service] Failed to convert B2 image to base64:', err.message);
   }
 
-  return imgUrlOrPath;
+  return '';
 };
 
 /**
@@ -114,15 +109,15 @@ const formatCertificateBodyHtml = (rawDescription, cert) => {
 /**
  * Builds the complete HTML string for a single certificate
  */
-const buildSingleCertificateHtml = (cert, templateHtml) => {
+const buildSingleCertificateHtml = async (cert, templateHtml) => {
   const studentName = `${cert.first_name || ''} ${cert.last_name || ''}`.trim() || 'Student';
   const issueDateStr = cert.certificate_date || cert.date || new Date().toISOString().split('T')[0];
   const [y, m, d] = issueDateStr.split('-');
   const formattedDate = d && m && y ? `${d}/${m}/${y}` : issueDateStr;
 
   const serialNo = cert.id ? `CERT-${String(cert.id).padStart(5, '0')}` : 'CERT-00001';
-  const borderUri = toBase64DataUri(cert.borderImg || cert.border);
-  const logoUri = toBase64DataUri(cert.school_logo);
+  const borderUri = await toBase64DataUri(cert.borderImg || cert.border);
+  const logoUri = await toBase64DataUri(cert.school_logo);
   const bodyHtml = formatCertificateBodyHtml(cert.certificate_description || cert.description, cert);
 
   let html = templateHtml
@@ -157,17 +152,18 @@ exports.generateCertificatesPdfBuffer = async (certificates) => {
 
   let finalHtml = '';
   if (certList.length === 1) {
-    finalHtml = buildSingleCertificateHtml(certList[0], baseTemplateHtml);
+    finalHtml = await buildSingleCertificateHtml(certList[0], baseTemplateHtml);
   } else {
     // Multi-page document: extract inner styles & wrap each certificate in an A4 page container
-    const pagesHtml = certList
-      .map((cert) => {
-        const certHtml = buildSingleCertificateHtml(cert, baseTemplateHtml);
+    const renderedPages = await Promise.all(
+      certList.map(async (cert) => {
+        const certHtml = await buildSingleCertificateHtml(cert, baseTemplateHtml);
         const bodyMatch = certHtml.match(/<body[^>]*>([\s\S]*)<\/body>/i);
         const bodyInner = bodyMatch ? bodyMatch[1] : certHtml;
         return `<div class="certificate-page">${bodyInner}</div>`;
       })
-      .join('\n');
+    );
+    const pagesHtml = renderedPages.join('\n');
 
     // Extract head
     const headMatch = baseTemplateHtml.match(/<head[^>]*>([\s\S]*)<\/head>/i);

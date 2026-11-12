@@ -1395,6 +1395,7 @@ class AdminAcademicController {
 
   static async downloadStudyMaterial(req, res, next) {
     try {
+      const CloudStorageService = require('../services/cloudStorage.service');
       const schoolId = AdminAcademicController.getSchoolId(req);
       const branchId = req.branchId || req.query.branch_id || null;
       const { id } = req.params;
@@ -1409,28 +1410,18 @@ class AdminAcademicController {
           ? `${data.title.replace(/[^a-zA-Z0-9_\-\. ]/g, '_')}.${data.attachment_extension || 'pdf'}`
           : filename);
 
-      const cleanRelPath = data.attachment.replace(/^[/\\]+/, '').replace(/^upload[/\\]+/, '');
-
-      const candidatePaths = [
-        path.join(__dirname, '../public', data.attachment.replace(/^[/\\]+/, '')),
-        path.join(__dirname, '../public/upload', cleanRelPath),
-        path.join(__dirname, '../public/upload/study_material', filename),
-        path.join(__dirname, '../public/upload/study_materials', filename),
-        path.join(__dirname, '../public/upload/general', filename),
-        path.join(__dirname, '../public/upload', filename),
-        path.join('C:/xampp/htdocs/growvidya', data.attachment.replace(/^[/\\]+/, '')),
-        path.join('C:/xampp/htdocs/growvidya/upload', cleanRelPath),
-        path.join('C:/xampp/htdocs/growvidya/upload/study_material', filename),
-        path.join('C:/xampp/htdocs/growvidya/upload', filename),
-      ];
-
-      for (const p of candidatePaths) {
-        if (fs.existsSync(p) && fs.statSync(p).isFile()) {
-          return res.download(p, originalName);
-        }
+      try {
+        const { stream, contentType, contentLength } = await CloudStorageService.getObjectStream(data.attachment);
+        res.setHeader('Content-Type', contentType || 'application/octet-stream');
+        if (contentLength) res.setHeader('Content-Length', String(contentLength));
+        res.setHeader(
+          'Content-Disposition',
+          `attachment; filename="${String(originalName).replace(/"/g, '')}"`
+        );
+        return stream.pipe(res);
+      } catch (b2Err) {
+        return ApiResponse.error(res, 'Attachment file not found in cloud storage.', null, 404);
       }
-
-      return ApiResponse.error(res, 'Attachment file not found on server.', null, 404);
     } catch (error) {
       next(error);
     }

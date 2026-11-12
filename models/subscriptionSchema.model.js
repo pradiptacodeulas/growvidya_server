@@ -1,5 +1,5 @@
 const { pool } = require('../config/db.config');
-const { getCycleMonths } = require('../constants/subscriptionModules.constant');
+const { getCycleMonths, refreshBillingCyclesCache } = require('../constants/subscriptionModules.constant');
 
 /**
  * Idempotent Schema Initializer for Production SaaS Subscriptions, Add-ons,
@@ -22,6 +22,14 @@ class SubscriptionSchemaModel {
     if (SubscriptionSchemaModel._initialized) return;
 
     try {
+      // 0. Initialize dynamic billing_cycle_master table & seed canonical cycles
+      await SubscriptionSchemaModel._initBillingCycleMaster();
+
+      // Refresh in-memory dynamic billing cycle cache from DB before plan normalization
+      if (typeof refreshBillingCyclesCache === 'function') {
+        await refreshBillingCyclesCache();
+      }
+
       // 1. Upgrade subscription_plans
       await SubscriptionSchemaModel._upgradeSubscriptionPlans();
 
@@ -37,7 +45,7 @@ class SubscriptionSchemaModel {
       // 5. Create subscription_payment_orders (immutable server-side order & zero-GST invoice table)
       await SubscriptionSchemaModel._initPaymentOrdersTable();
 
-      // 6. Link add-on order tables to payment_order_id
+      // 6. Link add-on order tables to payment_order_id & expand cycle columns
       await SubscriptionSchemaModel._upgradeAddonOrderTables();
 
       // 7. Create notification_pricing_master & school_notification_wallets + ledger
@@ -49,21 +57,67 @@ class SubscriptionSchemaModel {
       // 9. Create subscription_audit_logs & subscription_reminder_logs
       await SubscriptionSchemaModel._initAuditAndReminderTables();
 
+      // 10. Refresh in-memory dynamic billing cycle cache from DB
+      if (typeof refreshBillingCyclesCache === 'function') {
+        await refreshBillingCyclesCache();
+      }
+
       SubscriptionSchemaModel._initialized = true;
     } catch (error) {
       console.error('[SubscriptionSchemaModel] Schema initialization error:', error.message);
     }
   }
 
+  static async _initBillingCycleMaster() {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS \`billing_cycle_master\` (
+        \`id\` INT(11) NOT NULL AUTO_INCREMENT,
+        \`code\` VARCHAR(50) NOT NULL,
+        \`label\` VARCHAR(100) NOT NULL,
+        \`short_label\` VARCHAR(20) NOT NULL,
+        \`suffix\` VARCHAR(20) NOT NULL,
+        \`duration_type\` ENUM('days', 'months') NOT NULL DEFAULT 'months',
+        \`duration_value\` INT(11) NOT NULL DEFAULT 1,
+        \`rank\` INT(11) NOT NULL DEFAULT 0,
+        \`status\` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '1=Active, 2=Inactive, 4=Soft Deleted',
+        \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        \`updated_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`),
+        UNIQUE KEY \`uq_billing_cycle_code\` (\`code\`),
+        KEY \`idx_billing_cycle_status\` (\`status\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    // Canonical initial cycles:
+    // monthly, annual, trial are status=1 (Active)
+    // quarterly, half_yearly are status=2 (Inactive per requirement: currently only monthly & annual active)
+    const initialCycles = [
+      ['trial', 'Free Trial', 'trial', '', 'days', 14, 0, 1],
+      ['monthly', 'Monthly', 'month', '/ month', 'months', 1, 1, 1],
+      ['quarterly', 'Quarterly', 'quarter', '/ quarter', 'months', 3, 3, 2],
+      ['half_yearly', 'Half-Yearly', '6 months', '/ 6 months', 'months', 6, 6, 2],
+      ['annual', 'Annual', 'year', '/ year', 'months', 12, 12, 1],
+    ];
+
+    for (const [code, label, shortLabel, suffix, durationType, durationValue, rank, status] of initialCycles) {
+      await pool.query(
+        `INSERT IGNORE INTO \`billing_cycle_master\`
+         (\`code\`, \`label\`, \`short_label\`, \`suffix\`, \`duration_type\`, \`duration_value\`, \`rank\`, \`status\`)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [code, label, shortLabel, suffix, durationType, durationValue, rank, status]
+      );
+    }
+  }
+
   static async _upgradeSubscriptionPlans() {
     const cols = await SubscriptionSchemaModel._getColumnMap('subscription_plans');
 
-    // Expand billing_cycle enum to support all 5 cycles
+    // Convert billing_cycle to VARCHAR(50) so dynamic cycles (e.g. 3-year, triennial) can be stored seamlessly
     const cycleType = String(cols.get('billing_cycle')?.Type || '').toLowerCase();
-    if (!cycleType.includes('quarterly') || !cycleType.includes('half_yearly')) {
+    if (cycleType.startsWith('enum')) {
       await pool.query(`
         ALTER TABLE \`subscription_plans\`
-        MODIFY COLUMN \`billing_cycle\` ENUM('trial','monthly','quarterly','half_yearly','annual') NOT NULL DEFAULT 'annual'
+        MODIFY COLUMN \`billing_cycle\` VARCHAR(50) NOT NULL DEFAULT 'annual'
       `);
     }
 
@@ -79,6 +133,12 @@ class SubscriptionSchemaModel {
     }
     if (!cols.has('included_storage_gb')) {
       alterParts.push('ADD COLUMN `included_storage_gb` INT(11) NOT NULL DEFAULT 0 AFTER `max_students`');
+    }
+    if (!cols.has('included_push_credits')) {
+      alterParts.push('ADD COLUMN `included_push_credits` INT(11) NOT NULL DEFAULT 0 AFTER `included_storage_gb`');
+    }
+    if (!cols.has('included_sms_credits')) {
+      alterParts.push('ADD COLUMN `included_sms_credits` INT(11) NOT NULL DEFAULT 0 AFTER `included_push_credits`');
     }
     if (!cols.has('max_teachers')) {
       alterParts.push('ADD COLUMN `max_teachers` INT(11) NOT NULL DEFAULT 0 AFTER `max_students`');
@@ -241,6 +301,23 @@ class SubscriptionSchemaModel {
           ADD COLUMN \`applicable_scope\` ENUM('plan_only','software_and_storage','all') NOT NULL DEFAULT 'plan_only' AFTER \`discount_value\`
         `);
       }
+
+      const usageCols = await SubscriptionSchemaModel._getColumnMap('coupon_usages');
+      if (!usageCols.has('payment_order_id')) {
+        await pool.query(`
+          ALTER TABLE \`coupon_usages\`
+          ADD COLUMN \`payment_order_id\` INT(11) DEFAULT NULL AFTER \`subscription_id\`
+        `);
+      }
+
+      // Sync coupons.used_count strictly to actual recorded redemptions in coupon_usages
+      // (heals any historical phantom increments from UI validation checks)
+      await pool.query(`
+        UPDATE \`coupons\` c
+        SET c.\`used_count\` = (
+          SELECT COUNT(*) FROM \`coupon_usages\` cu WHERE cu.\`coupon_id\` = c.\`id\`
+        )
+      `);
     } catch (_) {
       // coupons table initialized by CouponModel.initTable()
     }
@@ -256,7 +333,7 @@ class SubscriptionSchemaModel {
         \`order_type\` ENUM('onboarding','trial_with_addons','renewal','upgrade','addon_only','manual_override') NOT NULL DEFAULT 'renewal',
         \`action_type\` ENUM('onboarding','trial','renewal','upgrade','addon_only','manual_override') NOT NULL DEFAULT 'renewal',
         \`plan_id\` INT(11) DEFAULT NULL,
-        \`billing_cycle\` VARCHAR(30) DEFAULT NULL,
+        \`billing_cycle\` VARCHAR(50) DEFAULT NULL,
         \`plan_amount\` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
         \`storage_plan_id\` INT(11) DEFAULT NULL,
         \`storage_qty\` INT(11) NOT NULL DEFAULT 0,
@@ -292,6 +369,17 @@ class SubscriptionSchemaModel {
         KEY \`idx_sub_order_invoice\` (\`invoice_no\`)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
+
+    // Ensure billing_cycle column is VARCHAR(50) if table was created previously with narrower width or enum
+    try {
+      const orderCols = await SubscriptionSchemaModel._getColumnMap('subscription_payment_orders');
+      if (orderCols.has('billing_cycle')) {
+        const bType = String(orderCols.get('billing_cycle')?.Type || '').toLowerCase();
+        if (bType.startsWith('enum') || bType.includes('varchar(30)')) {
+          await pool.query(`ALTER TABLE \`subscription_payment_orders\` MODIFY COLUMN \`billing_cycle\` VARCHAR(50) DEFAULT NULL`);
+        }
+      }
+    } catch (_) {}
   }
 
   static async _upgradeAddonOrderTables() {
@@ -307,6 +395,27 @@ class SubscriptionSchemaModel {
           await pool.query(
             `ALTER TABLE \`${table}\` ADD COLUMN \`payment_order_id\` INT(11) DEFAULT NULL AFTER \`school_id\``
           );
+        }
+        if (table === 'school_storage_orders' && cols.has('billing_cycle')) {
+          const sCycleType = String(cols.get('billing_cycle')?.Type || '').toLowerCase();
+          if (sCycleType.startsWith('enum')) {
+            await pool.query(
+              `ALTER TABLE \`school_storage_orders\` MODIFY COLUMN \`billing_cycle\` VARCHAR(50) NOT NULL DEFAULT 'annual'`
+            );
+          }
+        }
+        if (table === 'school_attendance_machines') {
+          if (cols.has('device_serial_number') && cols.get('device_serial_number')?.Null === 'NO') {
+            await pool.query(
+              `ALTER TABLE \`school_attendance_machines\` MODIFY COLUMN \`device_serial_number\` VARCHAR(100) DEFAULT NULL`
+            );
+          }
+          if (cols.has('device_location') && (cols.get('device_location')?.Null === 'NO' || cols.get('device_location')?.Default)) {
+            await pool.query(
+              `ALTER TABLE \`school_attendance_machines\` MODIFY COLUMN \`device_location\` VARCHAR(100) DEFAULT NULL`
+            );
+          }
+          await pool.query(`UPDATE \`school_attendance_machines\` SET \`status\` = 2 WHERE \`status\` = 0`);
         }
       } catch (_) {}
     }

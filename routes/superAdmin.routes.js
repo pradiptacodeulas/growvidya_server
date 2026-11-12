@@ -4,9 +4,9 @@ const SuperAdminController = require('../controllers/superAdmin.controller');
 const authenticateToken = require('../middlewares/auth.middleware');
 const authorizeRoles = require('../middlewares/rbac.middleware');
 
-// All Super Admin routes require authentication and Super Admin or Admin authorization
+// All Organization Super Admin routes require authentication and strict Super Admin (admin_type = 1) authorization
 router.use(authenticateToken);
-router.use(authorizeRoles('Super Admin', 'Admin'));
+router.use(authorizeRoles('Super Admin'));
 
 // GET /v1/admin/super-admin/dashboard (supports optional ?branch_id= filter)
 router.get('/dashboard', SuperAdminController.getDashboard);

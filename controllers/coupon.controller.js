@@ -82,6 +82,8 @@ class CouponController {
         discountType,
         discount_value,
         discountValue,
+        applicable_scope,
+        applicableScope,
         min_order_amount,
         minOrderAmount,
         max_discount_amount,
@@ -104,6 +106,15 @@ class CouponController {
       const discType = discount_type || discountType || 'percentage';
       if (discType !== 'percentage' && discType !== 'fixed') {
         return ApiResponse.badRequest(res, "discount_type must be either 'percentage' or 'fixed'.");
+      }
+
+      const validScopes = ['plan_only', 'software_and_storage', 'all'];
+      const rawScope = applicable_scope || applicableScope || 'plan_only';
+      if (!validScopes.includes(rawScope)) {
+        return ApiResponse.badRequest(
+          res,
+          "applicable_scope must be one of 'plan_only', 'software_and_storage', or 'all'."
+        );
       }
 
       const discVal = discount_value !== undefined ? discount_value : discountValue;
@@ -158,6 +169,7 @@ class CouponController {
         description: description || '',
         discount_type: discType,
         discount_value: discVal,
+        applicable_scope: rawScope,
         min_order_amount: min_order_amount !== undefined ? min_order_amount : minOrderAmount,
         max_discount_amount: max_discount_amount !== undefined ? max_discount_amount : maxDiscountAmount,
         start_date: start_date || startDate,
@@ -200,6 +212,8 @@ class CouponController {
         discountType,
         discount_value,
         discountValue,
+        applicable_scope,
+        applicableScope,
         min_order_amount,
         minOrderAmount,
         max_discount_amount,
@@ -230,6 +244,17 @@ class CouponController {
       }
       if (discount_value !== undefined || discountValue !== undefined) {
         updateData.discount_value = discount_value !== undefined ? discount_value : discountValue;
+      }
+      if (applicable_scope !== undefined || applicableScope !== undefined) {
+        const validScopes = ['plan_only', 'software_and_storage', 'all'];
+        const targetScope = applicable_scope !== undefined ? applicable_scope : applicableScope;
+        if (!validScopes.includes(targetScope)) {
+          return ApiResponse.badRequest(
+            res,
+            "applicable_scope must be one of 'plan_only', 'software_and_storage', or 'all'."
+          );
+        }
+        updateData.applicable_scope = targetScope;
       }
       if (min_order_amount !== undefined || minOrderAmount !== undefined) {
         updateData.min_order_amount = min_order_amount !== undefined ? min_order_amount : minOrderAmount;
@@ -364,15 +389,38 @@ class CouponController {
    */
   static async validateCoupon(req, res, next) {
     try {
-      const { code, order_amount, orderAmount, amount, school_id, schoolId, check_only, checkOnly } = req.body;
+      const {
+        code,
+        order_amount,
+        orderAmount,
+        amount,
+        plan_amount,
+        planAmount,
+        storage_amount,
+        storageAmount,
+        school_id,
+        schoolId,
+        email,
+        phone,
+        check_only,
+        checkOnly,
+      } = req.body;
       const targetAmount =
         order_amount !== undefined ? order_amount : orderAmount !== undefined ? orderAmount : amount;
       const targetSchoolId =
         school_id || schoolId || req.user?.school_id || req.user?.schoolId || null;
 
-      const result = await CouponModel.validateCoupon(code, targetAmount, targetSchoolId, {
+      const options = {
         checkOnly: Boolean(check_only || checkOnly),
-      });
+        email: email || null,
+        phone: phone || null,
+      };
+      const resolvedPlanAmt = plan_amount !== undefined ? plan_amount : planAmount;
+      const resolvedStorageAmt = storage_amount !== undefined ? storage_amount : storageAmount;
+      if (resolvedPlanAmt !== undefined) options.planAmount = parseFloat(resolvedPlanAmt) || 0;
+      if (resolvedStorageAmt !== undefined) options.storageAmount = parseFloat(resolvedStorageAmt) || 0;
+
+      const result = await CouponModel.validateCoupon(code, targetAmount, targetSchoolId, options);
       if (!result.valid) {
         return ApiResponse.badRequest(res, result.message);
       }

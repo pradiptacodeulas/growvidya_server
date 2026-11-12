@@ -62,7 +62,9 @@ class WebhookModel {
   }
 
   /**
-   * Process an order.paid or payment.captured event atomically & idempotently via SubscriptionFulfillmentService
+   * Process an order.paid or payment.captured event atomically & idempotently via SubscriptionFulfillmentService.
+   * Enforces strict amount & currency verification, and automatically provisions pre-registration onboarding orders
+   * if the user's browser disconnected after Razorpay captured payment.
    */
   static async processPaymentSuccess({ order, payment, notes, eventId }) {
     const razorpayOrderId = order?.id || payment?.order_id || notes?.razorpay_order_id || null;
@@ -74,7 +76,76 @@ class WebhookModel {
     }
 
     try {
+      const [orderRows] = await pool.query(
+        `SELECT * FROM subscription_payment_orders
+         WHERE (? IS NOT NULL AND razorpay_order_id = ?)
+            OR (? IS NOT NULL AND order_no = ?)
+         LIMIT 1`,
+        [razorpayOrderId, razorpayOrderId, orderNo, orderNo]
+      );
+
+      if (orderRows.length === 0) {
+        return { status: 'skipped', reason: 'Checkout order record not found (non-SaaS payment).' };
+      }
+
+      const persistedOrder = orderRows[0];
+
+      // 1. Strict Amount & Currency Verification
+      const expectedPaise = Math.round((parseFloat(persistedOrder.grand_total) || 0) * 100);
+      const webhookAmountPaise = Number(payment?.amount ?? order?.amount ?? 0);
+      const webhookCurrency = String(payment?.currency || order?.currency || 'INR').toUpperCase();
+      const expectedCurrency = String(persistedOrder.currency || 'INR').toUpperCase();
+
+      if (
+        expectedPaise > 0 &&
+        webhookAmountPaise > 0 &&
+        (webhookAmountPaise !== expectedPaise || webhookCurrency !== expectedCurrency)
+      ) {
+        const err = new Error(
+          `Webhook amount/currency mismatch: received ${webhookCurrency} ${(webhookAmountPaise / 100).toFixed(2)}, expected ${expectedCurrency} ${(expectedPaise / 100).toFixed(2)}.`
+        );
+        err.code = 'AMOUNT_MISMATCH';
+        err.statusCode = 400;
+        throw err;
+      }
+
+      // 2. Auto-provision pre-registration onboarding school if browser disconnected before /register-school completed
+      if (!persistedOrder.school_id) {
+        let parsedSnap = {};
+        try {
+          parsedSnap = persistedOrder.payload_snapshot_json
+            ? JSON.parse(persistedOrder.payload_snapshot_json)
+            : {};
+        } catch (_) {}
+
+        const regSnap = parsedSnap?.extra?.onboarding_registration;
+        if (
+          regSnap &&
+          regSnap.school?.school_name &&
+          regSnap.admin?.email &&
+          regSnap.admin?.password_hash
+        ) {
+          const SaasModel = require('./saas.model');
+          const provisioned = await SaasModel.registerSchoolWithPlan({
+            planId: persistedOrder.plan_id,
+            paymentOrderId: persistedOrder.id,
+            razorpayOrderId: persistedOrder.razorpay_order_id || razorpayOrderId,
+            razorpayPaymentId: paymentId,
+            schoolData: regSnap.school,
+            academicYearData: regSnap.academic_year || {},
+            adminData: regSnap.admin,
+            isTrial: Boolean(regSnap.is_trial || persistedOrder.action_type === 'trial'),
+          });
+
+          return {
+            status: provisioned.alreadyRegistered ? 'already_active' : 'fulfilled',
+            result: provisioned,
+          };
+        }
+      }
+
       const result = await SubscriptionFulfillmentService.fulfillPaidOrder({
+        orderId: persistedOrder.id,
         orderNo,
         razorpayOrderId,
         razorpayPaymentId: paymentId,
@@ -87,8 +158,6 @@ class WebhookModel {
         result,
       };
     } catch (err) {
-      // Pre-registration onboarding orders don't have school_id until /saas/register-with-plan completes;
-      // acknowledge cleanly so client registration finishes fulfillment, or if order is non-SaaS (e.g. student fee), ignore safely.
       if (err.code === 'ORDER_NOT_FOUND' || err.code === 'MISSING_SCHOOL_ID') {
         return { status: 'skipped', reason: err.message };
       }

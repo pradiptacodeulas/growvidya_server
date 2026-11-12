@@ -7,6 +7,7 @@ const {
   addCycleDuration,
   getCycleMonths,
   getCycleMeta,
+  getActiveBillingCycles,
 } = require('../constants/subscriptionModules.constant');
 
 function normalizeDateStr(val) {
@@ -26,23 +27,28 @@ class SubscriptionPolicyService {
   /**
    * Compute storage unit rate cleanly across all 4 paid cycles using storage_master (monthly_price, annual_price)
    */
-  static computeStorageCyclePrice(storageRow, billingCycle = 'annual') {
+  static computeStorageCyclePrice(storageRow, billingCycle) {
+    if (!storageRow) return 0;
+    if (!billingCycle) {
+      throw new Error('billingCycle is required for computeStorageCyclePrice.');
+    }
     const monthly = parseFloat(storageRow.monthly_price) || 0;
     const annual = parseFloat(storageRow.annual_price) || 0;
-    const cycle = String(billingCycle || 'annual').toLowerCase();
+    const cycleMonths = getCycleMonths(billingCycle);
 
-    if (cycle === 'monthly') {
+    if (cycleMonths === 1) {
       return monthly > 0 ? monthly : Math.round((annual / 12) * 100) / 100;
     }
-    if (cycle === 'quarterly') {
-      if (monthly > 0 && annual > 0) return Math.round(Math.min(annual, monthly * 3) * 100) / 100;
-      return monthly > 0 ? Math.round(monthly * 3 * 100) / 100 : Math.round((annual / 4) * 100) / 100;
+    if (cycleMonths >= 12) {
+      // Annual or multi-year (e.g. 12 months = annual, 24 months = annual * 2, 36 months = annual * 3)
+      const annualBase = annual > 0 ? annual : monthly * 12;
+      return Math.round(annualBase * (cycleMonths / 12) * 100) / 100;
     }
-    if (cycle === 'half_yearly') {
-      if (monthly > 0 && annual > 0) return Math.round(Math.min(annual, monthly * 6) * 100) / 100;
-      return monthly > 0 ? Math.round(monthly * 6 * 100) / 100 : Math.round((annual / 2) * 100) / 100;
+    // Intermediate cycles (e.g. 3 months, 6 months)
+    if (monthly > 0 && annual > 0) {
+      return Math.round(Math.min(annual, monthly * cycleMonths) * 100) / 100;
     }
-    return annual > 0 ? annual : Math.round(monthly * 12 * 100) / 100;
+    return Math.round(monthly * cycleMonths * 100) / 100;
   }
 
   /**
@@ -101,7 +107,7 @@ class SubscriptionPolicyService {
           code: 'QUOTA_BELOW_ACTIVE_USAGE',
           transition_type: 'quota_locked',
           action_type: 'trial',
-          reason: `Your school has ${activeStudentCount} active students, which exceeds the ${targetMaxStudents}-student limit of "${targetPlan.plan_name}".`,
+          reason: `Your school has ${activeStudentCount} enrolled students (active + inactive), which exceeds the ${targetMaxStudents}-student limit of "${targetPlan.plan_name}".`,
         };
       }
 
@@ -120,7 +126,7 @@ class SubscriptionPolicyService {
       };
     }
 
-    // 2. Quota Floor Guard against live student count (Teachers & Branches are Unlimited across all plans)
+    // 2. Quota Floor Guard against live student count (Active + Inactive; Teachers & Branches are Unlimited across all plans)
     const targetMaxStudents = parseInt(targetPlan.max_students, 10) || 0;
     if (targetMaxStudents > 0 && activeStudentCount > targetMaxStudents) {
       return {
@@ -129,7 +135,7 @@ class SubscriptionPolicyService {
         transition_type: 'quota_locked',
         action_type: 'upgrade',
         is_quota_locked: true,
-        reason: `Your school currently has ${activeStudentCount} active students, exceeding the ${targetMaxStudents}-student limit of "${targetPlan.plan_name}". Please choose a higher capacity plan.`,
+        reason: `Your school currently has ${activeStudentCount} enrolled students (active + inactive), exceeding the ${targetMaxStudents}-student limit of "${targetPlan.plan_name}". Please choose a higher capacity plan.`,
       };
     }
 
@@ -162,12 +168,19 @@ class SubscriptionPolicyService {
       };
     }
 
-    const refTierRank = Math.max(1, parseInt(referencePaidSub.tier_rank, 10) || 1);
+    const refTierRank = Math.max(
+      1,
+      parseInt(referencePaidSub.tier_rank, 10) || 1,
+      parseInt(lastPaidSub?.tier_rank, 10) || 1
+    );
     const targetTierRank = Math.max(1, parseInt(targetPlan.tier_rank, 10) || 1);
-    const refCycleMonths = getCycleMonths(referencePaidSub.billing_cycle);
+    const refCycleMonths = Math.max(
+      getCycleMonths(referencePaidSub.billing_cycle),
+      lastPaidSub ? getCycleMonths(lastPaidSub.billing_cycle) : 0
+    );
     const targetCycleMonths = getCycleMonths(targetPlan.billing_cycle);
 
-    // 5. Rule A: Strict Tier No-Downgrade (even post-expiry)
+    // 5. Rule A: Strict Tier No-Downgrade (both mid-cycle and post-expiry)
     if (targetTierRank < refTierRank) {
       return {
         allowed: false,
@@ -179,61 +192,33 @@ class SubscriptionPolicyService {
       };
     }
 
-    // 6. Rule B: Same-Tier Billing Cycle Shrink Blocked (e.g. Annual -> Monthly on same tier)
-    if (targetTierRank === refTierRank && targetCycleMonths < refCycleMonths) {
-      const refMeta = getCycleMeta(referencePaidSub.billing_cycle);
+    // 6. Rule B: Strict Billing Cycle No-Downgrade (Monthly -> Annual is allowed, but Annual -> Monthly is strictly forbidden across all tiers, both mid-cycle and post-expiry)
+    if (targetCycleMonths < refCycleMonths) {
+      const refCycleSource =
+        lastPaidSub && getCycleMonths(lastPaidSub.billing_cycle) > getCycleMonths(referencePaidSub.billing_cycle)
+          ? lastPaidSub.billing_cycle
+          : referencePaidSub.billing_cycle;
+      const refMeta = getCycleMeta(refCycleSource);
       const targetMeta = getCycleMeta(targetPlan.billing_cycle);
       const article = /^[aeiou]/i.test(refMeta.label || '') ? 'an' : 'a';
       return {
         allowed: false,
         code: 'CYCLE_DOWNGRADE_NOT_ALLOWED',
         transition_type: 'downgrade_locked',
-        action_type: 'renewal',
+        action_type: targetTierRank > refTierRank ? 'upgrade' : 'renewal',
         is_downgrade: true,
-        reason: `Switching from ${article} ${refMeta.label} commitment to a shorter ${targetMeta.label} cycle on "${targetPlan.plan_name}" is not permitted.`,
+        reason: `Switching from ${article} ${refMeta.label} plan to a shorter ${targetMeta.label} billing cycle is not permitted.`,
       };
     }
 
-    // 7. Rule C: Active Longer-Cycle Subscriber Upgrading to Shorter-Cycle Higher Tier Blocked
-    if (activeIsPaidAndLive && targetTierRank > refTierRank) {
-      const activeCycleMonths = getCycleMonths(activeSub.billing_cycle);
-      if (targetCycleMonths < activeCycleMonths) {
-        const activeMeta = getCycleMeta(activeSub.billing_cycle);
-        const targetMeta = getCycleMeta(targetPlan.billing_cycle);
-        return {
-          allowed: false,
-          code: 'ACTIVE_CYCLE_SHRINK_NOT_ALLOWED',
-          transition_type: 'downgrade_locked',
-          action_type: 'upgrade',
-          is_downgrade: true,
-          reason: `While your ${activeMeta.label} plan is active, upgrades must use an equal or longer billing cycle (${activeMeta.label}) rather than ${targetMeta.label} so your remaining validity is protected.`,
-        };
-      }
-    }
-
-    // 8. Same Plan / Plan Family Allowed Transitions: Early Renewal (Date Stacking!) vs Post-Expiry Renewal vs Cycle Upgrade
-    const stripCycleSuffix = (val) =>
-      String(val || '')
-        .toLowerCase()
-        .trim()
-        .replace(/[\s_-]+(monthly|quarterly|half[\s_-]?yearly|annual|yearly|trial)$/i, '');
-    const refPlanKey = stripCycleSuffix(
-      referencePaidSub.plan_group || referencePaidSub.plan_code || referencePaidSub.plan_name
-    );
-    const targetPlanKey = stripCycleSuffix(
-      targetPlan.plan_group || targetPlan.plan_code || targetPlan.plan_name
-    );
-    const isSamePlanFamily =
-      Number(targetPlan.id) === Number(referencePaidSub.plan_id) ||
-      Boolean(refPlanKey && targetPlanKey && refPlanKey === targetPlanKey);
-
-    if (targetTierRank === refTierRank && isSamePlanFamily) {
+    // 7. Same Tier Transitions: Early Renewal (Date Stacking!) vs Post-Expiry Renewal vs Cycle Upgrade (Monthly -> Annual with Date Stacking when active)
+    if (targetTierRank === refTierRank) {
       const activeEndStr = activeIsPaidAndLive ? normalizeDateStr(activeSub.end_date) : null;
       const canStackDates = Boolean(activeIsPaidAndLive && activeEndStr && activeEndStr >= todayStr);
+      const isCycleUpgrade = targetCycleMonths > refCycleMonths;
 
       if (canStackDates) {
         const stackedEndDate = addCycleDuration(activeEndStr, targetPlan.billing_cycle);
-        const isCycleUpgrade = targetCycleMonths > refCycleMonths;
         return {
           allowed: true,
           code: 'OK',
@@ -254,11 +239,11 @@ class SubscriptionPolicyService {
       return {
         allowed: true,
         code: 'OK',
-        transition_type: 'post_expiry_renewal',
+        transition_type: isCycleUpgrade ? 'cycle_upgrade' : 'post_expiry_renewal',
         action_type: 'renewal',
         is_downgrade: false,
         is_renewal: true,
-        is_upgrade: false,
+        is_upgrade: isCycleUpgrade,
         stacks_dates: false,
         start_date: todayStr,
         end_date: freshEndDate,
@@ -266,7 +251,7 @@ class SubscriptionPolicyService {
       };
     }
 
-    // 9. Higher Tier Upgrade (Full Target Price, Immediate Fresh Cycle)
+    // 8. Higher Tier Upgrade (Full Target Price, Immediate Fresh Cycle)
     const upgradeEndDate = addCycleDuration(todayStr, targetPlan.billing_cycle);
     return {
       allowed: true,
@@ -304,13 +289,16 @@ class SubscriptionPolicyService {
     school_id = null,
     email = null,
     phone = null,
+    exclude_order_id = null,
     connection = null,
     forUpdateCoupon = false,
   }) {
     const db = connection || pool;
     const isTrial = !is_addon_only && (Boolean(is_trial) || (plan && String(plan.billing_cycle).toLowerCase() === 'trial'));
     const planAmount = (!plan || isTrial || is_addon_only) ? 0 : Math.round((parseFloat(plan.price) || 0) * 100) / 100;
-    const effectiveCycle = storage_billing_cycle || (plan && !isTrial ? plan.billing_cycle : 'annual');
+    const activePaid = getActiveBillingCycles(true);
+    const dynamicDefaultCycle = activePaid[0]?.code || null;
+    const effectiveCycle = storage_billing_cycle || (plan && !isTrial ? plan.billing_cycle : dynamicDefaultCycle);
 
     let storageAmount = 0;
     let machinesAmount = 0;
@@ -347,7 +335,10 @@ class SubscriptionPolicyService {
         throw createPolicyError('Selected cloud storage plan is invalid or inactive.', 'INVALID_STORAGE_PLAN', 400);
       }
       const s = sRows[0];
-      const sCycle = String(effectiveCycle || 'annual').toLowerCase() === 'trial' ? 'annual' : effectiveCycle;
+      const sCycle = (!effectiveCycle || String(effectiveCycle).toLowerCase() === 'trial') ? dynamicDefaultCycle : effectiveCycle;
+      if (!sCycle) {
+        throw createPolicyError('Valid storage billing cycle is required.', 'INVALID_STORAGE_BILLING_CYCLE', 400);
+      }
       const sUnitRate = SubscriptionPolicyService.computeStorageCyclePrice(s, sCycle);
       const sQuantity = Math.max(1, parseInt(storage_qty, 10) || 1);
       const sTotal = Math.round(sUnitRate * sQuantity * 100) / 100;
@@ -486,57 +477,164 @@ class SubscriptionPolicyService {
     const addonsAmount = Math.round((storageAmount + machinesAmount + rfidAmount + notificationsAmount) * 100) / 100;
     const subtotalAmount = Math.round((planAmount + addonsAmount) * 100) / 100;
 
-    // 5. Scoped Coupon Validation (protects physical hardware & SMS margins, and tracks coupon usage even when starting trial!)
+    // 5. Scoped Coupon Validation (protects physical hardware & SMS margins; never burns coupons on ₹0 free trials)
     let couponInfo = null;
     let discountAmount = 0;
     let payableDiscountAmount = 0;
 
     if (coupon_code && String(coupon_code).trim()) {
-      const catalogPlanPrice = plan ? Math.round((parseFloat(plan.price) || 0) * 100) / 100 : 0;
-      const validationPlanAmount = planAmount > 0 ? planAmount : catalogPlanPrice;
-      const validationSubtotal = Math.round((validationPlanAmount + addonsAmount) * 100) / 100;
-
-      const couponValidation = await CouponModel.validateCoupon(coupon_code, validationSubtotal, school_id, {
-        planAmount: validationPlanAmount,
-        storageAmount,
-        email,
-        phone,
-        connection: db,
-        forUpdate: forUpdateCoupon,
-        isCheckoutVerification: true,
-      });
-      if (!couponValidation.valid) {
-        throw createPolicyError(couponValidation.message, 'INVALID_COUPON', 400);
-      }
-      couponInfo = couponValidation.coupon;
-      discountAmount = parseFloat(couponValidation.coupon.discountAmount) || 0;
-
       if (isTrial && planAmount === 0) {
-        const scope = String(couponInfo.applicableScope || couponInfo.applicable_scope || 'plan_only').toLowerCase();
-        if (scope === 'all') {
-          payableDiscountAmount = Math.min(addonsAmount, discountAmount);
-        } else if (scope === 'software_and_storage') {
-          payableDiscountAmount = Math.min(storageAmount, discountAmount);
-        } else {
-          payableDiscountAmount = 0;
+        // On a Free Trial, coupons only apply if the school is purchasing eligible paid add-ons alongside the trial
+        if (subtotalAmount > 0) {
+          const existingCoupon = await CouponModel.getByCode(coupon_code);
+          const couponScope = String(existingCoupon?.applicable_scope || 'plan_only').toLowerCase();
+          const trialEligibleAmt =
+            couponScope === 'all'
+              ? subtotalAmount
+              : couponScope === 'software_and_storage'
+              ? storageAmount
+              : 0;
+
+          if (!existingCoupon || trialEligibleAmt > 0) {
+            const couponValidation = await CouponModel.validateCoupon(coupon_code, subtotalAmount, school_id, {
+              planAmount: 0,
+              storageAmount,
+              email,
+              phone,
+              excludeOrderId: exclude_order_id || null,
+              connection: db,
+              forUpdate: forUpdateCoupon,
+              isCheckoutVerification: true,
+            });
+            if (!couponValidation.valid) {
+              throw createPolicyError(couponValidation.message, 'INVALID_COUPON', 400);
+            }
+            couponInfo = couponValidation.coupon;
+            discountAmount = parseFloat(couponValidation.coupon.discountAmount) || 0;
+            payableDiscountAmount = discountAmount;
+          }
         }
       } else {
+        const couponValidation = await CouponModel.validateCoupon(coupon_code, subtotalAmount, school_id, {
+          planAmount,
+          storageAmount,
+          email,
+          phone,
+          excludeOrderId: exclude_order_id || null,
+          connection: db,
+          forUpdate: forUpdateCoupon,
+          isCheckoutVerification: true,
+        });
+        if (!couponValidation.valid) {
+          throw createPolicyError(couponValidation.message, 'INVALID_COUPON', 400);
+        }
+        couponInfo = couponValidation.coupon;
+        discountAmount = parseFloat(couponValidation.coupon.discountAmount) || 0;
         payableDiscountAmount = discountAmount;
       }
     }
 
-    // Net software plan amount after software-scoped discount (never negative)
-    const netPlanAmount = Math.max(0, Math.round((planAmount - Math.min(planAmount, payableDiscountAmount)) * 100) / 100);
+    // 6. Proportional Coupon Discount Allocation across eligible line items
+    // Ensures netPlanAmount + netAddonsAmount === grandTotal and add-on revenue tables record actual net revenue collected.
+    const scope = String(couponInfo?.applicable_scope || couponInfo?.applicableScope || 'plan_only').toLowerCase();
+    const eligibleItems = [];
+
+    if (planAmount > 0) {
+      eligibleItems.push({ kind: 'plan', gross: planAmount, discount: 0, net: planAmount });
+    }
+    if (breakdown.storage) {
+      breakdown.storage.gross_total_price = breakdown.storage.total_price;
+      breakdown.storage.discount_amount = 0;
+      breakdown.storage.net_total_price = breakdown.storage.total_price;
+      if ((scope === 'software_and_storage' || scope === 'all') && breakdown.storage.total_price > 0) {
+        eligibleItems.push({
+          kind: 'storage',
+          ref: breakdown.storage,
+          gross: breakdown.storage.total_price,
+          discount: 0,
+          net: breakdown.storage.total_price,
+        });
+      }
+    }
+    for (const m of breakdown.machines) {
+      m.gross_total_price = m.total_price;
+      m.discount_amount = 0;
+      m.net_total_price = m.total_price;
+      if (scope === 'all' && m.total_price > 0) {
+        eligibleItems.push({ kind: 'machine', ref: m, gross: m.total_price, discount: 0, net: m.total_price });
+      }
+    }
+    for (const c of breakdown.cards) {
+      c.gross_total_price = c.total_price;
+      c.discount_amount = 0;
+      c.net_total_price = c.total_price;
+      if (scope === 'all' && c.total_price > 0) {
+        eligibleItems.push({ kind: 'card', ref: c, gross: c.total_price, discount: 0, net: c.total_price });
+      }
+    }
+    for (const n of breakdown.notifications) {
+      n.gross_total_price = n.total_price;
+      n.discount_amount = 0;
+      n.net_total_price = n.total_price;
+      if (scope === 'all' && n.total_price > 0) {
+        eligibleItems.push({ kind: 'notification', ref: n, gross: n.total_price, discount: 0, net: n.total_price });
+      }
+    }
+
+    const totalEligibleGross =
+      Math.round(eligibleItems.reduce((sum, it) => sum + it.gross, 0) * 100) / 100;
+
+    if (payableDiscountAmount > 0 && totalEligibleGross > 0 && eligibleItems.length > 0) {
+      let remainingDiscount = Math.min(totalEligibleGross, payableDiscountAmount);
+      for (let i = 0; i < eligibleItems.length; i++) {
+        const it = eligibleItems[i];
+        let itemDisc = 0;
+        if (i === eligibleItems.length - 1) {
+          itemDisc = Math.min(it.gross, Math.round(remainingDiscount * 100) / 100);
+        } else {
+          const rawShare = Math.round(((payableDiscountAmount * it.gross) / totalEligibleGross) * 100) / 100;
+          itemDisc = Math.min(it.gross, Math.min(remainingDiscount, rawShare));
+        }
+        remainingDiscount = Math.max(0, Math.round((remainingDiscount - itemDisc) * 100) / 100);
+        it.discount = itemDisc;
+        it.net = Math.max(0, Math.round((it.gross - itemDisc) * 100) / 100);
+        if (it.ref) {
+          it.ref.discount_amount = it.discount;
+          it.ref.net_total_price = it.net;
+        }
+      }
+    }
+
+    const planEligibleEntry = eligibleItems.find((it) => it.kind === 'plan');
+    const netPlanAmount = planEligibleEntry ? planEligibleEntry.net : planAmount;
+    const netStorageAmount = breakdown.storage ? breakdown.storage.net_total_price : 0;
+    const netMachinesAmount =
+      Math.round(breakdown.machines.reduce((s, m) => s + m.net_total_price, 0) * 100) / 100;
+    const netRfidAmount =
+      Math.round(breakdown.cards.reduce((s, c) => s + c.net_total_price, 0) * 100) / 100;
+    const netNotificationsAmount =
+      Math.round(breakdown.notifications.reduce((s, n) => s + n.net_total_price, 0) * 100) / 100;
+    const netAddonsAmount =
+      Math.round((netStorageAmount + netMachinesAmount + netRfidAmount + netNotificationsAmount) * 100) / 100;
     const grandTotal = Math.max(0, Math.round((subtotalAmount - payableDiscountAmount) * 100) / 100);
+
+    breakdown.plan_discount_amount = planEligibleEntry ? planEligibleEntry.discount : 0;
+    breakdown.net_plan_price = netPlanAmount;
+    breakdown.net_addons_amount = netAddonsAmount;
 
     return {
       planAmount,
       netPlanAmount,
       storageAmount,
+      netStorageAmount,
       machinesAmount,
+      netMachinesAmount,
       rfidAmount,
+      netRfidAmount,
       notificationsAmount,
+      netNotificationsAmount,
       addonsAmount,
+      netAddonsAmount,
       subtotalAmount,
       discountAmount,
       taxAmount: 0, // Zero GST

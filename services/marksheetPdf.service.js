@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const puppeteer = require('puppeteer');
+const CloudStorageService = require('./cloudStorage.service');
 
 let cachedTemplate = null;
 const TEMPLATE_PATH = path.join(__dirname, '../templates/marksheets/default-marksheet.html');
@@ -13,32 +14,26 @@ const getTemplateHtml = () => {
 };
 
 /**
- * Converts a local file path to base64 Data URI for fast and reliable Puppeteer rendering
+ * Converts a Backblaze B2 upload path to a base64 Data URI for Puppeteer rendering
  */
-const toBase64DataUri = (imgUrlOrPath) => {
+const toBase64DataUri = async (imgUrlOrPath) => {
   if (!imgUrlOrPath) return '';
   if (typeof imgUrlOrPath !== 'string') return '';
   if (imgUrlOrPath.startsWith('data:')) return imgUrlOrPath;
 
   try {
-    let cleanPath = imgUrlOrPath.replace(/^https?:\/\/[^\/]+/i, '');
+    let cleanPath = imgUrlOrPath.replace(/^https?:\/\/[^\/]+/i, '').split('?')[0];
     if (cleanPath.startsWith('/')) cleanPath = cleanPath.substring(1);
 
-    const fullPath = path.isAbsolute(imgUrlOrPath)
-      ? imgUrlOrPath
-      : path.join(__dirname, '../public', cleanPath);
-
-    if (fs.existsSync(fullPath)) {
-      const ext = path.extname(fullPath).toLowerCase().replace('.', '') || 'jpeg';
-      const mime = ext === 'png' ? 'image/png' : ext === 'svg' ? 'image/svg+xml' : 'image/jpeg';
-      const data = fs.readFileSync(fullPath).toString('base64');
-      return `data:${mime};base64,${data}`;
+    const { buffer, mimeType } = await CloudStorageService.getFileBuffer(cleanPath);
+    if (buffer && buffer.length > 0) {
+      return `data:${mimeType || 'image/jpeg'};base64,${buffer.toString('base64')}`;
     }
   } catch (err) {
-    console.warn('[marksheetPdf.service] Failed to convert image to base64:', err.message);
+    console.warn('[marksheetPdf.service] Failed to convert B2 image to base64:', err.message);
   }
 
-  return imgUrlOrPath;
+  return '';
 };
 
 /**
@@ -297,7 +292,7 @@ const formatAcademicSessionRange = (rawSession) => {
 /**
  * Builds the complete HTML for a single student marksheet
  */
-const buildSingleMarksheetHtml = (item, baseTemplate) => {
+const buildSingleMarksheetHtml = async (item, baseTemplate) => {
   const student = item.student || {};
   const school = item.school || {};
   const exam = item.exam || {};
@@ -322,7 +317,7 @@ const buildSingleMarksheetHtml = (item, baseTemplate) => {
   const schoolAddress = [school.address, school.city, school.state, school.postal_code].filter(Boolean).join(', ');
   const schoolCode = school.school_code ? `Code: ${school.school_code}` : '';
 
-  const rawSchoolLogo = toBase64DataUri(school.school_logo);
+  const rawSchoolLogo = await toBase64DataUri(school.school_logo);
   const hasLogo = Boolean(rawSchoolLogo && rawSchoolLogo.trim());
 
   // Show uploaded logo if present; otherwise show 'No Logo' text instead of taking from static file
@@ -414,17 +409,18 @@ exports.generateMarksheetPdfBuffer = async (marksheetData) => {
 
   let finalHtml = '';
   if (dataList.length === 1) {
-    finalHtml = buildSingleMarksheetHtml(dataList[0], baseTemplateHtml);
+    finalHtml = await buildSingleMarksheetHtml(dataList[0], baseTemplateHtml);
   } else {
     // Multi-page batch marksheet
-    const pagesHtml = dataList
-      .map((item) => {
-        const itemHtml = buildSingleMarksheetHtml(item, baseTemplateHtml);
+    const renderedPages = await Promise.all(
+      dataList.map(async (item) => {
+        const itemHtml = await buildSingleMarksheetHtml(item, baseTemplateHtml);
         const bodyMatch = itemHtml.match(/<body[^>]*>([\s\S]*)<\/body>/i);
         const bodyInner = bodyMatch ? bodyMatch[1] : itemHtml;
         return `<div class="marksheet-page">${bodyInner}</div>`;
       })
-      .join('\n');
+    );
+    const pagesHtml = renderedPages.join('\n');
 
     const headMatch = baseTemplateHtml.match(/<head[^>]*>([\s\S]*)<\/head>/i);
     const headInner = headMatch ? headMatch[1] : '';

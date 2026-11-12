@@ -101,6 +101,53 @@ class PasscodeService {
   }
 
   /**
+   * Send a 6-digit OTP email for sensitive administrative actions (e.g. Permanent Branch Deletion)
+   */
+  static async sendActionOtpEmail({ toEmail, toName, otpCode, actionTitle, actionWarning, expiresInMinutes = 10 }) {
+    const cleanEmail = String(toEmail || '').trim();
+    if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      const err = new Error('No valid email address is registered for this account to receive the OTP.');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const title = actionTitle || 'Security Verification Code';
+    const subject = `Growvidya — ${title} (6-Digit OTP)`;
+    const text = `Hello ${toName || ''},\n\n${actionWarning || 'Please use the verification code below to confirm your action.'}\n\nYour 6-digit confirmation OTP is: ${otpCode}\n\nThis OTP is valid for ${expiresInMinutes} minutes. Do not share this code with anyone.`;
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 540px; margin: 0 auto; padding: 28px; border: 1px solid #fecaca; border-radius: 12px;">
+        <div style="text-align: center; margin-bottom: 22px;">
+          <img
+            src="https://growvidya.in/vidya_assets/images/logo.png"
+            alt="Growvidya"
+            width="180"
+            style="max-width: 180px; width: 180px; height: auto; display: inline-block; border: 0; outline: none; text-decoration: none;"
+          />
+        </div>
+        <h2 style="margin-top: 0; color: #b91c1c; font-size: 22px;">${title}</h2>
+        <p style="color: #374151; font-size: 15px; line-height: 1.6;">
+          Hello${toName ? ` <strong>${toName}</strong>` : ''},<br/>
+          ${actionWarning || 'Use the following 6-digit OTP to confirm your action:'}
+        </p>
+        <div style="background: #fef2f2; border: 1px solid #fecaca; padding: 18px; border-radius: 8px; text-align: center; margin: 22px 0;">
+          <span style="font-size: 34px; font-weight: bold; letter-spacing: 6px; color: #991b1b; font-family: monospace;">${otpCode}</span>
+        </div>
+        <p style="color: #6b7280; font-size: 13px; line-height: 1.5; margin-bottom: 16px;">
+          This code is valid for ${expiresInMinutes} minutes. If you did not initiate this request, please change your account password immediately.
+        </p>
+      </div>
+    `;
+
+    return await EmailService.sendEmail({
+      to: cleanEmail,
+      toName: toName || cleanEmail,
+      subject,
+      text,
+      html,
+    });
+  }
+
+  /**
    * Verify the 6-digit OTP against the otp column and check otp_expires_at (does not use passcode column)
    */
   static async verifyPasscode(tableName, recordId, inputOtp) {

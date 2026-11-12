@@ -191,16 +191,27 @@ class TeacherDashboardController {
         marked: false,
       };
 
-      if (teacher.class && teacher.section) {
+      const assignedClasses = (teacher.class_assignments || [])
+        .map((c) => Number(c.class_id))
+        .filter(Boolean);
+      if (teacher.class && !assignedClasses.includes(Number(teacher.class))) {
+        assignedClasses.push(Number(teacher.class));
+      }
+
+      if (assignedClasses.length > 0) {
         let attSql = `SELECT sa.attendance, COUNT(*) AS count 
            FROM student_attendance sa
            JOIN student_master s ON sa.student_id = s.id
            WHERE sa.school_id = ? 
-             AND s.class = ? 
-             AND s.section = ? 
+             AND s.class IN (?)
              AND sa.date = ? 
-             AND sa.status = 1`;
-        const attParams = [schoolId, teacher.class, teacher.section, todayDate];
+             AND sa.status != 4
+             AND s.status = 1`;
+        const attParams = [schoolId, assignedClasses, todayDate];
+        if (teacher.class && teacher.section && assignedClasses.length === 1) {
+          attSql += ` AND s.section = ?`;
+          attParams.push(teacher.section);
+        }
         if (branchId) {
           attSql += ` AND (s.branch_id = ? OR s.branch_id IS NULL)`;
           attParams.push(Number(branchId));
@@ -212,13 +223,13 @@ class TeacherDashboardController {
           studentAttendanceSummary.marked = true;
           let markedTotal = 0;
           for (const row of attRows) {
-            const val = String(row.attendance).toLowerCase();
+            const val = String(row.attendance).trim().toLowerCase();
             const cnt = Number(row.count) || 0;
             markedTotal += cnt;
             if (val === 'present' || val === 'p' || val === '1') studentAttendanceSummary.present += cnt;
-            else if (val === 'absent' || val === 'a' || val === '2') studentAttendanceSummary.absent += cnt;
-            else if (val === 'late' || val === 'l' || val === '3') studentAttendanceSummary.late += cnt;
-            else if (val === 'halfday' || val === 'hd' || val === '4') studentAttendanceSummary.halfday += cnt;
+            else if (val === 'absent' || val === 'a' || val === '0') studentAttendanceSummary.absent += cnt;
+            else if (val === 'late' || val === 'l' || val === '2') studentAttendanceSummary.late += cnt;
+            else if (val === 'halfday' || val === 'hd' || val === '3') studentAttendanceSummary.halfday += cnt;
           }
           if (markedTotal > 0) studentAttendanceSummary.total = markedTotal;
         }

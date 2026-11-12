@@ -449,9 +449,10 @@ class ParentChildController {
         }
       }
 
-      const allNotices = await AnnouncementModel.getAllNotices(schoolId, branchId);
+      const allNotices = await AnnouncementModel.getAllNotices(schoolId, branchId, true);
 
       const filtered = allNotices.filter((n) => {
+        if (Number(n.status ?? 1) !== 1) return false;
         const type = n.target_type || 'all';
 
         if (type === 'class_section') {
@@ -476,11 +477,16 @@ class ParentChildController {
         }
 
         if (type === 'specific_users') {
-          const userIds = (n.target_user_ids || []).map((u) => {
-            if (typeof u === 'object' && u !== null) return Number(u.id);
-            return Number(u);
+          return (n.target_user_ids || []).some((u) => {
+            if (typeof u === 'object' && u !== null) {
+              const uRole = String(u.role || '').toLowerCase();
+              const uId = Number(u.id);
+              if (uRole === 'parent') return Boolean(parentId && uId === Number(parentId));
+              if (uRole === 'student') return Boolean(studentId && uId === Number(studentId));
+              return false;
+            }
+            return false;
           });
-          return (studentId && userIds.includes(studentId)) || (parentId && userIds.includes(parentId));
         }
 
         // Default: 'all' / School-Wide

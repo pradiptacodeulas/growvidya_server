@@ -164,12 +164,15 @@ class DeviceTokenModel {
    * Fetch all active device tokens for a specific user
    */
   static async getActiveTokensForUser(userId, role, schoolId = null) {
+    const normalizedRole = String(role || '').toLowerCase();
+    const isStaffOrAdmin = ['admin', 'staff', 'user'].includes(normalizedRole);
+
     let query = `
-      SELECT id, school_id, user_id, role, device_type, token, endpoint_hash, device_name, last_used_at
+      SELECT id, school_id, branch_id, user_id, role, device_type, token, endpoint_hash, device_name, last_used_at
       FROM user_device_tokens
-      WHERE user_id = ? AND role = ? AND is_active = 1
+      WHERE user_id = ? AND ${isStaffOrAdmin ? "role IN ('admin', 'staff')" : 'role = ?'} AND is_active = 1
     `;
-    const params = [userId, String(role).toLowerCase()];
+    const params = isStaffOrAdmin ? [userId] : [userId, normalizedRole];
 
     if (schoolId !== null && schoolId !== undefined) {
       query += ` AND school_id = ?`;
@@ -229,24 +232,36 @@ class DeviceTokenModel {
   }
 
   /**
-   * Fetch all active device tokens for a list of target roles (e.g. broadcast notice)
+   * Fetch all active device tokens for a school/branch, optionally filtered by target roles
    */
-  static async getActiveTokensForRoles(roles = [], schoolId = null) {
-    if (!roles || roles.length === 0) return [];
-
-    const normalizedRoles = roles.map((r) => String(r).toLowerCase());
-    const placeholders = normalizedRoles.map(() => '?').join(',');
+  static async getActiveTokensForRoles(roles = null, schoolId = null, branchId = null) {
+    const normalizedRoles = Array.isArray(roles)
+      ? roles.map((r) => String(r).toLowerCase().trim()).filter(Boolean)
+      : [];
+    const filterByRole = normalizedRoles.length > 0 && !normalizedRoles.includes('all');
 
     let query = `
-      SELECT id, school_id, user_id, role, device_type, token, endpoint_hash, device_name, last_used_at
+      SELECT id, school_id, branch_id, user_id, role, device_type, token, endpoint_hash, device_name, last_used_at
       FROM user_device_tokens
-      WHERE role IN (${placeholders}) AND is_active = 1
+      WHERE is_active = 1 AND role != 'saas_admin'
     `;
-    const params = [...normalizedRoles];
+    const params = [];
+
+    if (filterByRole) {
+      const placeholders = normalizedRoles.map(() => '?').join(',');
+      query += ` AND role IN (${placeholders})`;
+      params.push(...normalizedRoles);
+    }
 
     if (schoolId) {
       query += ` AND school_id = ?`;
       params.push(schoolId);
+    }
+
+    const parsedBranchId = branchId && branchId !== 'all' ? parseInt(branchId, 10) : null;
+    if (parsedBranchId && !isNaN(parsedBranchId) && parsedBranchId > 0) {
+      query += ` AND (branch_id = ? OR branch_id IS NULL OR role = 'admin')`;
+      params.push(parsedBranchId);
     }
 
     const [rows] = await pool.query(query, params);
@@ -256,7 +271,7 @@ class DeviceTokenModel {
   /**
    * Fetch active device tokens for a targeted list of recipients ({ id, role })
    */
-  static async getActiveTokensForTargetedRecipients(recipients = [], schoolId = null) {
+  static async getActiveTokensForTargetedRecipients(recipients = [], schoolId = null, branchId = null) {
     if (!recipients || recipients.length === 0) return [];
 
     const roleMap = {};
@@ -281,13 +296,19 @@ class DeviceTokenModel {
     }
 
     let query = `
-      SELECT id, school_id, user_id, role, device_type, token, endpoint_hash, device_name, last_used_at
+      SELECT id, school_id, branch_id, user_id, role, device_type, token, endpoint_hash, device_name, last_used_at
       FROM user_device_tokens
       WHERE is_active = 1 AND (${clauses.join(' OR ')})
     `;
     if (schoolId) {
       query += ` AND school_id = ?`;
       params.push(schoolId);
+    }
+
+    const parsedBranchId = branchId && branchId !== 'all' ? parseInt(branchId, 10) : null;
+    if (parsedBranchId && !isNaN(parsedBranchId) && parsedBranchId > 0) {
+      query += ` AND (branch_id = ? OR branch_id IS NULL OR role = 'admin')`;
+      params.push(parsedBranchId);
     }
 
     const [rows] = await pool.query(query, params);

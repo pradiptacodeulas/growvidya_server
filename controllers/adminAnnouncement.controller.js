@@ -15,6 +15,28 @@ exports.getAllNotices = async (req, res) => {
   try {
     const schoolId = getSchoolId(req);
     const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+
+    const hasPaginationOrFilter =
+      req.query.page !== undefined ||
+      req.query.limit !== undefined ||
+      req.query.search !== undefined ||
+      req.query.status !== undefined ||
+      req.query.target_type !== undefined ||
+      req.query.recipient !== undefined ||
+      req.query.start_date !== undefined ||
+      req.query.end_date !== undefined;
+
+    if (hasPaginationOrFilter) {
+      const result = await AnnouncementModel.getNoticesPaginated(schoolId, branchId, req.query);
+      return res.status(200).json({
+        success: true,
+        data: result.notices,
+        notices: result.notices,
+        pagination: result.pagination,
+        summary: result.summary,
+      });
+    }
+
     const notices = await AnnouncementModel.getAllNotices(schoolId, branchId);
     return res.status(200).json({ success: true, data: notices, notices });
   } catch (err) {
@@ -64,6 +86,7 @@ exports.createNotice = async (req, res) => {
 
     const formattedPublishOn = publish_on ? String(publish_on).replace('T', ' ').substring(0, 19) : null;
     const formattedNoticeDate = notice_date || (formattedPublishOn ? formattedPublishOn.split(' ')[0] : null);
+    const normalizedStatus = status !== undefined && (Number(status) === 2 || Number(status) === 0) ? 2 : 1;
 
     const insertId = await AnnouncementModel.createNotice({
       school_id: schoolId,
@@ -73,7 +96,7 @@ exports.createNotice = async (req, res) => {
       publish_on: formattedPublishOn,
       message,
       message_to: Array.isArray(message_to) ? message_to : (message_to ? [message_to] : []),
-      status: status !== undefined ? status : 1,
+      status: normalizedStatus,
       target_type,
       target_classes,
       target_sections,
@@ -81,8 +104,8 @@ exports.createNotice = async (req, res) => {
       target_user_ids,
     });
 
-    // Dispatch targeted push notification
-    try {
+    // Dispatch targeted push notification only when notice is Active (status === 1)
+    if (normalizedStatus === 1) try {
       const PushNotificationService = require('../services/pushNotification.service');
       const { pool } = require('../config/db.config');
 
@@ -116,6 +139,10 @@ exports.createNotice = async (req, res) => {
         if (effectiveRoles.includes('student') && classIds.length > 0) {
           let studentQuery = `SELECT id FROM student_master WHERE school_id = ? AND status = 1 AND class IN (${classIds.map(() => '?').join(',')})`;
           const studentParams = [schoolId, ...classIds];
+          if (branchId) {
+            studentQuery += ` AND (branch_id = ? OR branch_id IS NULL)`;
+            studentParams.push(Number(branchId));
+          }
           if (sectionIds.length > 0) {
             studentQuery += ` AND section IN (${sectionIds.map(() => '?').join(',')})`;
             studentParams.push(...sectionIds);
@@ -135,6 +162,10 @@ exports.createNotice = async (req, res) => {
             WHERE sp.school_id = ? AND sp.status = 1 AND s.class IN (${classIds.map(() => '?').join(',')})
           `;
           const parentParams = [schoolId, ...classIds];
+          if (branchId) {
+            parentQuery += ` AND (s.branch_id = ? OR s.branch_id IS NULL)`;
+            parentParams.push(Number(branchId));
+          }
           if (sectionIds.length > 0) {
             parentQuery += ` AND s.section IN (${sectionIds.map(() => '?').join(',')})`;
             parentParams.push(...sectionIds);
@@ -153,11 +184,14 @@ exports.createNotice = async (req, res) => {
 
         // 3. Resolve Teachers assigned to those classes
         if (effectiveRoles.includes('teacher') && classIds.length > 0) {
-          const [teacherRows] = await pool.query(
-            `SELECT DISTINCT teacher_id FROM teacher_class_assign 
-             WHERE school_id = ? AND (status = 1 OR status IS NULL) AND class_id IN (${classIds.map(() => '?').join(',')})`,
-            [schoolId, ...classIds]
-          );
+          let teacherQuery = `SELECT DISTINCT teacher_id FROM teacher_class_assign 
+             WHERE school_id = ? AND (status = 1 OR status IS NULL) AND class_id IN (${classIds.map(() => '?').join(',')})`;
+          const teacherParams = [schoolId, ...classIds];
+          if (branchId) {
+            teacherQuery += ` AND (branch_id = ? OR branch_id IS NULL)`;
+            teacherParams.push(Number(branchId));
+          }
+          const [teacherRows] = await pool.query(teacherQuery, teacherParams);
           for (const t of teacherRows) {
             if (t.teacher_id) {
               targetedRecipients.push({ id: Number(t.teacher_id), role: 'teacher' });
@@ -169,6 +203,7 @@ exports.createNotice = async (req, res) => {
           PushNotificationService.sendToTargetedRecipients({
             recipients: targetedRecipients,
             school_id: schoolId,
+            branch_id: branchId,
             title: noticeTitle,
             body: noticeBody,
             data: pushPayloadData,
@@ -185,6 +220,7 @@ exports.createNotice = async (req, res) => {
           PushNotificationService.sendToTargetedRecipients({
             recipients,
             school_id: schoolId,
+            branch_id: branchId,
             title: noticeTitle,
             body: noticeBody,
             data: pushPayloadData,
@@ -192,12 +228,12 @@ exports.createNotice = async (req, res) => {
           }).catch((pushErr) => console.warn('[Specific Users Notice Push Error]:', pushErr?.message));
         }
       } else {
-        // School-Wide / Role broadcast (target_type === 'all')
+        // Branch-Wide / Dynamic Role broadcast (target_type === 'all')
         const rawRoles = (target_roles && target_roles.length > 0)
           ? target_roles
           : (Array.isArray(message_to) ? message_to : ['all']);
 
-        let targetRoles = rawRoles.map((r) => {
+        const normalizedRoles = rawRoles.map((r) => {
           const str = String(r).toLowerCase().trim();
           if (str === '1' || str === 'student') return 'student';
           if (str === '2' || str === 'parent') return 'parent';
@@ -206,26 +242,87 @@ exports.createNotice = async (req, res) => {
           if (str === '5' || str === 'super admin' || str === 'super_admin') return 'super admin';
           if (str === '6' || str === 'staff') return 'staff';
           return str;
-        });
+        }).filter(Boolean);
 
-        if (targetRoles.includes('all')) {
-          targetRoles = ['student', 'parent', 'teacher', 'admin', 'staff'];
+        if (normalizedRoles.length === 0 || normalizedRoles.includes('all')) {
+          PushNotificationService.sendToRoles({
+            roles: null,
+            school_id: schoolId,
+            branch_id: branchId,
+            title: noticeTitle,
+            body: noticeBody,
+            data: pushPayloadData,
+            category: 'notice',
+          }).catch((pushErr) => console.warn('[Notice Push Error]:', pushErr?.message));
+        } else {
+          const portalRoles = normalizedRoles.filter((r) => ['student', 'parent', 'teacher'].includes(r));
+          const customOrStaffRoles = normalizedRoles.filter((r) => !['student', 'parent', 'teacher'].includes(r));
+
+          if (portalRoles.length > 0) {
+            PushNotificationService.sendToRoles({
+              roles: portalRoles,
+              school_id: schoolId,
+              branch_id: branchId,
+              title: noticeTitle,
+              body: noticeBody,
+              data: pushPayloadData,
+              category: 'notice',
+            }).catch((pushErr) => console.warn('[Notice Portal Roles Push Error]:', pushErr?.message));
+          }
+
+          if (customOrStaffRoles.length > 0) {
+            if (customOrStaffRoles.includes('staff') || customOrStaffRoles.includes('admin')) {
+              PushNotificationService.sendToRoles({
+                roles: ['admin', 'staff'],
+                school_id: schoolId,
+                branch_id: branchId,
+                title: noticeTitle,
+                body: noticeBody,
+                data: pushPayloadData,
+                category: 'notice',
+              }).catch((pushErr) => console.warn('[Notice Staff Push Error]:', pushErr?.message));
+            } else {
+              let userRoleQuery = `
+                SELECT DISTINCT u.id
+                FROM user_master u
+                LEFT JOIN role_master r ON u.role = r.id
+                WHERE u.school_id = ? AND (u.status = 1 OR u.status IS NULL)
+              `;
+              const userRoleParams = [schoolId];
+              if (branchId) {
+                userRoleQuery += ` AND (u.branch_id = ? OR u.branch_id IS NULL OR u.admin_type = 1)`;
+                userRoleParams.push(Number(branchId));
+              }
+
+              const rolePlaceholders = customOrStaffRoles.map(() => '?').join(',');
+              const includeSuperAdmin = customOrStaffRoles.includes('super admin') || customOrStaffRoles.includes('super_admin');
+              userRoleQuery += ` AND (
+                LOWER(TRIM(COALESCE(r.role_name, ''))) IN (${rolePlaceholders})
+                OR CAST(u.role AS CHAR) IN (${rolePlaceholders})
+                ${includeSuperAdmin ? 'OR u.admin_type = 1' : ''}
+              )`;
+              userRoleParams.push(...customOrStaffRoles, ...customOrStaffRoles);
+
+              const [matchedUsers] = await pool.query(userRoleQuery, userRoleParams).catch(() => [[]]);
+              const staffRecipients = [];
+              for (const u of matchedUsers) {
+                staffRecipients.push({ id: Number(u.id), role: 'admin' });
+                staffRecipients.push({ id: Number(u.id), role: 'staff' });
+              }
+              if (staffRecipients.length > 0) {
+                PushNotificationService.sendToTargetedRecipients({
+                  recipients: staffRecipients,
+                  school_id: schoolId,
+                  branch_id: branchId,
+                  title: noticeTitle,
+                  body: noticeBody,
+                  data: pushPayloadData,
+                  category: 'notice',
+                }).catch((pushErr) => console.warn('[Notice Dynamic Role Push Error]:', pushErr?.message));
+              }
+            }
+          }
         }
-
-        const rolesToNotify = new Set(targetRoles);
-        // In user_device_tokens, staff and admin users register as 'admin'
-        if (rolesToNotify.has('staff') || rolesToNotify.has('admin') || rolesToNotify.has('super admin')) {
-          rolesToNotify.add('admin');
-        }
-
-        PushNotificationService.sendToRoles({
-          roles: Array.from(rolesToNotify),
-          school_id: schoolId,
-          title: noticeTitle,
-          body: noticeBody,
-          data: pushPayloadData,
-          category: 'notice',
-        }).catch((pushErr) => console.warn('[Notice Push Error]:', pushErr?.message));
       }
 
       // Real-time socket broadcast for active users in the school / target groups
@@ -295,6 +392,7 @@ exports.updateNotice = async (req, res) => {
 
     const formattedPublishOn = publish_on ? String(publish_on).replace('T', ' ').substring(0, 19) : null;
     const formattedNoticeDate = notice_date || (formattedPublishOn ? formattedPublishOn.split(' ')[0] : null);
+    const normalizedStatus = status !== undefined && (Number(status) === 2 || Number(status) === 0) ? 2 : 1;
 
     await AnnouncementModel.updateNotice(id, schoolId, {
       branch_id: branchId,
@@ -303,7 +401,7 @@ exports.updateNotice = async (req, res) => {
       publish_on: formattedPublishOn,
       message,
       message_to: Array.isArray(message_to) ? message_to : (message_to ? [message_to] : []),
-      status: status !== undefined ? status : 1,
+      status: normalizedStatus,
       target_type,
       target_classes,
       target_sections,
@@ -337,11 +435,64 @@ exports.deleteNotice = async (req, res) => {
   }
 };
 
+const normalizeSqlDate = (raw) => {
+  if (!raw) return null;
+  const str = String(raw).trim();
+  if (!str) return null;
+  // Match DD/MM/YYYY
+  const dmy = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (dmy) {
+    const d = String(dmy[1]).padStart(2, '0');
+    const m = String(dmy[2]).padStart(2, '0');
+    const y = dmy[3];
+    return `${y}-${m}-${d}`;
+  }
+  // Match YYYY-MM-DD at start
+  const ymd = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (ymd) {
+    const y = ymd[1];
+    const m = String(ymd[2]).padStart(2, '0');
+    const d = String(ymd[3]).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  const parsed = new Date(str);
+  if (!Number.isNaN(parsed.getTime())) {
+    const y = parsed.getFullYear();
+    const m = String(parsed.getMonth() + 1).padStart(2, '0');
+    const d = String(parsed.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  return null;
+};
+
 // ================= EVENT CONTROLLERS =================
 exports.getAllEvents = async (req, res) => {
   try {
     const schoolId = getSchoolId(req);
     const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+
+    const hasPaginationOrFilter =
+      req.query.page !== undefined ||
+      req.query.limit !== undefined ||
+      req.query.search !== undefined ||
+      req.query.status !== undefined ||
+      req.query.timeline_status !== undefined ||
+      req.query.year !== undefined ||
+      req.query.month !== undefined ||
+      req.query.start_date !== undefined ||
+      req.query.end_date !== undefined;
+
+    if (hasPaginationOrFilter) {
+      const result = await AnnouncementModel.getEventsPaginated(schoolId, branchId, req.query);
+      return res.status(200).json({
+        success: true,
+        data: result.events,
+        events: result.events,
+        pagination: result.pagination,
+        summary: result.summary,
+      });
+    }
+
     const events = await AnnouncementModel.getAllEvents(schoolId, branchId);
     return res.status(200).json({ success: true, data: events, events });
   } catch (err) {
@@ -387,15 +538,61 @@ exports.createEvent = async (req, res) => {
       }
     }
 
+    const normalizedFrom = normalizeSqlDate(from_date);
+    const normalizedTo = normalizeSqlDate(to_date) || normalizedFrom;
+
     const insertId = await AnnouncementModel.createEvent({
       school_id: schoolId,
       branch_id: branchId,
       title: title.trim(),
-      from_date: from_date || null,
-      to_date: to_date || from_date || null,
+      from_date: normalizedFrom,
+      to_date: normalizedTo,
       details: details || null,
       status: status !== undefined ? status : 1,
     });
+
+    // Dispatch branch-scoped push notification & real-time socket broadcast
+    if (Number(status ?? 1) === 1) try {
+      const PushNotificationService = require('../services/pushNotification.service');
+      const cleanDetails = details
+        ? String(details).replace(/<[^>]*>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/\s+/g, ' ').trim()
+        : '';
+      const dateStr = normalizedFrom
+        ? normalizedTo && normalizedTo !== normalizedFrom
+          ? ` (${normalizedFrom} to ${normalizedTo})`
+          : ` (${normalizedFrom})`
+        : '';
+      const eventBody = cleanDetails
+        ? (cleanDetails.length > 120 ? cleanDetails.substring(0, 117) + '...' : cleanDetails)
+        : `New school event scheduled${dateStr}.`;
+
+      PushNotificationService.sendToRoles({
+        school_id: schoolId,
+        branch_id: branchId,
+        title: `Event: ${title.trim()}`,
+        body: eventBody,
+        data: {
+          type: 'event',
+          eventId: insertId,
+          url: '/admin/announcement/event',
+        },
+        category: 'event',
+      }).catch((pushErr) => console.warn('[Event Push Error]:', pushErr?.message));
+
+      const { getIO } = require('../services/socket.service');
+      const io = getIO();
+      if (io) {
+        io.to(`school_${schoolId}`).emit('new_event', {
+          id: insertId,
+          school_id: schoolId,
+          branch_id: branchId,
+          title: title.trim(),
+          from_date: normalizedFrom,
+          to_date: normalizedTo,
+          details: details || null,
+        });
+      }
+    } catch (_) {}
 
     return res.status(201).json({
       success: true,
@@ -430,11 +627,14 @@ exports.updateEvent = async (req, res) => {
       }
     }
 
+    const normalizedFrom = normalizeSqlDate(from_date);
+    const normalizedTo = normalizeSqlDate(to_date) || normalizedFrom;
+
     await AnnouncementModel.updateEvent(id, schoolId, {
       branch_id: branchId,
       title: title.trim(),
-      from_date: from_date || null,
-      to_date: to_date || from_date || null,
+      from_date: normalizedFrom,
+      to_date: normalizedTo,
       details: details || null,
       status: status !== undefined ? status : 1,
     }, branchId);
@@ -515,15 +715,61 @@ exports.createHoliday = async (req, res) => {
       }
     }
 
+    const normalizedFrom = normalizeSqlDate(from_date);
+    const normalizedTo = normalizeSqlDate(to_date) || normalizedFrom;
+
     const insertId = await AnnouncementModel.createHoliday({
       school_id: schoolId,
       branch_id: branchId,
       title: title.trim(),
-      from_date: from_date || null,
-      to_date: to_date || from_date || null,
+      from_date: normalizedFrom,
+      to_date: normalizedTo,
       details: details || null,
       status: status !== undefined ? status : 1,
     });
+
+    // Dispatch branch-wide push notification & real-time socket broadcast
+    if (Number(status ?? 1) === 1) try {
+      const PushNotificationService = require('../services/pushNotification.service');
+      const cleanDetails = details
+        ? String(details).replace(/<[^>]*>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/\s+/g, ' ').trim()
+        : '';
+      const dateStr = normalizedFrom
+        ? normalizedTo && normalizedTo !== normalizedFrom
+          ? ` (${normalizedFrom} to ${normalizedTo})`
+          : ` (${normalizedFrom})`
+        : '';
+      const holidayBody = cleanDetails
+        ? (cleanDetails.length > 120 ? cleanDetails.substring(0, 117) + '...' : cleanDetails)
+        : `School holiday announced${dateStr}.`;
+
+      PushNotificationService.sendToRoles({
+        school_id: schoolId,
+        branch_id: branchId,
+        title: `Holiday: ${title.trim()}`,
+        body: holidayBody,
+        data: {
+          type: 'holiday',
+          holidayId: insertId,
+          url: '/admin/announcement/holiday',
+        },
+        category: 'holiday',
+      }).catch((pushErr) => console.warn('[Holiday Push Error]:', pushErr?.message));
+
+      const { getIO } = require('../services/socket.service');
+      const io = getIO();
+      if (io) {
+        io.to(`school_${schoolId}`).emit('new_holiday', {
+          id: insertId,
+          school_id: schoolId,
+          branch_id: branchId,
+          title: title.trim(),
+          from_date: normalizedFrom,
+          to_date: normalizedTo,
+          details: details || null,
+        });
+      }
+    } catch (_) {}
 
     return res.status(201).json({
       success: true,
@@ -558,11 +804,14 @@ exports.updateHoliday = async (req, res) => {
       }
     }
 
+    const normalizedFrom = normalizeSqlDate(from_date);
+    const normalizedTo = normalizeSqlDate(to_date) || normalizedFrom;
+
     await AnnouncementModel.updateHoliday(id, schoolId, {
       branch_id: branchId,
       title: title.trim(),
-      from_date: from_date || null,
-      to_date: to_date || from_date || null,
+      from_date: normalizedFrom,
+      to_date: normalizedTo,
       details: details || null,
       status: status !== undefined ? status : 1,
     }, branchId);

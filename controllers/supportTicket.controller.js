@@ -125,7 +125,7 @@ class SupportTicketController {
       let attachmentUrl = null;
       let attachmentName = null;
       if (req.file) {
-        attachmentUrl = `/upload/support_tickets/${req.file.filename}`;
+        attachmentUrl = `/${req.file.filePath.replace(/^\/+/, '')}`;
         attachmentName = req.file.originalname || req.file.filename;
       }
 
@@ -222,7 +222,7 @@ class SupportTicketController {
       let attachmentUrl = null;
       let attachmentName = null;
       if (req.file) {
-        attachmentUrl = `/upload/support_tickets/${req.file.filename}`;
+        attachmentUrl = `/${req.file.filePath.replace(/^\/+/, '')}`;
         attachmentName = req.file.originalname || req.file.filename;
       }
 
@@ -423,7 +423,7 @@ class SupportTicketController {
       let attachmentUrl = null;
       let attachmentName = null;
       if (req.file) {
-        attachmentUrl = `/upload/support_tickets/${req.file.filename}`;
+        attachmentUrl = `/${req.file.filePath.replace(/^\/+/, '')}`;
         attachmentName = req.file.originalname || req.file.filename;
       }
 
@@ -465,6 +465,7 @@ class SupportTicketController {
             tag: `support_ticket_${updatedTicket.id}`,
           },
           category: 'support_ticket',
+          billable: false,
         }).catch((err) => console.warn('[SupportTicket Push Error - saas reply]:', err?.message));
       }
 
@@ -518,6 +519,7 @@ class SupportTicketController {
               tag: `support_ticket_${updatedTicket.id}`,
             },
             category: 'support_ticket',
+            billable: false,
           }).catch((err) => console.warn('[SupportTicket Push Error - status]:', err?.message));
         }
 

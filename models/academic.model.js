@@ -4537,6 +4537,10 @@ class AcademicModel {
       params.push(cleanBranchId);
     }
     const [result] = await pool.query(sql, params);
+    if (result.affectedRows > 0 && attachment && existing.attachment && attachment !== existing.attachment) {
+      const { hardDeleteFile } = require('../utils/file.util');
+      await hardDeleteFile(existing.attachment);
+    }
     return result.affectedRows > 0;
   }
 
@@ -4573,7 +4577,7 @@ class AcademicModel {
 
   static async deleteStudyMaterial(id, schoolId, branchId = null, teacherId = null) {
     const cleanBranchId = AcademicModel.parseBranchId(branchId);
-    let selectSql = `SELECT id, uploaded_by, uploader_type FROM study_materials WHERE id = ? AND school_id = ? AND (status != 4 OR status IS NULL)`;
+    let selectSql = `SELECT id, attachment, uploaded_by, uploader_type FROM study_materials WHERE id = ? AND school_id = ? AND (status != 4 OR status IS NULL)`;
     const selectParams = [id, schoolId];
     if (cleanBranchId) {
       selectSql += ` AND branch_id = ?`;
@@ -4598,6 +4602,10 @@ class AcademicModel {
       params.push(cleanBranchId);
     }
     const [result] = await pool.query(sql, params);
+    if (result.affectedRows > 0 && rows[0].attachment) {
+      const { hardDeleteFile } = require('../utils/file.util');
+      await hardDeleteFile(rows[0].attachment);
+    }
     return result.affectedRows > 0;
   }
 }

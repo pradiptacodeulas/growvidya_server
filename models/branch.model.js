@@ -1,5 +1,6 @@
 const { pool } = require('../config/db.config');
 const PermissionModel = require('./permission.model');
+const DataScope = require('../utils/dataScope.util');
 
 class BranchModel {
   /**
@@ -404,18 +405,20 @@ class BranchModel {
       status !== undefined ? Number(status) : 1,
     ]);
 
-    // Assign head user's branch_id and assign Branch Head role in user_master
+    // Assign head user's branch_id and assign Branch Head role in user_master (never demote Super Admin admin_type = 1)
     if (resolvedHeadUserId) {
       try {
         const branchHeadRoleId = await PermissionModel.ensureBranchHeadRole(parsedSchoolId);
         await pool.query(
-          'UPDATE user_master SET branch_id = ?, role = ?, admin_type = 2 WHERE id = ? AND school_id = ?',
+          'UPDATE user_master SET branch_id = ?, role = ?, admin_type = 2 WHERE id = ? AND school_id = ? AND (admin_type IS NULL OR admin_type != 1)',
           [result.insertId, branchHeadRoleId, resolvedHeadUserId, parsedSchoolId]
         );
       } catch (headErr) {
         console.error('[BranchModel] Error assigning branch head role:', headErr.message);
       }
     }
+
+    DataScope.invalidateMainBranchCache(parsedSchoolId);
 
     return {
       id: result.insertId,
@@ -491,22 +494,22 @@ class BranchModel {
         const oldHeadUserId = oldRows[0]?.head_user_id ? Number(oldRows[0].head_user_id) : null;
 
         if (oldHeadUserId && oldHeadUserId !== resolvedHead) {
-          // Revert old head's role if they were assigned the Branch Head role
+          // Revert old head's role if they were assigned the Branch Head role (never touch Super Admin admin_type = 1)
           const [fallbackRoles] = await pool.query(
             `SELECT id FROM role_master WHERE (school_id = ? OR school_id IS NULL) AND IFNULL(is_system_role, 0) = 0 AND (status = 1 OR status IS NULL) ORDER BY id ASC LIMIT 1`,
             [parsedSchoolId]
           );
-          const fallbackRoleId = fallbackRoles[0]?.id || 2;
+          const fallbackRoleId = fallbackRoles[0]?.id || null;
           await pool.query(
-            'UPDATE user_master SET role = ?, admin_type = 2 WHERE id = ? AND school_id = ? AND role = ?',
+            'UPDATE user_master SET role = ?, admin_type = 2 WHERE id = ? AND school_id = ? AND role = ? AND (admin_type IS NULL OR admin_type != 1)',
             [fallbackRoleId, oldHeadUserId, parsedSchoolId, branchHeadRoleId]
           );
         }
 
         if (resolvedHead) {
-          // Assign Branch Head role and lock to this branch
+          // Assign Branch Head role and lock to this branch (never demote Super Admin admin_type = 1)
           await pool.query(
-            'UPDATE user_master SET branch_id = ?, role = ?, admin_type = 2 WHERE id = ? AND school_id = ?',
+            'UPDATE user_master SET branch_id = ?, role = ?, admin_type = 2 WHERE id = ? AND school_id = ? AND (admin_type IS NULL OR admin_type != 1)',
             [Number(id), branchHeadRoleId, resolvedHead, parsedSchoolId]
           );
         }
@@ -572,6 +575,7 @@ class BranchModel {
     params.push(Number(id), parsedSchoolId);
 
     const [result] = await pool.execute(sql, params);
+    DataScope.invalidateMainBranchCache(parsedSchoolId);
     return result.affectedRows > 0;
   }
 
@@ -661,11 +665,13 @@ class BranchModel {
       `UPDATE branch_master SET is_main_branch = 1 WHERE id = ? AND school_id = ?`,
       [Number(id), parsedSchoolId]
     );
+    DataScope.invalidateMainBranchCache(parsedSchoolId);
     return result.affectedRows > 0;
   }
 
   /**
-   * Soft delete a branch with safety check (sets status = 4)
+   * Soft delete a branch and all associated students, teachers, staff, classes, and campus records (sets status = 4)
+   * Executed only after Super Admin password + 6-digit OTP verification.
    */
   static async deleteBranch(id, school_id) {
     const parsedId = Number(id);
@@ -674,68 +680,105 @@ class BranchModel {
       throw new Error('Valid school_id is required.');
     }
 
-    // Check if it's the main branch
     const branch = await BranchModel.getBranchById(parsedId, parsedSchoolId);
-    if (!branch) {
+    if (!branch || Number(branch.status) === 4) {
       throw new Error('Branch not found.');
     }
-    if (branch.is_main_branch === 1) {
+    if (Number(branch.is_main_branch) === 1) {
       throw new Error('Cannot delete the primary/main campus. Please assign another main campus first.');
     }
 
-    // Check if students exist in this branch
+    const conn = await pool.getConnection();
     try {
-      const [students] = await pool.query(
-        `SELECT COUNT(*) AS total FROM student_master WHERE school_id = ? AND branch_id = ? AND (status = 1 OR status = '1')`,
+      await conn.beginTransaction();
+
+      // Find the school's main branch so any Super Admin (admin_type = 1) pointing to this branch is safely re-linked
+      const [mainRows] = await conn.query(
+        'SELECT id FROM branch_master WHERE school_id = ? AND id != ? AND status IN (1, 2) ORDER BY is_main_branch DESC, id ASC LIMIT 1',
         [parsedSchoolId, parsedId]
       );
-      if (students[0]?.total > 0) {
-        throw new Error(
-          `Cannot delete branch: ${students[0].total} active student(s) are enrolled in this branch. Transfer them first.`
+      const mainBranchId = mainRows[0]?.id || null;
+
+      if (mainBranchId) {
+        await conn.query(
+          'UPDATE user_master SET branch_id = ? WHERE school_id = ? AND branch_id = ? AND admin_type = 1',
+          [mainBranchId, parsedSchoolId, parsedId]
         );
       }
-    } catch (e) {
-      if (e.message.includes('Cannot delete branch')) throw e;
-    }
 
-    // Check if teachers exist in this branch
-    try {
-      const [teachers] = await pool.query(
-        `SELECT COUNT(*) AS total FROM teacher_master WHERE school_id = ? AND branch_id = ? AND status = 1`,
+      // Soft-delete (status = 4) all non-SuperAdmin staff users belonging to this branch
+      await conn.query(
+        'UPDATE user_master SET status = 4 WHERE school_id = ? AND branch_id = ? AND (admin_type IS NULL OR admin_type != 1) AND status != 4',
         [parsedSchoolId, parsedId]
       );
-      if (teachers[0]?.total > 0) {
-        throw new Error(
-          `Cannot delete branch: ${teachers[0].total} active teacher(s) are assigned to this branch.`
-        );
+
+      // Soft-delete (status = 4) all branch-scoped entities that carry a status column
+      const cascadeTables = [
+        'student_master',
+        'teacher_master',
+        'staff_master',
+        'class_master',
+        'section_master',
+        'fee_invoices',
+        'fee_payments',
+        'fee_structures',
+        'fee_components',
+        'student_attendance',
+        'teacher_attendance',
+        'user_master_attendance',
+        'leaves',
+        'notice',
+        'student_activity',
+        'student_certificate',
+        'trans_route_master',
+        'bus_master',
+        'hostel_name_master',
+        'hostel_room_master',
+        'exam_schedule',
+        'beneficiary_master',
+        'employee_salary',
+        'routine',
+        'syllabus',
+        'assignments',
+        'study_materials',
+        'student_transport',
+        'shift_master',
+        'period_master',
+        'house_master',
+        'days_master',
+        'event',
+        'holiday',
+        'operator_master',
+        'certificate_template',
+        'certificate_category',
+      ];
+
+      for (const table of cascadeTables) {
+        try {
+          await conn.query(
+            `UPDATE \`${table}\` SET status = 4 WHERE school_id = ? AND branch_id = ? AND status != 4`,
+            [parsedSchoolId, parsedId]
+          );
+        } catch (_) {
+          // Table may not exist or may not have a status column in all schemas
+        }
       }
-    } catch (e) {
-      if (e.message.includes('Cannot delete branch')) throw e;
+
+      // Finally mark the branch itself as soft-deleted (status = 4)
+      const [result] = await conn.execute(
+        'UPDATE branch_master SET status = 4 WHERE id = ? AND school_id = ?',
+        [parsedId, parsedSchoolId]
+      );
+
+      await conn.commit();
+      DataScope.invalidateMainBranchCache(parsedSchoolId);
+      return result.affectedRows > 0;
+    } catch (err) {
+      await conn.rollback();
+      throw err;
+    } finally {
+      conn.release();
     }
-
-    // Soft delete: update status to 4 (Deleted)
-    const [result] = await pool.execute(
-      `UPDATE branch_master SET status = 4 WHERE id = ? AND school_id = ?`,
-      [parsedId, parsedSchoolId]
-    );
-
-    // Revert head user role back if assigned
-    if (branch.head_user_id) {
-      try {
-        const branchHeadRoleId = await PermissionModel.ensureBranchHeadRole(parsedSchoolId);
-        const [fallbackRoles] = await pool.query(
-          `SELECT id FROM role_master WHERE (school_id = ? OR school_id IS NULL) AND IFNULL(is_system_role, 0) = 0 AND (status = 1 OR status IS NULL) ORDER BY id ASC LIMIT 1`,
-          [parsedSchoolId]
-        );
-        const fallbackRoleId = fallbackRoles[0]?.id || 2;
-        await pool.query(
-          'UPDATE user_master SET role = ?, admin_type = 2 WHERE id = ? AND school_id = ? AND role = ?',
-          [fallbackRoleId, branch.head_user_id, parsedSchoolId, branchHeadRoleId]
-        );
-      } catch (_) {}
-    }
-
-    return result.affectedRows > 0;
   }
 
   /**
@@ -798,19 +841,19 @@ class BranchModel {
       LEFT JOIN (
         SELECT branch_id, COUNT(*) AS student_count 
         FROM student_master 
-        WHERE school_id = ? AND (status = 1 OR status = '1')
+        WHERE school_id = ? AND status IN (1, 2)
         GROUP BY branch_id
       ) st ON b.id = st.branch_id
       LEFT JOIN (
         SELECT branch_id, COUNT(*) AS teacher_count 
         FROM teacher_master 
-        WHERE school_id = ? AND status = 1
+        WHERE school_id = ? AND status IN (1, 2)
         GROUP BY branch_id
       ) t ON b.id = t.branch_id
       LEFT JOIN (
         SELECT branch_id, COUNT(*) AS class_count 
         FROM class_master 
-        WHERE school_id = ? AND status = 1
+        WHERE school_id = ? AND status IN (1, 2)
         GROUP BY branch_id
       ) c ON b.id = c.branch_id
       WHERE b.school_id = ? AND b.status IN (1, 2)

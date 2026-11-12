@@ -313,7 +313,6 @@ class SaasModel {
     try {
       await connection.beginTransaction();
 
-      // 1. Re-verify uniqueness inside transaction
       const adminEmail = (adminData.email || '').trim().toLowerCase();
       if (!adminEmail) {
         const err = new Error('Admin Email is required.');
@@ -321,6 +320,77 @@ class SaasModel {
         throw err;
       }
 
+      // 1. Lock and verify the server-bound payment order FIRST
+      //    (prevents race conditions between Razorpay webhook and browser callback, and prevents order replay)
+      const [orderLockRows] = await connection.query(
+        `SELECT * FROM subscription_payment_orders
+         WHERE ${paymentOrderId ? 'id = ?' : 'razorpay_order_id = ?'}
+         LIMIT 1 FOR UPDATE`,
+        [paymentOrderId || razorpayOrderId]
+      );
+      if (orderLockRows.length === 0) {
+        const err = new Error('Checkout order record was not found. Please re-initiate payment from the review step.');
+        err.statusCode = 404;
+        throw err;
+      }
+
+      const lockedOrder = orderLockRows[0];
+      if (Number(lockedOrder.plan_id) !== Number(planId)) {
+        const err = new Error('Plan mismatch detected between payment order and registration request.');
+        err.statusCode = 400;
+        throw err;
+      }
+
+      // Idempotent return if this exact order was already fulfilled for this admin email (e.g. by Razorpay webhook)
+      if (lockedOrder.status === 'paid' || lockedOrder.school_id) {
+        if (lockedOrder.school_id) {
+          const [existingProvisioned] = await connection.query(
+            `SELECT sm.id AS school_id, sm.school_name, sm.school_code,
+                    bm.id AS branch_id,
+                    um.id AS admin_user_id, um.email AS admin_email,
+                    ss.id AS subscription_id, ss.start_date, ss.end_date, ss.status AS sub_status,
+                    p.plan_name
+             FROM school_master sm
+             JOIN user_master um ON um.school_id = sm.id
+             LEFT JOIN branch_master bm ON bm.school_id = sm.id AND bm.is_main_branch = 1
+             LEFT JOIN school_subscriptions ss ON ss.id = ?
+             LEFT JOIN subscription_plans p ON ss.plan_id = p.id
+             WHERE sm.id = ? AND LOWER(um.email) = ?
+             LIMIT 1`,
+            [lockedOrder.activated_subscription_id || null, lockedOrder.school_id, adminEmail]
+          );
+
+          if (existingProvisioned.length > 0) {
+            const prov = existingProvisioned[0];
+            await connection.commit();
+            return {
+              alreadyRegistered: true,
+              schoolId: prov.school_id,
+              schoolName: prov.school_name,
+              schoolCode: prov.school_code,
+              branchId: prov.branch_id,
+              adminUserId: prov.admin_user_id,
+              adminEmail: prov.admin_email,
+              subscriptionId: prov.subscription_id || lockedOrder.activated_subscription_id,
+              orderNo: lockedOrder.order_no,
+              invoiceNo: lockedOrder.invoice_no,
+              planName: prov.plan_name,
+              startDate: prov.start_date,
+              endDate: prov.end_date,
+              amountPaid: parseFloat(lockedOrder.grand_total) || 0,
+              taxAmount: 0,
+              status: prov.sub_status || (isTrial ? 'trial' : 'active'),
+              transactionId: razorpayPaymentId || lockedOrder.razorpay_payment_id || lockedOrder.order_no,
+            };
+          }
+        }
+
+        const err = new Error('This payment order has already been redeemed for a school registration.');
+        err.statusCode = 409;
+        throw err;
+      }
+
+      // 2. Re-verify uniqueness inside transaction
       const [existingUser] = await connection.query(
         'SELECT id FROM user_master WHERE LOWER(email) = ? AND status != 4 LIMIT 1',
         [adminEmail]
@@ -382,7 +452,7 @@ class SaasModel {
         }
       }
 
-      // 2. Re-verify trial eligibility inside transaction before inserting anything
+      // 3. Re-verify trial eligibility inside transaction before inserting anything
       if (isTrial) {
         const eligibility = await SaasModel.checkTrialEligibility(
           {
@@ -400,36 +470,10 @@ class SaasModel {
         }
       }
 
-      // 3. Lock and verify the server-bound payment order BEFORE creating the school
-      //    (prevents replaying a paid Razorpay order across two school registrations!)
-      const [orderLockRows] = await connection.query(
-        `SELECT * FROM subscription_payment_orders
-         WHERE ${paymentOrderId ? 'id = ?' : 'razorpay_order_id = ?'}
-         LIMIT 1 FOR UPDATE`,
-        [paymentOrderId || razorpayOrderId]
-      );
-      if (orderLockRows.length === 0) {
-        const err = new Error('Checkout order record was not found. Please re-initiate payment from the review step.');
-        err.statusCode = 404;
-        throw err;
-      }
-
-      const lockedOrder = orderLockRows[0];
-      if (lockedOrder.status === 'paid' || lockedOrder.school_id) {
-        const err = new Error('This payment order has already been redeemed for a school registration.');
-        err.statusCode = 409;
-        throw err;
-      }
-      if (Number(lockedOrder.plan_id) !== Number(planId)) {
-        const err = new Error('Plan mismatch detected between payment order and registration request.');
-        err.statusCode = 400;
-        throw err;
-      }
-
       // 4. Process School Logo if uploaded as base64
       let logoPath = schoolData.school_logo || null;
       if (logoPath && logoPath.startsWith('data:')) {
-        logoPath = saveBase64File(logoPath, 'school', 'Logo');
+        logoPath = await saveBase64File(logoPath, 'school', 'Logo', { skipQuotaCheck: true });
       }
 
       // 5. Generate unique School Code
@@ -527,11 +571,28 @@ class SaasModel {
         [schoolId, mainBranchId, yearName, yearStart, yearEnd]
       );
 
-      // 9. Insert School Super Admin into user_master
-      const hashedPassword = await hashPassword(adminData.password);
+      // 9. Insert School Super Admin into user_master (supports pre-hashed password_hash from onboarding order snapshot)
+      const hashedPassword = adminData.password_hash
+        ? String(adminData.password_hash)
+        : await hashPassword(adminData.password);
       let adminPicturePath = adminData.picture || null;
       if (adminPicturePath && adminPicturePath.startsWith('data:')) {
-        adminPicturePath = saveBase64File(adminPicturePath, 'staff', 'Admin');
+        adminPicturePath = await saveBase64File(adminPicturePath, 'staff', 'Admin', {
+          schoolId,
+          branchId: mainBranchId,
+          skipQuotaCheck: true,
+        });
+      }
+
+      // Associate any pre-uploaded onboarding logo or admin photo with the newly created school & main branch in file_storage_ledger
+      if (logoPath || adminPicturePath) {
+        const pathsToAssociate = [logoPath, adminPicturePath].filter(Boolean);
+        await connection.query(
+          `UPDATE file_storage_ledger
+           SET school_id = ?, branch_id = ?
+           WHERE file_path IN (?) AND (school_id IS NULL OR school_id = 0)`,
+          [schoolId, mainBranchId, pathsToAssociate]
+        );
       }
 
       const genderId = (adminData.gender !== undefined && adminData.gender !== null && !isNaN(adminData.gender))

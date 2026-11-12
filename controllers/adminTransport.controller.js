@@ -154,7 +154,7 @@ class AdminTransportController {
         return ApiResponse.error(res, 'Vehicle name is required.', null, 400);
       }
 
-      const imagePath = req.file ? `upload/buses/${req.file.filename}` : (req.body.image || null);
+      const imagePath = req.file ? req.file.filePath : (req.body.image || null);
 
       const id = await TransportModel.createVehicle(schoolId, {
         branch_id: branchId,
@@ -186,7 +186,7 @@ class AdminTransportController {
       let imagePath = undefined;
       const isRemoveImage = remove_image === 'true' || remove_image === true || remove_image === '1';
       if (req.file) {
-        imagePath = `upload/buses/${req.file.filename}`;
+        imagePath = req.file.filePath;
       } else if (isRemoveImage) {
         imagePath = null;
       } else if (req.body.image !== undefined) {
@@ -374,8 +374,10 @@ class AdminTransportController {
         return ApiResponse.error(res, 'Government ID proof document is required.', null, 400);
       }
 
-      const licenseDocPath = `upload/drivers/documents/${licenseFile.filename}`;
-      const idProofDocPath = `upload/drivers/documents/${idProofFile.filename}`;
+      const licenseDocPath = licenseFile.filePath;
+      const idProofDocPath = idProofFile.filePath;
+      const { saveBase64File } = require('../utils/file.util');
+      const savedPic = picture ? await saveBase64File(picture, 'drivers', 'Driver', { schoolId, branchId }) : picture;
 
       const id = await TransportModel.createDriver(schoolId, {
         branch_id: branchId,
@@ -389,7 +391,7 @@ class AdminTransportController {
         id_proof_number: idProofNumber,
         id_proof_doc: idProofDocPath,
         gender,
-        picture,
+        picture: savedPic,
         status,
       });
       return ApiResponse.success(res, 'Driver created successfully.', { id }, 201);
@@ -504,8 +506,10 @@ class AdminTransportController {
         return ApiResponse.error(res, 'Government ID proof document is required.', null, 400);
       }
 
-      const licenseDocPath = licenseFile ? `upload/drivers/documents/${licenseFile.filename}` : undefined;
-      const idProofDocPath = idProofFile ? `upload/drivers/documents/${idProofFile.filename}` : undefined;
+      const licenseDocPath = licenseFile ? licenseFile.filePath : undefined;
+      const idProofDocPath = idProofFile ? idProofFile.filePath : undefined;
+      const { saveBase64File } = require('../utils/file.util');
+      const savedPic = picture ? await saveBase64File(picture, 'drivers', 'Driver', { schoolId, branchId: branchId || existingDriver.branch_id }) : picture;
 
       await TransportModel.updateDriver(schoolId, id, {
         branch_id: branchId,
@@ -521,7 +525,7 @@ class AdminTransportController {
         remove_license_doc,
         remove_id_proof_doc,
         gender,
-        picture,
+        picture: savedPic,
         status,
       });
       return ApiResponse.success(res, 'Driver updated successfully.');
@@ -675,7 +679,9 @@ class AdminTransportController {
       if (!idProofFile) {
         return ApiResponse.error(res, 'Government ID proof document is required.', null, 400);
       }
-      const idProofDocPath = `upload/drivers/documents/${idProofFile.filename}`;
+      const idProofDocPath = idProofFile.filePath;
+      const { saveBase64File } = require('../utils/file.util');
+      const savedPic = picture ? await saveBase64File(picture, 'drivers', 'Helper', { schoolId, branchId }) : picture;
 
       const id = await TransportModel.createHelper(schoolId, {
         branch_id: branchId,
@@ -687,7 +693,7 @@ class AdminTransportController {
         id_proof_number: idProofNumber,
         id_proof_doc: idProofDocPath,
         gender,
-        picture,
+        picture: savedPic,
         status,
       });
       return ApiResponse.success(res, 'Helper created successfully.', { id }, 201);
@@ -773,7 +779,9 @@ class AdminTransportController {
         return ApiResponse.error(res, 'Government ID proof document is required.', null, 400);
       }
 
-      const idProofDocPath = idProofFile ? `upload/drivers/documents/${idProofFile.filename}` : undefined;
+      const idProofDocPath = idProofFile ? idProofFile.filePath : undefined;
+      const { saveBase64File } = require('../utils/file.util');
+      const savedPic = picture ? await saveBase64File(picture, 'drivers', 'Helper', { schoolId, branchId: branchId || existingHelper.branch_id }) : picture;
 
       await TransportModel.updateHelper(schoolId, id, {
         branch_id: branchId,
@@ -786,7 +794,7 @@ class AdminTransportController {
         id_proof_doc: idProofDocPath,
         remove_id_proof_doc,
         gender,
-        picture,
+        picture: savedPic,
         status,
       });
       return ApiResponse.success(res, 'Helper updated successfully.');

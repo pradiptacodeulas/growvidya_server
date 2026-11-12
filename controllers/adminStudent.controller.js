@@ -225,13 +225,13 @@ class AdminStudentController {
         return ApiResponse.error(res, 'First name and Class selection are required.', null, 400);
       }
 
-      // Prevent student quota bypass via reactivating an inactive student (status: 0 -> 1)
-      if (req.body.status !== undefined && Number(req.body.status) !== 0) {
+      // Prevent student quota bypass via restoring a soft-deleted student (status: 4 -> 1 or 2)
+      if (req.body.status !== undefined && [1, 2].includes(Number(req.body.status))) {
         const [existingStatusRows] = await pool.query(
           'SELECT status FROM student_master WHERE id = ? AND school_id = ? LIMIT 1',
           [studentId, schoolId]
         );
-        if (existingStatusRows.length > 0 && Number(existingStatusRows[0].status) === 0) {
+        if (existingStatusRows.length > 0 && Number(existingStatusRows[0].status) === 4) {
           const quotaCheck = await SubscriptionModel.checkQuota(schoolId, 'students');
           if (!quotaCheck.allowed) {
             return ApiResponse.error(
@@ -309,11 +309,242 @@ class AdminStudentController {
     }
   }
 
+  static async _notifyParentsOnActivityAdded(schoolId, branchId, entries = []) {
+    try {
+      if (!Array.isArray(entries) || entries.length === 0) {
+        return { pushSent: false, notifiedParentsCount: 0, quotaExhausted: false };
+      }
+
+      const { pool } = require('../config/db.config');
+      const NotificationRecordModel = require('../models/notificationRecord.model');
+      const PushNotificationService = require('../services/pushNotification.service');
+      const { getIO } = require('../services/socket.service');
+
+      const studentIds = [...new Set(entries.map((e) => Number(e.student_id)).filter((id) => id > 0))];
+      if (studentIds.length === 0) {
+        return { pushSent: false, notifiedParentsCount: 0, quotaExhausted: false };
+      }
+
+      // Resolve active students and their active linked parents
+      const [rows] = await pool.query(
+        `
+        SELECT 
+          s.id AS student_id,
+          s.first_name,
+          s.last_name,
+          s.branch_id,
+          sp.father_id,
+          sp.mother_id,
+          sp.guardian_id
+        FROM student_master s
+        LEFT JOIN student_to_parent sp ON sp.student_id = s.id AND sp.school_id = s.school_id AND sp.status = 1
+        WHERE s.school_id = ? AND s.status = 1 AND s.id IN (${studentIds.map(() => '?').join(',')})
+        `,
+        [schoolId, ...studentIds]
+      );
+
+      if (!rows || rows.length === 0) {
+        return { pushSent: false, notifiedParentsCount: 0, quotaExhausted: false };
+      }
+
+      const studentInfoMap = new Map();
+      const allParentIds = new Set();
+
+      for (const r of rows) {
+        const sid = Number(r.student_id);
+        if (!studentInfoMap.has(sid)) {
+          const fullName = `${r.first_name || ''} ${r.last_name || ''}`.trim() || 'Student';
+          studentInfoMap.set(sid, {
+            id: sid,
+            name: fullName,
+            branch_id: r.branch_id ? Number(r.branch_id) : (branchId ? Number(branchId) : null),
+            parentIds: new Set(),
+          });
+        }
+        const info = studentInfoMap.get(sid);
+        if (r.father_id) {
+          info.parentIds.add(Number(r.father_id));
+          allParentIds.add(Number(r.father_id));
+        }
+        if (r.mother_id) {
+          info.parentIds.add(Number(r.mother_id));
+          allParentIds.add(Number(r.mother_id));
+        }
+        if (r.guardian_id) {
+          info.parentIds.add(Number(r.guardian_id));
+          allParentIds.add(Number(r.guardian_id));
+        }
+      }
+
+      if (allParentIds.size === 0) {
+        return {
+          pushSent: false,
+          notifiedParentsCount: 0,
+          quotaExhausted: false,
+          message: 'No linked parent accounts found for the selected student(s).',
+        };
+      }
+
+      // Check Push Notification Quota in school wallet
+      const creditCheck = await NotificationRecordModel.checkWalletCredits(schoolId, 'push', 1);
+      if (!creditCheck.allowed || creditCheck.balance <= 0) {
+        return {
+          pushSent: false,
+          notifiedParentsCount: 0,
+          quotaExhausted: true,
+          message: 'Push notification quota exhausted. Parents can refresh their portal to view the latest activities.',
+        };
+      }
+
+      // Group entries by (date + activity_description) so bulk activities use a single multicast call
+      const groupsMap = new Map();
+      for (const entry of entries) {
+        const sid = Number(entry.student_id);
+        const sInfo = studentInfoMap.get(sid);
+        if (!sInfo || sInfo.parentIds.size === 0) continue;
+
+        const desc = String(entry.activity_description || '').trim();
+        const dt = String(entry.date || '').split('T')[0].trim();
+        if (!desc || !dt) continue;
+
+        const key = `${dt}||${desc}`;
+        if (!groupsMap.has(key)) {
+          groupsMap.set(key, {
+            date: dt,
+            description: desc,
+            studentIds: new Set(),
+            studentNames: [],
+            parentIds: new Set(),
+            branchId: sInfo.branch_id || (branchId ? Number(branchId) : null),
+          });
+        }
+        const grp = groupsMap.get(key);
+        if (!grp.studentIds.has(sid)) {
+          grp.studentIds.add(sid);
+          grp.studentNames.push(sInfo.name);
+        }
+        for (const pid of sInfo.parentIds) {
+          grp.parentIds.add(pid);
+        }
+      }
+
+      let totalDevicesSent = 0;
+      const notifiedParentSet = new Set();
+      const io = getIO();
+
+      for (const grp of groupsMap.values()) {
+        // Re-check quota before each group in case multiple distinct descriptions were submitted
+        const currentCredit = await NotificationRecordModel.checkWalletCredits(schoolId, 'push', 1);
+        if (!currentCredit.allowed || currentCredit.balance <= 0) {
+          break;
+        }
+
+        const isSingleStudent = grp.studentNames.length === 1;
+        const title = isSingleStudent
+          ? `New Activity: ${grp.studentNames[0]}`
+          : 'New Student Activity Logged';
+        const bodyText = isSingleStudent
+          ? `${grp.studentNames[0]}: ${grp.description}`
+          : `${grp.description} (${grp.date})`;
+        const truncatedBody = bodyText.length > 140 ? `${bodyText.substring(0, 137)}...` : bodyText;
+
+        const parentList = Array.from(grp.parentIds).slice(0, currentCredit.balance);
+        const recipients = parentList.map((pid) => ({ id: pid, role: 'parent' }));
+
+        const pushPayload = {
+          type: 'activity',
+          category: 'activity',
+          date: grp.date,
+          url: '/parent/activities',
+        };
+
+        const pushRes = await PushNotificationService.sendToTargetedRecipients({
+          recipients,
+          school_id: schoolId,
+          branch_id: grp.branchId,
+          title,
+          body: truncatedBody,
+          data: pushPayload,
+          category: 'activity',
+          billable: true,
+        });
+
+        const sentDevices = Number(pushRes?.totalDevices || pushRes?.sentCount || 0);
+        totalDevicesSent += sentDevices;
+
+        // If no Web/FCM device tokens were registered for these parents, log billable push for real-time socket alert (capped to balance)
+        if (sentDevices === 0 && io && parentList.length > 0) {
+          for (const pid of parentList) {
+            await NotificationRecordModel.logPush({
+              school_id: schoolId,
+              branch_id: grp.branchId,
+              recipient_device_token: `socket_parent_${pid}`,
+              recipient_device_type: 'web',
+              title,
+              message: truncatedBody,
+              payload: pushPayload,
+              recipient_role: 'parent',
+              recipient_id: pid,
+              category: 'activity',
+              status: 'sent',
+              provider: 'webpush',
+              billable: true,
+            }).catch(() => {});
+          }
+        }
+
+        // Emit real-time Socket.IO event to parents (within quota) and students
+        if (io) {
+          const socketPayload = {
+            id: `act_${Date.now()}`,
+            type: 'activity',
+            category: 'activity',
+            title,
+            message: truncatedBody,
+            activity_description: grp.description,
+            date: grp.date,
+            publish_on: grp.date,
+            notice_date: grp.date,
+            studentIds: Array.from(grp.studentIds),
+            url: '/parent/activities',
+          };
+
+          for (const pid of parentList) {
+            notifiedParentSet.add(pid);
+            io.to(`user_parent_${pid}`).emit('student_activity_added', socketPayload);
+            io.to(`user_parent_${pid}`).emit('new_notice', socketPayload);
+          }
+
+          for (const sid of grp.studentIds) {
+            io.to(`user_student_${sid}`).emit('student_activity_added', {
+              ...socketPayload,
+              url: '/student/activities',
+            });
+          }
+        } else {
+          for (const pid of parentList) {
+            notifiedParentSet.add(pid);
+          }
+        }
+      }
+
+      return {
+        pushSent: notifiedParentSet.size > 0 || totalDevicesSent > 0,
+        notifiedParentsCount: notifiedParentSet.size,
+        totalDevicesSent,
+        quotaExhausted: false,
+      };
+    } catch (err) {
+      console.error('[Student Activity Push Notification Error]:', err.message);
+      return { pushSent: false, notifiedParentsCount: 0, quotaExhausted: false };
+    }
+  }
+
   static async addActivity(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
       const studentId = req.params.id;
-      const { activities } = req.body;
+      const { activities, notify_parents = true } = req.body;
       const branchId = req.branchId || req.body?.branch_id || req.body?.branchId || null;
 
       if (!activities || !Array.isArray(activities) || activities.length === 0) {
@@ -321,7 +552,134 @@ class AdminStudentController {
       }
 
       await StudentModel.addActivity(studentId, schoolId, activities, branchId);
-      return ApiResponse.success(res, 'Activity added successfully.');
+
+      const entries = activities.map((a) => ({
+        student_id: Number(studentId),
+        date: a.date,
+        activity_description: a.activity_description,
+      }));
+      const notificationStatus = await AdminStudentController._notifyParentsOnActivityAdded(
+        schoolId,
+        branchId,
+        entries
+      );
+
+      return ApiResponse.success(res, 'Activity added successfully.', { notification: notificationStatus });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getActivitiesList(req, res, next) {
+    try {
+      const schoolId = req.user.schoolId;
+      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const {
+        classId = '',
+        class_id = '',
+        sectionId = '',
+        section_id = '',
+        search = '',
+        date = '',
+        fromDate = '',
+        toDate = '',
+        studentId = '',
+        page = 1,
+        limit = 20,
+      } = req.query;
+
+      const result = await StudentModel.getActivitiesList(schoolId, {
+        branchId,
+        classId: classId || class_id,
+        sectionId: sectionId || section_id,
+        search,
+        date,
+        fromDate,
+        toDate,
+        studentId,
+        page,
+        limit,
+      });
+
+      return ApiResponse.success(res, 'Student activities fetched successfully.', result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async bulkAddActivities(req, res, next) {
+    try {
+      const schoolId = req.user.schoolId;
+      const branchId = req.branchId || req.body?.branch_id || req.body?.branchId || null;
+      const { entries, studentIds, date, activity_description, notify_parents = true } = req.body;
+
+      let normalizedEntries = [];
+      if (Array.isArray(entries) && entries.length > 0) {
+        normalizedEntries = entries;
+      } else if (Array.isArray(studentIds) && studentIds.length > 0 && date && activity_description) {
+        normalizedEntries = studentIds.map((sid) => ({
+          student_id: Number(sid),
+          date,
+          activity_description,
+        }));
+      }
+
+      if (normalizedEntries.length === 0) {
+        return ApiResponse.error(
+          res,
+          'Please select at least one student and provide an activity date and description.',
+          null,
+          400
+        );
+      }
+
+      const insertRes = await StudentModel.bulkAddActivities(schoolId, normalizedEntries, branchId);
+      if (!insertRes.insertedCount) {
+        return ApiResponse.error(res, 'No valid student activities were provided to save.', null, 400);
+      }
+
+      const notificationStatus = await AdminStudentController._notifyParentsOnActivityAdded(
+        schoolId,
+        branchId,
+        insertRes.entries || normalizedEntries
+      );
+
+      const message = `Successfully added activity for ${insertRes.insertedCount} ${
+        insertRes.insertedCount === 1 ? 'student' : 'students'
+      }.`;
+
+      return ApiResponse.success(res, message, {
+        insertedCount: insertRes.insertedCount,
+        studentIds: insertRes.studentIds,
+        notification: notificationStatus,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async updateActivity(req, res, next) {
+    try {
+      const schoolId = req.user.schoolId;
+      const activityId = req.params.activityId;
+      const branchId = req.branchId || req.body?.branch_id || req.query?.branch_id || null;
+      const { date, activity_description } = req.body;
+
+      if (!date || !activity_description || !String(activity_description).trim()) {
+        return ApiResponse.error(res, 'Activity date and description are required.', null, 400);
+      }
+
+      const updated = await StudentModel.updateActivity(
+        activityId,
+        schoolId,
+        { date, activity_description },
+        branchId
+      );
+      if (!updated) {
+        return ApiResponse.error(res, 'Activity record not found or update failed.', null, 404);
+      }
+
+      return ApiResponse.success(res, 'Activity updated successfully.');
     } catch (error) {
       next(error);
     }

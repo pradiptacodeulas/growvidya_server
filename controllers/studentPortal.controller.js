@@ -146,8 +146,9 @@ class StudentPortalController {
       // 5. Recent Notices (Target-filtered for this student)
       let notices = [];
       try {
-        const allNotices = await AnnouncementModel.getAllNotices(schoolId, branchId);
+        const allNotices = await AnnouncementModel.getAllNotices(schoolId, branchId, true);
         const filteredNotices = (allNotices || []).filter((n) => {
+          if (Number(n.status ?? 1) !== 1) return false;
           const type = n.target_type || 'all';
 
           if (type === 'class_section') {
@@ -168,11 +169,13 @@ class StudentPortalController {
           }
 
           if (type === 'specific_users') {
-            const userIds = (n.target_user_ids || []).map((u) => {
-              if (typeof u === 'object' && u !== null) return Number(u.id);
-              return Number(u);
+            return (n.target_user_ids || []).some((u) => {
+              if (typeof u === 'object' && u !== null) {
+                const uRole = String(u.role || '').toLowerCase();
+                return Number(u.id) === Number(studentId) && (!uRole || uRole === 'student');
+              }
+              return false;
             });
-            return studentId && userIds.includes(Number(studentId));
           }
 
           const roles = (n.target_roles || []).map((r) => String(r).toLowerCase());
@@ -910,9 +913,10 @@ class StudentPortalController {
       const studentClass = student.class ? Number(student.class) : null;
       const studentSection = student.section ? Number(student.section) : null;
 
-      const allNotices = await AnnouncementModel.getAllNotices(schoolId, branchId);
+      const allNotices = await AnnouncementModel.getAllNotices(schoolId, branchId, true);
 
       const filtered = (allNotices || []).filter((n) => {
+        if (Number(n.status ?? 1) !== 1) return false;
         const type = n.target_type || 'all';
 
         if (type === 'class_section') {
@@ -937,11 +941,13 @@ class StudentPortalController {
         }
 
         if (type === 'specific_users') {
-          const userIds = (n.target_user_ids || []).map((u) => {
-            if (typeof u === 'object' && u !== null) return Number(u.id);
-            return Number(u);
+          return (n.target_user_ids || []).some((u) => {
+            if (typeof u === 'object' && u !== null) {
+              const uRole = String(u.role || '').toLowerCase();
+              return Number(u.id) === Number(studentId) && (!uRole || uRole === 'student');
+            }
+            return false;
           });
-          return studentId && userIds.includes(Number(studentId));
         }
 
         // Default: 'all' / School-Wide

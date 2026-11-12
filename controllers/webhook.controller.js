@@ -76,38 +76,55 @@ class WebhookController {
       let errorMessage = null;
 
       // 3. Process Specific Events
-      switch (eventName) {
-        case 'order.paid':
-        case 'payment.captured': {
-          const result = await WebhookModel.processPaymentSuccess({
-            order: orderEntity,
-            payment: paymentEntity,
-            notes,
-            eventId,
-          });
-          if (result.status === 'skipped') {
-            status = 'ignored';
-            errorMessage = result.reason;
+      try {
+        switch (eventName) {
+          case 'order.paid':
+          case 'payment.captured': {
+            const result = await WebhookModel.processPaymentSuccess({
+              order: orderEntity,
+              payment: paymentEntity,
+              notes,
+              eventId,
+            });
+            if (result.status === 'skipped') {
+              status = 'ignored';
+              errorMessage = result.reason;
+            }
+            break;
           }
-          break;
-        }
 
-        case 'payment.failed': {
-          await WebhookModel.processPaymentFailure({
-            order: orderEntity,
-            payment: paymentEntity,
-            notes,
-            eventId,
-          });
-          status = 'processed';
-          errorMessage = paymentEntity?.error_description || 'Payment failed';
-          break;
-        }
+          case 'payment.failed': {
+            await WebhookModel.processPaymentFailure({
+              order: orderEntity,
+              payment: paymentEntity,
+              notes,
+              eventId,
+            });
+            status = 'processed';
+            errorMessage = paymentEntity?.error_description || 'Payment failed';
+            break;
+          }
 
-        default: {
-          status = 'ignored';
-          break;
+          default: {
+            status = 'ignored';
+            break;
+          }
         }
+      } catch (processingError) {
+        await WebhookModel.logWebhookEvent({
+          eventId,
+          eventName,
+          orderId,
+          paymentId,
+          schoolId,
+          planId,
+          amount,
+          currency,
+          status: 'failed',
+          errorMessage: processingError.message || 'Webhook processing error',
+          payloadJson: event,
+        });
+        throw processingError;
       }
 
       // 4. Log event for audit trail

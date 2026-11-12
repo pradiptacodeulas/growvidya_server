@@ -929,6 +929,10 @@ class TeacherModel {
     }
 
     const hashedPassword = password ? await hashPassword(password) : null;
+    const { saveBase64File } = require('../utils/file.util');
+    const savedPic = picture
+      ? await saveBase64File(picture, 'teacher', 'Teacher', { schoolId, branchId })
+      : null;
 
     const [result] = await pool.query(
       `INSERT INTO teacher_master 
@@ -941,7 +945,7 @@ class TeacherModel {
       [
         schoolId,
         branchId,
-        picture || null,
+        savedPic,
         academic_year || null,
         teacher_id || `TCH${Math.floor(100000 + Math.random() * 900000)}`,
         first_name,
@@ -1184,6 +1188,12 @@ class TeacherModel {
       try {
         for (const doc of documents) {
           if (doc.document_type || doc.attachments) {
+            const savedDoc = doc.attachments
+              ? await saveBase64File(doc.attachments, 'teacher/attachment', 'TeacherDoc', {
+                  schoolId,
+                  branchId,
+                })
+              : '';
             await pool.query(
               `INSERT INTO teacher_document 
                (school_id, branch_id, teacher_id, document_type, academic_year, file_name, attachments, status)
@@ -1195,7 +1205,7 @@ class TeacherModel {
                 doc.document_type || 1,
                 academic_year || null,
                 doc.file_name || null,
-                doc.attachments || '',
+                savedDoc || '',
               ]
             );
           }
@@ -1323,8 +1333,13 @@ class TeacherModel {
     ];
 
     if (data.picture) {
+      const { saveBase64File } = require('../utils/file.util');
+      const savedPic = await saveBase64File(data.picture, 'teacher', 'Teacher', {
+        schoolId,
+        branchId: teacherBranchId,
+      });
       updateSql += `, picture = ?`;
-      params.push(data.picture);
+      params.push(savedPic);
     }
     if (data.password) {
       updateSql += `, password = ?`;
@@ -1631,9 +1646,16 @@ class TeacherModel {
     // 8. Update Documents (only if documents provided)
     if (data.documents !== undefined && Array.isArray(data.documents)) {
       try {
+        const { saveBase64File } = require('../utils/file.util');
         await pool.query(`DELETE FROM teacher_document WHERE teacher_id = ? AND school_id = ?`, [id, schoolId]);
         for (const doc of data.documents) {
           if (doc.document_type || doc.attachments) {
+            const savedDoc = doc.attachments
+              ? await saveBase64File(doc.attachments, 'teacher/attachment', 'TeacherDoc', {
+                  schoolId,
+                  branchId: teacherBranchId,
+                })
+              : '';
             await pool.query(
               `INSERT INTO teacher_document 
                (school_id, branch_id, teacher_id, document_type, academic_year, file_name, attachments, status)
@@ -1645,7 +1667,7 @@ class TeacherModel {
                 doc.document_type || 1,
                 academic_year || null,
                 doc.file_name || null,
-                doc.attachments || '',
+                savedDoc || '',
               ]
             );
           }

@@ -172,13 +172,14 @@ class NotificationRecordModel {
     sender_id = null,
     sender_role = 'system',
     error_message = null,
+    billable = true,
   }) {
     const rates = await NotificationRecordModel.getDynamicRates();
-    const unit_cost = rates.SMS;
+    const unit_cost = billable ? rates.SMS : 0;
     const normalizedUnits = Math.max(1, parseInt(units_count, 10) || 1);
-    const isBillable = ['sent', 'delivered'].includes(status);
+    const isBillable = Boolean(billable) && ['sent', 'delivered'].includes(status);
     const total_cost = isBillable ? unit_cost * normalizedUnits : 0.0000;
-    const sent_at = isBillable ? new Date() : null;
+    const sent_at = ['sent', 'delivered'].includes(status) ? new Date() : null;
 
     const query = `
       INSERT INTO notification_records (
@@ -251,13 +252,14 @@ class NotificationRecordModel {
     sender_id = null,
     sender_role = 'system',
     error_message = null,
+    billable = true,
   }) {
     const rates = await NotificationRecordModel.getDynamicRates();
-    const unit_cost = rates.PUSH;
+    const unit_cost = billable ? rates.PUSH : 0;
     const normalizedUnits = Math.max(1, parseInt(units_count, 10) || 1);
-    const isBillable = ['sent', 'delivered'].includes(status);
+    const isBillable = Boolean(billable) && ['sent', 'delivered'].includes(status);
     const total_cost = isBillable ? unit_cost * normalizedUnits : 0.0000;
-    const sent_at = isBillable ? new Date() : null;
+    const sent_at = ['sent', 'delivered'].includes(status) ? new Date() : null;
 
     const query = `
       INSERT INTO notification_records (

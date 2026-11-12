@@ -19,7 +19,6 @@ router.post('/login', SaasAdminController.login);
 router.post('/validate-coupon', SaasAdminController.validateCoupon);
 router.get('/genders', SaasAdminController.getGenders);
 router.get('/notifications/vapid-public-key', NotificationController.getVapidPublicKey);
-router.use('/upload', express.static(path.join(__dirname, '../public/upload')));
 
 // ==========================================
 // 2. PROTECTED SAAS ADMIN ROUTES
@@ -85,6 +84,8 @@ router.post('/coupons/validate', checkPermission('coupons', 'can_view'), SaasAdm
 
 // Storage Master Plan Management & Buyers
 router.get('/storage-plans', checkPermission('storage_plans', 'can_view'), StorageMasterController.getAll);
+router.get('/storage-plans/analytics', checkPermission('storage_plans', 'can_view'), StorageMasterController.getStorageAnalytics);
+router.get('/storage-analytics', checkPermission(['storage_plans', 'dashboard', 'schools'], 'can_view'), StorageMasterController.getStorageAnalytics);
 router.get('/storage-plans/units', checkPermission('storage_plans', 'can_view'), StorageMasterController.getCapacityUnits);
 router.get('/capacity-units', checkPermission('storage_plans', 'can_view'), StorageMasterController.getCapacityUnits);
 router.get('/storage-plans/buyers', checkPermission('storage_plans', 'can_view'), StorageMasterController.getBuyers);
@@ -187,6 +188,8 @@ router.get('/notifications/pricing', checkPermission(['email_delivery', 'package
 router.put('/notifications/pricing', checkPermission(['email_delivery', 'packages'], 'can_edit'), SaasAdminController.updateNotificationPricing);
 router.get('/notifications/buyers', checkPermission(['email_delivery', 'packages', 'subscriptions'], 'can_view'), SaasAdminController.getNotificationBuyers);
 router.get('/notifications/buyers/:schoolId/ledger', checkPermission(['email_delivery', 'packages', 'subscriptions'], 'can_view'), SaasAdminController.getNotificationBuyerLedger);
+router.post('/notifications/orders/:orderId/approve', checkPermission(['email_delivery', 'packages', 'subscriptions'], ['can_manage', 'can_edit']), SaasAdminController.approveAddonOrder);
+router.post('/notifications/orders/:orderId/reject', checkPermission(['email_delivery', 'packages', 'subscriptions'], ['can_manage', 'can_edit']), SaasAdminController.rejectAddonOrder);
 
 // Settings — Email Delivery (Mailjet & SMTP) Credentials Management
 router.get('/settings/email', checkPermission('email_delivery', 'can_view'), SaasAdminController.getEmailCredentials);

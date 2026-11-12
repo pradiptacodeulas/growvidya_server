@@ -6,7 +6,7 @@ class DashboardModel {
       throw new Error('schoolId is required for DashboardModel.getDashboardStats');
     }
     try {
-      // 1. Students Count
+      // 1. Students Count (1 = Active, 2 = Inactive, 4 = Soft Delete)
       const stuParams = [schoolId];
       let stuSql = `SELECT status, COUNT(*) as count FROM student_master WHERE school_id = ? AND status != 4`;
       if (branchId) {
@@ -19,11 +19,11 @@ class DashboardModel {
       let activeStudents = 0, inactiveStudents = 0, totalStudents = 0;
       stuRows.forEach((r) => {
         if (r.status === 1) activeStudents += Number(r.count);
-        else if (r.status === 2 || r.status === 0) inactiveStudents += Number(r.count);
-        totalStudents += Number(r.count);
+        else if (r.status === 2) inactiveStudents += Number(r.count);
+        if (r.status === 1 || r.status === 2) totalStudents += Number(r.count);
       });
 
-      // 2. Teachers Count
+      // 2. Teachers Count (1 = Active, 2 = Inactive, 4 = Soft Delete)
       const tchParams = [schoolId];
       let tchSql = `SELECT status, COUNT(*) as count FROM teacher_master WHERE school_id = ? AND status != 4`;
       if (branchId) {
@@ -36,11 +36,11 @@ class DashboardModel {
       let activeTeachers = 0, inactiveTeachers = 0, totalTeachers = 0;
       tchRows.forEach((r) => {
         if (r.status === 1) activeTeachers += Number(r.count);
-        else if (r.status === 2 || r.status === 0) inactiveTeachers += Number(r.count);
-        totalTeachers += Number(r.count);
+        else if (r.status === 2) inactiveTeachers += Number(r.count);
+        if (r.status === 1 || r.status === 2) totalTeachers += Number(r.count);
       });
 
-      // 3. Staff Users Count
+      // 3. Staff Users Count (1 = Active, 2 = Inactive, 4 = Soft Delete)
       const usrParams = [schoolId];
       let usrSql = `SELECT status, COUNT(*) as count FROM user_master WHERE school_id = ? AND status != 4`;
       if (branchId) {
@@ -53,17 +53,17 @@ class DashboardModel {
       let activeStaff = 0, inactiveStaff = 0, totalStaff = 0;
       usrRows.forEach((r) => {
         if (r.status === 1) activeStaff += Number(r.count);
-        else if (r.status === 2 || r.status === 0) inactiveStaff += Number(r.count);
-        totalStaff += Number(r.count);
+        else if (r.status === 2) inactiveStaff += Number(r.count);
+        if (r.status === 1 || r.status === 2) totalStaff += Number(r.count);
       });
 
-      // 4. Parents Count
+      // 4. Parents Count (1 = Active, 2 = Inactive, 4 = Soft Delete)
       let prnSql = `SELECT status, COUNT(*) as count FROM parent_master WHERE school_id = ? AND status != 4`;
       const prnParams = [schoolId];
       if (branchId) {
         prnSql = `SELECT p.status, COUNT(DISTINCT p.id) as count FROM parent_master p
                   INNER JOIN student_to_parent stp ON (p.id = stp.father_id OR p.id = stp.mother_id OR p.id = stp.guardian_id)
-                  INNER JOIN student_master sm ON stp.student_id = sm.id AND sm.branch_id = ?
+                  INNER JOIN student_master sm ON stp.student_id = sm.id AND sm.branch_id = ? AND sm.status != 4
                   WHERE p.school_id = ? AND p.status != 4 GROUP BY p.status`;
         prnParams.unshift(Number(branchId));
       } else {
@@ -74,8 +74,8 @@ class DashboardModel {
       let activeParents = 0, inactiveParents = 0, totalParents = 0;
       prnRows.forEach((r) => {
         if (r.status === 1) activeParents += Number(r.count);
-        else if (r.status === 2 || r.status === 0) inactiveParents += Number(r.count);
-        totalParents += Number(r.count);
+        else if (r.status === 2) inactiveParents += Number(r.count);
+        if (r.status === 1 || r.status === 2) totalParents += Number(r.count);
       });
 
       // 5. Attendance Summaries (Today's Attendance)
@@ -270,12 +270,38 @@ class DashboardModel {
             sectionName: latestPay[0].section_name || '',
             invoiceTitle: latestPay[0].invoice_title || 'Term Fees',
             amountPaid: latestPay[0].amount_paid,
+            receiptNo: latestPay[0].receipt_no || latestPay[0].txn_no || '',
+            paymentDate: latestPay[0].payment_date
+              ? new Date(latestPay[0].payment_date).toLocaleDateString('en-GB', {
+                  day: '2-digit',
+                  month: 'short',
+                  year: 'numeric',
+                })
+              : '',
             picture: latestPay[0].picture,
             gender: latestPay[0].gender,
           }
         : null;
 
+      // 11. Active Branch Info (if branch-filtered)
+      let branchInfo = null;
+      if (branchId) {
+        const [bRows] = await pool.query(
+          `SELECT id, branch_name, branch_code, is_main_branch FROM branch_master WHERE id = ? AND school_id = ? LIMIT 1`,
+          [Number(branchId), schoolId]
+        );
+        if (bRows[0]) {
+          branchInfo = {
+            id: bRows[0].id,
+            branchName: bRows[0].branch_name,
+            branchCode: bRows[0].branch_code,
+            isMainBranch: Boolean(bRows[0].is_main_branch),
+          };
+        }
+      }
+
       return {
+        branchInfo,
         students: { total: totalStudents, active: activeStudents, inactive: inactiveStudents },
         teachers: { total: totalTeachers, active: activeTeachers, inactive: inactiveTeachers },
         staff: { total: totalStaff, active: activeStaff, inactive: inactiveStaff },

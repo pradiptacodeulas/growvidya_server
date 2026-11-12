@@ -1,5 +1,6 @@
 const { pool } = require('../config/db.config');
 const CapacityUnitMasterModel = require('./capacityUnitMaster.model');
+const FileStorageLedgerModel = require('./fileStorageLedger.model');
 const { parsePagination, buildPagination } = require('../utils/pagination.util');
 
 class StorageMasterModel {
@@ -372,8 +373,18 @@ class StorageMasterModel {
         base_sub.base_billing_cycle,
         base_sub.base_subscription_status,
         base_sub.base_start_date,
-        base_sub.base_end_date
+        base_sub.base_end_date,
+        COALESCE(school_b2.used_bytes, 0) AS used_storage_bytes,
+        COALESCE(school_b2.files_count, 0) AS active_files_count
       ${baseJoins}
+      LEFT JOIN (
+        SELECT school_id,
+               COUNT(*) AS files_count,
+               COALESCE(SUM(size_bytes), 0) AS used_bytes
+        FROM file_storage_ledger
+        WHERE status = 1 AND school_id IS NOT NULL AND school_id > 0
+        GROUP BY school_id
+      ) school_b2 ON s.id = school_b2.school_id
       ${where}
       ORDER BY sso.id DESC
       LIMIT ? OFFSET ?
@@ -385,14 +396,22 @@ class StorageMasterModel {
       ${where}
     `;
 
+    await FileStorageLedgerModel.initTable();
     const [[rows], [[countRow]], counts] = await Promise.all([
       pool.query(selectQuery, [...params, pageSize, offset]),
       pool.query(countQuery, params),
       StorageMasterModel.getBuyerCounts(),
     ]);
 
+    const enrichedRows = rows.map((r) => ({
+      ...r,
+      used_storage_bytes: Number(r.used_storage_bytes || 0),
+      used_storage_formatted: FileStorageLedgerModel.formatBytes(r.used_storage_bytes || 0),
+      active_files_count: Number(r.active_files_count || 0),
+    }));
+
     return {
-      buyers: rows,
+      buyers: enrichedRows,
       pagination: buildPagination(countRow?.total || 0, pageNum, pageSize),
       counts,
     };
@@ -402,17 +421,21 @@ class StorageMasterModel {
    * Global counts for Storage Plan Buyers KPI summary cards
    */
   static async getBuyerCounts() {
-    const [[row]] = await pool.query(`
-      SELECT
-        COUNT(*) AS total_orders,
-        COALESCE(SUM(quantity), 0) AS total_quantity,
-        COALESCE(SUM(CASE WHEN order_status != 'cancelled' THEN total_amount ELSE 0 END), 0) AS total_revenue,
-        COALESCE(SUM(CASE WHEN order_status = 'pending' THEN 1 ELSE 0 END), 0) AS pending_count,
-        COALESCE(SUM(CASE WHEN order_status = 'active' THEN 1 ELSE 0 END), 0) AS active_count,
-        COALESCE(SUM(CASE WHEN order_status = 'expired' THEN 1 ELSE 0 END), 0) AS expired_count,
-        COALESCE(SUM(CASE WHEN order_status = 'cancelled' THEN 1 ELSE 0 END), 0) AS cancelled_count
-      FROM school_storage_orders
-    `);
+    await FileStorageLedgerModel.initTable();
+    const [[[row]], b2Overview] = await Promise.all([
+      pool.query(`
+        SELECT
+          COUNT(*) AS total_orders,
+          COALESCE(SUM(quantity), 0) AS total_quantity,
+          COALESCE(SUM(CASE WHEN order_status != 'cancelled' THEN total_amount ELSE 0 END), 0) AS total_revenue,
+          COALESCE(SUM(CASE WHEN order_status = 'pending' THEN 1 ELSE 0 END), 0) AS pending_count,
+          COALESCE(SUM(CASE WHEN order_status = 'active' THEN 1 ELSE 0 END), 0) AS active_count,
+          COALESCE(SUM(CASE WHEN order_status = 'expired' THEN 1 ELSE 0 END), 0) AS expired_count,
+          COALESCE(SUM(CASE WHEN order_status = 'cancelled' THEN 1 ELSE 0 END), 0) AS cancelled_count
+        FROM school_storage_orders
+      `),
+      FileStorageLedgerModel.getAdminStorageOverview(),
+    ]);
     return {
       total_orders: Number(row?.total_orders || 0),
       total_quantity: Number(row?.total_quantity || 0),
@@ -421,6 +444,13 @@ class StorageMasterModel {
       active_count: Number(row?.active_count || 0),
       expired_count: Number(row?.expired_count || 0),
       cancelled_count: Number(row?.cancelled_count || 0),
+      total_b2_bytes: b2Overview.total_b2_bytes,
+      total_b2_formatted: b2Overview.total_b2_formatted,
+      total_active_files: b2Overview.total_active_files,
+      schools_bytes: b2Overview.schools_bytes,
+      schools_formatted: b2Overview.schools_formatted,
+      platform_bytes: b2Overview.platform_bytes,
+      platform_formatted: b2Overview.platform_formatted,
     };
   }
 
@@ -439,12 +469,17 @@ class StorageMasterModel {
    * Update storage plan buyer order status / dates / remarks
    */
   static async updateBuyerOrder(id, data) {
+    const existing = await this.getBuyerOrderById(id);
+    if (!existing) return false;
+
     const updates = [];
     const params = [];
+    let normalizedStatus = null;
 
     if (data.order_status !== undefined) {
+      normalizedStatus = String(data.order_status).trim().toLowerCase();
       updates.push('order_status = ?');
-      params.push(String(data.order_status).trim().toLowerCase());
+      params.push(normalizedStatus);
     }
     if (data.start_date !== undefined) {
       updates.push('start_date = ?');
@@ -461,11 +496,46 @@ class StorageMasterModel {
 
     if (updates.length === 0) return false;
 
+    const isApprovingPending =
+      existing.payment_order_id && normalizedStatus === 'active' && existing.order_status === 'pending';
+
+    if (isApprovingPending) {
+      try {
+        const [ordRows] = await pool.query(
+          'SELECT id, order_type, status FROM subscription_payment_orders WHERE id = ? LIMIT 1',
+          [existing.payment_order_id]
+        );
+        const ord = ordRows[0];
+        if (ord && ord.order_type === 'addon_only' && ord.status === 'pending_verification') {
+          const SubscriptionFulfillmentService = require('../services/subscriptionFulfillment.service');
+          await SubscriptionFulfillmentService.approveOfflineAddonOrder({
+            orderId: ord.id,
+            verificationNotes: data.remarks || 'Approved via Storage Plan Buyers',
+          });
+        }
+      } catch (e) {
+        console.error('[StorageMasterModel.updateBuyerOrder approval sync error]:', e.message);
+      }
+    }
+
     params.push(id);
     const [result] = await pool.query(
       `UPDATE school_storage_orders SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ?`,
       params
     );
+
+    if (existing.payment_order_id && normalizedStatus === 'cancelled') {
+      try {
+        const SubscriptionFulfillmentService = require('../services/subscriptionFulfillment.service');
+        await SubscriptionFulfillmentService.syncStandaloneAddonCancellation({
+          orderId: existing.payment_order_id,
+          reason: data.remarks || 'Cancelled via Storage Plan Buyers',
+        });
+      } catch (e) {
+        console.error('[StorageMasterModel.updateBuyerOrder cancellation sync error]:', e.message);
+      }
+    }
+
     return result.affectedRows > 0;
   }
 }

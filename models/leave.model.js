@@ -2,19 +2,20 @@ const { pool } = require('../config/db.config');
 
 class LeaveModel {
   /**
-   * Fetch all applied leaves with applicant details and status
+   * Fetch all applied leaves with applicant details, role designation, and accurate date/status counts
    */
   static async getAllLeaves(schoolId, { name, role, staff_id, date, status, branchId = null } = {}) {
     let sql = `
       SELECT 
         l.id,
         l.school_id,
+        l.branch_id,
         l.role,
         CASE 
           WHEN l.role = 1 THEN 'Teacher'
-          WHEN l.role = 2 THEN 'User'
-          ELSE 'Staff'
+          ELSE COALESCE(NULLIF(TRIM(r.role_name), ''), 'Staff')
         END AS role_label,
+        r.role_name AS staff_role_name,
         l.staff_id,
         l.leave_id,
         lm.leave_name,
@@ -28,17 +29,36 @@ class LeaveModel {
         END AS duration_label,
         l.document,
         l.leave_reason,
-        l.status AS leave_status,
-        l.created_at,
         COALESCE(
-          (SELECT MIN(ld.date) FROM leaves_date ld WHERE ld.staff_leave_id = l.id),
-          DATE(l.created_at)
+          (
+            SELECT 
+              CASE 
+                WHEN COUNT(CASE WHEN ld.status = 1 THEN 1 END) > 0 THEN 1
+                WHEN COUNT(CASE WHEN ld.status = 2 THEN 1 END) = COUNT(*) THEN 2
+                WHEN COUNT(CASE WHEN ld.status = 3 THEN 1 END) = COUNT(*) THEN 3
+                WHEN COUNT(CASE WHEN ld.status = 2 THEN 1 END) > 0 THEN 2
+                ELSE MIN(ld.status)
+              END
+            FROM leaves_date ld 
+            WHERE ld.staff_leave_id = l.id AND ld.status != 4 AND ld.status != 0
+          ),
+          l.status
+        ) AS leave_status,
+        (SELECT COUNT(*) FROM leaves_date ld WHERE ld.staff_leave_id = l.id AND ld.status != 4 AND ld.status != 0) AS total_dates_count,
+        (SELECT COUNT(*) FROM leaves_date ld WHERE ld.staff_leave_id = l.id AND ld.status = 2) AS approved_dates_count,
+        (SELECT COUNT(*) FROM leaves_date ld WHERE ld.staff_leave_id = l.id AND ld.status = 3) AS rejected_dates_count,
+        (SELECT COUNT(*) FROM leaves_date ld WHERE ld.staff_leave_id = l.id AND ld.status = 1) AS pending_dates_count,
+        l.created_at,
+        DATE_FORMAT(l.created_at, '%Y-%m-%d') AS created_date,
+        COALESCE(
+          (SELECT DATE_FORMAT(MIN(ld.date), '%Y-%m-%d') FROM leaves_date ld WHERE ld.staff_leave_id = l.id AND ld.status != 4 AND ld.status != 0),
+          DATE_FORMAT(l.created_at, '%Y-%m-%d')
         ) AS leave_date,
         (SELECT GROUP_CONCAT(DATE_FORMAT(ld.date, '%Y-%m-%d') ORDER BY ld.date ASC SEPARATOR ',') 
-         FROM leaves_date ld WHERE ld.staff_leave_id = l.id) AS leave_dates_str,
+         FROM leaves_date ld WHERE ld.staff_leave_id = l.id AND ld.status != 4 AND ld.status != 0) AS leave_dates_str,
         CASE
-          WHEN l.role = 1 THEN CONCAT(IFNULL(t.first_name, ''), ' ', IFNULL(t.last_name, ''))
-          ELSE CONCAT(IFNULL(u.first_name, ''), ' ', IFNULL(u.last_name, ''))
+          WHEN l.role = 1 THEN TRIM(CONCAT(IFNULL(t.first_name, ''), ' ', IFNULL(t.last_name, '')))
+          ELSE TRIM(CONCAT(IFNULL(u.first_name, ''), ' ', IFNULL(u.last_name, '')))
         END AS person_name,
         CASE
           WHEN l.role = 1 THEN t.gender
@@ -52,6 +72,7 @@ class LeaveModel {
       LEFT JOIN leave_master lm ON (l.leave_id = lm.id AND lm.school_id = l.school_id)
       LEFT JOIN teacher_master t ON (l.role = 1 AND l.staff_id = t.id AND t.school_id = l.school_id)
       LEFT JOIN user_master u ON (l.role = 2 AND l.staff_id = u.id AND u.school_id = l.school_id)
+      LEFT JOIN role_master r ON (l.role = 2 AND u.role = r.id)
       WHERE l.school_id = ? AND l.status != 4 AND l.status != 0
     `;
 
@@ -77,7 +98,21 @@ class LeaveModel {
       params.push(Number(staff_id));
     }
     if (status !== undefined && status !== '') {
-      sql += ` AND l.status = ?`;
+      sql += ` AND COALESCE(
+        (
+          SELECT 
+            CASE 
+              WHEN COUNT(CASE WHEN ld.status = 1 THEN 1 END) > 0 THEN 1
+              WHEN COUNT(CASE WHEN ld.status = 2 THEN 1 END) = COUNT(*) THEN 2
+              WHEN COUNT(CASE WHEN ld.status = 3 THEN 1 END) = COUNT(*) THEN 3
+              WHEN COUNT(CASE WHEN ld.status = 2 THEN 1 END) > 0 THEN 2
+              ELSE MIN(ld.status)
+            END
+          FROM leaves_date ld 
+          WHERE ld.staff_leave_id = l.id AND ld.status != 4 AND ld.status != 0
+        ),
+        l.status
+      ) = ?`;
       params.push(Number(status));
     }
     if (name) {
@@ -89,7 +124,7 @@ class LeaveModel {
     }
     if (date) {
       sql += ` AND (
-        EXISTS (SELECT 1 FROM leaves_date ld WHERE ld.staff_leave_id = l.id AND ld.date = ?) OR
+        EXISTS (SELECT 1 FROM leaves_date ld WHERE ld.staff_leave_id = l.id AND ld.date = ? AND ld.status != 4 AND ld.status != 0) OR
         DATE(l.created_at) = ?
       )`;
       params.push(date, date);
@@ -111,18 +146,45 @@ class LeaveModel {
         l.school_id,
         l.branch_id,
         l.role,
+        CASE 
+          WHEN l.role = 1 THEN 'Teacher'
+          ELSE COALESCE(NULLIF(TRIM(r.role_name), ''), 'Staff')
+        END AS role_label,
+        r.role_name AS staff_role_name,
         l.staff_id,
         l.leave_id,
         lm.leave_name,
         COALESCE(lm.is_paid, 1) AS is_paid,
         l.duration,
+        CASE 
+          WHEN l.duration = 1 THEN 'Full Day'
+          WHEN l.duration = 2 THEN 'Half Day'
+          WHEN l.duration = 3 THEN 'Multiple'
+          ELSE 'Full Day'
+        END AS duration_label,
         l.document,
         l.leave_reason,
         l.status,
+        COALESCE(
+          (
+            SELECT 
+              CASE 
+                WHEN COUNT(CASE WHEN ld.status = 1 THEN 1 END) > 0 THEN 1
+                WHEN COUNT(CASE WHEN ld.status = 2 THEN 1 END) = COUNT(*) THEN 2
+                WHEN COUNT(CASE WHEN ld.status = 3 THEN 1 END) = COUNT(*) THEN 3
+                WHEN COUNT(CASE WHEN ld.status = 2 THEN 1 END) > 0 THEN 2
+                ELSE MIN(ld.status)
+              END
+            FROM leaves_date ld 
+            WHERE ld.staff_leave_id = l.id AND ld.status != 4 AND ld.status != 0
+          ),
+          l.status
+        ) AS leave_status,
         l.created_at,
+        DATE_FORMAT(l.created_at, '%Y-%m-%d') AS created_date,
         CASE
-          WHEN l.role = 1 THEN CONCAT(IFNULL(t.first_name, ''), ' ', IFNULL(t.last_name, ''))
-          ELSE CONCAT(IFNULL(u.first_name, ''), ' ', IFNULL(u.last_name, ''))
+          WHEN l.role = 1 THEN TRIM(CONCAT(IFNULL(t.first_name, ''), ' ', IFNULL(t.last_name, '')))
+          ELSE TRIM(CONCAT(IFNULL(u.first_name, ''), ' ', IFNULL(u.last_name, '')))
         END AS person_name,
         CASE
           WHEN l.role = 1 THEN t.gender
@@ -136,7 +198,8 @@ class LeaveModel {
       LEFT JOIN leave_master lm ON (l.leave_id = lm.id AND lm.school_id = l.school_id)
       LEFT JOIN teacher_master t ON (l.role = 1 AND l.staff_id = t.id AND t.school_id = l.school_id)
       LEFT JOIN user_master u ON (l.role = 2 AND l.staff_id = u.id AND u.school_id = l.school_id)
-      WHERE l.id = ? AND l.school_id = ?
+      LEFT JOIN role_master r ON (l.role = 2 AND u.role = r.id)
+      WHERE l.id = ? AND l.school_id = ? AND l.status != 4 AND l.status != 0
     `;
 
     const params = [leaveId, schoolId];
@@ -156,9 +219,12 @@ class LeaveModel {
 
     const leave = rows[0];
 
-    // Fetch associated dates
+    // Fetch associated dates formatted as YYYY-MM-DD to prevent UTC timezone shifts
     const [dates] = await pool.query(
-      `SELECT id, staff_leave_id, date, status FROM leaves_date WHERE staff_leave_id = ? ORDER BY date ASC`,
+      `SELECT id, staff_leave_id, DATE_FORMAT(date, '%Y-%m-%d') AS date, status
+       FROM leaves_date
+       WHERE staff_leave_id = ? AND status != 4 AND status != 0
+       ORDER BY date ASC`,
       [leaveId]
     );
 
@@ -209,7 +275,7 @@ class LeaveModel {
     );
 
     const leaveMaster = typeRows && typeRows.length > 0 ? typeRows[0] : null;
-    const leaveName = leaveMaster?.leave_name || 'Leave';
+    const leaveName = leaveMaster?.leave_name || '';
     const isPaid = Number(leaveMaster?.is_paid !== undefined ? leaveMaster.is_paid : 1);
     const maxQuota = Number(leaveMaster?.no_leave || 0);
 
@@ -225,7 +291,8 @@ class LeaveModel {
          AND l.role = ?
          AND l.staff_id = ?
          AND l.leave_id = ?
-         AND l.status != 4 AND l.status != 0`,
+         AND l.status != 4 AND l.status != 0
+         AND ld.status != 4 AND ld.status != 0`,
       [schoolId, schoolId, Number(role), Number(staffId), Number(leaveId)]
     );
 
@@ -240,7 +307,7 @@ class LeaveModel {
          AND l.staff_id = ?
          AND l.leave_id = ?
          AND l.status IN (1, 2)
-         AND NOT EXISTS (SELECT 1 FROM leaves_date ld WHERE ld.staff_leave_id = l.id)`,
+         AND NOT EXISTS (SELECT 1 FROM leaves_date ld WHERE ld.staff_leave_id = l.id AND ld.status != 4 AND ld.status != 0)`,
       [schoolId, schoolId, Number(role), Number(staffId), Number(leaveId)]
     );
 
@@ -328,7 +395,7 @@ class LeaveModel {
         AND l.staff_id = ?
         AND DATE(l.created_at) IN (${placeholders})
         AND l.status IN (1, 2)
-        AND NOT EXISTS (SELECT 1 FROM leaves_date ld WHERE ld.staff_leave_id = l.id)
+        AND NOT EXISTS (SELECT 1 FROM leaves_date ld WHERE ld.staff_leave_id = l.id AND ld.status != 4 AND ld.status != 0)
       ORDER BY l.created_at ASC
     `;
     const [fallbackRows] = await pool.query(fallbackSql, params);
@@ -427,13 +494,33 @@ class LeaveModel {
 
   /**
    * Update Overall Leave Status (1=Pending, 2=Approved, 3=Rejected)
+   * Returns applicant and leave decision details for notification dispatch.
    */
   static async updateLeaveStatus(schoolId, leaveId, status, branchId = null) {
     const targetStatus = Number(status);
 
-    let checkSql = `SELECT l.id, l.school_id, l.role, l.staff_id, l.leave_id, l.duration, l.status, l.branch_id
-         FROM leaves l
-         WHERE l.id = ? AND (l.school_id = ? OR ? IS NULL)`;
+    let checkSql = `
+      SELECT 
+        l.id,
+        l.school_id,
+        l.role,
+        l.staff_id,
+        l.leave_id,
+        lm.leave_name,
+        l.duration,
+        l.status,
+        l.branch_id,
+        DATE_FORMAT(l.created_at, '%Y-%m-%d') AS created_date,
+        CASE
+          WHEN l.role = 1 THEN TRIM(CONCAT(IFNULL(t.first_name, ''), ' ', IFNULL(t.last_name, '')))
+          ELSE TRIM(CONCAT(IFNULL(u.first_name, ''), ' ', IFNULL(u.last_name, '')))
+        END AS person_name
+      FROM leaves l
+      LEFT JOIN leave_master lm ON (l.leave_id = lm.id AND lm.school_id = l.school_id)
+      LEFT JOIN teacher_master t ON (l.role = 1 AND l.staff_id = t.id AND t.school_id = l.school_id)
+      LEFT JOIN user_master u ON (l.role = 2 AND l.staff_id = u.id AND u.school_id = l.school_id)
+      WHERE l.id = ? AND (l.school_id = ? OR ? IS NULL) AND l.status != 4 AND l.status != 0
+    `;
     const checkParams = [leaveId, schoolId, schoolId];
     if (branchId) {
       checkSql += ` AND (l.branch_id = ? OR l.branch_id IS NULL)`;
@@ -452,14 +539,17 @@ class LeaveModel {
     if (targetStatus === 2) {
       // Find dates that are not yet approved
       const [nonApprovedDates] = await pool.query(
-        `SELECT id, status FROM leaves_date WHERE staff_leave_id = ? AND status != 2`,
+        `SELECT id, status FROM leaves_date WHERE staff_leave_id = ? AND status != 2 AND status != 4 AND status != 0`,
         [leaveId]
       );
 
       const dayWeight = Number(leaveRecord.duration) === 2 ? 0.5 : 1;
-      const additionalDays = nonApprovedDates && nonApprovedDates.length > 0 
-        ? nonApprovedDates.length * dayWeight 
-        : (Number(leaveRecord.status) !== 2 ? dayWeight : 0);
+      const additionalDays =
+        nonApprovedDates && nonApprovedDates.length > 0
+          ? nonApprovedDates.length * dayWeight
+          : Number(leaveRecord.status) !== 2
+          ? dayWeight
+          : 0;
 
       if (additionalDays > 0) {
         const quota = await LeaveModel.getStaffLeaveQuota(
@@ -471,7 +561,7 @@ class LeaveModel {
 
         if (quota.max_quota > 0 && (quota.approved_days + additionalDays) > quota.max_quota) {
           const err = new Error(
-            `Cannot approve leave: Approving ${additionalDays} day(s) would exceed the maximum quota of ${quota.max_quota} day(s) for "${quota.leave_name}". (Already approved: ${quota.approved_days} day(s), Available: ${quota.remaining_days} day(s)).`
+            `Cannot approve leave: Approving ${additionalDays} day(s) would exceed the maximum quota of ${quota.max_quota} day(s) for "${quota.leave_name}". (Already approved: ${quota.approved_days} day(s), Available for approval: ${quota.remaining_approval_days} day(s)).`
           );
           err.statusCode = 400;
           throw err;
@@ -487,26 +577,66 @@ class LeaveModel {
     }
     await pool.query(updateSql, updateParams);
 
-    // Also update all dates for this leave request
+    // Also update all active dates for this leave request
     await pool.query(
-      `UPDATE leaves_date SET status = ? WHERE staff_leave_id = ? AND (school_id = ? OR ? IS NULL)`,
+      `UPDATE leaves_date SET status = ? WHERE staff_leave_id = ? AND (school_id = ? OR ? IS NULL) AND status != 4 AND status != 0`,
       [targetStatus, leaveId, schoolId, schoolId]
     );
 
-    return true;
+    const [dateRows] = await pool.query(
+      `SELECT DATE_FORMAT(date, '%Y-%m-%d') AS date FROM leaves_date WHERE staff_leave_id = ? AND status != 4 AND status != 0 ORDER BY date ASC`,
+      [leaveId]
+    );
+    const dateStrings = (dateRows || []).map((r) => r.date).filter(Boolean);
+
+    return {
+      leaveId: Number(leaveRecord.id),
+      school_id: leaveRecord.school_id || schoolId,
+      branch_id: leaveRecord.branch_id || branchId,
+      role: Number(leaveRecord.role),
+      staff_id: Number(leaveRecord.staff_id),
+      leave_id: Number(leaveRecord.leave_id),
+      leave_name: leaveRecord.leave_name || '',
+      duration: Number(leaveRecord.duration),
+      status: targetStatus,
+      previousStatus: Number(leaveRecord.status),
+      overallStatus: targetStatus,
+      person_name: (leaveRecord.person_name || '').trim(),
+      dates: dateStrings.length > 0 ? dateStrings : [leaveRecord.created_date].filter(Boolean),
+    };
   }
 
   /**
    * Update Single Leave Date Status
+   * Returns applicant and date decision details for notification dispatch.
    */
   static async updateLeaveDateStatus(schoolId, leaveDateId, status, branchId = null) {
     const targetStatus = Number(status);
 
-    let dateSql = `SELECT ld.id, ld.staff_leave_id, ld.status AS date_status,
-                l.school_id, l.role, l.staff_id, l.leave_id, l.duration, l.branch_id
-         FROM leaves_date ld
-         JOIN leaves l ON ld.staff_leave_id = l.id
-         WHERE ld.id = ? AND (ld.school_id = ? OR ? IS NULL)`;
+    let dateSql = `
+      SELECT 
+        ld.id,
+        ld.staff_leave_id,
+        DATE_FORMAT(ld.date, '%Y-%m-%d') AS formatted_date,
+        ld.status AS date_status,
+        l.school_id,
+        l.role,
+        l.staff_id,
+        l.leave_id,
+        lm.leave_name,
+        l.duration,
+        l.branch_id,
+        CASE
+          WHEN l.role = 1 THEN TRIM(CONCAT(IFNULL(t.first_name, ''), ' ', IFNULL(t.last_name, '')))
+          ELSE TRIM(CONCAT(IFNULL(u.first_name, ''), ' ', IFNULL(u.last_name, '')))
+        END AS person_name
+      FROM leaves_date ld
+      JOIN leaves l ON ld.staff_leave_id = l.id
+      LEFT JOIN leave_master lm ON (l.leave_id = lm.id AND lm.school_id = l.school_id)
+      LEFT JOIN teacher_master t ON (l.role = 1 AND l.staff_id = t.id AND t.school_id = l.school_id)
+      LEFT JOIN user_master u ON (l.role = 2 AND l.staff_id = u.id AND u.school_id = l.school_id)
+      WHERE ld.id = ? AND (ld.school_id = ? OR ? IS NULL) AND ld.status != 4 AND ld.status != 0
+    `;
     const dateParams = [leaveDateId, schoolId, schoolId];
     if (branchId) {
       dateSql += ` AND (l.branch_id = ? OR l.branch_id IS NULL)`;
@@ -524,7 +654,6 @@ class LeaveModel {
 
     // If approving, enforce quota restriction
     if (targetStatus === 2) {
-      // If not already approved, check if adding this date exceeds quota
       if (Number(dateRecord.date_status) !== 2) {
         const dateWeight = Number(dateRecord.duration) === 2 ? 0.5 : 1;
         const quota = await LeaveModel.getStaffLeaveQuota(
@@ -536,7 +665,7 @@ class LeaveModel {
 
         if (quota.max_quota > 0 && (quota.approved_days + dateWeight) > quota.max_quota) {
           const err = new Error(
-            `Cannot approve leave date: Maximum quota of ${quota.max_quota} days for "${quota.leave_name}" has already been reached. (Already approved: ${quota.approved_days} day(s), Quota: ${quota.max_quota} day(s)).`
+            `Cannot approve leave date: Maximum quota of ${quota.max_quota} day(s) for "${quota.leave_name}" has already been reached. (Already approved: ${quota.approved_days} day(s), Available for approval: ${quota.remaining_approval_days} day(s)).`
           );
           err.statusCode = 400;
           throw err;
@@ -549,26 +678,61 @@ class LeaveModel {
       [targetStatus, leaveDateId, schoolId, schoolId]
     );
 
-    // Check if dates have been decided and sync parent leave status
-    const [row] = await pool.query(`SELECT staff_leave_id FROM leaves_date WHERE id = ?`, [leaveDateId]);
-    if (row && row.length > 0) {
-      const leaveId = row[0].staff_leave_id;
-      const [allDates] = await pool.query(`SELECT status FROM leaves_date WHERE staff_leave_id = ?`, [leaveId]);
+    const leaveId = dateRecord.staff_leave_id;
+    let overallStatus = targetStatus;
+    let totalDates = 1;
+    let approvedDates = targetStatus === 2 ? 1 : 0;
+    let rejectedDates = targetStatus === 3 ? 1 : 0;
+    let pendingDates = targetStatus === 1 ? 1 : 0;
 
-      if (allDates && allDates.length > 0) {
-        if (allDates.every((d) => Number(d.status) === 2)) {
-          await pool.query(`UPDATE leaves SET status = 2 WHERE id = ? AND (school_id = ? OR ? IS NULL)`, [leaveId, schoolId, schoolId]);
-        } else if (allDates.every((d) => Number(d.status) === 3)) {
-          await pool.query(`UPDATE leaves SET status = 3 WHERE id = ? AND (school_id = ? OR ? IS NULL)`, [leaveId, schoolId, schoolId]);
-        } else if (allDates.some((d) => Number(d.status) === 2)) {
-          await pool.query(`UPDATE leaves SET status = 2 WHERE id = ? AND (school_id = ? OR ? IS NULL)`, [leaveId, schoolId, schoolId]);
-        } else if (allDates.some((d) => Number(d.status) === 1)) {
-          await pool.query(`UPDATE leaves SET status = 1 WHERE id = ? AND (school_id = ? OR ? IS NULL)`, [leaveId, schoolId, schoolId]);
-        }
+    // Check all dates for this leave and sync parent leave status accurately
+    const [allDates] = await pool.query(
+      `SELECT status FROM leaves_date WHERE staff_leave_id = ? AND status != 4 AND status != 0`,
+      [leaveId]
+    );
+
+    if (allDates && allDates.length > 0) {
+      totalDates = allDates.length;
+      approvedDates = allDates.filter((d) => Number(d.status) === 2).length;
+      rejectedDates = allDates.filter((d) => Number(d.status) === 3).length;
+      pendingDates = allDates.filter((d) => Number(d.status) === 1).length;
+
+      if (pendingDates > 0) {
+        overallStatus = 1;
+      } else if (rejectedDates === totalDates) {
+        overallStatus = 3;
+      } else if (approvedDates > 0) {
+        overallStatus = 2;
+      } else {
+        overallStatus = 1;
       }
+
+      await pool.query(
+        `UPDATE leaves SET status = ? WHERE id = ? AND (school_id = ? OR ? IS NULL)`,
+        [overallStatus, leaveId, schoolId, schoolId]
+      );
     }
 
-    return true;
+    return {
+      leaveId: Number(leaveId),
+      leaveDateId: Number(leaveDateId),
+      date: dateRecord.formatted_date,
+      school_id: dateRecord.school_id || schoolId,
+      branch_id: dateRecord.branch_id || branchId,
+      role: Number(dateRecord.role),
+      staff_id: Number(dateRecord.staff_id),
+      leave_id: Number(dateRecord.leave_id),
+      leave_name: dateRecord.leave_name || '',
+      duration: Number(dateRecord.duration),
+      status: targetStatus,
+      previousStatus: Number(dateRecord.date_status),
+      overallStatus,
+      person_name: (dateRecord.person_name || '').trim(),
+      totalDates,
+      approvedDates,
+      rejectedDates,
+      pendingDates,
+    };
   }
 
   /**
@@ -609,7 +773,7 @@ class LeaveModel {
         bm.branch_name,
         bm.branch_code,
         lm.role, 
-        CASE WHEN lm.role = 1 THEN 'Teacher' ELSE 'User' END AS role_label,
+        CASE WHEN lm.role = 1 THEN 'Teacher' ELSE 'Staff' END AS role_label,
         lm.leave_name, 
         lm.need_document, 
         COALESCE(lm.is_paid, 1) AS is_paid,
@@ -672,10 +836,20 @@ class LeaveModel {
    */
   static async getStaffByRole(schoolId, role, branchId = null) {
     if (Number(role) === 1) {
-      // Teachers: show only active (status = 1) and exclude inactive/deleted (status = 2, 4, 0)
-      let sql = `SELECT id, branch_id, teacher_id AS code, CONCAT(IFNULL(first_name, ''), ' ', IFNULL(last_name, '')) AS name, picture, gender, status
-         FROM teacher_master
-         WHERE school_id = ? AND status = 1 AND status != 4 AND status != 2 AND status != 0`;
+      // Teachers: show only active (status = 1)
+      let sql = `
+        SELECT 
+          id,
+          branch_id,
+          teacher_id AS code,
+          TRIM(CONCAT(IFNULL(first_name, ''), ' ', IFNULL(last_name, ''))) AS name,
+          'Teacher' AS role_name,
+          picture,
+          gender,
+          status
+        FROM teacher_master
+        WHERE school_id = ? AND status = 1
+      `;
       const params = [schoolId];
       if (branchId) {
         sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
@@ -685,16 +859,26 @@ class LeaveModel {
       const [rows] = await pool.query(sql, params);
       return rows || [];
     } else {
-      // Users / Staff: show only active (status = 1) and exclude inactive/deleted (status = 2, 4, 0)
-      let sql = `SELECT id, branch_id, CONCAT(IFNULL(first_name, ''), ' ', IFNULL(last_name, '')) AS name, picture, gender, status
-         FROM user_master
-         WHERE school_id = ? AND status = 1 AND status != 4 AND status != 2 AND status != 0`;
+      // Staff (user_master joined with role_master): show only active (status = 1)
+      let sql = `
+        SELECT 
+          u.id,
+          u.branch_id,
+          TRIM(CONCAT(IFNULL(u.first_name, ''), ' ', IFNULL(u.last_name, ''))) AS name,
+          r.role_name,
+          u.picture,
+          u.gender,
+          u.status
+        FROM user_master u
+        LEFT JOIN role_master r ON u.role = r.id
+        WHERE u.school_id = ? AND u.status = 1
+      `;
       const params = [schoolId];
       if (branchId) {
-        sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+        sql += ` AND (u.branch_id = ? OR u.branch_id IS NULL)`;
         params.push(Number(branchId));
       }
-      sql += ` ORDER BY first_name ASC`;
+      sql += ` ORDER BY u.first_name ASC`;
       const [rows] = await pool.query(sql, params);
       return rows || [];
     }
@@ -712,6 +896,7 @@ class LeaveModel {
         bm.branch_name,
         bm.branch_code,
         lm.role, 
+        CASE WHEN lm.role = 1 THEN 'Teacher' ELSE 'Staff' END AS role_label,
         lm.leave_name, 
         lm.need_document, 
         COALESCE(lm.is_paid, 1) AS is_paid,

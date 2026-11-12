@@ -1,7 +1,8 @@
 const { pool } = require('../config/db.config');
 
 class AdminUserModel {
-  static async findByEmail(email) {
+  static async findByEmail(email, schoolId = null) {
+    const hasSchoolFilter = schoolId !== null && schoolId !== undefined && !isNaN(Number(schoolId));
     const sql = `
       SELECT 
         u.id, 
@@ -31,11 +32,12 @@ class AdminUserModel {
       LEFT JOIN role_master r ON u.role = r.id
       LEFT JOIN school_master sm ON u.school_id = sm.id
       LEFT JOIN branch_master bm ON u.branch_id = bm.id
-      WHERE u.email = ? AND u.status != 4
+      WHERE u.email = ?${hasSchoolFilter ? ' AND u.school_id = ?' : ''} AND u.status != 4
       ORDER BY CASE WHEN u.status = 1 THEN 0 ELSE 1 END, u.id ASC
       LIMIT 1
     `;
-    const [rows] = await pool.execute(sql, [email]);
+    const params = hasSchoolFilter ? [email, Number(schoolId)] : [email];
+    const [rows] = await pool.execute(sql, params);
     return rows[0] || null;
   }
 

@@ -3,11 +3,14 @@ const SubscriptionItemModel = require('./subscriptionItem.model');
 const SaasRoleModel = require('./saasRole.model');
 const CouponModel = require('./coupon.model');
 const NotificationRecordModel = require('./notificationRecord.model');
+const FileStorageLedgerModel = require('./fileStorageLedger.model');
 const SubscriptionFulfillmentService = require('../services/subscriptionFulfillment.service');
 const { parsePagination, buildPagination } = require('../utils/pagination.util');
 const {
   BILLING_CYCLES,
   getBillingCycleMeta,
+  getCycleMeta,
+  getActiveBillingCycles,
   addCycleDuration,
   getTodayIST,
 } = require('../constants/subscriptionModules.constant');
@@ -61,6 +64,8 @@ function enrichPackageRow(pkg) {
     : 0;
   pkg.tier_rank = Number(pkg.tier_rank) || 1;
   pkg.included_storage_gb = Math.max(0, parseInt(pkg.included_storage_gb, 10) || 0);
+  pkg.included_push_credits = Math.max(0, parseInt(pkg.included_push_credits, 10) || 0);
+  pkg.included_sms_credits = Math.max(0, parseInt(pkg.included_sms_credits, 10) || 0);
   pkg.is_popular = Number(pkg.is_popular) === 1 ? 1 : 0;
   pkg.max_students = Number(pkg.max_students) || 0;
   pkg.max_teachers = 0;
@@ -189,7 +194,9 @@ class SaasAdminModel {
       let imagePath = profile_image;
       if (imagePath && imagePath.startsWith('data:')) {
         const { saveBase64File } = require('../utils/file.util');
-        imagePath = saveBase64File(imagePath, 'admin/profile_pic', 'SaasAdmin');
+        imagePath = await saveBase64File(imagePath, 'admin/profile_pic', 'SaasAdmin', {
+          skipQuotaCheck: true,
+        });
       }
       updates.push('profile_image = ?');
       params.push(imagePath || null);
@@ -350,6 +357,8 @@ class SaasAdminModel {
 
       pool.query(`
         SELECT
+          COUNT(CASE WHEN entry_type = 'credit' AND (unit_price > 0 OR total_amount > 0) THEN 1 END) AS total_orders,
+          COALESCE(SUM(CASE WHEN entry_type = 'credit' AND (unit_price > 0 OR total_amount > 0) THEN units ELSE 0 END), 0) AS total_quantity,
           COALESCE(SUM(CASE WHEN entry_type = 'credit' THEN total_amount ELSE 0 END), 0) AS total_revenue,
           COALESCE(SUM(CASE WHEN entry_type = 'credit' AND YEAR(created_at) = YEAR(CURDATE()) AND MONTH(created_at) = MONTH(CURDATE()) THEN total_amount ELSE 0 END), 0) AS this_month_revenue
         FROM school_notification_ledger
@@ -543,7 +552,10 @@ class SaasAdminModel {
       });
     }
 
+    const b2StorageOverview = await FileStorageLedgerModel.getAdminStorageOverview();
+
     return {
+      cloudStorage: b2StorageOverview,
       schools: {
         total: Number(schoolRows[0]?.total_schools || 0),
         active: Number(schoolRows[0]?.active_schools || 0),
@@ -601,6 +613,11 @@ class SaasAdminModel {
           dispatchedCount: Number(rfidOrderRows[0]?.dispatched_count || 0),
           deliveredCount: Number(rfidOrderRows[0]?.delivered_count || 0),
           cancelledCount: Number(rfidOrderRows[0]?.cancelled_count || 0),
+        },
+        notifications: {
+          totalOrders: Number(notifCreditRows[0]?.total_orders || 0),
+          totalQuantity: Number(notifCreditRows[0]?.total_quantity || 0),
+          totalRevenue: notificationRevenue,
         },
       },
       supportTickets: {
@@ -726,7 +743,8 @@ class SaasAdminModel {
         sp.tier_rank,
         (SELECT COUNT(*) FROM student_master sm WHERE sm.school_id = s.id AND sm.status != 4) AS student_count,
         (SELECT COUNT(*) FROM user_master um WHERE um.school_id = s.id AND um.role = 2 AND um.status = 1) AS teacher_count,
-        (SELECT COUNT(*) FROM branch_master bm WHERE bm.school_id = s.id AND bm.status = 1) AS branch_count
+        (SELECT COUNT(*) FROM branch_master bm WHERE bm.school_id = s.id AND bm.status = 1) AS branch_count,
+        (SELECT COALESCE(SUM(fsl.size_bytes), 0) FROM file_storage_ledger fsl WHERE fsl.school_id = s.id AND fsl.status = 1) AS used_storage_bytes
       FROM school_master s
       ${prioritizedSubJoin}
       LEFT JOIN subscription_plans sp ON latest_sub.plan_id = sp.id
@@ -735,14 +753,21 @@ class SaasAdminModel {
       LIMIT ? OFFSET ?
     `;
 
+    await FileStorageLedgerModel.initTable();
     const [countRows] = await pool.query(countQuery, params);
     const total = countRows[0]?.total || 0;
 
     const queryParams = [...params, limitNum, offset];
     const [schools] = await pool.query(selectQuery, queryParams);
 
+    const enrichedSchools = schools.map((s) => ({
+      ...s,
+      used_storage_bytes: Number(s.used_storage_bytes || 0),
+      used_storage_formatted: FileStorageLedgerModel.formatBytes(s.used_storage_bytes || 0),
+    }));
+
     return {
-      schools,
+      schools: enrichedSchools,
       pagination: {
         total,
         page: pageNum,
@@ -753,12 +778,13 @@ class SaasAdminModel {
   }
 
   static async getSchoolById(id) {
+    await FileStorageLedgerModel.initTable();
     const [rows] = await pool.query(
       `SELECT s.*,
               (SELECT COUNT(*) FROM student_master sm WHERE sm.school_id = s.id AND sm.status != 4) AS total_students,
               (SELECT COUNT(*) FROM user_master um WHERE um.school_id = s.id AND um.role = 2 AND um.status = 1) AS total_teachers,
               (SELECT COUNT(*) FROM class_master cm WHERE cm.school_id = s.id AND cm.status = 1) AS total_classes,
-              (SELECT COUNT(*) FROM branch_master bm WHERE bm.school_id = s.id AND bm.status = 1) AS total_branches
+              (SELECT COUNT(*) FROM branch_master bm WHERE sm.school_id = s.id AND bm.status = 1) AS total_branches
        FROM school_master s
        WHERE s.id = ? AND s.status IN (1, 2) LIMIT 1`,
       [id]
@@ -766,6 +792,7 @@ class SaasAdminModel {
 
     if (rows.length === 0) return null;
     const school = rows[0];
+    school.storage_usage = await FileStorageLedgerModel.calculateSchoolStorage(id);
 
     const [adminRows] = await pool.query(
       'SELECT id, first_name, last_name, email, phone, status, date AS created_at, date FROM user_master WHERE school_id = ? AND admin_type = 1 AND status != 4 LIMIT 1',
@@ -1226,6 +1253,10 @@ class SaasAdminModel {
     const [result] = await pool.query(query, params);
     if (result.affectedRows > 0) {
       await pool.query(
+        "UPDATE school_subscriptions SET status = 'superseded', superseded_by_id = ? WHERE school_id = ? AND id != ? AND status IN ('active', 'trial')",
+        [id, sub.school_id, id]
+      );
+      await pool.query(
         `INSERT INTO subscription_audit_logs
            (school_id, subscription_id, actor_type, actor_id, action, previous_state_json, new_state_json, reason)
          VALUES (?, ?, 'saas_super_admin', ?, 'EXPIRY_EXTENDED', ?, ?, ?)`,
@@ -1327,7 +1358,7 @@ class SaasAdminModel {
       pagination: buildPagination(countRow.total, pageNum, pageSize),
       counts,
       meta: {
-        billing_cycles: Object.values(BILLING_CYCLES),
+        billing_cycles: getActiveBillingCycles(),
       },
     };
   }
@@ -1388,17 +1419,24 @@ class SaasAdminModel {
     description,
     price,
     original_price = null,
-    billing_cycle = 'annual',
+    billing_cycle,
     free_trial_days = 0,
     max_students = 0,
     included_storage_gb = 0,
+    included_push_credits = 0,
+    included_sms_credits = 0,
     is_popular = 0,
     status = 1,
     items = [],
   }) {
-    const normalizedCycle = BILLING_CYCLES[String(billing_cycle || 'annual').toLowerCase()]
-      ? String(billing_cycle).toLowerCase()
-      : 'annual';
+    if (!billing_cycle) {
+      throw new Error('billing_cycle is required.');
+    }
+    const cycleMeta = getCycleMeta(billing_cycle);
+    if (!cycleMeta || Number(cycleMeta.status) !== 1) {
+      throw new Error(`Invalid or inactive billing_cycle '${billing_cycle}'. It must be an active cycle in billing_cycle_master.`);
+    }
+    const normalizedCycle = cycleMeta.code;
 
     const cleanCode = (plan_code || plan_name.toLowerCase().replace(/[^a-z0-9]/g, '_')).trim();
     const cleanGroup = (
@@ -1425,8 +1463,8 @@ class SaasAdminModel {
 
     const [result] = await pool.query(
       `INSERT INTO subscription_plans
-         (plan_name, plan_code, plan_group, tier_rank, description, price, original_price, billing_cycle, free_trial_days, max_students, max_teachers, included_storage_gb, is_popular, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, NOW())`,
+         (plan_name, plan_code, plan_group, tier_rank, description, price, original_price, billing_cycle, free_trial_days, max_students, max_teachers, included_storage_gb, included_push_credits, included_sms_credits, is_popular, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, NOW())`,
       [
         plan_name.trim(),
         cleanCode,
@@ -1439,6 +1477,8 @@ class SaasAdminModel {
         Math.max(0, parseInt(free_trial_days, 10) || 0),
         Math.max(0, parseInt(max_students, 10) || 0),
         Math.max(0, parseInt(included_storage_gb, 10) || 0),
+        Math.max(0, parseInt(included_push_credits, 10) || 0),
+        Math.max(0, parseInt(included_sms_credits, 10) || 0),
         Number(is_popular) ? 1 : 0,
         parseInt(status, 10) === 2 ? 2 : 1,
       ]
@@ -1465,6 +1505,8 @@ class SaasAdminModel {
       free_trial_days,
       max_students,
       included_storage_gb,
+      included_push_credits,
+      included_sms_credits,
       is_popular,
       status,
       items,
@@ -1510,15 +1552,18 @@ class SaasAdminModel {
       params.push(normalizedOriginal);
     }
     if (billing_cycle !== undefined) {
-      const normalizedCycle = BILLING_CYCLES[String(billing_cycle).toLowerCase()]
-        ? String(billing_cycle).toLowerCase()
-        : 'annual';
+      const cycleMeta = getCycleMeta(billing_cycle);
+      if (!cycleMeta || Number(cycleMeta.status) === 4) {
+        throw new Error(`Invalid billing_cycle '${billing_cycle}'. It does not exist in billing_cycle_master.`);
+      }
       updates.push('billing_cycle = ?');
-      params.push(normalizedCycle);
+      params.push(cycleMeta.code);
     }
     if (free_trial_days !== undefined) { updates.push('free_trial_days = ?'); params.push(Math.max(0, parseInt(free_trial_days, 10) || 0)); }
     if (max_students !== undefined) { updates.push('max_students = ?'); params.push(Math.max(0, parseInt(max_students, 10) || 0)); }
     if (included_storage_gb !== undefined) { updates.push('included_storage_gb = ?'); params.push(Math.max(0, parseInt(included_storage_gb, 10) || 0)); }
+    if (included_push_credits !== undefined) { updates.push('included_push_credits = ?'); params.push(Math.max(0, parseInt(included_push_credits, 10) || 0)); }
+    if (included_sms_credits !== undefined) { updates.push('included_sms_credits = ?'); params.push(Math.max(0, parseInt(included_sms_credits, 10) || 0)); }
     if (is_popular !== undefined) { updates.push('is_popular = ?'); params.push(Number(is_popular) ? 1 : 0); }
     if (status !== undefined) {
       updates.push('status = ?');
@@ -1674,8 +1719,72 @@ class SaasAdminModel {
       [...params, limit, offset]
     );
 
+    const [pendingOrderRows] = await pool.query(
+      `SELECT
+         o.id,
+         o.order_no,
+         o.school_id,
+         sm.school_name,
+         sm.school_code,
+         sm.email AS school_email,
+         sm.phone_number AS school_phone,
+         o.notifications_amount,
+         o.subtotal_amount,
+         o.discount_amount,
+         o.coupon_code,
+         o.grand_total,
+         o.payment_method,
+         o.utr_number,
+         o.payload_snapshot_json,
+         o.status,
+         o.created_at
+       FROM subscription_payment_orders o
+       JOIN school_master sm ON sm.id = o.school_id
+       WHERE o.order_type = 'addon_only'
+         AND o.notifications_amount > 0
+         AND o.status = 'pending_verification'
+       ORDER BY o.id DESC`
+    );
+
+    const pendingOrders = (pendingOrderRows || []).map((po) => {
+      let smsUnits = 0;
+      let pushUnits = 0;
+      try {
+        const snap = po.payload_snapshot_json ? JSON.parse(po.payload_snapshot_json) : {};
+        const notifs = snap?.breakdown?.notifications || [];
+        for (const n of notifs) {
+          const ch = String(n.channel || n.type || '').toLowerCase();
+          if (ch === 'sms') smsUnits += parseInt(n.quantity, 10) || 0;
+          else if (ch === 'push') pushUnits += parseInt(n.quantity, 10) || 0;
+        }
+      } catch (_) {}
+      return {
+        id: po.id,
+        order_no: po.order_no,
+        school_id: po.school_id,
+        school_name: po.school_name,
+        school_code: po.school_code,
+        school_email: po.school_email,
+        school_phone: po.school_phone,
+        sms_units: smsUnits,
+        sms_qty: smsUnits,
+        push_units: pushUnits,
+        push_qty: pushUnits,
+        notifications_amount: parseFloat(po.notifications_amount) || 0,
+        discount_amount: parseFloat(po.discount_amount) || 0,
+        coupon_code: po.coupon_code || null,
+        grand_total: parseFloat(po.grand_total) || 0,
+        payment_method: po.payment_method,
+        utr_number: po.utr_number,
+        offline_transaction_ref: po.utr_number,
+        status: po.status,
+        created_at: po.created_at,
+      };
+    });
+
     return {
       buyers: rows || [],
+      pending_orders: pendingOrders,
       counts: {
         total_schools: Number(summary?.total_schools) || 0,
         total_sms_balance: Number(summary?.total_sms_balance) || 0,
@@ -1685,6 +1794,7 @@ class SaasAdminModel {
         total_sms_used: Number(summary?.total_sms_used) || 0,
         total_push_used: Number(summary?.total_push_used) || 0,
         total_revenue: Number(revRow?.total_revenue) || 0,
+        pending_orders_count: pendingOrders.length,
       },
       pagination: {
         total_items: totalItems,
@@ -1695,6 +1805,22 @@ class SaasAdminModel {
         has_prev_page: page > 1,
       },
     };
+  }
+
+  static async approveAddonOrder(orderId, { verifiedBy = null, verificationNotes = '' } = {}) {
+    return await SubscriptionFulfillmentService.approveOfflineAddonOrder({
+      orderId,
+      adminId: verifiedBy,
+      verificationNotes,
+    });
+  }
+
+  static async rejectAddonOrder(orderId, { verifiedBy = null, rejectionReason = '' } = {}) {
+    return await SubscriptionFulfillmentService.rejectOfflineAddonOrder({
+      orderId,
+      adminId: verifiedBy,
+      reason: rejectionReason,
+    });
   }
 
   static async getNotificationBuyerLedger(schoolId) {

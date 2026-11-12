@@ -625,6 +625,193 @@ class StudentModel {
     return true;
   }
 
+  static async bulkAddActivities(schoolId, entries = [], branchId = null) {
+    if (!Array.isArray(entries) || entries.length === 0) {
+      return { insertedCount: 0, studentIds: [] };
+    }
+
+    const validEntries = entries
+      .map((e) => ({
+        student_id: Number(e.student_id || e.studentId),
+        date: String(e.date || '').split('T')[0].trim(),
+        activity_description: String(e.activity_description || e.description || '').trim(),
+      }))
+      .filter((e) => e.student_id > 0 && e.date && e.activity_description);
+
+    if (validEntries.length === 0) {
+      return { insertedCount: 0, studentIds: [] };
+    }
+
+    const uniqueStudentIds = [...new Set(validEntries.map((e) => e.student_id))];
+    const studentBranchMap = new Map();
+    try {
+      const [stRows] = await pool.query(
+        `SELECT id, branch_id FROM student_master WHERE school_id = ? AND status != 4 AND id IN (${uniqueStudentIds.map(() => '?').join(',')})`,
+        [schoolId, ...uniqueStudentIds]
+      );
+      for (const r of stRows || []) {
+        studentBranchMap.set(Number(r.id), r.branch_id ? Number(r.branch_id) : null);
+      }
+    } catch (e) {}
+
+    const defaultBranchId = branchId && branchId !== 'all' ? Number(branchId) : null;
+    const values = [];
+    const placeholders = [];
+
+    for (const item of validEntries) {
+      const resolvedBranch = studentBranchMap.get(item.student_id) || defaultBranchId || null;
+      placeholders.push('(?, ?, ?, ?, ?, 1)');
+      values.push(schoolId, resolvedBranch, item.student_id, item.date, item.activity_description);
+    }
+
+    const [result] = await pool.query(
+      `INSERT INTO student_activity (school_id, branch_id, student_id, date, activity_description, status) VALUES ${placeholders.join(', ')}`,
+      values
+    );
+
+    return {
+      insertedCount: result?.affectedRows || validEntries.length,
+      studentIds: uniqueStudentIds,
+      entries: validEntries,
+    };
+  }
+
+  static async getActivitiesList(
+    schoolId,
+    {
+      branchId = null,
+      classId = '',
+      sectionId = '',
+      search = '',
+      date = '',
+      fromDate = '',
+      toDate = '',
+      studentId = '',
+      page = 1,
+      limit = 20,
+    } = {}
+  ) {
+    const safePage = Math.max(1, parseInt(page, 10) || 1);
+    const safeLimit = Math.min(200, Math.max(1, parseInt(limit, 10) || 20));
+    const offset = (safePage - 1) * safeLimit;
+
+    const whereClauses = ['sa.school_id = ?', 'sa.status = 1', 's.status != 4'];
+    const params = [schoolId];
+
+    if (branchId && branchId !== 'all') {
+      whereClauses.push('(sa.branch_id = ? OR s.branch_id = ?)');
+      params.push(Number(branchId), Number(branchId));
+    }
+
+    if (studentId) {
+      whereClauses.push('sa.student_id = ?');
+      params.push(Number(studentId));
+    }
+
+    if (classId) {
+      whereClauses.push('(s.class = ? OR s.class = (SELECT class_name FROM class_master WHERE id = ? LIMIT 1))');
+      params.push(classId, classId);
+    }
+
+    if (sectionId) {
+      whereClauses.push('(s.section = ? OR s.section = (SELECT section_name FROM section_master WHERE id = ? LIMIT 1))');
+      params.push(sectionId, sectionId);
+    }
+
+    if (date) {
+      whereClauses.push('DATE(sa.date) = ?');
+      params.push(String(date).split('T')[0]);
+    } else {
+      if (fromDate) {
+        whereClauses.push('DATE(sa.date) >= ?');
+        params.push(String(fromDate).split('T')[0]);
+      }
+      if (toDate) {
+        whereClauses.push('DATE(sa.date) <= ?');
+        params.push(String(toDate).split('T')[0]);
+      }
+    }
+
+    if (search && String(search).trim()) {
+      const term = `%${String(search).trim()}%`;
+      whereClauses.push(`(
+        sa.activity_description LIKE ? OR
+        s.first_name LIKE ? OR
+        s.last_name LIKE ? OR
+        CONCAT(TRIM(IFNULL(s.first_name, '')), ' ', TRIM(IFNULL(s.last_name, ''))) LIKE ? OR
+        s.admission_number LIKE ? OR
+        s.roll_number LIKE ?
+      )`);
+      params.push(term, term, term, term, term, term);
+    }
+
+    const whereSql = `WHERE ${whereClauses.join(' AND ')}`;
+
+    const countSql = `
+      SELECT COUNT(sa.id) AS total
+      FROM student_activity sa
+      INNER JOIN student_master s ON sa.student_id = s.id
+      ${whereSql}
+    `;
+    const [countRows] = await pool.query(countSql, params);
+    const total = Number(countRows?.[0]?.total || 0);
+
+    const dataSql = `
+      SELECT 
+        sa.id,
+        sa.school_id,
+        sa.branch_id,
+        sa.student_id,
+        DATE_FORMAT(sa.date, '%Y-%m-%d') AS date,
+        sa.activity_description,
+        sa.status,
+        sa.created_at,
+        s.admission_number,
+        s.roll_number,
+        s.first_name,
+        s.last_name,
+        CONCAT(TRIM(IFNULL(s.first_name, '')), ' ', TRIM(IFNULL(s.last_name, ''))) AS full_name,
+        s.picture,
+        s.status AS student_status,
+        s.class AS class_id,
+        cm.class_name,
+        s.section AS section_id,
+        sec.section_name,
+        g.gender AS gender
+      FROM student_activity sa
+      INNER JOIN student_master s ON sa.student_id = s.id
+      LEFT JOIN class_master cm ON s.class = cm.id
+      LEFT JOIN section_master sec ON s.section = sec.id
+      LEFT JOIN gender_master g ON g.id = s.gender
+      ${whereSql}
+      ORDER BY sa.date DESC, sa.id DESC
+      LIMIT ? OFFSET ?
+    `;
+
+    const [rows] = await pool.query(dataSql, [...params, safeLimit, offset]);
+
+    return {
+      activities: rows || [],
+      pagination: {
+        total,
+        page: safePage,
+        limit: safeLimit,
+        totalPages: Math.max(1, Math.ceil(total / safeLimit)),
+      },
+    };
+  }
+
+  static async updateActivity(activityId, schoolId, { date, activity_description }, branchId = null) {
+    let sql = `UPDATE student_activity SET date = ?, activity_description = ? WHERE id = ? AND school_id = ? AND status = 1`;
+    const params = [String(date).split('T')[0], String(activity_description).trim(), activityId, schoolId];
+    if (branchId && branchId !== 'all') {
+      sql += ` AND branch_id = ?`;
+      params.push(Number(branchId));
+    }
+    const [result] = await pool.execute(sql, params);
+    return result.affectedRows > 0;
+  }
+
   static async deleteActivity(activityId, schoolId, branchId = null) {
     let sql = `UPDATE student_activity SET status = 4 WHERE id = ? AND school_id = ?`;
     const params = [activityId, schoolId];
@@ -778,7 +965,12 @@ class StudentModel {
         caste, mother_tongue, language_known, status, picture
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
-    const savedStudentPic = data.picture ? saveBase64File(data.picture, 'student/student_pic', 'Profile') : null;
+    const savedStudentPic = data.picture
+      ? await saveBase64File(data.picture, 'student/student_pic', 'Profile', {
+          schoolId: data.school_id,
+          branchId,
+        })
+      : null;
 
     const [result] = await pool.execute(sql, [
       data.school_id,
@@ -911,7 +1103,10 @@ class StudentModel {
         for (const doc of data.documents) {
           if (!doc.document_type && !doc.file_name && !doc.attachments && !doc.file_url) continue;
           const rawDoc = doc.attachments || doc.file_url || doc.file_name || '';
-          const savedDocPath = saveBase64File(rawDoc, 'student/attachment', 'Attachment');
+          const savedDocPath = await saveBase64File(rawDoc, 'student/attachment', 'Attachment', {
+            schoolId: data.school_id,
+            branchId,
+          });
           await pool.execute(
             `INSERT INTO student_document (school_id, branch_id, student_id, document_type, attachments, file_name, status, created_at)
              VALUES (?, ?, ?, ?, ?, ?, 1, NOW())`,
@@ -971,7 +1166,15 @@ class StudentModel {
       }
     }
 
-    const savedStudentPic = data.picture !== undefined ? (data.picture ? saveBase64File(data.picture, 'student/student_pic', 'Profile') : null) : undefined;
+    const savedStudentPic =
+      data.picture !== undefined
+        ? data.picture
+          ? await saveBase64File(data.picture, 'student/student_pic', 'Profile', {
+              schoolId,
+              branchId: resolvedBranchId,
+            })
+          : null
+        : undefined;
 
     let sql = `
       UPDATE student_master SET
@@ -1210,7 +1413,10 @@ class StudentModel {
         for (const doc of data.documents) {
           if (!doc.document_type && !doc.file_name && !doc.attachments && !doc.file_url) continue;
           const rawDoc = doc.attachments || doc.file_url || doc.file_name || '';
-          const savedDocPath = saveBase64File(rawDoc, 'student/attachment', 'Attachment');
+          const savedDocPath = await saveBase64File(rawDoc, 'student/attachment', 'Attachment', {
+            schoolId,
+            branchId: studentBranchId,
+          });
           await pool.execute(
             `INSERT INTO student_document (school_id, branch_id, student_id, document_type, attachments, file_name, status, created_at)
              VALUES (?, ?, ?, ?, ?, ?, 1, NOW())`,
@@ -1267,7 +1473,12 @@ class StudentModel {
       const fEmail = fInfo.father_email || data.father_email || null;
       const fOcc = fInfo.father_occupation || data.father_occupation || null;
       const fPic = fInfo.father_picture || data.father_picture || null;
-      const fatherPic = fPic ? saveBase64File(fPic, 'parent/profile', 'Parent-Profile') : null;
+      const fatherPic = fPic
+        ? await saveBase64File(fPic, 'parent/profile', 'Parent-Profile', {
+            schoolId,
+            branchId: studentBranchId,
+          })
+        : null;
 
       if (fFirst || fPhone || fEmail) {
         if (existingStp && existingStp.father_id) {
@@ -1361,7 +1572,12 @@ class StudentModel {
       const mEmail = mInfo.mother_email || data.mother_email || null;
       const mOcc = mInfo.mother_occupation || data.mother_occupation || null;
       const mPic = mInfo.mother_picture || data.mother_picture || null;
-      const motherPic = mPic ? saveBase64File(mPic, 'parent/profile', 'Parent-Profile') : null;
+      const motherPic = mPic
+        ? await saveBase64File(mPic, 'parent/profile', 'Parent-Profile', {
+            schoolId,
+            branchId: studentBranchId,
+          })
+        : null;
 
       if (mFirst || mPhone || mEmail) {
         if (existingStp && existingStp.mother_id) {

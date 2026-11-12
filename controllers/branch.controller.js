@@ -1,4 +1,7 @@
+const bcrypt = require('bcryptjs');
+const { pool } = require('../config/db.config');
 const BranchModel = require('../models/branch.model');
+const PasscodeService = require('../services/passcode.service');
 const ApiResponse = require('../utils/api.response');
 const { hasGeoFields, normalizeBranchLocation } = require('../utils/branchLocation.util');
 
@@ -254,15 +257,153 @@ class BranchController {
   }
 
   /**
-   * Delete a branch
+   * Step 2 of Branch Deletion: Verify School Super Admin password and send 6-digit OTP
+   * POST /api/v1/admin/branches/:id/request-delete-otp
+   */
+  static async requestDeleteBranchOtp(req, res, next) {
+    try {
+      const schoolId = BranchController.getSchoolId(req);
+      const userId = Number(req.user?.id || req.user?.userId);
+      const { id } = req.params;
+      const { password } = req.body || {};
+
+      if (!password || !String(password).trim()) {
+        return ApiResponse.error(res, 'Please enter your Super Admin account password to continue.', null, 400);
+      }
+
+      // Strictly verify the caller is the School Super Admin (admin_type = 1) in DB
+      const [userRows] = await pool.query(
+        'SELECT id, first_name, last_name, email, password, admin_type, status FROM user_master WHERE id = ? AND school_id = ? AND status = 1 LIMIT 1',
+        [userId, schoolId]
+      );
+      const superAdmin = userRows[0];
+      if (!superAdmin || Number(superAdmin.admin_type) !== 1) {
+        return ApiResponse.error(
+          res,
+          'Only the School Super Admin is authorized to permanently delete a branch.',
+          null,
+          403
+        );
+      }
+
+      const branch = await BranchModel.getBranchById(Number(id), schoolId);
+      if (!branch || Number(branch.status) === 4) {
+        return ApiResponse.error(res, 'Branch not found.', null, 404);
+      }
+      if (Number(branch.is_main_branch) === 1) {
+        return ApiResponse.error(
+          res,
+          'Cannot delete the primary/main campus. Please designate another campus as the main branch first.',
+          null,
+          400
+        );
+      }
+
+      const isPasswordValid = await bcrypt.compare(String(password), String(superAdmin.password || ''));
+      if (!isPasswordValid) {
+        return ApiResponse.error(res, 'Incorrect password. Please enter your valid Super Admin password.', null, 401);
+      }
+
+      if (!superAdmin.email || !String(superAdmin.email).trim()) {
+        return ApiResponse.error(
+          res,
+          'No email address is registered on your Super Admin profile to receive the confirmation OTP.',
+          null,
+          400
+        );
+      }
+
+      const otpMode = await PasscodeService.getOtpMode();
+      const isTest = otpMode === 'test';
+      const otpCode = PasscodeService.generatePasscode();
+      const expiresInMinutes = 10;
+
+      await PasscodeService.storePasscode('user_master', superAdmin.id, otpCode, expiresInMinutes);
+
+      const fullName = `${superAdmin.first_name || ''} ${superAdmin.last_name || ''}`.trim() || 'Super Admin';
+      const maskedEmail = PasscodeService.maskIdentifier(superAdmin.email);
+
+      if (!isTest) {
+        await PasscodeService.sendActionOtpEmail({
+          toEmail: superAdmin.email,
+          toName: fullName,
+          otpCode,
+          actionTitle: `Confirm Permanent Deletion of "${branch.branch_name}"`,
+          actionWarning: `You requested to permanently delete the branch "${branch.branch_name}" (${branch.branch_code}) along with all its students, teachers, classes, and campus records. Enter the 6-digit OTP below to confirm:`,
+          expiresInMinutes,
+        });
+
+        return ApiResponse.success(
+          res,
+          `Password verified. A 6-digit confirmation OTP has been sent to ${maskedEmail}.`,
+          {
+            otpMode: 'production',
+            maskedEmail,
+            expiresInMinutes,
+          }
+        );
+      }
+
+      return ApiResponse.success(
+        res,
+        'Password verified. A 6-digit confirmation OTP has been generated.',
+        {
+          otpMode: 'test',
+          maskedEmail,
+          expiresInMinutes,
+          testPasscode: otpCode,
+        }
+      );
+    } catch (error) {
+      return ApiResponse.error(res, error.message || 'Failed to send branch deletion OTP.', null, 400);
+    }
+  }
+
+  /**
+   * Step 3 of Branch Deletion: Verify 6-digit OTP and permanently delete branch + all its data
+   * DELETE /api/v1/admin/branches/:id
    */
   static async deleteBranch(req, res, next) {
     try {
       const schoolId = BranchController.getSchoolId(req);
+      const userId = Number(req.user?.id || req.user?.userId);
       const { id } = req.params;
+      const otp = req.body?.otp || req.body?.passcode || req.query?.otp;
+
+      // Strictly verify the caller is the School Super Admin (admin_type = 1) in DB
+      const [userRows] = await pool.query(
+        'SELECT id, admin_type, status FROM user_master WHERE id = ? AND school_id = ? AND status = 1 LIMIT 1',
+        [userId, schoolId]
+      );
+      const superAdmin = userRows[0];
+      if (!superAdmin || Number(superAdmin.admin_type) !== 1) {
+        return ApiResponse.error(
+          res,
+          'Only the School Super Admin is authorized to permanently delete a branch.',
+          null,
+          403
+        );
+      }
+
+      if (!otp || !String(otp).trim()) {
+        return ApiResponse.error(
+          res,
+          'A valid 6-digit confirmation OTP is required to delete this branch.',
+          null,
+          400
+        );
+      }
+
+      const verifyResult = await PasscodeService.verifyPasscode('user_master', superAdmin.id, otp);
+      if (!verifyResult.valid) {
+        return ApiResponse.error(res, verifyResult.message || 'Invalid or expired OTP.', null, 400);
+      }
 
       await BranchModel.deleteBranch(Number(id), schoolId);
-      return ApiResponse.success(res, 'Branch deleted successfully.');
+      return ApiResponse.success(
+        res,
+        'Branch and all associated students, teachers, classes, and campus records have been permanently deleted.'
+      );
     } catch (error) {
       return ApiResponse.error(res, error.message || 'Failed to delete branch.', null, 400);
     }

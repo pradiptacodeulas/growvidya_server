@@ -309,18 +309,21 @@ class AdminSubscriptionController {
         );
       }
 
-      // Cross-verify Razorpay gateway order amount matches server-persisted grand_total
+      // Cross-verify Razorpay gateway order amount and currency match server-persisted grand_total
       if (razorpayConfig.razorpayInstance?.orders?.fetch) {
         try {
           const remoteOrder = await razorpayConfig.razorpayInstance.orders.fetch(orderId);
           const expectedPaise = Math.round(parseFloat(persistedOrder.grand_total) * 100);
-          if (remoteOrder && Number(remoteOrder.amount) !== expectedPaise) {
-            return ApiResponse.error(
-              res,
-              'Order amount mismatch detected during verification.',
-              { code: 'AMOUNT_MISMATCH' },
-              400
-            );
+          if (remoteOrder) {
+            const remoteCurrency = String(remoteOrder.currency || 'INR').toUpperCase();
+            if (remoteCurrency !== 'INR' || Number(remoteOrder.amount) !== expectedPaise) {
+              return ApiResponse.error(
+                res,
+                'Order amount or currency mismatch detected during verification.',
+                { code: 'AMOUNT_MISMATCH' },
+                400
+              );
+            }
           }
         } catch (_) {
           // If network fetch fails transiently, HMAC signature + DB-bound order_id already prevents tampering
@@ -394,7 +397,18 @@ class AdminSubscriptionController {
         );
       }
 
-      const storageCycle = req.body.billing_cycle || req.body.billingCycle || 'annual';
+      let storageCycle =
+        req.body.storage_billing_cycle ||
+        req.body.storageBillingCycle ||
+        req.body.billing_cycle ||
+        req.body.billingCycle ||
+        null;
+
+      if (!storageCycle && storagePlanId) {
+        const currentSub = await SubscriptionModel.getSchoolSubscription(schoolId);
+        storageCycle = currentSub?.billing_cycle || null;
+      }
+
       const verifiedCalc = await SubscriptionPolicyService.calculateVerifiedCheckout({
         plan: null,
         is_trial: false,
@@ -541,7 +555,18 @@ class AdminSubscriptionController {
         );
       }
 
-      const storageCycle = req.body.billing_cycle || req.body.billingCycle || 'annual';
+      let storageCycle =
+        req.body.storage_billing_cycle ||
+        req.body.storageBillingCycle ||
+        req.body.billing_cycle ||
+        req.body.billingCycle ||
+        null;
+
+      if (!storageCycle && storagePlanId) {
+        const currentSub = await SubscriptionModel.getSchoolSubscription(schoolId);
+        storageCycle = currentSub?.billing_cycle || null;
+      }
+
       const verifiedCalc = await SubscriptionPolicyService.calculateVerifiedCheckout({
         plan: null,
         is_trial: false,

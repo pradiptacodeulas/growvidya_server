@@ -129,6 +129,8 @@ class SubscriptionModel {
         p.free_trial_days,
         p.max_students,
         p.included_storage_gb,
+        p.included_push_credits,
+        p.included_sms_credits,
         p.is_popular,
         p.features_json
       FROM school_subscriptions s
@@ -347,6 +349,8 @@ class SubscriptionModel {
       ...sub,
       tier_rank: Number(sub.tier_rank) || 1,
       included_storage_gb: Math.max(0, parseInt(sub.included_storage_gb, 10) || 0),
+      included_push_credits: Math.max(0, parseInt(sub.included_push_credits, 10) || 0),
+      included_sms_credits: Math.max(0, parseInt(sub.included_sms_credits, 10) || 0),
       total_storage_gb: storageAllocation ? storageAllocation.totalAllowedGb : Math.max(0, parseInt(sub.included_storage_gb, 10) || 0),
       addon_storage_gb: storageAllocation ? storageAllocation.addonStorageGb : 0,
       max_students: Number(sub.max_students) || 0,
@@ -381,7 +385,7 @@ class SubscriptionModel {
   static async getUpgradePlans(schoolId = null) {
     const query = `
       SELECT id, plan_name, plan_code, plan_group, tier_rank, description, price, original_price, billing_cycle,
-             free_trial_days, max_students, included_storage_gb, is_popular, features_json
+             free_trial_days, max_students, included_storage_gb, included_push_credits, included_sms_credits, is_popular, features_json
       FROM subscription_plans
       WHERE status = 1 AND LOWER(billing_cycle) != 'trial' AND price > 0
       ORDER BY tier_rank ASC, price ASC
@@ -437,10 +441,7 @@ class SubscriptionModel {
           };
 
       const isCurrent = Boolean(
-        lifecycle.activeSub &&
-          !lifecycle.activeSub.isTrial &&
-          !lifecycle.activeSub.isExpired &&
-          Number(lifecycle.activeSub.plan_id) === Number(row.id)
+        refSub && Number(refSub.plan_id) === Number(row.id)
       );
 
       const isQuotaLocked = Boolean(
@@ -468,6 +469,8 @@ class SubscriptionModel {
           : 0,
         tier_rank: Number(row.tier_rank) || 1,
         included_storage_gb: Math.max(0, parseInt(row.included_storage_gb, 10) || 0),
+        included_push_credits: Math.max(0, parseInt(row.included_push_credits, 10) || 0),
+        included_sms_credits: Math.max(0, parseInt(row.included_sms_credits, 10) || 0),
         is_popular: Number(row.is_popular) === 1 ? 1 : 0,
         max_students: Number(row.max_students) || 0,
         max_teachers: 0,
@@ -508,7 +511,7 @@ class SubscriptionModel {
 
     const [rows] = await pool.query(
       `SELECT id, plan_name, plan_code, plan_group, tier_rank, description, price, original_price, billing_cycle,
-              free_trial_days, max_students, included_storage_gb, is_popular, features_json, status
+              free_trial_days, max_students, included_storage_gb, included_push_credits, included_sms_credits, is_popular, features_json, status
        FROM subscription_plans
        WHERE id = ? LIMIT 1`,
       [targetPlanId]
@@ -571,10 +574,10 @@ class SubscriptionModel {
         sub.max_students !== null && sub.max_students !== undefined
           ? Number(sub.max_students)
           : 0;
-      // 0 indicates unlimited student quota
+      // 0 indicates unlimited student quota; count both Active (1) and Inactive (2) students, excluding soft-deleted (4)
       if (maxStudents > 0) {
         const [rows] = await pool.query(
-          'SELECT COUNT(id) AS count FROM student_master WHERE school_id = ? AND status != 0',
+          'SELECT COUNT(id) AS count FROM student_master WHERE school_id = ? AND status IN (1, 2)',
           [targetSchoolId]
         );
         const currentCount = rows[0]?.count || 0;

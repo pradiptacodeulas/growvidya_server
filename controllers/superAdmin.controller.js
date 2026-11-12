@@ -4,7 +4,7 @@ const ApiResponse = require('../utils/api.response');
 class SuperAdminController {
   /**
    * Get Super Admin Organization Dashboard Stats
-   * Supports optional ?branch_id= query to filter stats to a specific campus
+   * Supports optional ?branch_id= query or X-Branch-Id header to filter stats to a specific campus
    */
   static async getDashboard(req, res, next) {
     try {
@@ -13,7 +13,14 @@ class SuperAdminController {
         return ApiResponse.error(res, 'School context required. Please log in again.', null, 401);
       }
 
-      const branchId = req.query.branch_id || null;
+      const rawQueryBranch = req.query.branch_id ?? req.query.branchId;
+      let branchId = null;
+      if (rawQueryBranch !== undefined && rawQueryBranch !== null && rawQueryBranch !== '') {
+        branchId = rawQueryBranch === 'all' || rawQueryBranch === '0' ? null : Number(rawQueryBranch) || null;
+      } else {
+        branchId = req.branchId || req.user?.branchId || req.user?.branch_id || null;
+      }
+
       const stats = await SuperAdminModel.getOrganizationStats(schoolId, branchId);
       return ApiResponse.success(res, 'Organization dashboard stats fetched successfully.', stats);
     } catch (error) {

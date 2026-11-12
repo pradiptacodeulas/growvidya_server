@@ -96,6 +96,10 @@ class BankAccountMasterController {
       } = req.body;
 
       if (!account_title || !beneficiary_name || !account_number || !bank_name || !ifsc_code) {
+        if (req.file && req.file.filePath) {
+          const CloudStorageService = require('../services/cloudStorage.service');
+          await CloudStorageService.deleteFile(req.file.filePath);
+        }
         return ApiResponse.error(
           res,
           'Required fields: account_title, beneficiary_name, account_number, bank_name, and ifsc_code are mandatory.',
@@ -106,7 +110,10 @@ class BankAccountMasterController {
 
       let finalQrImage = qr_code_image || null;
       if (req.file) {
-        finalQrImage = `upload/bank_accounts/${req.file.filename}`;
+        finalQrImage = req.file.filePath;
+      } else if (finalQrImage && String(finalQrImage).startsWith('data:')) {
+        const { saveBase64File } = require('../utils/file.util');
+        finalQrImage = await saveBase64File(finalQrImage, 'bank_accounts', 'bank_qr', { skipQuotaCheck: true });
       }
 
       const newAccount = await BankAccountMasterModel.create({
@@ -148,7 +155,20 @@ class BankAccountMasterController {
 
       const updateData = { ...req.body };
       if (req.file) {
-        updateData.qr_code_image = `upload/bank_accounts/${req.file.filename}`;
+        updateData.qr_code_image = req.file.filePath;
+        if (existing.qr_code_image && existing.qr_code_image !== updateData.qr_code_image) {
+          const CloudStorageService = require('../services/cloudStorage.service');
+          await CloudStorageService.deleteFile(existing.qr_code_image);
+        }
+      } else if (updateData.qr_code_image && String(updateData.qr_code_image).startsWith('data:')) {
+        const { saveBase64File } = require('../utils/file.util');
+        updateData.qr_code_image = await saveBase64File(updateData.qr_code_image, 'bank_accounts', 'bank_qr', {
+          skipQuotaCheck: true,
+        });
+        if (existing.qr_code_image && existing.qr_code_image !== updateData.qr_code_image) {
+          const CloudStorageService = require('../services/cloudStorage.service');
+          await CloudStorageService.deleteFile(existing.qr_code_image);
+        }
       }
       if (updateData.ifsc_code) {
         updateData.ifsc_code = String(updateData.ifsc_code).trim().toUpperCase();

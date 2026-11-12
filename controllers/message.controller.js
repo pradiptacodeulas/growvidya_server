@@ -158,7 +158,7 @@ class MessageController {
       let finalFileType = fileType || null;
 
       if (req.file) {
-        fileUrl = `upload/messages/${req.file.filename}`;
+        fileUrl = req.file.filePath;
         finalFileType = req.file.mimetype;
       }
 

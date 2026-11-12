@@ -57,17 +57,22 @@ class TeacherLeaveController {
                   ELSE MIN(ld.status)
                 END
               FROM leaves_date ld 
-              WHERE ld.staff_leave_id = l.id
+              WHERE ld.staff_leave_id = l.id AND ld.status != 4 AND ld.status != 0
             ),
             l.status
           ) AS leave_status,
+          (SELECT COUNT(*) FROM leaves_date ld WHERE ld.staff_leave_id = l.id AND ld.status != 4 AND ld.status != 0) AS total_dates_count,
+          (SELECT COUNT(*) FROM leaves_date ld WHERE ld.staff_leave_id = l.id AND ld.status = 2) AS approved_dates_count,
+          (SELECT COUNT(*) FROM leaves_date ld WHERE ld.staff_leave_id = l.id AND ld.status = 3) AS rejected_dates_count,
+          (SELECT COUNT(*) FROM leaves_date ld WHERE ld.staff_leave_id = l.id AND ld.status = 1) AS pending_dates_count,
           l.created_at,
+          DATE_FORMAT(l.created_at, '%Y-%m-%d') AS created_date,
           COALESCE(
-            (SELECT MIN(ld.date) FROM leaves_date ld WHERE ld.staff_leave_id = l.id),
-            DATE(l.created_at)
+            (SELECT DATE_FORMAT(MIN(ld.date), '%Y-%m-%d') FROM leaves_date ld WHERE ld.staff_leave_id = l.id AND ld.status != 4 AND ld.status != 0),
+            DATE_FORMAT(l.created_at, '%Y-%m-%d')
           ) AS leave_date,
           (SELECT GROUP_CONCAT(DATE_FORMAT(ld.date, '%Y-%m-%d') ORDER BY ld.date ASC SEPARATOR ', ') 
-           FROM leaves_date ld WHERE ld.staff_leave_id = l.id) AS leave_dates_str
+           FROM leaves_date ld WHERE ld.staff_leave_id = l.id AND ld.status != 4 AND ld.status != 0) AS leave_dates_str
         FROM leaves l
         LEFT JOIN leave_master lm ON (l.leave_id = lm.id AND lm.school_id = l.school_id)
         WHERE l.school_id = ?
@@ -138,14 +143,15 @@ class TeacherLeaveController {
                    ELSE MIN(ld.status)
                  END
                FROM leaves_date ld 
-               WHERE ld.staff_leave_id = l.id
+               WHERE ld.staff_leave_id = l.id AND ld.status != 4 AND ld.status != 0
              ),
              l.status
            ) AS leave_status,
            l.created_at,
+           DATE_FORMAT(l.created_at, '%Y-%m-%d') AS created_date,
            COALESCE(
-             (SELECT MIN(ld.date) FROM leaves_date ld WHERE ld.staff_leave_id = l.id),
-             DATE(l.created_at)
+             (SELECT DATE_FORMAT(MIN(ld.date), '%Y-%m-%d') FROM leaves_date ld WHERE ld.staff_leave_id = l.id AND ld.status != 4 AND ld.status != 0),
+             DATE_FORMAT(l.created_at, '%Y-%m-%d')
            ) AS leave_date
          FROM leaves l
          LEFT JOIN leave_master lm ON (l.leave_id = lm.id AND lm.school_id = l.school_id)
@@ -170,11 +176,11 @@ class TeacherLeaveController {
 
       const leave = rows[0];
 
-      // Fetch individual leave dates
+      // Fetch individual leave dates formatted as YYYY-MM-DD
       const [dates] = await pool.query(
         `SELECT id, staff_leave_id, DATE_FORMAT(date, '%Y-%m-%d') AS date, status 
          FROM leaves_date 
-         WHERE staff_leave_id = ? 
+         WHERE staff_leave_id = ? AND status != 4 AND status != 0
          ORDER BY date ASC`,
         [id]
       );
@@ -253,16 +259,13 @@ class TeacherLeaveController {
 
       // Duration specific date validation
       if (Number(duration) === 3) {
-        // Multiple days: Start Date must not be earlier than today
         if (firstDate < todayStr) {
           return ApiResponse.error(res, 'Start Date must not be earlier than today.', null, 400);
         }
-        // End Date must not be earlier than Start Date
         if (lastDate < firstDate) {
           return ApiResponse.error(res, 'End Date must not be earlier than the selected Start Date.', null, 400);
         }
       } else {
-        // Single Day / Half Day: Date must not be earlier than today
         if (firstDate < todayStr) {
           return ApiResponse.error(res, 'Leave date must not be earlier than today.', null, 400);
         }

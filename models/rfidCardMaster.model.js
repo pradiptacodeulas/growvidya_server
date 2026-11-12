@@ -430,12 +430,17 @@ class RfidCardMasterModel {
    * Update RFID card buyer order status / shipping address / remarks
    */
   static async updateBuyerOrder(id, data) {
+    const existing = await this.getBuyerOrderById(id);
+    if (!existing) return false;
+
     const updates = [];
     const params = [];
+    let normalizedStatus = null;
 
     if (data.order_status !== undefined) {
+      normalizedStatus = String(data.order_status).trim().toLowerCase();
       updates.push('order_status = ?');
-      params.push(String(data.order_status).trim().toLowerCase());
+      params.push(normalizedStatus);
     }
     if (data.shipping_address !== undefined) {
       updates.push('shipping_address = ?');
@@ -448,11 +453,48 @@ class RfidCardMasterModel {
 
     if (updates.length === 0) return false;
 
+    const isApprovingPending =
+      existing.payment_order_id &&
+      ['approved', 'dispatched', 'delivered'].includes(normalizedStatus) &&
+      existing.order_status === 'pending';
+
+    if (isApprovingPending) {
+      try {
+        const [ordRows] = await pool.query(
+          'SELECT id, order_type, status FROM subscription_payment_orders WHERE id = ? LIMIT 1',
+          [existing.payment_order_id]
+        );
+        const ord = ordRows[0];
+        if (ord && ord.order_type === 'addon_only' && ord.status === 'pending_verification') {
+          const SubscriptionFulfillmentService = require('../services/subscriptionFulfillment.service');
+          await SubscriptionFulfillmentService.approveOfflineAddonOrder({
+            orderId: ord.id,
+            verificationNotes: data.remarks || 'Approved via RFID Card Buyers',
+          });
+        }
+      } catch (e) {
+        console.error('[RfidCardMasterModel.updateBuyerOrder approval sync error]:', e.message);
+      }
+    }
+
     params.push(id);
     const [result] = await pool.query(
       `UPDATE school_rfid_orders SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ?`,
       params
     );
+
+    if (existing.payment_order_id && normalizedStatus === 'cancelled') {
+      try {
+        const SubscriptionFulfillmentService = require('../services/subscriptionFulfillment.service');
+        await SubscriptionFulfillmentService.syncStandaloneAddonCancellation({
+          orderId: existing.payment_order_id,
+          reason: data.remarks || 'Cancelled via RFID Card Buyers',
+        });
+      } catch (e) {
+        console.error('[RfidCardMasterModel.updateBuyerOrder cancellation sync error]:', e.message);
+      }
+    }
+
     return result.affectedRows > 0;
   }
 }

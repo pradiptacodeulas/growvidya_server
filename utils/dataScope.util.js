@@ -29,24 +29,28 @@ class DataScope {
     let branchId = null;
 
     if (isSuperAdmin) {
-      // Super Admin can explicitly target a branch via query, body, or header, or view consolidated 'ALL_BRANCHES'
-      const queryBranch = req.query?.branch_id !== undefined ? req.query.branch_id : req.query?.branchId;
-      const bodyBranch = req.body?.branch_id !== undefined ? req.body.branch_id : req.body?.branchId;
-      const headerBranch = req.headers?.['x-branch-id'] || req.headers?.['x-branch'];
-      const middlewareBranch = req.branchId;
+      // Single-branch schools operate as a unified single campus; only apply explicit branch filter when registrationType === 'multiple'
+      if (String(registrationType).toLowerCase() === 'multiple') {
+        const queryBranch = req.query?.branch_id !== undefined ? req.query.branch_id : req.query?.branchId;
+        const bodyBranch = req.body?.branch_id !== undefined ? req.body.branch_id : req.body?.branchId;
+        const headerBranch = req.headers?.['x-branch-id'] || req.headers?.['x-branch'];
+        const middlewareBranch = req.branchId;
 
-      const raw = queryBranch !== undefined && queryBranch !== null && queryBranch !== ''
-        ? queryBranch
-        : bodyBranch !== undefined && bodyBranch !== null && bodyBranch !== ''
-        ? bodyBranch
-        : headerBranch !== undefined && headerBranch !== null && headerBranch !== ''
-        ? headerBranch
-        : middlewareBranch;
+        const raw = queryBranch !== undefined && queryBranch !== null && queryBranch !== ''
+          ? queryBranch
+          : bodyBranch !== undefined && bodyBranch !== null && bodyBranch !== ''
+          ? bodyBranch
+          : headerBranch !== undefined && headerBranch !== null && headerBranch !== ''
+          ? headerBranch
+          : middlewareBranch;
 
-      if (raw !== undefined && raw !== null && raw !== '' && raw !== 'all' && raw !== '0' && raw !== 0) {
-        branchId = Number(raw) || null;
+        if (raw !== undefined && raw !== null && raw !== '' && raw !== 'all' && raw !== '0' && raw !== 0) {
+          branchId = Number(raw) || null;
+        } else {
+          branchId = null; // Consolidated
+        }
       } else {
-        branchId = null; // Consolidated
+        branchId = null;
       }
     } else {
       // Non-SuperAdmin (Branch Admin, Teacher, Student, Parent, Staff) is STRICTLY pinned to assigned branch
@@ -114,29 +118,42 @@ class DataScope {
   }
 
   /**
-   * Retrieves the main branch ID for a school
+   * Retrieves the main branch ID for a school (active or inactive only; excludes soft-deleted status = 4)
    * @param {number} schoolId
    * @returns {Promise<number|null>}
    */
   static async getMainBranchId(schoolId) {
-    if (!schoolId) return null;
-    if (mainBranchCache.has(schoolId)) {
-      return mainBranchCache.get(schoolId);
+    const parsedSchoolId = Number(schoolId);
+    if (!parsedSchoolId) return null;
+    if (mainBranchCache.has(parsedSchoolId)) {
+      return mainBranchCache.get(parsedSchoolId);
     }
     try {
       const [rows] = await pool.query(
-        'SELECT id FROM branch_master WHERE school_id = ? AND (is_main_branch = 1 OR id > 0) ORDER BY is_main_branch DESC, id ASC LIMIT 1',
-        [schoolId]
+        'SELECT id FROM branch_master WHERE school_id = ? AND status IN (1, 2) ORDER BY is_main_branch DESC, id ASC LIMIT 1',
+        [parsedSchoolId]
       );
       if (rows && rows.length > 0) {
         const id = rows[0].id;
-        mainBranchCache.set(schoolId, id);
+        mainBranchCache.set(parsedSchoolId, id);
         return id;
       }
     } catch (e) {
       console.error('[DataScope.getMainBranchId] Error:', e.message);
     }
     return null;
+  }
+
+  /**
+   * Invalidates the cached main branch ID for a school
+   * @param {number} schoolId
+   */
+  static invalidateMainBranchCache(schoolId = null) {
+    if (schoolId) {
+      mainBranchCache.delete(Number(schoolId));
+    } else {
+      mainBranchCache.clear();
+    }
   }
 
   /**
