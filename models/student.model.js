@@ -2044,6 +2044,123 @@ class StudentModel {
 
     return result.affectedRows > 0;
   }
+
+  static async promoteStudents(
+    schoolId,
+    { toAcademicYear, toClassId, toSectionId = null, students = [], promotedBy = null }
+  ) {
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
+
+      await connection.query(`
+        CREATE TABLE IF NOT EXISTS student_promotion_history (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          school_id INT NOT NULL,
+          branch_id INT DEFAULT NULL,
+          student_id INT NOT NULL,
+          from_academic_year INT DEFAULT NULL,
+          from_class_id INT DEFAULT NULL,
+          from_section_id INT DEFAULT NULL,
+          from_roll_number VARCHAR(100) DEFAULT NULL,
+          to_academic_year INT NOT NULL,
+          to_class_id INT NOT NULL,
+          to_section_id INT DEFAULT NULL,
+          to_roll_number VARCHAR(100) DEFAULT NULL,
+          promotion_status VARCHAR(50) NOT NULL DEFAULT 'promoted',
+          promoted_by INT DEFAULT NULL,
+          promoted_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+
+      let promotedCount = 0;
+
+      for (const item of students) {
+        const studentId = Number(item.student_id);
+        if (!studentId) continue;
+
+        const [rows] = await connection.query(
+          `SELECT id, branch_id, academic_year, class, section, roll_number, status
+           FROM student_master
+           WHERE id = ? AND school_id = ? AND status != 4
+           LIMIT 1`,
+          [studentId, schoolId]
+        );
+        if (!rows || rows.length === 0) continue;
+
+        const current = rows[0];
+        const statusAction = String(item.promotion_status || 'promoted').toLowerCase();
+        const newRollNumber =
+          item.roll_number !== undefined && item.roll_number !== null && String(item.roll_number).trim() !== ''
+            ? String(item.roll_number).trim()
+            : current.roll_number;
+
+        let nextAcademicYear = Number(toAcademicYear);
+        let nextClassId = Number(toClassId);
+        let nextSectionId = toSectionId ? Number(toSectionId) : null;
+        let nextStatus = 1;
+
+        if (statusAction === 'detained') {
+          nextClassId = Number(current.class);
+          nextSectionId = current.section ? Number(current.section) : null;
+        } else if (statusAction === 'graduated') {
+          nextClassId = Number(current.class);
+          nextSectionId = current.section ? Number(current.section) : null;
+          nextStatus = 2;
+        }
+
+        await connection.query(
+          `INSERT INTO student_promotion_history (
+             school_id, branch_id, student_id,
+             from_academic_year, from_class_id, from_section_id, from_roll_number,
+             to_academic_year, to_class_id, to_section_id, to_roll_number,
+             promotion_status, promoted_by
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            schoolId,
+            current.branch_id || null,
+            studentId,
+            current.academic_year ? Number(current.academic_year) : null,
+            current.class ? Number(current.class) : null,
+            current.section ? Number(current.section) : null,
+            current.roll_number || null,
+            nextAcademicYear,
+            nextClassId,
+            nextSectionId,
+            newRollNumber,
+            statusAction,
+            promotedBy ? Number(promotedBy) : null,
+          ]
+        );
+
+        await connection.query(
+          `UPDATE student_master
+           SET academic_year = ?, class = ?, section = ?, roll_number = ?, status = ?
+           WHERE id = ? AND school_id = ?`,
+          [nextAcademicYear, nextClassId, nextSectionId, newRollNumber, nextStatus, studentId, schoolId]
+        );
+
+        if (nextStatus === 1) {
+          await connection.query(
+            `UPDATE student_hostel
+             SET academic_year = ?
+             WHERE student_id = ? AND school_id = ? AND status = 1`,
+            [nextAcademicYear, studentId, schoolId]
+          );
+        }
+
+        promotedCount += 1;
+      }
+
+      await connection.commit();
+      return { promotedCount };
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
 }
 
 module.exports = StudentModel;

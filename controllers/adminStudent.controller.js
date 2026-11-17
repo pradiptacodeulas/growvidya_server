@@ -744,6 +744,58 @@ class AdminStudentController {
       next(error);
     }
   }
+
+  static async promoteStudents(req, res, next) {
+    try {
+      const schoolId = req.user?.schoolId || req.user?.school_id;
+      const promotedBy = req.user?.userId || req.user?.id || null;
+      const {
+        from_academic_year,
+        to_academic_year,
+        to_class_id,
+        to_section_id = null,
+        students = [],
+      } = req.body;
+
+      if (!to_academic_year || !to_class_id) {
+        return ApiResponse.error(
+          res,
+          'Target Academic Year and Target Class are required for promotion.',
+          null,
+          400
+        );
+      }
+
+      if (from_academic_year && String(from_academic_year) === String(to_academic_year)) {
+        return ApiResponse.error(
+          res,
+          'Target Academic Year must be different from Current Academic Year.',
+          null,
+          400
+        );
+      }
+
+      if (!Array.isArray(students) || students.length === 0) {
+        return ApiResponse.error(res, 'Please select at least one student to promote.', null, 400);
+      }
+
+      const result = await StudentModel.promoteStudents(schoolId, {
+        toAcademicYear: Number(to_academic_year),
+        toClassId: Number(to_class_id),
+        toSectionId: to_section_id ? Number(to_section_id) : null,
+        students,
+        promotedBy,
+      });
+
+      return ApiResponse.success(
+        res,
+        `${result.promotedCount} student(s) promoted successfully.`,
+        result
+      );
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 module.exports = AdminStudentController;

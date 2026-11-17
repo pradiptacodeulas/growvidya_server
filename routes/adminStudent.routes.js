@@ -19,6 +19,7 @@ router.get('/check-admission-number', rbacMiddleware(['Super Admin', 'Admin'], '
 // Student activities management (Accessible by Super Admin, Admin, Teacher)
 router.get('/activities/list', rbacMiddleware(['Super Admin', 'Admin', 'Teacher'], 'ward/students', 'view'), AdminStudentController.getActivitiesList);
 router.post('/activities/bulk', rbacMiddleware(['Super Admin', 'Admin', 'Teacher'], 'ward/students', 'edit'), AdminStudentController.bulkAddActivities);
+router.post('/promote', rbacMiddleware(['Super Admin', 'Admin'], 'ward/students', 'edit'), AdminStudentController.promoteStudents);
 router.post('/:id/activity', rbacMiddleware(['Super Admin', 'Admin', 'Teacher'], 'ward/students', 'edit'), AdminStudentController.addActivity);
 router.put('/activity/:activityId', rbacMiddleware(['Super Admin', 'Admin', 'Teacher'], 'ward/students', 'edit'), AdminStudentController.updateActivity);
 router.delete('/activity/:activityId', rbacMiddleware(['Super Admin', 'Admin', 'Teacher'], 'ward/students', 'delete'), AdminStudentController.deleteActivity);
