@@ -218,8 +218,8 @@ router.delete('/settings/email/:id', checkPermission('email_delivery', 'can_dele
 router.delete('/settings/email-delivery/:id', checkPermission('email_delivery', 'can_delete'), SaasAdminController.deleteEmailCredentials);
 router.post('/settings/email/test', checkPermission('email_delivery', 'can_edit'), SaasAdminController.sendTestEmail);
 router.post('/settings/email-delivery/test', checkPermission('email_delivery', 'can_edit'), SaasAdminController.sendTestEmail);
-router.patch('/settings/email/otp-mode', checkPermission('email_delivery', 'can_edit'), SaasAdminController.updateEmailOtpMode);
-router.patch('/settings/email-delivery/otp-mode', checkPermission('email_delivery', 'can_edit'), SaasAdminController.updateEmailOtpMode);
+router.patch('/settings/email/active-provider', checkPermission('email_delivery', 'can_edit'), SaasAdminController.setActiveEmailProvider);
+router.patch('/settings/email-delivery/active-provider', checkPermission('email_delivery', 'can_edit'), SaasAdminController.setActiveEmailProvider);
 
 // Help & Support Tickets Management
 router.get('/support-tickets', checkPermission('support_tickets', 'can_view'), SupportTicketController.getSaasTickets);

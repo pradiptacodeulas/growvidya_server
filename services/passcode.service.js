@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const { pool } = require('../config/db.config');
-const EmailCredentialModel = require('../models/emailCredential.model');
+const { generateToken, verifyToken } = require('../utils/jwt.util');
 const EmailService = require('./email.service');
 
 class PasscodeService {
@@ -9,13 +9,6 @@ class PasscodeService {
    */
   static generatePasscode() {
     return String(crypto.randomInt(100000, 1000000));
-  }
-
-  /**
-   * Get current OTP mode ('test' | 'production') from email_credentials table
-   */
-  static async getOtpMode() {
-    return await EmailCredentialModel.getOtpMode();
   }
 
   /**
@@ -52,7 +45,20 @@ class PasscodeService {
   }
 
   /**
-   * Send the 6-digit OTP email using the active Default Email Provider (Mailjet or SMTP)
+   * Clear stored OTP and expiry timestamp (e.g., if email dispatch fails)
+   */
+  static async clearPasscode(tableName, recordId) {
+    await pool.query(
+      `UPDATE ${tableName}
+       SET otp = NULL, otp_expires_at = NULL
+       WHERE id = ?`,
+      [recordId]
+    );
+    return true;
+  }
+
+  /**
+   * Send the 6-digit Sign-In OTP email using the active Email Provider (Mailjet, Zoho Mail, or SMTP)
    */
   static async sendOtpEmail({ toEmail, toName, otpCode, portalName, expiresInMinutes = 10 }) {
     const cleanEmail = String(toEmail || '').trim();
@@ -83,6 +89,55 @@ class PasscodeService {
         </div>
         <p style="color: #6b7280; font-size: 14px; line-height: 1.5; margin-bottom: 16px;">
           This code is valid for ${expiresInMinutes} minutes. If you did not request this code, you can safely ignore this email.
+        </p>
+        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 16px 0;" />
+        <p style="color: #6b7280; font-size: 13px; margin-bottom: 0;">
+          <strong>Disclaimer:</strong> This is an automated email. Please do not reply back to this mail.
+        </p>
+      </div>
+    `;
+
+    return await EmailService.sendEmail({
+      to: cleanEmail,
+      toName: toName || cleanEmail,
+      subject,
+      text,
+      html,
+    });
+  }
+
+  /**
+   * Send the 6-digit Forgot Password OTP email using the active Email Provider (Mailjet, Zoho Mail, or SMTP)
+   */
+  static async sendForgotPasswordOtpEmail({ toEmail, toName, otpCode, portalName, expiresInMinutes = 10 }) {
+    const cleanEmail = String(toEmail || '').trim();
+    if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      const err = new Error('No valid email address is registered for this account to receive the password reset OTP.');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const subject = `${portalName ? `${portalName} — ` : ''}Your 6-Digit Password Reset OTP`;
+    const text = `Hello ${toName || ''},\n\nWe received a request to reset your password${portalName ? ` for ${portalName}` : ''}.\n\nYour 6-digit password reset OTP is: ${otpCode}\n\nThis OTP is valid for ${expiresInMinutes} minutes. Do not share this code with anyone.\n\nIf you did not request a password reset, please ignore this email.\n\nDisclaimer: Please do not reply back to this mail.`;
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 540px; margin: 0 auto; padding: 28px; border: 1px solid #e5e7eb; border-radius: 12px;">
+        <div style="text-align: center; margin-bottom: 22px;">
+          <img
+            src="https://growvidya.in/vidya_assets/images/logo.png"
+            alt="Growvidya"
+            width="180"
+            style="max-width: 180px; width: 180px; height: auto; display: inline-block; border: 0; outline: none; text-decoration: none;"
+          />
+        </div>
+        <h2 style="margin-top: 0; color: #111827; font-size: 24px;">Password Reset Verification Code</h2>
+        <p style="color: #374151; font-size: 16px; line-height: 1.6;">
+          Hello${toName ? ` <strong>${toName}</strong>` : ''}, use the following 6-digit OTP to verify your identity and reset your password${portalName ? ` for <strong>${portalName}</strong>` : ''}:
+        </p>
+        <div style="background: #eff6ff; border: 1px solid #bfdbfe; padding: 18px; border-radius: 8px; text-align: center; margin: 22px 0;">
+          <span style="font-size: 34px; font-weight: bold; letter-spacing: 6px; color: #1e3a8a; font-family: monospace;">${otpCode}</span>
+        </div>
+        <p style="color: #6b7280; font-size: 14px; line-height: 1.5; margin-bottom: 16px;">
+          This code is valid for ${expiresInMinutes} minutes. If you did not request a password reset, your account remains secure and you can safely ignore this email.
         </p>
         <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 16px 0;" />
         <p style="color: #6b7280; font-size: 13px; margin-bottom: 0;">
@@ -183,6 +238,38 @@ class PasscodeService {
     );
 
     return { valid: true };
+  }
+
+  /**
+   * Issue a short-lived (10-minute) signed JWT token after verifying a Forgot Password OTP
+   */
+  static issuePasswordResetToken({ userId, portalType, identifier }) {
+    return generateToken(
+      {
+        purpose: 'password_reset',
+        userId: Number(userId),
+        portalType,
+        identifier: String(identifier || '').trim(),
+      },
+      { expiresIn: '10m' }
+    );
+  }
+
+  /**
+   * Verify a Forgot Password resetToken for a specific portalType
+   */
+  static verifyPasswordResetToken(resetToken, expectedPortalType) {
+    if (!resetToken || typeof resetToken !== 'string') {
+      return { valid: false, message: 'Password reset session token is missing. Please verify your OTP again.' };
+    }
+    const decoded = verifyToken(resetToken.trim());
+    if (!decoded || decoded.purpose !== 'password_reset' || decoded.portalType !== expectedPortalType || !decoded.userId) {
+      return {
+        valid: false,
+        message: 'Your password reset session has expired or is invalid. Please request a new OTP.',
+      };
+    }
+    return { valid: true, payload: decoded };
   }
 }
 

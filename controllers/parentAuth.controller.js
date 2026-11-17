@@ -87,18 +87,40 @@ class ParentAuthController {
   }
 
   /**
+   * Validate Email-Only Identifier for Parent Portal
+   */
+  static _validateParentEmail(rawInput) {
+    const cleanEmail = String(rawInput || '').trim();
+    if (!cleanEmail) {
+      return { valid: false, message: 'Email address is required.' };
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      return {
+        valid: false,
+        message: 'Please enter a valid registered email address. Phone number login is not supported.',
+      };
+    }
+    return { valid: true, email: cleanEmail };
+  }
+
+  /**
    * Parent Login Controller (Password-based fallback)
    */
   static async login(req, res, next) {
     try {
-      const emailOrIdentifier = req.body.email || req.body.phone || req.body.identifier || req.body.parent_id || req.body.login;
+      const rawIdentifier = req.body.email || req.body.identifier || req.body.login;
       const { password } = req.body;
 
-      if (!emailOrIdentifier || !password) {
-        return ApiResponse.error(res, 'Email / Phone Number and password are required.', null, 400);
+      if (!rawIdentifier || !password) {
+        return ApiResponse.error(res, 'Email address and password are required.', null, 400);
       }
 
-      const parent = await ParentModel.findByLoginIdentifier(emailOrIdentifier);
+      const emailCheck = ParentAuthController._validateParentEmail(rawIdentifier);
+      if (!emailCheck.valid) {
+        return ApiResponse.error(res, emailCheck.message, null, 400);
+      }
+
+      const parent = await ParentModel.findByLoginIdentifier(emailCheck.email);
 
       if (!parent || Number(parent.status) !== 1) {
         return ApiResponse.error(res, 'Invalid credentials. Parent account not found or inactive.', null, 401);
@@ -124,30 +146,31 @@ class ParentAuthController {
    */
   static async requestPasscode(req, res, next) {
     try {
-      const emailOrIdentifier = req.body.email || req.body.phone || req.body.identifier || req.body.parent_id || req.body.login;
-
-      if (!emailOrIdentifier || !String(emailOrIdentifier).trim()) {
-        return ApiResponse.error(res, 'Email address or Phone number is required.', null, 400);
+      const rawIdentifier = req.body.email || req.body.identifier || req.body.login;
+      const emailCheck = ParentAuthController._validateParentEmail(rawIdentifier);
+      if (!emailCheck.valid) {
+        return ApiResponse.error(res, emailCheck.message, null, 400);
       }
 
-      const parent = await ParentModel.findByLoginIdentifier(emailOrIdentifier);
+      const cleanEmail = emailCheck.email;
+      const parent = await ParentModel.findByLoginIdentifier(cleanEmail);
 
       if (!parent || Number(parent.status) !== 1) {
-        return ApiResponse.error(res, 'Parent account not found with this identifier or is inactive.', null, 404);
+        return ApiResponse.error(res, 'Parent account not found with this email address or is inactive.', null, 404);
       }
 
-      const otpMode = await PasscodeService.getOtpMode();
-      const isTest = otpMode === 'test';
+      const targetEmail = String(parent.email || '').trim();
+      if (!targetEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(targetEmail)) {
+        return ApiResponse.error(res, 'No valid email address is registered for this account to receive the OTP.', null, 400);
+      }
+
       const passcode = PasscodeService.generatePasscode();
       const expiresInMinutes = 10;
 
-      if (!isTest) {
-        const targetEmail = String(parent.email || '').trim();
-        if (!targetEmail) {
-          return ApiResponse.error(res, 'No email address is registered for this account to receive the OTP.', null, 400);
-        }
-        await PasscodeService.storePasscode('parent_master', parent.id, passcode, expiresInMinutes);
-        const parentName = [parent.first_name, parent.last_name].filter(Boolean).join(' ');
+      await PasscodeService.storePasscode('parent_master', parent.id, passcode, expiresInMinutes);
+      const parentName = [parent.first_name, parent.last_name].filter(Boolean).join(' ');
+
+      try {
         await PasscodeService.sendOtpEmail({
           toEmail: targetEmail,
           toName: parentName,
@@ -155,22 +178,19 @@ class ParentAuthController {
           portalName: 'Parent Portal',
           expiresInMinutes,
         });
-        return ApiResponse.success(res, 'A 6-digit OTP has been sent to your registered email address.', {
-          identifier: String(emailOrIdentifier).trim(),
-          maskedIdentifier: PasscodeService.maskIdentifier(targetEmail),
-          testMode: false,
-          expiresInMinutes,
-        });
+      } catch (emailErr) {
+        await PasscodeService.clearPasscode('parent_master', parent.id).catch(() => {});
+        return ApiResponse.error(
+          res,
+          emailErr.message || 'Failed to send OTP email. Please try again later.',
+          null,
+          emailErr.statusCode || 400
+        );
       }
 
-      await PasscodeService.storePasscode('parent_master', parent.id, passcode, expiresInMinutes);
-      const maskedIdentifier = PasscodeService.maskIdentifier(parent.phone || parent.email || emailOrIdentifier);
-
-      return ApiResponse.success(res, 'A 6-digit OTP has been generated.', {
-        identifier: String(emailOrIdentifier).trim(),
-        maskedIdentifier,
-        testMode: true,
-        testPasscode: passcode,
+      return ApiResponse.success(res, 'A 6-digit OTP has been sent to your registered email address.', {
+        identifier: cleanEmail,
+        maskedIdentifier: PasscodeService.maskIdentifier(targetEmail),
         expiresInMinutes,
       });
     } catch (error) {
@@ -183,17 +203,18 @@ class ParentAuthController {
    */
   static async verifyPasscode(req, res, next) {
     try {
-      const emailOrIdentifier = req.body.email || req.body.phone || req.body.identifier || req.body.parent_id || req.body.login;
+      const rawIdentifier = req.body.email || req.body.identifier || req.body.login;
       const passcode = req.body.passcode || req.body.otp || req.body.code;
 
-      if (!emailOrIdentifier || !String(emailOrIdentifier).trim()) {
-        return ApiResponse.error(res, 'Email address or Phone number is required.', null, 400);
+      const emailCheck = ParentAuthController._validateParentEmail(rawIdentifier);
+      if (!emailCheck.valid) {
+        return ApiResponse.error(res, emailCheck.message, null, 400);
       }
       if (!passcode || !String(passcode).trim()) {
         return ApiResponse.error(res, '6-digit OTP is required.', null, 400);
       }
 
-      const parent = await ParentModel.findByLoginIdentifier(emailOrIdentifier);
+      const parent = await ParentModel.findByLoginIdentifier(emailCheck.email);
 
       if (!parent || Number(parent.status) !== 1) {
         return ApiResponse.error(res, 'Parent account not found or is inactive.', null, 401);
@@ -206,6 +227,138 @@ class ParentAuthController {
       }
 
       return await ParentAuthController._issueSession(parent, res, 'Parent authenticated successfully via OTP.');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Step 1 of Forgot Password: Request 6-digit Password Reset OTP via Email
+   */
+  static async requestForgotPasswordOtp(req, res, next) {
+    try {
+      const rawIdentifier = req.body.email || req.body.identifier || req.body.login;
+      const emailCheck = ParentAuthController._validateParentEmail(rawIdentifier);
+      if (!emailCheck.valid) {
+        return ApiResponse.error(res, emailCheck.message, null, 400);
+      }
+
+      const cleanEmail = emailCheck.email;
+      const parent = await ParentModel.findByLoginIdentifier(cleanEmail);
+      if (!parent || Number(parent.status) !== 1) {
+        return ApiResponse.error(res, 'No active parent account found with this email address.', null, 404);
+      }
+
+      const targetEmail = String(parent.email || '').trim();
+      const otpCode = PasscodeService.generatePasscode();
+      const expiresInMinutes = 10;
+
+      await PasscodeService.storePasscode('parent_master', parent.id, otpCode, expiresInMinutes);
+      const parentName = [parent.first_name, parent.last_name].filter(Boolean).join(' ');
+
+      try {
+        await PasscodeService.sendForgotPasswordOtpEmail({
+          toEmail: targetEmail,
+          toName: parentName,
+          otpCode,
+          portalName: 'Parent Portal',
+          expiresInMinutes,
+        });
+      } catch (emailErr) {
+        await PasscodeService.clearPasscode('parent_master', parent.id).catch(() => {});
+        return ApiResponse.error(
+          res,
+          emailErr.message || 'Failed to send password reset OTP email. Please try again later.',
+          null,
+          emailErr.statusCode || 400
+        );
+      }
+
+      return ApiResponse.success(res, 'A 6-digit password reset OTP has been sent to your registered email address.', {
+        identifier: cleanEmail,
+        maskedIdentifier: PasscodeService.maskIdentifier(targetEmail),
+        expiresInMinutes,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Step 2 of Forgot Password: Verify 6-digit OTP and issue short-lived resetToken
+   */
+  static async verifyForgotPasswordOtp(req, res, next) {
+    try {
+      const rawIdentifier = req.body.email || req.body.identifier || req.body.login;
+      const otpCode = req.body.otp || req.body.passcode || req.body.code;
+
+      const emailCheck = ParentAuthController._validateParentEmail(rawIdentifier);
+      if (!emailCheck.valid) {
+        return ApiResponse.error(res, emailCheck.message, null, 400);
+      }
+      if (!otpCode || !String(otpCode).trim()) {
+        return ApiResponse.error(res, '6-digit OTP is required.', null, 400);
+      }
+
+      const cleanEmail = emailCheck.email;
+      const parent = await ParentModel.findByLoginIdentifier(cleanEmail);
+      if (!parent || Number(parent.status) !== 1) {
+        return ApiResponse.error(res, 'Parent account not found or inactive.', null, 404);
+      }
+
+      const verifyResult = await PasscodeService.verifyPasscode('parent_master', parent.id, otpCode);
+      if (!verifyResult.valid) {
+        return ApiResponse.error(res, verifyResult.message, null, 401);
+      }
+
+      const resetToken = PasscodeService.issuePasswordResetToken({
+        userId: parent.id,
+        portalType: 'ParentPortal',
+        identifier: cleanEmail,
+      });
+
+      return ApiResponse.success(res, 'OTP verified. Please enter your new password.', {
+        resetToken,
+        identifier: cleanEmail,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Step 3 of Forgot Password: Set new password using verified resetToken
+   */
+  static async resetPassword(req, res, next) {
+    try {
+      const { resetToken, newPassword, confirmPassword, password } = req.body || {};
+      const candidatePassword = String(newPassword || password || '').trim();
+
+      const tokenVerify = PasscodeService.verifyPasswordResetToken(resetToken, 'ParentPortal');
+      if (!tokenVerify.valid) {
+        return ApiResponse.error(res, tokenVerify.message, null, 401);
+      }
+
+      if (!candidatePassword || candidatePassword.length < 6) {
+        return ApiResponse.error(res, 'New password must be at least 6 characters long.', null, 400);
+      }
+      if (confirmPassword !== undefined && String(confirmPassword).trim() !== candidatePassword) {
+        return ApiResponse.error(res, 'New password and confirm password do not match.', null, 400);
+      }
+
+      const parentId = Number(tokenVerify.payload.userId);
+      const [rows] = await pool.query('SELECT id FROM parent_master WHERE id = ? AND status = 1 LIMIT 1', [parentId]);
+      if (!rows || rows.length === 0) {
+        return ApiResponse.error(res, 'Parent account not found or inactive.', null, 404);
+      }
+
+      const hashedPwd = await hashPassword(candidatePassword);
+      await pool.query(
+        'UPDATE parent_master SET password = ?, otp = NULL, otp_expires_at = NULL WHERE id = ? AND status = 1',
+        [hashedPwd, parentId]
+      );
+
+      return ApiResponse.success(res, 'Your password has been reset successfully. Please sign in with your new password.');
     } catch (error) {
       next(error);
     }
@@ -335,6 +488,87 @@ class ParentAuthController {
   }
 
   /**
+   * Request 6-digit Email OTP for Parent Password Change
+   * POST /api/parent/auth/profile/request-otp
+   */
+  static async requestProfileOtp(req, res, next) {
+    try {
+      const parentId = req.user.parentId || req.user.userId;
+      const existingParent = await ParentModel.findAuthProfileById(parentId);
+      if (!existingParent) {
+        return ApiResponse.error(res, 'Parent profile not found.', null, 404);
+      }
+
+      const data = req.body || {};
+      const currentPassword = String(data.current_password || '');
+      const candidateNewPassword = String(data.new_password || '').trim();
+
+      if (!currentPassword) {
+        return ApiResponse.error(res, 'Current password is required to change password.', null, 400);
+      }
+      if (!candidateNewPassword || candidateNewPassword.length < 6) {
+        return ApiResponse.error(res, 'New password must be at least 6 characters long.', null, 400);
+      }
+
+      let isCurrentValid = false;
+      if (existingParent.password) {
+        isCurrentValid = await comparePassword(currentPassword, existingParent.password);
+      }
+      if (!isCurrentValid) {
+        return ApiResponse.error(res, 'Current password is incorrect.', null, 400);
+      }
+
+      const targetEmail = String(existingParent.email || '').trim();
+      if (!targetEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(targetEmail)) {
+        return ApiResponse.error(
+          res,
+          'No email address is registered with your Parent profile. Please contact your school administrator to link your email address.',
+          { emailMissing: true },
+          400
+        );
+      }
+
+      const otpCode = PasscodeService.generatePasscode();
+      await PasscodeService.storePasscode('parent_master', parentId, otpCode, 10);
+
+      const fullName =
+        [existingParent.first_name, existingParent.last_name].filter(Boolean).join(' ').trim() ||
+        'Parent';
+
+      try {
+        await PasscodeService.sendActionOtpEmail({
+          toEmail: targetEmail,
+          toName: fullName,
+          otpCode,
+          actionTitle: 'Parent Password Change Verification',
+          actionWarning: 'Use this one-time passcode to confirm changing your Parent Portal password.',
+          expiresInMinutes: 10,
+        });
+      } catch (emailErr) {
+        await PasscodeService.clearPasscode('parent_master', parentId);
+        return ApiResponse.error(
+          res,
+          emailErr.message || 'Failed to deliver OTP email. Please check active email provider settings.',
+          null,
+          502
+        );
+      }
+
+      const maskedEmail = PasscodeService.maskEmail(targetEmail);
+      return ApiResponse.success(
+        res,
+        `A 6-digit verification code has been sent to ${maskedEmail}.`,
+        {
+          maskedEmail,
+          expiresInMinutes: 10,
+        }
+      );
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Update Parent Profile
    */
   static async updateProfile(req, res, next) {
@@ -357,6 +591,7 @@ class ParentAuthController {
         state,
         city,
         postal_code,
+        otp,
       } = req.body;
 
       const existingParent = await ParentModel.findAuthProfileById(parentId);
@@ -366,8 +601,20 @@ class ParentAuthController {
 
       let hashedPassword = undefined;
       if (new_password) {
+        const cleanOtp = String(otp || '').trim();
+        if (!cleanOtp) {
+          return ApiResponse.error(
+            res,
+            'A 6-digit email verification OTP is required to change your password.',
+            null,
+            400
+          );
+        }
         if (!current_password) {
           return ApiResponse.error(res, 'Current password is required to change password.', null, 400);
+        }
+        if (String(new_password).trim().length < 6) {
+          return ApiResponse.error(res, 'New password must be at least 6 characters long.', null, 400);
         }
 
         let isCurrentValid = false;
@@ -379,7 +626,12 @@ class ParentAuthController {
           return ApiResponse.error(res, 'Current password is incorrect.', null, 400);
         }
 
-        hashedPassword = await hashPassword(new_password);
+        const verification = await PasscodeService.verifyPasscode('parent_master', parentId, cleanOtp);
+        if (!verification.valid) {
+          return ApiResponse.error(res, verification.reason, null, 400);
+        }
+
+        hashedPassword = await hashPassword(String(new_password).trim());
       }
 
       const updatedParent = await ParentModel.updateParentProfile(parentId, schoolId, {

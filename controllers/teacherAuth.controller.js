@@ -78,18 +78,19 @@ class TeacherAuthController {
   }
 
   /**
-   * Teacher Login Controller (Password-based fallback)
+   * Teacher Login Controller (Password-based fallback — accepts Email or Teacher ID)
    */
   static async login(req, res, next) {
     try {
-      const emailOrIdentifier = req.body.email || req.body.identifier || req.body.teacher_id || req.body.phone || req.body.login;
+      const emailOrIdentifier = req.body.email || req.body.identifier || req.body.teacher_id || req.body.login;
       const { password } = req.body;
 
-      if (!emailOrIdentifier || !password) {
-        return ApiResponse.error(res, 'Teacher ID / Email and password are required.', null, 400);
+      if (!emailOrIdentifier || !String(emailOrIdentifier).trim() || !password) {
+        return ApiResponse.error(res, 'Email address or Teacher ID and password are required.', null, 400);
       }
 
-      const teacher = await TeacherModel.findByLoginIdentifier(emailOrIdentifier);
+      const cleanIdent = String(emailOrIdentifier).trim();
+      const teacher = await TeacherModel.findByLoginIdentifier(cleanIdent);
 
       if (!teacher || Number(teacher.status) === 4) {
         return ApiResponse.error(res, 'Invalid credentials. Teacher account not found.', null, 401);
@@ -120,20 +121,21 @@ class TeacherAuthController {
   }
 
   /**
-   * Request 6-digit Passcode for Teacher Login
+   * Request 6-digit Passcode for Teacher Login (accepts Email or Teacher ID)
    */
   static async requestPasscode(req, res, next) {
     try {
-      const emailOrIdentifier = req.body.email || req.body.identifier || req.body.teacher_id || req.body.phone || req.body.login;
+      const emailOrIdentifier = req.body.email || req.body.identifier || req.body.teacher_id || req.body.login;
 
       if (!emailOrIdentifier || !String(emailOrIdentifier).trim()) {
-        return ApiResponse.error(res, 'Teacher ID, Email address or Phone number is required.', null, 400);
+        return ApiResponse.error(res, 'Email address or Teacher ID is required.', null, 400);
       }
 
-      const teacher = await TeacherModel.findByLoginIdentifier(emailOrIdentifier);
+      const cleanIdent = String(emailOrIdentifier).trim();
+      const teacher = await TeacherModel.findByLoginIdentifier(cleanIdent);
 
       if (!teacher || Number(teacher.status) === 4) {
-        return ApiResponse.error(res, 'Teacher account not found with this identifier.', null, 404);
+        return ApiResponse.error(res, 'Teacher account not found with this Email or Teacher ID.', null, 404);
       }
 
       if (!TeacherAuthController._isTeacherActive(teacher)) {
@@ -145,18 +147,23 @@ class TeacherAuthController {
         );
       }
 
-      const otpMode = await PasscodeService.getOtpMode();
-      const isTest = otpMode === 'test';
+      const targetEmail = String(teacher.email_address || '').trim();
+      if (!targetEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(targetEmail)) {
+        return ApiResponse.error(
+          res,
+          `No email address is registered for Teacher ID "${teacher.teacher_id || cleanIdent}". Please contact your School Administrator to link an email address to your profile, or sign in using your password.`,
+          { emailMissing: true, identifier: cleanIdent },
+          400
+        );
+      }
+
       const passcode = PasscodeService.generatePasscode();
       const expiresInMinutes = 10;
 
-      if (!isTest) {
-        const targetEmail = String(teacher.email_address || '').trim();
-        if (!targetEmail) {
-          return ApiResponse.error(res, 'No email address is registered for this account to receive the OTP.', null, 400);
-        }
-        await PasscodeService.storePasscode('teacher_master', teacher.id, passcode, expiresInMinutes);
-        const teacherName = [teacher.first_name, teacher.last_name].filter(Boolean).join(' ');
+      await PasscodeService.storePasscode('teacher_master', teacher.id, passcode, expiresInMinutes);
+      const teacherName = [teacher.first_name, teacher.last_name].filter(Boolean).join(' ');
+
+      try {
         await PasscodeService.sendOtpEmail({
           toEmail: targetEmail,
           toName: teacherName,
@@ -164,22 +171,19 @@ class TeacherAuthController {
           portalName: 'Teacher Portal',
           expiresInMinutes,
         });
-        return ApiResponse.success(res, 'A 6-digit OTP has been sent to your registered email address.', {
-          identifier: String(emailOrIdentifier).trim(),
-          maskedIdentifier: PasscodeService.maskIdentifier(targetEmail),
-          testMode: false,
-          expiresInMinutes,
-        });
+      } catch (emailErr) {
+        await PasscodeService.clearPasscode('teacher_master', teacher.id).catch(() => {});
+        return ApiResponse.error(
+          res,
+          emailErr.message || 'Failed to send OTP email. Please try again later.',
+          null,
+          emailErr.statusCode || 400
+        );
       }
 
-      await PasscodeService.storePasscode('teacher_master', teacher.id, passcode, expiresInMinutes);
-      const maskedIdentifier = PasscodeService.maskIdentifier(teacher.email_address || teacher.primary_contact_number || emailOrIdentifier);
-
-      return ApiResponse.success(res, 'A 6-digit OTP has been generated.', {
-        identifier: String(emailOrIdentifier).trim(),
-        maskedIdentifier,
-        testMode: true,
-        testPasscode: passcode,
+      return ApiResponse.success(res, 'A 6-digit OTP has been sent to your registered email address.', {
+        identifier: cleanIdent,
+        maskedIdentifier: PasscodeService.maskIdentifier(targetEmail),
         expiresInMinutes,
       });
     } catch (error) {
@@ -192,17 +196,18 @@ class TeacherAuthController {
    */
   static async verifyPasscode(req, res, next) {
     try {
-      const emailOrIdentifier = req.body.email || req.body.identifier || req.body.teacher_id || req.body.phone || req.body.login;
+      const emailOrIdentifier = req.body.email || req.body.identifier || req.body.teacher_id || req.body.login;
       const passcode = req.body.passcode || req.body.otp || req.body.code;
 
       if (!emailOrIdentifier || !String(emailOrIdentifier).trim()) {
-        return ApiResponse.error(res, 'Teacher ID, Email address or Phone number is required.', null, 400);
+        return ApiResponse.error(res, 'Email address or Teacher ID is required.', null, 400);
       }
       if (!passcode || !String(passcode).trim()) {
         return ApiResponse.error(res, '6-digit OTP is required.', null, 400);
       }
 
-      const teacher = await TeacherModel.findByLoginIdentifier(emailOrIdentifier);
+      const cleanIdent = String(emailOrIdentifier).trim();
+      const teacher = await TeacherModel.findByLoginIdentifier(cleanIdent);
 
       if (!teacher || Number(teacher.status) === 4) {
         return ApiResponse.error(res, 'Teacher account not found.', null, 401);
@@ -224,6 +229,155 @@ class TeacherAuthController {
       }
 
       return await TeacherAuthController._issueSession(teacher, res, 'Teacher authenticated successfully via OTP.');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Step 1 of Forgot Password: Request 6-digit Password Reset OTP via Email (accepts Email or Teacher ID)
+   */
+  static async requestForgotPasswordOtp(req, res, next) {
+    try {
+      const emailOrIdentifier = req.body.email || req.body.identifier || req.body.teacher_id || req.body.login;
+      if (!emailOrIdentifier || !String(emailOrIdentifier).trim()) {
+        return ApiResponse.error(res, 'Email address or Teacher ID is required.', null, 400);
+      }
+
+      const cleanIdent = String(emailOrIdentifier).trim();
+      const teacher = await TeacherModel.findByLoginIdentifier(cleanIdent);
+
+      if (!teacher || Number(teacher.status) === 4) {
+        return ApiResponse.error(res, 'No teacher account found with this Email or Teacher ID.', null, 404);
+      }
+
+      if (!TeacherAuthController._isTeacherActive(teacher)) {
+        return ApiResponse.error(
+          res,
+          'Your account is currently inactive. Please contact the school administrator.',
+          null,
+          403
+        );
+      }
+
+      const targetEmail = String(teacher.email_address || '').trim();
+      if (!targetEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(targetEmail)) {
+        return ApiResponse.error(
+          res,
+          `No email address is registered for Teacher ID "${teacher.teacher_id || cleanIdent}". Please contact your School Administrator to reset your password or link an email address.`,
+          { emailMissing: true, identifier: cleanIdent },
+          400
+        );
+      }
+
+      const otpCode = PasscodeService.generatePasscode();
+      const expiresInMinutes = 10;
+
+      await PasscodeService.storePasscode('teacher_master', teacher.id, otpCode, expiresInMinutes);
+      const teacherName = [teacher.first_name, teacher.last_name].filter(Boolean).join(' ');
+
+      try {
+        await PasscodeService.sendForgotPasswordOtpEmail({
+          toEmail: targetEmail,
+          toName: teacherName,
+          otpCode,
+          portalName: 'Teacher Portal',
+          expiresInMinutes,
+        });
+      } catch (emailErr) {
+        await PasscodeService.clearPasscode('teacher_master', teacher.id).catch(() => {});
+        return ApiResponse.error(
+          res,
+          emailErr.message || 'Failed to send password reset OTP email. Please try again later.',
+          null,
+          emailErr.statusCode || 400
+        );
+      }
+
+      return ApiResponse.success(res, 'A 6-digit password reset OTP has been sent to your registered email address.', {
+        identifier: cleanIdent,
+        maskedIdentifier: PasscodeService.maskIdentifier(targetEmail),
+        expiresInMinutes,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Step 2 of Forgot Password: Verify 6-digit OTP and issue short-lived resetToken
+   */
+  static async verifyForgotPasswordOtp(req, res, next) {
+    try {
+      const emailOrIdentifier = req.body.email || req.body.identifier || req.body.teacher_id || req.body.login;
+      const otpCode = req.body.otp || req.body.passcode || req.body.code;
+
+      if (!emailOrIdentifier || !String(emailOrIdentifier).trim()) {
+        return ApiResponse.error(res, 'Email address or Teacher ID is required.', null, 400);
+      }
+      if (!otpCode || !String(otpCode).trim()) {
+        return ApiResponse.error(res, '6-digit OTP is required.', null, 400);
+      }
+
+      const cleanIdent = String(emailOrIdentifier).trim();
+      const teacher = await TeacherModel.findByLoginIdentifier(cleanIdent);
+      if (!teacher || !TeacherAuthController._isTeacherActive(teacher)) {
+        return ApiResponse.error(res, 'Teacher account not found or inactive.', null, 404);
+      }
+
+      const verifyResult = await PasscodeService.verifyPasscode('teacher_master', teacher.id, otpCode);
+      if (!verifyResult.valid) {
+        return ApiResponse.error(res, verifyResult.message, null, 401);
+      }
+
+      const resetToken = PasscodeService.issuePasswordResetToken({
+        userId: teacher.id,
+        portalType: 'TeacherPortal',
+        identifier: cleanIdent,
+      });
+
+      return ApiResponse.success(res, 'OTP verified. Please enter your new password.', {
+        resetToken,
+        identifier: cleanIdent,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Step 3 of Forgot Password: Set new password using verified resetToken
+   */
+  static async resetPassword(req, res, next) {
+    try {
+      const { resetToken, newPassword, confirmPassword, password } = req.body || {};
+      const candidatePassword = String(newPassword || password || '').trim();
+
+      const tokenVerify = PasscodeService.verifyPasswordResetToken(resetToken, 'TeacherPortal');
+      if (!tokenVerify.valid) {
+        return ApiResponse.error(res, tokenVerify.message, null, 401);
+      }
+
+      if (!candidatePassword || candidatePassword.length < 6) {
+        return ApiResponse.error(res, 'New password must be at least 6 characters long.', null, 400);
+      }
+      if (confirmPassword !== undefined && String(confirmPassword).trim() !== candidatePassword) {
+        return ApiResponse.error(res, 'New password and confirm password do not match.', null, 400);
+      }
+
+      const teacherId = Number(tokenVerify.payload.userId);
+      const teacher = await TeacherModel.findAuthProfileById(teacherId);
+      if (!teacher || !TeacherAuthController._isTeacherActive(teacher)) {
+        return ApiResponse.error(res, 'Teacher account not found or inactive.', null, 404);
+      }
+
+      const hashedPwd = await hashPassword(candidatePassword);
+      await pool.query(
+        'UPDATE teacher_master SET password = ?, otp = NULL, otp_expires_at = NULL WHERE id = ? AND status != 4',
+        [hashedPwd, teacherId]
+      );
+
+      return ApiResponse.success(res, 'Your password has been reset successfully. Please sign in with your new password.');
     } catch (error) {
       next(error);
     }
@@ -394,6 +548,96 @@ class TeacherAuthController {
       return ApiResponse.success(res, 'Teacher profile retrieved successfully.', {
         teacher: TeacherAuthController._formatTeacherResponse(safeTeacher),
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Request 6-digit Email OTP for Teacher Password Change
+   * POST /api/teacher/auth/profile/request-otp
+   */
+  static async requestProfileOtp(req, res, next) {
+    try {
+      const teacherId = req.user.teacherId || req.user.userId;
+      const existingTeacher = await TeacherModel.findAuthProfileById(teacherId);
+      if (!existingTeacher || Number(existingTeacher.status) === 4) {
+        return ApiResponse.error(res, 'Teacher profile not found.', null, 404);
+      }
+
+      if (!TeacherAuthController._isTeacherActive(existingTeacher)) {
+        return ApiResponse.error(
+          res,
+          'Your account is currently inactive. Please contact the school administrator.',
+          null,
+          403
+        );
+      }
+
+      const data = req.body || {};
+      const currentPassword = String(data.current_password || '');
+      const candidateNewPassword = String(data.new_password || '').trim();
+
+      if (!currentPassword) {
+        return ApiResponse.error(res, 'Current password is required to set a new password.', null, 400);
+      }
+      if (!candidateNewPassword || candidateNewPassword.length < 6) {
+        return ApiResponse.error(res, 'New password must be at least 6 characters long.', null, 400);
+      }
+
+      const isMatch = await comparePassword(currentPassword, existingTeacher.password);
+      if (!isMatch) {
+        return ApiResponse.error(res, 'Current password is incorrect.', null, 400);
+      }
+
+      const targetEmail = String(
+        existingTeacher.email_address || data.email_address || data.email || ''
+      ).trim();
+
+      if (!targetEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(targetEmail)) {
+        return ApiResponse.error(
+          res,
+          'No email address is registered with your Teacher profile. Please contact your school administrator to link your email address before changing your password.',
+          { emailMissing: true },
+          400
+        );
+      }
+
+      const otpCode = PasscodeService.generatePasscode();
+      await PasscodeService.storePasscode('teacher_master', teacherId, otpCode, 10);
+
+      const fullName =
+        [existingTeacher.first_name, existingTeacher.last_name].filter(Boolean).join(' ').trim() ||
+        'Teacher';
+
+      try {
+        await PasscodeService.sendActionOtpEmail({
+          toEmail: targetEmail,
+          toName: fullName,
+          otpCode,
+          actionTitle: 'Teacher Password Change Verification',
+          actionWarning: 'Use this one-time passcode to confirm changing your Teacher Portal password.',
+          expiresInMinutes: 10,
+        });
+      } catch (emailErr) {
+        await PasscodeService.clearPasscode('teacher_master', teacherId);
+        return ApiResponse.error(
+          res,
+          emailErr.message || 'Failed to deliver OTP email. Please check active email provider settings.',
+          null,
+          502
+        );
+      }
+
+      const maskedEmail = PasscodeService.maskEmail(targetEmail);
+      return ApiResponse.success(
+        res,
+        `A 6-digit verification code has been sent to ${maskedEmail}.`,
+        {
+          maskedEmail,
+          expiresInMinutes: 10,
+        }
+      );
     } catch (error) {
       next(error);
     }
@@ -646,16 +890,34 @@ class TeacherAuthController {
         params.push(picture || null);
       }
 
-      // Handle Password Change if requested
+      // Handle Password Change if requested (requires 6-digit OTP)
       if (new_password) {
+        const otp = String(req.body.otp || '').trim();
+        if (!otp) {
+          return ApiResponse.error(
+            res,
+            'A 6-digit email verification OTP is required to change your password.',
+            null,
+            400
+          );
+        }
         if (!current_password) {
           return ApiResponse.error(res, 'Current password is required to set a new password.', null, 400);
+        }
+        if (String(new_password).trim().length < 6) {
+          return ApiResponse.error(res, 'New password must be at least 6 characters long.', null, 400);
         }
         const isMatch = await comparePassword(current_password, existingTeacher.password);
         if (!isMatch) {
           return ApiResponse.error(res, 'Current password is incorrect.', null, 400);
         }
-        const hashedPassword = await hashPassword(new_password);
+
+        const verification = await PasscodeService.verifyPasscode('teacher_master', teacherId, otp);
+        if (!verification.valid) {
+          return ApiResponse.error(res, verification.reason, null, 400);
+        }
+
+        const hashedPassword = await hashPassword(String(new_password).trim());
         updates.push('password = ?');
         params.push(hashedPassword);
       }

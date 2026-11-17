@@ -10,11 +10,15 @@ router.post('/request-otp', AdminAuthController.requestOtp);
 router.post('/verify-otp', AdminAuthController.verifyOtp);
 router.post('/request-passcode', AdminAuthController.requestOtp);
 router.post('/verify-passcode', AdminAuthController.verifyOtp);
+router.post('/forgot-password/request-otp', AdminAuthController.requestForgotPasswordOtp);
+router.post('/forgot-password/verify-otp', AdminAuthController.verifyForgotPasswordOtp);
+router.post('/forgot-password/reset', AdminAuthController.resetPassword);
 router.post('/logout', AdminAuthController.logout);
 
 // Protected routes (Super Admin & Admin)
 router.get('/me', authMiddleware, rbacMiddleware(['Super Admin', 'Admin']), AdminAuthController.getProfile);
 router.get('/profile', authMiddleware, rbacMiddleware(['Super Admin', 'Admin']), AdminAuthController.getFullProfile);
+router.post('/profile/request-otp', authMiddleware, rbacMiddleware(['Super Admin', 'Admin']), AdminAuthController.requestProfileOtp);
 router.put('/profile', authMiddleware, rbacMiddleware(['Super Admin', 'Admin']), AdminAuthController.updateProfile);
 
 module.exports = router;

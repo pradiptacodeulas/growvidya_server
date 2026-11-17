@@ -1787,13 +1787,13 @@ class TeacherModel {
         CAST(t.marital_status AS CHAR) = CAST(mm.id AS CHAR) OR
         (t.marital_status NOT IN ('0', 0, '') AND CAST(t.marital_status AS CHAR) COLLATE utf8mb4_unicode_ci = mm.marital_status)
       )
-      WHERE (t.email_address = ? OR t.teacher_id = ? OR t.primary_contact_number = ?)
+      WHERE (t.email_address = ? OR t.teacher_id = ?)
         AND t.status != 4
       ORDER BY (t.status = 1) DESC, t.id DESC
       LIMIT 1
     `;
 
-    const [rows] = await pool.query(sql, [trimmed, trimmed, trimmed]);
+    const [rows] = await pool.query(sql, [trimmed, trimmed]);
     return rows && rows.length > 0 ? rows[0] : null;
   }
 

@@ -15,6 +15,7 @@ const DeviceTokenModel = require('./models/deviceToken.model');
 const TeacherSelfAttendanceModel = require('./models/teacherSelfAttendance.model');
 const SubscriptionSchemaModel = require('./models/subscriptionSchema.model');
 const FileStorageLedgerModel = require('./models/fileStorageLedger.model');
+const EmailCredentialModel = require('./models/emailCredential.model');
 const SubscriptionLifecycleJob = require('./jobs/subscriptionLifecycle.job');
 
 // Middleware & Router Imports
@@ -121,6 +122,7 @@ initSocket(server, config);
 async function startServer() {
   const dbStatus = await testConnection();
   if (dbStatus?.ok) {
+    await EmailCredentialModel.initTable();
     await SubscriptionSchemaModel.initTable();
     await FileStorageLedgerModel.initTable();
     await BranchModel.initTable();

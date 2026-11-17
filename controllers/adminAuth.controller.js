@@ -3,7 +3,7 @@ const StaffModel = require('../models/staff.model');
 const PermissionModel = require('../models/permission.model');
 const SubscriptionModel = require('../models/subscription.model');
 const { pool } = require('../config/db.config');
-const { comparePassword } = require('../utils/password.util');
+const { comparePassword, hashPassword } = require('../utils/password.util');
 const { generateToken } = require('../utils/jwt.util');
 const config = require('../config/app.config');
 const ApiResponse = require('../utils/api.response');
@@ -115,21 +115,38 @@ class AdminAuthController {
   }
 
   /**
+   * Validate Email-Only Identifier for School Admin / Staff
+   */
+  static _validateAdminEmail(rawInput) {
+    const cleanEmail = String(rawInput || '').trim();
+    if (!cleanEmail) {
+      return { valid: false, message: 'Email address is required.' };
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      return {
+        valid: false,
+        message: 'Please enter a valid registered email address. Phone number login is not supported.',
+      };
+    }
+    return { valid: true, email: cleanEmail };
+  }
+
+  /**
    * Request 6-digit OTP for School Admin / Staff Login
    */
   static async requestOtp(req, res, next) {
     try {
-      const emailOrIdentifier = req.body.email || req.body.identifier || req.body.phone || req.body.login;
-
-      if (!emailOrIdentifier || !String(emailOrIdentifier).trim()) {
-        return ApiResponse.error(res, 'Email address or phone number is required.', null, 400);
+      const rawIdentifier = req.body.email || req.body.identifier || req.body.login;
+      const emailCheck = AdminAuthController._validateAdminEmail(rawIdentifier);
+      if (!emailCheck.valid) {
+        return ApiResponse.error(res, emailCheck.message, null, 400);
       }
 
-      const cleanIdent = String(emailOrIdentifier).trim();
+      const cleanIdent = emailCheck.email;
       const user = await AdminUserModel.findByLoginIdentifier(cleanIdent);
 
       if (!user) {
-        return ApiResponse.error(res, 'Admin account not found with this identifier.', null, 404);
+        return ApiResponse.error(res, 'Admin account not found with this email address.', null, 404);
       }
 
       if (Number(user.status) !== 1) {
@@ -190,18 +207,18 @@ class AdminAuthController {
         }
       }
 
-      const otpMode = await PasscodeService.getOtpMode();
-      const isTest = otpMode === 'test';
+      const targetEmail = String(user.email || '').trim();
+      if (!targetEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(targetEmail)) {
+        return ApiResponse.error(res, 'No valid email address is registered for this account to receive the OTP.', null, 400);
+      }
+
       const otpCode = PasscodeService.generatePasscode();
       const expiresInMinutes = 10;
 
-      if (!isTest) {
-        const targetEmail = String(user.email || '').trim();
-        if (!targetEmail) {
-          return ApiResponse.error(res, 'No email address is registered for this account to receive the OTP.', null, 400);
-        }
-        await PasscodeService.storePasscode('user_master', user.id, otpCode, expiresInMinutes);
-        const adminName = [user.first_name, user.last_name].filter(Boolean).join(' ');
+      await PasscodeService.storePasscode('user_master', user.id, otpCode, expiresInMinutes);
+      const adminName = [user.first_name, user.last_name].filter(Boolean).join(' ');
+
+      try {
         await PasscodeService.sendOtpEmail({
           toEmail: targetEmail,
           toName: adminName,
@@ -209,22 +226,19 @@ class AdminAuthController {
           portalName: 'School Admin Portal',
           expiresInMinutes,
         });
-        return ApiResponse.success(res, 'A 6-digit OTP has been sent to your registered email address.', {
-          identifier: cleanIdent,
-          maskedIdentifier: PasscodeService.maskIdentifier(targetEmail),
-          testMode: false,
-          expiresInMinutes,
-        });
+      } catch (emailErr) {
+        await PasscodeService.clearPasscode('user_master', user.id).catch(() => {});
+        return ApiResponse.error(
+          res,
+          emailErr.message || 'Failed to send OTP email. Please try again later.',
+          null,
+          emailErr.statusCode || 400
+        );
       }
 
-      await PasscodeService.storePasscode('user_master', user.id, otpCode, expiresInMinutes);
-      const maskedIdentifier = PasscodeService.maskIdentifier(user.email || user.phone || cleanIdent);
-
-      return ApiResponse.success(res, 'A 6-digit OTP has been generated.', {
+      return ApiResponse.success(res, 'A 6-digit OTP has been sent to your registered email address.', {
         identifier: cleanIdent,
-        maskedIdentifier,
-        testMode: true,
-        testPasscode: otpCode,
+        maskedIdentifier: PasscodeService.maskIdentifier(targetEmail),
         expiresInMinutes,
       });
     } catch (error) {
@@ -237,17 +251,18 @@ class AdminAuthController {
    */
   static async verifyOtp(req, res, next) {
     try {
-      const emailOrIdentifier = req.body.email || req.body.identifier || req.body.phone || req.body.login;
+      const rawIdentifier = req.body.email || req.body.identifier || req.body.login;
       const otpCode = req.body.otp || req.body.passcode || req.body.code;
 
-      if (!emailOrIdentifier || !String(emailOrIdentifier).trim()) {
-        return ApiResponse.error(res, 'Email address or phone number is required.', null, 400);
+      const emailCheck = AdminAuthController._validateAdminEmail(rawIdentifier);
+      if (!emailCheck.valid) {
+        return ApiResponse.error(res, emailCheck.message, null, 400);
       }
       if (!otpCode || !String(otpCode).trim()) {
         return ApiResponse.error(res, '6-digit OTP is required.', null, 400);
       }
 
-      const cleanIdent = String(emailOrIdentifier).trim();
+      const cleanIdent = emailCheck.email;
       const user = await AdminUserModel.findByLoginIdentifier(cleanIdent);
 
       if (!user) {
@@ -290,6 +305,165 @@ class AdminAuthController {
       next(error);
     }
   }
+
+  /**
+   * Step 1 of Forgot Password: Request 6-digit Password Reset OTP via Email
+   */
+  static async requestForgotPasswordOtp(req, res, next) {
+    try {
+      const rawIdentifier = req.body.email || req.body.identifier || req.body.login;
+      const emailCheck = AdminAuthController._validateAdminEmail(rawIdentifier);
+      if (!emailCheck.valid) {
+        return ApiResponse.error(res, emailCheck.message, null, 400);
+      }
+
+      const cleanEmail = emailCheck.email;
+      const user = await AdminUserModel.findByLoginIdentifier(cleanEmail);
+
+      if (!user) {
+        return ApiResponse.error(res, 'No admin or staff account found with this email address.', null, 404);
+      }
+
+      if (Number(user.status) !== 1) {
+        return ApiResponse.error(
+          res,
+          'Your account has been deactivated / marked inactive. Please contact your administrator.',
+          null,
+          403
+        );
+      }
+
+      if (user.school_status !== undefined && user.school_status !== null && Number(user.school_status) !== 1) {
+        return ApiResponse.error(
+          res,
+          'Your school account has been marked inactive by the Super Admin. Please contact support.',
+          null,
+          403
+        );
+      }
+
+      const adminType = Number(user.admin_type);
+      const isSuperAdmin = adminType === 1;
+      const isAdmin = isSuperAdmin || adminType === 2 || Boolean(user.role_id);
+      if (!isAdmin) {
+        return ApiResponse.error(res, 'Access denied. Account does not have administrative privileges.', null, 403);
+      }
+
+      const targetEmail = String(user.email || '').trim();
+      const otpCode = PasscodeService.generatePasscode();
+      const expiresInMinutes = 10;
+
+      await PasscodeService.storePasscode('user_master', user.id, otpCode, expiresInMinutes);
+      const adminName = [user.first_name, user.last_name].filter(Boolean).join(' ');
+
+      try {
+        await PasscodeService.sendForgotPasswordOtpEmail({
+          toEmail: targetEmail,
+          toName: adminName,
+          otpCode,
+          portalName: 'School Admin Portal',
+          expiresInMinutes,
+        });
+      } catch (emailErr) {
+        await PasscodeService.clearPasscode('user_master', user.id).catch(() => {});
+        return ApiResponse.error(
+          res,
+          emailErr.message || 'Failed to send password reset OTP email. Please try again later.',
+          null,
+          emailErr.statusCode || 400
+        );
+      }
+
+      return ApiResponse.success(res, 'A 6-digit password reset OTP has been sent to your registered email address.', {
+        identifier: cleanEmail,
+        maskedIdentifier: PasscodeService.maskIdentifier(targetEmail),
+        expiresInMinutes,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Step 2 of Forgot Password: Verify 6-digit OTP and issue short-lived resetToken
+   */
+  static async verifyForgotPasswordOtp(req, res, next) {
+    try {
+      const rawIdentifier = req.body.email || req.body.identifier || req.body.login;
+      const otpCode = req.body.otp || req.body.passcode || req.body.code;
+
+      const emailCheck = AdminAuthController._validateAdminEmail(rawIdentifier);
+      if (!emailCheck.valid) {
+        return ApiResponse.error(res, emailCheck.message, null, 400);
+      }
+      if (!otpCode || !String(otpCode).trim()) {
+        return ApiResponse.error(res, '6-digit OTP is required.', null, 400);
+      }
+
+      const cleanEmail = emailCheck.email;
+      const user = await AdminUserModel.findByLoginIdentifier(cleanEmail);
+      if (!user || Number(user.status) !== 1) {
+        return ApiResponse.error(res, 'Admin account not found or inactive.', null, 404);
+      }
+
+      const verifyResult = await PasscodeService.verifyPasscode('user_master', user.id, otpCode);
+      if (!verifyResult.valid) {
+        return ApiResponse.error(res, verifyResult.message, null, 401);
+      }
+
+      const resetToken = PasscodeService.issuePasswordResetToken({
+        userId: user.id,
+        portalType: 'AdminPortal',
+        identifier: cleanEmail,
+      });
+
+      return ApiResponse.success(res, 'OTP verified. Please enter your new password.', {
+        resetToken,
+        identifier: cleanEmail,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Step 3 of Forgot Password: Set new password using verified resetToken
+   */
+  static async resetPassword(req, res, next) {
+    try {
+      const { resetToken, newPassword, confirmPassword, password } = req.body || {};
+      const candidatePassword = String(newPassword || password || '').trim();
+
+      const tokenVerify = PasscodeService.verifyPasswordResetToken(resetToken, 'AdminPortal');
+      if (!tokenVerify.valid) {
+        return ApiResponse.error(res, tokenVerify.message, null, 401);
+      }
+
+      if (!candidatePassword || candidatePassword.length < 6) {
+        return ApiResponse.error(res, 'New password must be at least 6 characters long.', null, 400);
+      }
+      if (confirmPassword !== undefined && String(confirmPassword).trim() !== candidatePassword) {
+        return ApiResponse.error(res, 'New password and confirm password do not match.', null, 400);
+      }
+
+      const userId = Number(tokenVerify.payload.userId);
+      const user = await AdminUserModel.findById(userId);
+      if (!user) {
+        return ApiResponse.error(res, 'Admin account not found or inactive.', null, 404);
+      }
+
+      const hashedPwd = await hashPassword(candidatePassword);
+      await pool.execute(
+        'UPDATE user_master SET password = ?, otp = NULL, otp_expires_at = NULL WHERE id = ? AND status = 1',
+        [hashedPwd, userId]
+      );
+
+      return ApiResponse.success(res, 'Your password has been reset successfully. Please sign in with your new password.');
+    } catch (error) {
+      next(error);
+    }
+  }
+
   /**
    * Admin Login Controller
    * Hybrid Authentication:
@@ -298,14 +472,19 @@ class AdminAuthController {
    */
   static async login(req, res, next) {
     try {
-      const emailOrIdentifier = req.body.email || req.body.identifier || req.body.phone || req.body.login;
+      const rawIdentifier = req.body.email || req.body.identifier || req.body.login;
       const { password } = req.body;
 
-      if (!emailOrIdentifier || !password) {
-        return ApiResponse.error(res, 'Email and password are required.', null, 400);
+      if (!rawIdentifier || !password) {
+        return ApiResponse.error(res, 'Email address and password are required.', null, 400);
       }
 
-      const user = await AdminUserModel.findByLoginIdentifier(emailOrIdentifier.trim());
+      const emailCheck = AdminAuthController._validateAdminEmail(rawIdentifier);
+      if (!emailCheck.valid) {
+        return ApiResponse.error(res, emailCheck.message, null, 400);
+      }
+
+      const user = await AdminUserModel.findByLoginIdentifier(emailCheck.email);
 
       if (!user) {
         return ApiResponse.error(res, 'Invalid credentials. User not found or inactive.', null, 401);
@@ -479,6 +658,86 @@ class AdminAuthController {
   }
 
   /**
+   * Request 6-digit Email OTP for Admin Password Change
+   * POST /api/admin/auth/profile/request-otp
+   */
+  static async requestProfileOtp(req, res, next) {
+    try {
+      const userId = req.user.userId;
+      const user = await AdminUserModel.findById(userId);
+      if (!user) {
+        return ApiResponse.error(res, 'Admin profile not found.', null, 404);
+      }
+
+      const data = req.body || {};
+      const currentPassword = String(data.current_password || '');
+      const candidateNewPassword = String(data.new_password || data.password || '').trim();
+
+      if (!currentPassword) {
+        return ApiResponse.error(res, 'Current password is required to change your password.', null, 400);
+      }
+      if (!candidateNewPassword || candidateNewPassword.length < 6) {
+        return ApiResponse.error(res, 'New password must be at least 6 characters long.', null, 400);
+      }
+
+      const [pwdRows] = await pool.execute('SELECT password FROM user_master WHERE id = ? LIMIT 1', [userId]);
+      const currentHash = pwdRows[0]?.password;
+      if (!currentHash) {
+        return ApiResponse.error(res, 'Unable to verify current password.', null, 400);
+      }
+      const isCurrentValid = await comparePassword(currentPassword, currentHash);
+      if (!isCurrentValid) {
+        return ApiResponse.error(res, 'Current password is incorrect.', null, 400);
+      }
+
+      const targetEmail = (user.email || '').trim();
+      if (!targetEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(targetEmail)) {
+        return ApiResponse.error(
+          res,
+          'No valid email address is linked to your profile. Please contact the administrator.',
+          { emailMissing: true },
+          400
+        );
+      }
+
+      const otpCode = PasscodeService.generatePasscode();
+      await PasscodeService.storePasscode('user_master', userId, otpCode, 10);
+
+      const fullName = [user.first_name, user.last_name].filter(Boolean).join(' ').trim() || 'Admin';
+      try {
+        await PasscodeService.sendActionOtpEmail({
+          toEmail: targetEmail,
+          toName: fullName,
+          otpCode,
+          actionTitle: 'Admin Password Change Verification',
+          actionWarning: 'Use this one-time passcode to confirm changing your School Admin account password.',
+          expiresInMinutes: 10,
+        });
+      } catch (emailErr) {
+        await PasscodeService.clearPasscode('user_master', userId);
+        return ApiResponse.error(
+          res,
+          emailErr.message || 'Failed to deliver OTP email. Please check active email provider settings.',
+          null,
+          502
+        );
+      }
+
+      const maskedEmail = PasscodeService.maskEmail(targetEmail);
+      return ApiResponse.success(
+        res,
+        `A 6-digit verification code has been sent to ${maskedEmail}.`,
+        {
+          maskedEmail,
+          expiresInMinutes: 10,
+        }
+      );
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Update Current Admin Profile (Self-Service)
    */
   static async updateProfile(req, res, next) {
@@ -491,22 +750,41 @@ class AdminAuthController {
 
       const data = req.body || {};
 
-      // Handle password change if current_password or new_password is provided
+      // Handle password change if current_password or new_password is provided (requires 6-digit OTP)
       let passwordToUpdate = undefined;
       if (data.new_password || data.password) {
         const candidateNewPassword = String(data.new_password || data.password || '').trim();
         if (candidateNewPassword) {
-          if (data.current_password !== undefined) {
-            const [pwdRows] = await pool.execute('SELECT password FROM user_master WHERE id = ? LIMIT 1', [userId]);
-            const currentHash = pwdRows[0]?.password;
-            if (!currentHash) {
-              return ApiResponse.error(res, 'Unable to verify current password.', null, 400);
-            }
-            const isCurrentValid = await comparePassword(String(data.current_password), currentHash);
-            if (!isCurrentValid) {
-              return ApiResponse.error(res, 'Current password is incorrect.', null, 400);
-            }
+          const otp = String(data.otp || '').trim();
+          if (!otp) {
+            return ApiResponse.error(
+              res,
+              'A 6-digit email verification OTP is required to change your password.',
+              null,
+              400
+            );
           }
+          if (candidateNewPassword.length < 6) {
+            return ApiResponse.error(res, 'New password must be at least 6 characters long.', null, 400);
+          }
+          if (!data.current_password) {
+            return ApiResponse.error(res, 'Current password is required to set a new password.', null, 400);
+          }
+          const [pwdRows] = await pool.execute('SELECT password FROM user_master WHERE id = ? LIMIT 1', [userId]);
+          const currentHash = pwdRows[0]?.password;
+          if (!currentHash) {
+            return ApiResponse.error(res, 'Unable to verify current password.', null, 400);
+          }
+          const isCurrentValid = await comparePassword(String(data.current_password), currentHash);
+          if (!isCurrentValid) {
+            return ApiResponse.error(res, 'Current password is incorrect.', null, 400);
+          }
+
+          const verification = await PasscodeService.verifyPasscode('user_master', userId, otp);
+          if (!verification.valid) {
+            return ApiResponse.error(res, verification.reason, null, 400);
+          }
+
           passwordToUpdate = candidateNewPassword;
         }
       }

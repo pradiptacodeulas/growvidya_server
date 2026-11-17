@@ -73,11 +73,11 @@ class AdminUserModel {
       LEFT JOIN role_master r ON u.role = r.id
       LEFT JOIN school_master sm ON u.school_id = sm.id
       LEFT JOIN branch_master bm ON u.branch_id = bm.id
-      WHERE (u.email = ? OR u.phone = ?) AND u.status != 4
+      WHERE u.email = ? AND u.status != 4
       ORDER BY CASE WHEN u.status = 1 THEN 0 ELSE 1 END, u.id ASC
       LIMIT 1
     `;
-    const [rows] = await pool.execute(sql, [cleanIdent, cleanIdent]);
+    const [rows] = await pool.execute(sql, [cleanIdent]);
     return rows[0] || null;
   }
 

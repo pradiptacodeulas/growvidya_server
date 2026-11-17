@@ -551,12 +551,12 @@ class ParentModel {
         sch.email AS school_email
       FROM parent_master p
       LEFT JOIN school_master sch ON p.school_id = sch.id
-      WHERE (p.email = ? OR p.phone = ? OR CAST(p.id AS CHAR) = ?)
+      WHERE p.email = ?
         AND p.status = 1
       LIMIT 1
     `;
 
-    const [rows] = await pool.query(sql, [trimmed, trimmed, trimmed]);
+    const [rows] = await pool.query(sql, [trimmed]);
     return rows && rows.length > 0 ? rows[0] : null;
   }
 

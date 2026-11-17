@@ -4,8 +4,14 @@ const appConfig = require('../config/app.config');
 
 const ENCRYPTION_PREFIX = 'enc:v1:';
 const MASKED_SECRET = '••••••••••••••••';
-const VALID_PROVIDERS = ['mailjet', 'smtp'];
+const VALID_PROVIDERS = ['mailjet', 'zoho', 'smtp'];
 const VALID_ENCRYPTIONS = ['tls', 'ssl', 'none'];
+
+const PROVIDER_LABELS = {
+  mailjet: 'Mailjet',
+  zoho: 'Zoho Mail',
+  smtp: 'SMTP',
+};
 
 /**
  * Derive a 32-byte key for AES-256-GCM encryption at rest
@@ -60,14 +66,71 @@ function createValidationError(message) {
   return err;
 }
 
+function getProviderLabel(provider) {
+  return PROVIDER_LABELS[String(provider || '').toLowerCase()] || 'Email Provider';
+}
+
 class EmailCredentialModel {
+  static _initialized = false;
+
   /**
-   * Validate Mailjet or SMTP payload
+   * Idempotent schema initializer: ensures email_credentials supports ('mailjet', 'zoho', 'smtp')
+   * and removes obsolete otp_mode column if present.
+   */
+  static async initTable() {
+    if (EmailCredentialModel._initialized) return;
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS \`email_credentials\` (
+          \`id\` INT(11) NOT NULL AUTO_INCREMENT,
+          \`provider\` ENUM('mailjet','zoho','smtp') NOT NULL COMMENT 'Email provider: mailjet, zoho, or smtp',
+          \`from_name\` VARCHAR(150) NOT NULL COMMENT 'Sender display name',
+          \`from_email\` VARCHAR(150) NOT NULL COMMENT 'Sender email address',
+          \`api_key\` VARCHAR(255) DEFAULT NULL COMMENT 'Mailjet API Key (Public Key)',
+          \`api_secret\` TEXT DEFAULT NULL COMMENT 'AES-256-GCM encrypted Mailjet Secret Key',
+          \`smtp_host\` VARCHAR(255) DEFAULT NULL COMMENT 'SMTP / Zoho server hostname',
+          \`smtp_port\` INT(11) DEFAULT 587 COMMENT 'SMTP / Zoho server port (587, 465, 25)',
+          \`smtp_username\` VARCHAR(255) DEFAULT NULL COMMENT 'SMTP / Zoho authentication username',
+          \`smtp_password\` TEXT DEFAULT NULL COMMENT 'AES-256-GCM encrypted SMTP / Zoho password',
+          \`smtp_encryption\` ENUM('tls','ssl','none') NOT NULL DEFAULT 'tls' COMMENT 'Encryption protocol',
+          \`is_default\` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '1 = Active default email provider',
+          \`status\` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '1 = Active, 2 = Inactive, 4 = Deleted',
+          \`created_on\` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          \`updated_at\` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          PRIMARY KEY (\`id\`),
+          UNIQUE KEY \`uq_email_provider\` (\`provider\`),
+          KEY \`idx_email_default\` (\`is_default\`, \`status\`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+
+      const [cols] = await pool.query(`SHOW COLUMNS FROM \`email_credentials\``);
+      const colMap = new Map(cols.map((c) => [c.Field, c]));
+
+      const providerCol = colMap.get('provider');
+      if (providerCol && !String(providerCol.Type || '').toLowerCase().includes("'zoho'")) {
+        await pool.query(`
+          ALTER TABLE \`email_credentials\`
+          MODIFY COLUMN \`provider\` ENUM('mailjet','zoho','smtp') NOT NULL COMMENT 'Email provider: mailjet, zoho, or smtp'
+        `);
+      }
+
+      if (colMap.has('otp_mode')) {
+        await pool.query(`ALTER TABLE \`email_credentials\` DROP COLUMN \`otp_mode\``);
+      }
+
+      EmailCredentialModel._initialized = true;
+    } catch (err) {
+      console.error('[EmailCredentialModel] Schema init error:', err.message);
+    }
+  }
+
+  /**
+   * Validate Mailjet, Zoho Mail, or SMTP payload
    */
   static validatePayload(data, { requireSecret = true } = {}) {
     const provider = String(data.provider || '').trim().toLowerCase();
     if (!VALID_PROVIDERS.includes(provider)) {
-      throw createValidationError('Provider must be either "mailjet" or "smtp".');
+      throw createValidationError('Provider must be "mailjet", "zoho", or "smtp".');
     }
 
     const from_name = String(data.from_name ?? data.fromName ?? '').trim();
@@ -119,7 +182,55 @@ class EmailCredentialModel {
       };
     }
 
-    // SMTP validation
+    if (provider === 'zoho') {
+      const smtp_host = String(data.smtp_host ?? data.smtpHost ?? 'smtp.zoho.in').trim().toLowerCase();
+      const smtp_port = Number(data.smtp_port ?? data.smtpPort ?? 465);
+      const smtp_username = String(data.smtp_username ?? data.smtpUsername ?? from_email).trim();
+      const rawPassword = data.smtp_password ?? data.smtpPassword;
+      const smtp_password = rawPassword !== undefined && rawPassword !== null ? String(rawPassword).trim() : '';
+      const defaultEnc = smtp_port === 465 ? 'ssl' : 'tls';
+      const smtp_encryption = String(data.smtp_encryption ?? data.smtpEncryption ?? defaultEnc).trim().toLowerCase();
+
+      if (!smtp_host) {
+        throw createValidationError('Zoho SMTP Host is required (e.g., smtp.zoho.in or smtp.zoho.com).');
+      }
+
+      if (!Number.isInteger(smtp_port) || smtp_port < 1 || smtp_port > 65535) {
+        throw createValidationError('Zoho SMTP Port must be a valid port number between 1 and 65535.');
+      }
+
+      if (!smtp_username) {
+        throw createValidationError('Zoho Mail Username / Email is required.');
+      }
+
+      if (!VALID_ENCRYPTIONS.includes(smtp_encryption)) {
+        throw createValidationError('Zoho Encryption must be "ssl" or "tls".');
+      }
+
+      if (requireSecret || smtp_password !== '') {
+        if (!smtp_password) {
+          throw createValidationError('Zoho Mail Password / App Password is required.');
+        }
+        if (smtp_password.includes('•') || smtp_password === MASKED_SECRET) {
+          throw createValidationError('Please provide a valid Zoho App Password instead of a masked value.');
+        }
+      }
+
+      return {
+        provider: 'zoho',
+        from_name,
+        from_email,
+        api_key: null,
+        api_secret: null,
+        smtp_host,
+        smtp_port,
+        smtp_username,
+        smtp_password: smtp_password || null,
+        smtp_encryption,
+      };
+    }
+
+    // Custom SMTP validation
     const smtp_host = String(data.smtp_host ?? data.smtpHost ?? '').trim();
     const smtp_port = Number(data.smtp_port ?? data.smtpPort ?? 587);
     const smtp_username = String(data.smtp_username ?? data.smtpUsername ?? '').trim();
@@ -172,6 +283,10 @@ class EmailCredentialModel {
   static sanitizeRecord(row) {
     if (!row) return null;
     const isMailjet = row.provider === 'mailjet';
+    const isZoho = row.provider === 'zoho';
+    const defaultPort = isZoho ? 465 : 587;
+    const defaultEnc = isZoho ? 'ssl' : 'tls';
+
     return {
       id: row.id,
       provider: row.provider,
@@ -181,15 +296,14 @@ class EmailCredentialModel {
       api_secret: null,
       api_secret_masked: isMailjet && row.api_secret ? MASKED_SECRET : null,
       has_api_secret: Boolean(isMailjet && row.api_secret),
-      smtp_host: !isMailjet ? (row.smtp_host || '') : null,
-      smtp_port: !isMailjet ? (row.smtp_port ? Number(row.smtp_port) : 587) : null,
+      smtp_host: !isMailjet ? (row.smtp_host || (isZoho ? 'smtp.zoho.in' : '')) : null,
+      smtp_port: !isMailjet ? (row.smtp_port ? Number(row.smtp_port) : defaultPort) : null,
       smtp_username: !isMailjet ? (row.smtp_username || '') : null,
       smtp_password: null,
       smtp_password_masked: !isMailjet && row.smtp_password ? MASKED_SECRET : null,
       has_smtp_password: Boolean(!isMailjet && row.smtp_password),
-      smtp_encryption: !isMailjet ? (row.smtp_encryption || 'tls') : null,
+      smtp_encryption: !isMailjet ? (row.smtp_encryption || defaultEnc) : null,
       is_default: Number(row.is_default) === 1 ? 1 : 0,
-      otp_mode: row.otp_mode === 'production' ? 'production' : 'test',
       status: row.status !== undefined && row.status !== null ? Number(row.status) : 1,
       created_on: row.created_on,
       created_at: row.created_on,
@@ -198,11 +312,12 @@ class EmailCredentialModel {
   }
 
   /**
-   * Retrieve all configured email providers (Mailjet & SMTP)
+   * Retrieve all configured email providers (Mailjet, Zoho Mail & SMTP)
    */
   static async getAll() {
+    await EmailCredentialModel.initTable();
     const [rows] = await pool.query(
-      `SELECT * FROM email_credentials WHERE status IN (1, 2) ORDER BY is_default DESC, FIELD(provider, 'mailjet', 'smtp'), id ASC`
+      `SELECT * FROM email_credentials WHERE status IN (1, 2) ORDER BY is_default DESC, FIELD(provider, 'mailjet', 'zoho', 'smtp'), id ASC`
     );
     return rows.map((r) => EmailCredentialModel.sanitizeRecord(r));
   }
@@ -211,6 +326,7 @@ class EmailCredentialModel {
    * Retrieve a specific email provider configuration by ID
    */
   static async getById(id) {
+    await EmailCredentialModel.initTable();
     const [rows] = await pool.query(
       `SELECT * FROM email_credentials WHERE id = ? AND status IN (1, 2) LIMIT 1`,
       [id]
@@ -219,9 +335,10 @@ class EmailCredentialModel {
   }
 
   /**
-   * Retrieve a specific email provider configuration by provider name ('mailjet' | 'smtp')
+   * Retrieve a specific email provider configuration by provider name ('mailjet' | 'zoho' | 'smtp')
    */
   static async getByProvider(provider) {
+    await EmailCredentialModel.initTable();
     const [rows] = await pool.query(
       `SELECT * FROM email_credentials WHERE provider = ? AND status IN (1, 2) LIMIT 1`,
       [String(provider).toLowerCase()]
@@ -230,15 +347,17 @@ class EmailCredentialModel {
   }
 
   /**
-   * Create or replace credentials for a provider ('mailjet' or 'smtp')
+   * Create or replace credentials for a provider ('mailjet', 'zoho', or 'smtp')
    */
   static async save(data) {
+    await EmailCredentialModel.initTable();
 
     const [existingRows] = await pool.query(
       `SELECT * FROM email_credentials WHERE provider = ? LIMIT 1`,
       [String(data.provider || '').trim().toLowerCase()]
     );
     const existing = existingRows[0] || null;
+    const isExistingActiveRecord = existing && Number(existing.status) !== 4;
 
     const hasIncomingSecret = Boolean(
       (data.api_secret && String(data.api_secret).trim() !== '') ||
@@ -248,7 +367,7 @@ class EmailCredentialModel {
     );
 
     const validated = EmailCredentialModel.validatePayload(data, {
-      requireSecret: !existing || hasIncomingSecret,
+      requireSecret: !isExistingActiveRecord || hasIncomingSecret,
     });
 
     const normalizedStatus =
@@ -256,13 +375,13 @@ class EmailCredentialModel {
         ? Number(data.status) === 2
           ? 2
           : 1
-        : existing && Number(existing.status) === 2
+        : isExistingActiveRecord && Number(existing.status) === 2
           ? 2
           : 1;
 
     // Check if any default exists at all
     const [defaultRows] = await pool.query(
-      `SELECT id FROM email_credentials WHERE is_default = 1 AND status IN (1, 2) LIMIT 1`
+      `SELECT id FROM email_credentials WHERE is_default = 1 AND status = 1 LIMIT 1`
     );
     const hasAnyDefault = defaultRows.length > 0;
 
@@ -271,7 +390,7 @@ class EmailCredentialModel {
         ? Number(data.is_default) === 1
           ? 1
           : 0
-        : existing
+        : isExistingActiveRecord
           ? Number(existing.is_default)
           : hasAnyDefault
             ? 0
@@ -299,7 +418,7 @@ class EmailCredentialModel {
             : null;
 
         const encryptedSmtpPassword =
-          validated.provider === 'smtp'
+          validated.provider === 'smtp' || validated.provider === 'zoho'
             ? validated.smtp_password
               ? encryptSecret(validated.smtp_password)
               : existing.smtp_password
@@ -330,13 +449,14 @@ class EmailCredentialModel {
         const encryptedApiSecret =
           validated.provider === 'mailjet' ? encryptSecret(validated.api_secret) : null;
         const encryptedSmtpPassword =
-          validated.provider === 'smtp' ? encryptSecret(validated.smtp_password) : null;
-        const currentOtpMode = await EmailCredentialModel.getOtpMode();
+          validated.provider === 'smtp' || validated.provider === 'zoho'
+            ? encryptSecret(validated.smtp_password)
+            : null;
 
         const [result] = await conn.query(
           `INSERT INTO email_credentials
-           (provider, from_name, from_email, api_key, api_secret, smtp_host, smtp_port, smtp_username, smtp_password, smtp_encryption, is_default, otp_mode, status)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (provider, from_name, from_email, api_key, api_secret, smtp_host, smtp_port, smtp_username, smtp_password, smtp_encryption, is_default, status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             validated.provider,
             validated.from_name,
@@ -349,7 +469,6 @@ class EmailCredentialModel {
             encryptedSmtpPassword,
             validated.smtp_encryption,
             normalizedDefault,
-            currentOtpMode,
             finalStatus,
           ]
         );
@@ -370,7 +489,7 @@ class EmailCredentialModel {
    * Update an existing email credential configuration by ID
    */
   static async update(id, data) {
-
+    await EmailCredentialModel.initTable();
     const [rows] = await pool.query(`SELECT * FROM email_credentials WHERE id = ? AND status IN (1, 2) LIMIT 1`, [id]);
     if (rows.length === 0) return null;
 
@@ -382,10 +501,10 @@ class EmailCredentialModel {
   }
 
   /**
-   * Set a specific provider record as Default (and unset the other)
+   * Set a specific provider record by ID as the single Active Default (and unset the others)
    */
   static async setDefault(id) {
-
+    await EmailCredentialModel.initTable();
     const [rows] = await pool.query(`SELECT * FROM email_credentials WHERE id = ? AND status IN (1, 2) LIMIT 1`, [id]);
     if (rows.length === 0) return null;
 
@@ -408,10 +527,42 @@ class EmailCredentialModel {
   }
 
   /**
+   * Switch the active OTP & email delivery provider using the 3-option switch ('mailjet' | 'zoho' | 'smtp')
+   */
+  static async setActiveProviderByType(provider) {
+    await EmailCredentialModel.initTable();
+    const normalizedProvider = String(provider || '').trim().toLowerCase();
+    if (!VALID_PROVIDERS.includes(normalizedProvider)) {
+      throw createValidationError('Active OTP delivery provider must be "mailjet", "zoho", or "smtp".');
+    }
+
+    const label = getProviderLabel(normalizedProvider);
+    const [rows] = await pool.query(
+      `SELECT * FROM email_credentials WHERE provider = ? AND status IN (1, 2) LIMIT 1`,
+      [normalizedProvider]
+    );
+    if (rows.length === 0) {
+      throw createValidationError(
+        `Please configure ${label} credentials first before selecting it as the active OTP & email provider.`
+      );
+    }
+
+    const targetRow = rows[0];
+    const verifiedCreds = await EmailCredentialModel.getActiveCredentials(targetRow.id);
+    if (!verifiedCreds) {
+      throw createValidationError(
+        `${label} credentials are incomplete. Please edit and save valid credentials before activating.`
+      );
+    }
+
+    return await EmailCredentialModel.setDefault(targetRow.id);
+  }
+
+  /**
    * Toggle status (Active = 1, Inactive = 2)
    */
   static async toggleStatus(id, status) {
-
+    await EmailCredentialModel.initTable();
     const [rows] = await pool.query(`SELECT * FROM email_credentials WHERE id = ? AND status IN (1, 2) LIMIT 1`, [id]);
     if (rows.length === 0) return null;
 
@@ -431,6 +582,7 @@ class EmailCredentialModel {
    * Soft delete an email credential record (status = 4)
    */
   static async delete(id) {
+    await EmailCredentialModel.initTable();
     const [res] = await pool.query(
       `UPDATE email_credentials SET status = 4, is_default = 0, updated_at = NOW() WHERE id = ? AND status != 4`,
       [id]
@@ -439,49 +591,11 @@ class EmailCredentialModel {
   }
 
   /**
-   * Get current Portal Sign-In OTP mode ('test' | 'production') from email_credentials
-   */
-  static async getOtpMode() {
-    const [rows] = await pool.query(
-      `SELECT otp_mode FROM email_credentials WHERE status IN (1, 2) ORDER BY is_default DESC, id ASC LIMIT 1`
-    );
-    if (rows.length > 0 && rows[0].otp_mode === 'production') {
-      return 'production';
-    }
-    return 'test';
-  }
-
-  /**
-   * Update Portal Sign-In OTP mode ('test' | 'production') across email_credentials
-   */
-  static async updateOtpMode(mode) {
-    const normalizedMode = String(mode || '').trim().toLowerCase();
-    if (!['test', 'production'].includes(normalizedMode)) {
-      throw createValidationError('OTP mode must be either "test" or "production".');
-    }
-
-    if (normalizedMode === 'production') {
-      const activeDefault = await EmailCredentialModel.getActiveCredentials();
-      if (!activeDefault) {
-        throw createValidationError(
-          'Please configure and activate a Default Email Provider (Mailjet or SMTP) before switching to Production Mode.'
-        );
-      }
-    }
-
-    await pool.query(
-      `UPDATE email_credentials SET otp_mode = ?, updated_at = NOW() WHERE status IN (1, 2)`,
-      [normalizedMode]
-    );
-
-    return normalizedMode;
-  }
-
-  /**
    * INTERNAL SERVER ONLY: Fetch decrypted credentials for the active Default provider (or specific ID for testing).
    * Never expose the return value of this method in any API response.
    */
   static async getActiveCredentials(specificId = null) {
+    await EmailCredentialModel.initTable();
     let rows;
     if (specificId) {
       [rows] = await pool.query(`SELECT * FROM email_credentials WHERE id = ? AND status IN (1, 2) LIMIT 1`, [specificId]);
@@ -515,19 +629,21 @@ class EmailCredentialModel {
         };
       }
 
-      if (row.provider === 'smtp') {
+      if (row.provider === 'zoho' || row.provider === 'smtp') {
+        const isZoho = row.provider === 'zoho';
         const decryptedPassword = decryptSecret(row.smtp_password);
-        if (!row.smtp_host || !row.smtp_username || !decryptedPassword) return null;
+        const host = row.smtp_host || (isZoho ? 'smtp.zoho.in' : '');
+        if (!host || !row.smtp_username || !decryptedPassword) return null;
         return {
           id: row.id,
-          provider: 'smtp',
+          provider: row.provider,
           fromName: row.from_name,
           fromEmail: row.from_email,
-          smtpHost: row.smtp_host,
-          smtpPort: Number(row.smtp_port) || 587,
+          smtpHost: host,
+          smtpPort: Number(row.smtp_port) || (isZoho ? 465 : 587),
           smtpUsername: row.smtp_username,
           smtpPassword: decryptedPassword,
-          smtpEncryption: row.smtp_encryption || 'tls',
+          smtpEncryption: row.smtp_encryption || (isZoho ? 'ssl' : 'tls'),
           isDefault: Number(row.is_default) === 1,
           status: Number(row.status),
         };
@@ -541,4 +657,5 @@ class EmailCredentialModel {
   }
 }
 
+EmailCredentialModel.getProviderLabel = getProviderLabel;
 module.exports = EmailCredentialModel;

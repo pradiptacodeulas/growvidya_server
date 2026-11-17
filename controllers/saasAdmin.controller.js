@@ -1750,9 +1750,10 @@ class SaasAdminController {
     try {
       const body = req.body || {};
       const saved = await EmailCredentialModel.save(body);
+      const label = EmailCredentialModel.getProviderLabel(saved.provider);
       return ApiResponse.created(
         res,
-        `${saved.provider === 'mailjet' ? 'Mailjet' : 'SMTP'} credentials saved successfully.`,
+        `${label} credentials saved successfully.`,
         saved
       );
     } catch (error) {
@@ -1777,9 +1778,10 @@ class SaasAdminController {
         return ApiResponse.notFound(res, 'Email credential configuration not found.');
       }
 
+      const label = EmailCredentialModel.getProviderLabel(updated.provider);
       return ApiResponse.success(
         res,
-        `${updated.provider === 'mailjet' ? 'Mailjet' : 'SMTP'} credentials updated successfully.`,
+        `${label} credentials updated successfully.`,
         updated
       );
     } catch (error) {
@@ -1803,13 +1805,31 @@ class SaasAdminController {
         return ApiResponse.notFound(res, 'Email credential configuration not found.');
       }
 
-      const label = updated.provider === 'mailjet' ? 'Mailjet' : 'SMTP';
+      const label = EmailCredentialModel.getProviderLabel(updated.provider);
       return ApiResponse.success(
         res,
-        `${label} is now set as the default email provider.`,
+        `${label} is now set as the active OTP & email delivery provider.`,
         updated
       );
     } catch (error) {
+      next(error);
+    }
+  }
+
+  static async setActiveEmailProvider(req, res, next) {
+    try {
+      const { provider } = req.body || {};
+      const updated = await EmailCredentialModel.setActiveProviderByType(provider);
+      const label = EmailCredentialModel.getProviderLabel(updated.provider);
+      return ApiResponse.success(
+        res,
+        `${label} is now active for all OTP & system email delivery.`,
+        updated
+      );
+    } catch (error) {
+      if (error.statusCode === 400) {
+        return ApiResponse.error(res, error.message, null, 400);
+      }
       next(error);
     }
   }
@@ -1832,7 +1852,7 @@ class SaasAdminController {
         return ApiResponse.notFound(res, 'Email credential configuration not found.');
       }
 
-      const label = updated.provider === 'mailjet' ? 'Mailjet' : 'SMTP';
+      const label = EmailCredentialModel.getProviderLabel(updated.provider);
       return ApiResponse.success(
         res,
         `${label} status updated to ${Number(status) === 1 ? 'Active' : 'Inactive'}.`,
@@ -1862,23 +1882,6 @@ class SaasAdminController {
     }
   }
 
-  static async updateEmailOtpMode(req, res, next) {
-    try {
-      const { otp_mode } = req.body || {};
-      const updatedMode = await EmailCredentialModel.updateOtpMode(otp_mode);
-      return ApiResponse.success(
-        res,
-        `Portal Sign-In OTP mode switched to ${updatedMode === 'production' ? 'Production Mode' : 'Test Mode'}.`,
-        { otp_mode: updatedMode }
-      );
-    } catch (error) {
-      if (error.statusCode === 400) {
-        return ApiResponse.error(res, error.message, null, 400);
-      }
-      next(error);
-    }
-  }
-
   static async sendTestEmail(req, res, next) {
     try {
       const body = req.body || {};
@@ -1890,9 +1893,10 @@ class SaasAdminController {
         credentialId,
       });
 
+      const label = EmailCredentialModel.getProviderLabel(result.provider);
       return ApiResponse.success(
         res,
-        `Test email sent successfully to ${toEmail} via ${result.provider === 'mailjet' ? 'Mailjet' : 'SMTP'}.`,
+        `Test email sent successfully to ${toEmail} via ${label}.`,
         result
       );
     } catch (error) {

@@ -2,6 +2,12 @@ const https = require('https');
 const nodemailer = require('nodemailer');
 const EmailCredentialModel = require('../models/emailCredential.model');
 
+const PROVIDER_DISPLAY_LABELS = {
+  mailjet: 'Mailjet API',
+  zoho: 'Zoho Mail',
+  smtp: 'SMTP Server',
+};
+
 class EmailService {
   /**
    * Send an email via Mailjet v3.1 Send API
@@ -100,15 +106,18 @@ class EmailService {
   }
 
   /**
-   * Send an email via SMTP using Nodemailer
+   * Send an email via Zoho Mail or Custom SMTP using Nodemailer
    */
   static async _sendViaSmtp(creds, { to, subject, text, html }) {
-    const isSsl = creds.smtpEncryption === 'ssl' || Number(creds.smtpPort) === 465;
+    const isZoho = creds.provider === 'zoho';
+    const defaultPort = isZoho ? 465 : 587;
+    const port = Number(creds.smtpPort) || defaultPort;
+    const isSsl = creds.smtpEncryption === 'ssl' || port === 465;
     const isNone = creds.smtpEncryption === 'none';
 
     const transporter = nodemailer.createTransport({
       host: creds.smtpHost,
-      port: Number(creds.smtpPort) || 587,
+      port,
       secure: isSsl,
       ignoreTLS: isNone,
       requireTLS: creds.smtpEncryption === 'tls' && !isSsl,
@@ -130,19 +139,20 @@ class EmailService {
       });
 
       return {
-        provider: 'smtp',
+        provider: creds.provider || 'smtp',
         messageId: info.messageId,
         response: info.response,
       };
     } catch (err) {
-      const customErr = new Error(`SMTP error: ${err.message}`);
+      const label = isZoho ? 'Zoho Mail' : 'SMTP';
+      const customErr = new Error(`${label} error: ${err.message}`);
       customErr.statusCode = 400;
       throw customErr;
     }
   }
 
   /**
-   * Dynamically send an email using the active Default provider (Mailjet or SMTP),
+   * Dynamically send an email using the single active Default provider (Mailjet, Zoho Mail, or SMTP),
    * or a specific credential ID if provided.
    */
   static async sendEmail({ to, toName, subject, text, html, credentialId = null }) {
@@ -155,7 +165,7 @@ class EmailService {
     const creds = await EmailCredentialModel.getActiveCredentials(credentialId);
     if (!creds) {
       const err = new Error(
-        'No active email provider (Mailjet or SMTP) is configured or enabled in Settings.'
+        'No active email delivery provider (Mailjet, Zoho Mail, or SMTP) is configured and enabled in Super Admin Settings.'
       );
       err.statusCode = 400;
       throw err;
@@ -180,7 +190,7 @@ class EmailService {
   }
 
   /**
-   * Send a test email to verify a Mailjet or SMTP configuration
+   * Send a test email to verify a Mailjet, Zoho Mail, or SMTP configuration
    */
   static async sendTestEmail({ toEmail, credentialId = null }) {
     const cleanEmail = String(toEmail || '').trim();
@@ -197,7 +207,7 @@ class EmailService {
       throw err;
     }
 
-    const providerLabel = creds.provider === 'mailjet' ? 'Mailjet API' : 'SMTP Server';
+    const providerLabel = PROVIDER_DISPLAY_LABELS[creds.provider] || 'SMTP Server';
     const subject = `Growvidya — ${providerLabel} Configuration Test`;
     const text = `Hello,\n\nThis is a test email from Growvidya Super Admin Portal sent via ${providerLabel} (${creds.fromEmail}).\n\nYour ${providerLabel} email configuration is working properly!`;
     const html = `
@@ -209,7 +219,7 @@ class EmailService {
         <div style="background: #f9fafb; padding: 12px 16px; border-radius: 8px; font-size: 13px; color: #4b5563; margin: 16px 0;">
           <div><strong>Provider:</strong> ${providerLabel}</div>
           <div><strong>Sender:</strong> ${creds.fromName} &lt;${creds.fromEmail}&gt;</div>
-          <div><strong>Default Provider:</strong> ${creds.isDefault ? 'Yes (Default)' : 'No'}</div>
+          <div><strong>Active OTP &amp; Email Sender:</strong> ${creds.isDefault ? 'Yes (Active Default)' : 'No'}</div>
         </div>
         <p style="color: #6b7280; font-size: 12px; margin-bottom: 0;">
           Sent at ${new Date().toUTCString()}

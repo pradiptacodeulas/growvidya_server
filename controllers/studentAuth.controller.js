@@ -98,12 +98,9 @@ async function verifyStudentCredential(candidatePassword, student) {
     }
   }
 
-  // 3. Contact or admission number match if no password is set
+  // 3. Admission number match if no custom password is set
   if (!student.password) {
-    if (
-      (student.admission_number && cleanInput === String(student.admission_number).trim()) ||
-      (student.primary_contact_number && cleanInput === String(student.primary_contact_number).trim())
-    ) {
+    if (student.admission_number && cleanInput === String(student.admission_number).trim()) {
       return true;
     }
   }
@@ -112,6 +109,32 @@ async function verifyStudentCredential(candidatePassword, student) {
 }
 
 class StudentAuthController {
+  /**
+   * Lookup active student by Email Address or Student ID (admission_number) only
+   */
+  static async _findStudentByEmailOrId(rawIdent) {
+    const cleanIdent = String(rawIdent || '').trim();
+    if (!cleanIdent) return null;
+    const [students] = await pool.query(
+      `SELECT 
+        s.*,
+        cm.class_name,
+        sec.section_name,
+        sch.school_name,
+        sch.school_logo
+       FROM student_master s
+       LEFT JOIN class_master cm ON s.class = cm.id
+       LEFT JOIN section_master sec ON s.section = sec.id
+       LEFT JOIN school_master sch ON s.school_id = sch.id
+       WHERE (
+         s.admission_number = ? OR 
+         s.email_address = ?
+       ) AND s.status = 1
+       LIMIT 1`,
+      [cleanIdent, cleanIdent]
+    );
+    return students && students.length > 0 ? students[0] : null;
+  }
   /**
    * Helper to issue session cookie & JWT token for student
    */
@@ -183,43 +206,21 @@ class StudentAuthController {
   }
 
   /**
-   * Student Login (Password-based fallback)
+   * Student Login (Password-based fallback — accepts Email or Student ID / Admission Number)
    */
   static async login(req, res, next) {
     try {
-      const emailOrAdmNo = req.body.email || req.body.admission_number || req.body.phone || req.body.identifier || req.body.login;
+      const emailOrAdmNo = req.body.email || req.body.admission_number || req.body.student_id || req.body.identifier || req.body.login;
       const { password } = req.body;
 
-      if (!emailOrAdmNo || !password) {
-        return ApiResponse.error(res, 'Admission number, email, or phone and password are required.', null, 400);
+      if (!emailOrAdmNo || !String(emailOrAdmNo).trim() || !password) {
+        return ApiResponse.error(res, 'Email address or Student ID (Admission No.) and password are required.', null, 400);
       }
 
-      // Find student by admission number, email, or phone
       const cleanIdent = String(emailOrAdmNo).trim();
-      const [students] = await pool.query(
-        `SELECT 
-          s.*,
-          cm.class_name,
-          sec.section_name,
-          sch.school_name,
-          sch.school_logo
-         FROM student_master s
-         LEFT JOIN class_master cm ON s.class = cm.id
-         LEFT JOIN section_master sec ON s.section = sec.id
-         LEFT JOIN school_master sch ON s.school_id = sch.id
-         WHERE (
-           s.admission_number = ? OR 
-           s.email_address = ? OR 
-           s.primary_contact_number = ? OR 
-           CAST(s.id AS CHAR) = ?
-         ) AND s.status = 1
-         LIMIT 1`,
-        [cleanIdent, cleanIdent, cleanIdent, cleanIdent]
-      );
-
-      const student = students[0];
+      const student = await StudentAuthController._findStudentByEmailOrId(cleanIdent);
       if (!student) {
-        return ApiResponse.error(res, 'Student account not found or inactive.', null, 401);
+        return ApiResponse.error(res, 'Student account not found with this Email or Student ID, or is inactive.', null, 401);
       }
 
       // Verify password & credentials
@@ -237,55 +238,39 @@ class StudentAuthController {
   }
 
   /**
-   * Request 6-digit Passcode for Student Login
+   * Request 6-digit Passcode for Student Login (accepts Email or Student ID / Admission Number)
    */
   static async requestPasscode(req, res, next) {
     try {
-      const emailOrAdmNo = req.body.email || req.body.admission_number || req.body.phone || req.body.identifier || req.body.login;
+      const emailOrAdmNo = req.body.email || req.body.admission_number || req.body.student_id || req.body.identifier || req.body.login;
 
       if (!emailOrAdmNo || !String(emailOrAdmNo).trim()) {
-        return ApiResponse.error(res, 'Admission number, email or phone number is required.', null, 400);
+        return ApiResponse.error(res, 'Email address or Student ID (Admission No.) is required.', null, 400);
       }
 
       const cleanIdent = String(emailOrAdmNo).trim();
-      const [students] = await pool.query(
-        `SELECT 
-          s.*,
-          cm.class_name,
-          sec.section_name,
-          sch.school_name,
-          sch.school_logo
-         FROM student_master s
-         LEFT JOIN class_master cm ON s.class = cm.id
-         LEFT JOIN section_master sec ON s.section = sec.id
-         LEFT JOIN school_master sch ON s.school_id = sch.id
-         WHERE (
-           s.admission_number = ? OR 
-           s.email_address = ? OR 
-           s.primary_contact_number = ? OR 
-           CAST(s.id AS CHAR) = ?
-         ) AND s.status = 1
-         LIMIT 1`,
-        [cleanIdent, cleanIdent, cleanIdent, cleanIdent]
-      );
-
-      const student = students && students.length > 0 ? students[0] : null;
+      const student = await StudentAuthController._findStudentByEmailOrId(cleanIdent);
       if (!student) {
-        return ApiResponse.error(res, 'Student account not found with this identifier or is inactive.', null, 404);
+        return ApiResponse.error(res, 'Student account not found with this Email or Student ID, or is inactive.', null, 404);
       }
 
-      const otpMode = await PasscodeService.getOtpMode();
-      const isTest = otpMode === 'test';
+      const targetEmail = String(student.email_address || '').trim();
+      if (!targetEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(targetEmail)) {
+        return ApiResponse.error(
+          res,
+          `No email address is registered for Student ID "${student.admission_number || cleanIdent}". Please contact your School Administrator to link an email address to your profile, or sign in using your password.`,
+          { emailMissing: true, identifier: cleanIdent },
+          400
+        );
+      }
+
       const passcode = PasscodeService.generatePasscode();
       const expiresInMinutes = 10;
 
-      if (!isTest) {
-        const targetEmail = String(student.email_address || '').trim();
-        if (!targetEmail) {
-          return ApiResponse.error(res, 'No email address is registered for this account to receive the OTP.', null, 400);
-        }
-        await PasscodeService.storePasscode('student_master', student.id, passcode, expiresInMinutes);
-        const studentName = [student.first_name, student.last_name].filter(Boolean).join(' ');
+      await PasscodeService.storePasscode('student_master', student.id, passcode, expiresInMinutes);
+      const studentName = [student.first_name, student.last_name].filter(Boolean).join(' ');
+
+      try {
         await PasscodeService.sendOtpEmail({
           toEmail: targetEmail,
           toName: studentName,
@@ -293,22 +278,19 @@ class StudentAuthController {
           portalName: 'Student Portal',
           expiresInMinutes,
         });
-        return ApiResponse.success(res, 'A 6-digit OTP has been sent to your registered email address.', {
-          identifier: cleanIdent,
-          maskedIdentifier: PasscodeService.maskIdentifier(targetEmail),
-          testMode: false,
-          expiresInMinutes,
-        });
+      } catch (emailErr) {
+        await PasscodeService.clearPasscode('student_master', student.id).catch(() => {});
+        return ApiResponse.error(
+          res,
+          emailErr.message || 'Failed to send OTP email. Please try again later.',
+          null,
+          emailErr.statusCode || 400
+        );
       }
 
-      await PasscodeService.storePasscode('student_master', student.id, passcode, expiresInMinutes);
-      const maskedIdentifier = PasscodeService.maskIdentifier(student.primary_contact_number || student.email_address || student.admission_number || cleanIdent);
-
-      return ApiResponse.success(res, 'A 6-digit OTP has been generated.', {
+      return ApiResponse.success(res, 'A 6-digit OTP has been sent to your registered email address.', {
         identifier: cleanIdent,
-        maskedIdentifier,
-        testMode: true,
-        testPasscode: passcode,
+        maskedIdentifier: PasscodeService.maskIdentifier(targetEmail),
         expiresInMinutes,
       });
     } catch (error) {
@@ -322,39 +304,18 @@ class StudentAuthController {
    */
   static async verifyPasscode(req, res, next) {
     try {
-      const emailOrAdmNo = req.body.email || req.body.admission_number || req.body.phone || req.body.identifier || req.body.login;
+      const emailOrAdmNo = req.body.email || req.body.admission_number || req.body.student_id || req.body.identifier || req.body.login;
       const passcode = req.body.passcode || req.body.otp || req.body.code;
 
       if (!emailOrAdmNo || !String(emailOrAdmNo).trim()) {
-        return ApiResponse.error(res, 'Admission number, email or phone number is required.', null, 400);
+        return ApiResponse.error(res, 'Email address or Student ID (Admission No.) is required.', null, 400);
       }
       if (!passcode || !String(passcode).trim()) {
         return ApiResponse.error(res, '6-digit OTP is required.', null, 400);
       }
 
       const cleanIdent = String(emailOrAdmNo).trim();
-      const [students] = await pool.query(
-        `SELECT 
-          s.*,
-          cm.class_name,
-          sec.section_name,
-          sch.school_name,
-          sch.school_logo
-         FROM student_master s
-         LEFT JOIN class_master cm ON s.class = cm.id
-         LEFT JOIN section_master sec ON s.section = sec.id
-         LEFT JOIN school_master sch ON s.school_id = sch.id
-         WHERE (
-           s.admission_number = ? OR 
-           s.email_address = ? OR 
-           s.primary_contact_number = ? OR 
-           CAST(s.id AS CHAR) = ?
-         ) AND s.status = 1
-         LIMIT 1`,
-        [cleanIdent, cleanIdent, cleanIdent, cleanIdent]
-      );
-
-      const student = students && students.length > 0 ? students[0] : null;
+      const student = await StudentAuthController._findStudentByEmailOrId(cleanIdent);
       if (!student) {
         return ApiResponse.error(res, 'Student account not found or is inactive.', null, 401);
       }
@@ -368,6 +329,145 @@ class StudentAuthController {
       return await StudentAuthController._issueSession(student, res, 'Student login successful via OTP.');
     } catch (error) {
       console.error('Error in StudentAuthController.verifyPasscode:', error);
+      next(error);
+    }
+  }
+
+  /**
+   * Step 1 of Forgot Password: Request 6-digit Password Reset OTP via Email (accepts Email or Student ID)
+   */
+  static async requestForgotPasswordOtp(req, res, next) {
+    try {
+      const emailOrAdmNo = req.body.email || req.body.admission_number || req.body.student_id || req.body.identifier || req.body.login;
+      if (!emailOrAdmNo || !String(emailOrAdmNo).trim()) {
+        return ApiResponse.error(res, 'Email address or Student ID (Admission No.) is required.', null, 400);
+      }
+
+      const cleanIdent = String(emailOrAdmNo).trim();
+      const student = await StudentAuthController._findStudentByEmailOrId(cleanIdent);
+      if (!student) {
+        return ApiResponse.error(res, 'No active student account found with this Email or Student ID.', null, 404);
+      }
+
+      const targetEmail = String(student.email_address || '').trim();
+      if (!targetEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(targetEmail)) {
+        return ApiResponse.error(
+          res,
+          `No email address is registered for Student ID "${student.admission_number || cleanIdent}". Please contact your School Administrator to reset your password or link an email address.`,
+          { emailMissing: true, identifier: cleanIdent },
+          400
+        );
+      }
+
+      const otpCode = PasscodeService.generatePasscode();
+      const expiresInMinutes = 10;
+
+      await PasscodeService.storePasscode('student_master', student.id, otpCode, expiresInMinutes);
+      const studentName = [student.first_name, student.last_name].filter(Boolean).join(' ');
+
+      try {
+        await PasscodeService.sendForgotPasswordOtpEmail({
+          toEmail: targetEmail,
+          toName: studentName,
+          otpCode,
+          portalName: 'Student Portal',
+          expiresInMinutes,
+        });
+      } catch (emailErr) {
+        await PasscodeService.clearPasscode('student_master', student.id).catch(() => {});
+        return ApiResponse.error(
+          res,
+          emailErr.message || 'Failed to send password reset OTP email. Please try again later.',
+          null,
+          emailErr.statusCode || 400
+        );
+      }
+
+      return ApiResponse.success(res, 'A 6-digit password reset OTP has been sent to your registered email address.', {
+        identifier: cleanIdent,
+        maskedIdentifier: PasscodeService.maskIdentifier(targetEmail),
+        expiresInMinutes,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Step 2 of Forgot Password: Verify 6-digit OTP and issue short-lived resetToken
+   */
+  static async verifyForgotPasswordOtp(req, res, next) {
+    try {
+      const emailOrAdmNo = req.body.email || req.body.admission_number || req.body.student_id || req.body.identifier || req.body.login;
+      const otpCode = req.body.otp || req.body.passcode || req.body.code;
+
+      if (!emailOrAdmNo || !String(emailOrAdmNo).trim()) {
+        return ApiResponse.error(res, 'Email address or Student ID (Admission No.) is required.', null, 400);
+      }
+      if (!otpCode || !String(otpCode).trim()) {
+        return ApiResponse.error(res, '6-digit OTP is required.', null, 400);
+      }
+
+      const cleanIdent = String(emailOrAdmNo).trim();
+      const student = await StudentAuthController._findStudentByEmailOrId(cleanIdent);
+      if (!student) {
+        return ApiResponse.error(res, 'Student account not found or inactive.', null, 404);
+      }
+
+      const verifyResult = await PasscodeService.verifyPasscode('student_master', student.id, otpCode);
+      if (!verifyResult.valid) {
+        return ApiResponse.error(res, verifyResult.message, null, 401);
+      }
+
+      const resetToken = PasscodeService.issuePasswordResetToken({
+        userId: student.id,
+        portalType: 'StudentPortal',
+        identifier: cleanIdent,
+      });
+
+      return ApiResponse.success(res, 'OTP verified. Please enter your new password.', {
+        resetToken,
+        identifier: cleanIdent,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Step 3 of Forgot Password: Set new password using verified resetToken
+   */
+  static async resetPassword(req, res, next) {
+    try {
+      const { resetToken, newPassword, confirmPassword, password } = req.body || {};
+      const candidatePassword = String(newPassword || password || '').trim();
+
+      const tokenVerify = PasscodeService.verifyPasswordResetToken(resetToken, 'StudentPortal');
+      if (!tokenVerify.valid) {
+        return ApiResponse.error(res, tokenVerify.message, null, 401);
+      }
+
+      if (!candidatePassword || candidatePassword.length < 6) {
+        return ApiResponse.error(res, 'New password must be at least 6 characters long.', null, 400);
+      }
+      if (confirmPassword !== undefined && String(confirmPassword).trim() !== candidatePassword) {
+        return ApiResponse.error(res, 'New password and confirm password do not match.', null, 400);
+      }
+
+      const studentId = Number(tokenVerify.payload.userId);
+      const [rows] = await pool.query('SELECT id FROM student_master WHERE id = ? AND status = 1 LIMIT 1', [studentId]);
+      if (!rows || rows.length === 0) {
+        return ApiResponse.error(res, 'Student account not found or inactive.', null, 404);
+      }
+
+      const hashedPwd = await hashPassword(candidatePassword);
+      await pool.query(
+        'UPDATE student_master SET password = ?, otp = NULL, otp_expires_at = NULL WHERE id = ? AND status = 1',
+        [hashedPwd, studentId]
+      );
+
+      return ApiResponse.success(res, 'Your password has been reset successfully. Please sign in with your new password.');
+    } catch (error) {
       next(error);
     }
   }
@@ -423,6 +523,97 @@ class StudentAuthController {
   }
 
   /**
+   * Request 6-digit Email OTP for Student Change Password
+   * POST /api/student/auth/change-password/request-otp
+   */
+  static async requestChangePasswordOtp(req, res, next) {
+    try {
+      const studentId = req.user?.studentId || req.user?.userId || req.user?.id;
+      const schoolId = req.user?.schoolId || req.user?.school_id;
+
+      if (!studentId || !schoolId) {
+        return ApiResponse.error(res, 'Authentication required: session or school ID missing.', null, 401);
+      }
+
+      const oldPassword = req.body.oldPassword || req.body.currentPassword || req.body.cur_pass || req.body.current_password;
+      const newPassword = req.body.newPassword || req.body.new_password || req.body.new_pass;
+
+      if (!oldPassword || !String(oldPassword).trim()) {
+        return ApiResponse.error(res, 'Current password is required to set a new password.', null, 400);
+      }
+
+      if (!newPassword || String(newPassword).trim().length < 4) {
+        return ApiResponse.error(res, 'New password must be at least 4 characters.', null, 400);
+      }
+
+      const [rows] = await pool.query(
+        `SELECT id, first_name, last_name, email_address, password, passcode, date_of_birth, admission_number, primary_contact_number 
+         FROM student_master 
+         WHERE id = ? AND (school_id = ? OR ? IS NULL) 
+         LIMIT 1`,
+        [studentId, schoolId, schoolId]
+      );
+
+      const student = rows && rows.length > 0 ? rows[0] : null;
+      if (!student) {
+        return ApiResponse.error(res, 'Student account not found.', null, 404);
+      }
+
+      const isValid = await verifyStudentCredential(oldPassword, student);
+      if (!isValid) {
+        return ApiResponse.error(res, 'Current password does not match.', null, 400);
+      }
+
+      const targetEmail = String(student.email_address || '').trim();
+      if (!targetEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(targetEmail)) {
+        return ApiResponse.error(
+          res,
+          'No email address is linked to your Student profile. Please contact your school administrator to register your email address before changing your password.',
+          { emailMissing: true },
+          400
+        );
+      }
+
+      const otpCode = PasscodeService.generatePasscode();
+      await PasscodeService.storePasscode('student_master', studentId, otpCode, 10);
+
+      const fullName =
+        [student.first_name, student.last_name].filter(Boolean).join(' ').trim() || 'Student';
+
+      try {
+        await PasscodeService.sendActionOtpEmail({
+          toEmail: targetEmail,
+          toName: fullName,
+          otpCode,
+          actionTitle: 'Student Password Change Verification',
+          actionWarning: 'Use this one-time passcode to confirm changing your Student Portal password.',
+          expiresInMinutes: 10,
+        });
+      } catch (emailErr) {
+        await PasscodeService.clearPasscode('student_master', studentId);
+        return ApiResponse.error(
+          res,
+          emailErr.message || 'Failed to deliver OTP email. Please check active email provider settings.',
+          null,
+          502
+        );
+      }
+
+      const maskedEmail = PasscodeService.maskEmail(targetEmail);
+      return ApiResponse.success(
+        res,
+        `A 6-digit verification code has been sent to ${maskedEmail}.`,
+        {
+          maskedEmail,
+          expiresInMinutes: 10,
+        }
+      );
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Change Student Password
    */
   static async changePassword(req, res, next) {
@@ -435,6 +626,11 @@ class StudentAuthController {
       }
       const oldPassword = req.body.oldPassword || req.body.currentPassword || req.body.cur_pass || req.body.current_password;
       const newPassword = req.body.newPassword || req.body.new_password || req.body.new_pass;
+      const otp = String(req.body.otp || '').trim();
+
+      if (!otp) {
+        return ApiResponse.error(res, 'A 6-digit email verification OTP is required to confirm changing your password.', null, 400);
+      }
 
       if (!newPassword || String(newPassword).trim().length < 4) {
         return ApiResponse.error(res, 'New password must be at least 4 characters.', null, 400);
@@ -460,6 +656,11 @@ class StudentAuthController {
       const isValid = await verifyStudentCredential(oldPassword, student);
       if (!isValid) {
         return ApiResponse.error(res, 'Current password does not match.', null, 400);
+      }
+
+      const verification = await PasscodeService.verifyPasscode('student_master', studentId, otp);
+      if (!verification.valid) {
+        return ApiResponse.error(res, verification.reason, null, 400);
       }
 
       const hashed = await hashPassword(String(newPassword).trim());

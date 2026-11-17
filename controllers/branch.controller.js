@@ -313,8 +313,6 @@ class BranchController {
         );
       }
 
-      const otpMode = await PasscodeService.getOtpMode();
-      const isTest = otpMode === 'test';
       const otpCode = PasscodeService.generatePasscode();
       const expiresInMinutes = 10;
 
@@ -323,7 +321,7 @@ class BranchController {
       const fullName = `${superAdmin.first_name || ''} ${superAdmin.last_name || ''}`.trim() || 'Super Admin';
       const maskedEmail = PasscodeService.maskIdentifier(superAdmin.email);
 
-      if (!isTest) {
+      try {
         await PasscodeService.sendActionOtpEmail({
           toEmail: superAdmin.email,
           toName: fullName,
@@ -332,26 +330,17 @@ class BranchController {
           actionWarning: `You requested to permanently delete the branch "${branch.branch_name}" (${branch.branch_code}) along with all its students, teachers, classes, and campus records. Enter the 6-digit OTP below to confirm:`,
           expiresInMinutes,
         });
-
-        return ApiResponse.success(
-          res,
-          `Password verified. A 6-digit confirmation OTP has been sent to ${maskedEmail}.`,
-          {
-            otpMode: 'production',
-            maskedEmail,
-            expiresInMinutes,
-          }
-        );
+      } catch (emailErr) {
+        await PasscodeService.clearPasscode('user_master', superAdmin.id).catch(() => {});
+        throw emailErr;
       }
 
       return ApiResponse.success(
         res,
-        'Password verified. A 6-digit confirmation OTP has been generated.',
+        `Password verified. A 6-digit confirmation OTP has been sent to ${maskedEmail}.`,
         {
-          otpMode: 'test',
           maskedEmail,
           expiresInMinutes,
-          testPasscode: otpCode,
         }
       );
     } catch (error) {
