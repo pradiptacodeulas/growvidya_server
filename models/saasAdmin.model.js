@@ -1871,7 +1871,8 @@ class SaasAdminModel {
       const minQty = Math.max(1, parseInt(entry.min_qty, 10) || 1);
       const packName = String(entry.pack_name || '').trim();
       const desc = entry.description !== undefined ? String(entry.description || '') : null;
-      const status = entry.status !== undefined ? (Number(entry.status) === 2 ? 2 : 1) : 1;
+      const parsedStatus = Number(entry.status);
+      const status = [1, 2, 4].includes(parsedStatus) ? parsedStatus : 1;
 
       await pool.query(
         `INSERT INTO notification_pricing_master (channel, pack_name, unit_price, min_qty, description, status)
@@ -1888,6 +1889,41 @@ class SaasAdminModel {
 
     NotificationRecordModel.invalidateRateCache();
     return await this.getNotificationPricing();
+  }
+
+  static async toggleNotificationPricingStatus(idOrChannel, rawStatus) {
+    const parsedId = parseInt(idOrChannel, 10);
+    const channel = String(idOrChannel || '').trim().toLowerCase();
+
+    const [existingRows] = await pool.query(
+      parsedId > 0
+        ? 'SELECT * FROM notification_pricing_master WHERE id = ? AND status != 4 LIMIT 1'
+        : 'SELECT * FROM notification_pricing_master WHERE channel = ? AND status != 4 LIMIT 1',
+      [parsedId > 0 ? parsedId : channel]
+    );
+
+    if (!existingRows.length) return null;
+    const existing = existingRows[0];
+
+    const parsedStatus = Number(rawStatus);
+    const nextStatus = [1, 2, 4].includes(parsedStatus)
+      ? parsedStatus
+      : Number(existing.status) === 1
+      ? 2
+      : 1;
+
+    await pool.query(
+      'UPDATE notification_pricing_master SET status = ? WHERE id = ?',
+      [nextStatus, existing.id]
+    );
+
+    NotificationRecordModel.invalidateRateCache();
+
+    const [updatedRows] = await pool.query(
+      'SELECT * FROM notification_pricing_master WHERE id = ? LIMIT 1',
+      [existing.id]
+    );
+    return updatedRows[0] || null;
   }
 
   static async getNotificationBuyers(options = {}) {

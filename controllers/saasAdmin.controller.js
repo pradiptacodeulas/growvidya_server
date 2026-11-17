@@ -1650,6 +1650,26 @@ class SaasAdminController {
     }
   }
 
+  static async toggleNotificationPricingStatus(req, res, next) {
+    try {
+      const idOrChannel = req.params.id || req.body?.id || req.body?.channel;
+      if (!idOrChannel) {
+        return ApiResponse.error(res, 'Notification pricing ID or channel is required.', null, 400);
+      }
+      const rawStatus = req.body?.status;
+      if (rawStatus !== undefined && ![1, 2, 4].includes(Number(rawStatus))) {
+        return ApiResponse.error(res, 'Status must be 1 (Active), 2 (Inactive), or 4 (Soft Delete).', null, 400);
+      }
+      const updated = await SaasAdminModel.toggleNotificationPricingStatus(idOrChannel, rawStatus);
+      if (!updated) {
+        return ApiResponse.error(res, 'Notification pricing record not found.', null, 404);
+      }
+      return ApiResponse.success(res, 'Notification status updated successfully.', updated);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   static async getNotificationBuyers(req, res, next) {
     try {
       const { search, page, limit } = req.query;
