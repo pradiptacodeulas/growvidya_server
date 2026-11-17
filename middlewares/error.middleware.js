@@ -69,23 +69,8 @@ function errorMiddleware(err, req, res, next) {
     statusCode = 400;
     message = 'Unexpected file uploaded. Please check the file attachment and try again.';
   } else if (statusCode >= 500) {
-    // Sanitize raw SQL or internal server errors from reaching client responses
-    const rawMsg = String(err.message || '');
-    const isProd = process.env.NODE_ENV === 'production';
-    if (
-      isProd ||
-      Boolean(err.sql) ||
-      Boolean(err.sqlMessage) ||
-      (typeof err.code === 'string' && err.code.startsWith('ER_')) ||
-      /\b(SELECT|UPDATE|INSERT|DELETE|COALESCE|ALTER|CREATE|DROP)\b/i.test(rawMsg) ||
-      rawMsg.includes('SQL syntax') ||
-      rawMsg.includes('Unknown column') ||
-      rawMsg.includes("doesn't exist")
-    ) {
-      message = isProd
-        ? 'Internal Server Error'
-        : 'An unexpected database error occurred while processing the request. Please verify entered details and try again.';
-    }
+    // Always sanitize internal server / runtime / SQL errors so raw technical messages never reach the client UI
+    message = 'Something went wrong while processing your request. Please try again.';
   }
 
   if (statusCode >= 500) {
@@ -94,7 +79,7 @@ function errorMiddleware(err, req, res, next) {
     console.warn(`[Client/Operational Error ${statusCode}]`, message);
   }
 
-  return ApiResponse.error(res, message, errors, statusCode);
+  return ApiResponse.error(res, message, statusCode >= 500 ? null : errors, statusCode);
 }
 
 module.exports = errorMiddleware;

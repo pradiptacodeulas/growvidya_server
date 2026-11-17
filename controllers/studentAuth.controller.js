@@ -279,12 +279,13 @@ class StudentAuthController {
           expiresInMinutes,
         });
       } catch (emailErr) {
+        console.error('[StudentAuth.requestPasscode] Email dispatch failed:', emailErr);
         await PasscodeService.clearPasscode('student_master', student.id).catch(() => {});
         return ApiResponse.error(
           res,
-          emailErr.message || 'Failed to send OTP email. Please try again later.',
+          'Unable to send verification code at the moment. Please try again shortly.',
           null,
-          emailErr.statusCode || 400
+          502
         );
       }
 
@@ -374,12 +375,13 @@ class StudentAuthController {
           expiresInMinutes,
         });
       } catch (emailErr) {
+        console.error('[StudentAuth.requestForgotPasswordOtp] Email dispatch failed:', emailErr);
         await PasscodeService.clearPasscode('student_master', student.id).catch(() => {});
         return ApiResponse.error(
           res,
-          emailErr.message || 'Failed to send password reset OTP email. Please try again later.',
+          'Unable to send verification code at the moment. Please try again shortly.',
           null,
-          emailErr.statusCode || 400
+          502
         );
       }
 
@@ -590,16 +592,17 @@ class StudentAuthController {
           expiresInMinutes: 10,
         });
       } catch (emailErr) {
+        console.error('[StudentAuth.requestChangePasswordOtp] Email dispatch failed:', emailErr);
         await PasscodeService.clearPasscode('student_master', studentId);
         return ApiResponse.error(
           res,
-          emailErr.message || 'Failed to deliver OTP email. Please check active email provider settings.',
+          'Unable to send verification code at the moment. Please try again shortly.',
           null,
           502
         );
       }
 
-      const maskedEmail = PasscodeService.maskEmail(targetEmail);
+      const maskedEmail = PasscodeService.maskIdentifier(targetEmail);
       return ApiResponse.success(
         res,
         `A 6-digit verification code has been sent to ${maskedEmail}.`,
@@ -660,7 +663,7 @@ class StudentAuthController {
 
       const verification = await PasscodeService.verifyPasscode('student_master', studentId, otp);
       if (!verification.valid) {
-        return ApiResponse.error(res, verification.reason, null, 400);
+        return ApiResponse.error(res, verification.message || verification.reason || 'Invalid or expired OTP.', null, 400);
       }
 
       const hashed = await hashPassword(String(newPassword).trim());

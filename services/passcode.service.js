@@ -32,6 +32,13 @@ class PasscodeService {
   }
 
   /**
+   * Mask an email address for display (alias for maskIdentifier)
+   */
+  static maskEmail(email) {
+    return PasscodeService.maskIdentifier(email);
+  }
+
+  /**
    * Store the generated 6-digit OTP and expiry timestamp in the specified table (does not touch passcode column)
    */
   static async storePasscode(tableName, recordId, otpCode, expiresInMinutes = 10) {
@@ -216,20 +223,24 @@ class PasscodeService {
 
     const record = rows && rows.length > 0 ? rows[0] : null;
     if (!record) {
-      return { valid: false, message: 'Account not found or inactive.' };
+      const msg = 'Account not found or inactive.';
+      return { valid: false, message: msg, reason: msg };
     }
 
     if (!record.otp) {
-      return { valid: false, message: 'No active OTP request found. Please request a new code.' };
+      const msg = 'No active OTP request found. Please request a new code.';
+      return { valid: false, message: msg, reason: msg };
     }
 
     if (!record.is_valid_time) {
-      return { valid: false, message: 'OTP has expired. Please request a new 6-digit code.' };
+      const msg = 'OTP has expired. Please request a new 6-digit code.';
+      return { valid: false, message: msg, reason: msg };
     }
 
     const cleanInput = String(inputOtp || '').trim();
     if (String(record.otp).trim() !== cleanInput) {
-      return { valid: false, message: 'Invalid 6-digit OTP. Please try again.' };
+      const msg = 'Invalid 6-digit OTP. Please try again.';
+      return { valid: false, message: msg, reason: msg };
     }
 
     await pool.query(
