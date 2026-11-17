@@ -21,8 +21,14 @@ class StudentModel {
 
     const targetAcademicYear = academicYear || academic_year || academicYearId;
     if (targetAcademicYear && String(targetAcademicYear).trim() && String(targetAcademicYear).toLowerCase() !== 'all') {
-      whereClauses.push('(s.academic_year = ? OR s.academic_year = (SELECT id FROM academic_year_master WHERE academic_year = ? AND (school_id = ? OR school_id IS NULL) LIMIT 1) OR s.academic_year = (SELECT academic_year FROM academic_year_master WHERE id = ? AND (school_id = ? OR school_id IS NULL) LIMIT 1))');
-      params.push(targetAcademicYear, targetAcademicYear, schoolId, targetAcademicYear, schoolId);
+      const cleanYear = String(targetAcademicYear).trim();
+      if (/^\d+$/.test(cleanYear)) {
+        whereClauses.push('s.academic_year = ?');
+        params.push(Number(cleanYear));
+      } else {
+        whereClauses.push('s.academic_year = (SELECT id FROM academic_year_master WHERE academic_year = ? AND school_id = ? LIMIT 1)');
+        params.push(cleanYear, schoolId);
+      }
     }
 
     if (classId) {
@@ -865,7 +871,7 @@ class StudentModel {
       FROM student_master 
       WHERE school_id = ? 
         AND LOWER(TRIM(email_address)) = ? 
-        AND status != 4
+        AND status = 1
     `;
     const params = [schoolId, cleanEmail];
 
@@ -906,7 +912,7 @@ class StudentModel {
       FROM student_master 
       WHERE school_id = ? 
         AND LOWER(TRIM(admission_number)) = ? 
-        AND status != 4
+        AND status = 1
     `;
     const params = [schoolId, cleanNum];
 
@@ -2059,6 +2065,7 @@ class StudentModel {
           school_id INT NOT NULL,
           branch_id INT DEFAULT NULL,
           student_id INT NOT NULL,
+          new_student_id INT DEFAULT NULL,
           from_academic_year INT DEFAULT NULL,
           from_class_id INT DEFAULT NULL,
           from_section_id INT DEFAULT NULL,
@@ -2073,6 +2080,11 @@ class StudentModel {
         )
       `);
 
+      const [sphCols] = await connection.query(`SHOW COLUMNS FROM student_promotion_history LIKE 'new_student_id'`);
+      if (!sphCols || sphCols.length === 0) {
+        await connection.query(`ALTER TABLE student_promotion_history ADD COLUMN new_student_id INT DEFAULT NULL AFTER student_id`);
+      }
+
       let promotedCount = 0;
 
       for (const item of students) {
@@ -2080,46 +2092,181 @@ class StudentModel {
         if (!studentId) continue;
 
         const [rows] = await connection.query(
-          `SELECT id, branch_id, academic_year, class, section, roll_number, status
+          `SELECT *
            FROM student_master
-           WHERE id = ? AND school_id = ? AND status != 4
-           LIMIT 1`,
+           WHERE id = ? AND school_id = ? AND status = 1
+           LIMIT 1
+           FOR UPDATE`,
           [studentId, schoolId]
         );
         if (!rows || rows.length === 0) continue;
 
         const current = rows[0];
+        const nextAcademicYear = Number(toAcademicYear);
+
+        // Prevent promoting to the same academic year
+        if (Number(current.academic_year) === nextAcademicYear) continue;
+
         const statusAction = String(item.promotion_status || 'promoted').toLowerCase();
         const newRollNumber =
           item.roll_number !== undefined && item.roll_number !== null && String(item.roll_number).trim() !== ''
             ? String(item.roll_number).trim()
             : current.roll_number;
 
-        let nextAcademicYear = Number(toAcademicYear);
         let nextClassId = Number(toClassId);
         let nextSectionId = toSectionId ? Number(toSectionId) : null;
-        let nextStatus = 1;
 
-        if (statusAction === 'detained') {
+        if (statusAction === 'detained' || statusAction === 'graduated') {
           nextClassId = Number(current.class);
           nextSectionId = current.section ? Number(current.section) : null;
-        } else if (statusAction === 'graduated') {
-          nextClassId = Number(current.class);
-          nextSectionId = current.section ? Number(current.section) : null;
-          nextStatus = 2;
+        }
+
+        // 1. Mark the previous academic year student record as Inactive (status = 2)
+        await connection.query(
+          `UPDATE student_master
+           SET status = 2
+           WHERE id = ? AND school_id = ?`,
+          [studentId, schoolId]
+        );
+
+        let newStudentId = null;
+
+        if (statusAction !== 'graduated') {
+          // Check if a record for this student in the target academic year already exists
+          let existingTargetRows = [];
+          if (current.admission_number) {
+            [existingTargetRows] = await connection.query(
+              `SELECT id, status FROM student_master
+               WHERE school_id = ? AND LOWER(TRIM(admission_number)) = LOWER(TRIM(?))
+                 AND academic_year = ? AND status != 4
+               LIMIT 1`,
+              [schoolId, current.admission_number, nextAcademicYear]
+            );
+          }
+
+          if (existingTargetRows && existingTargetRows.length > 0) {
+            newStudentId = Number(existingTargetRows[0].id);
+            await connection.query(
+              `UPDATE student_master
+               SET class = ?, section = ?, roll_number = ?, status = 1
+               WHERE id = ? AND school_id = ?`,
+              [nextClassId, nextSectionId, newRollNumber, newStudentId, schoolId]
+            );
+          } else {
+            // 2. Create the student's record for the new academic year with status = 1 (Active)
+            const [insertRes] = await connection.query(
+              `INSERT INTO student_master (
+                 school_id, branch_id, academic_year, admission_number, admission_date, roll_number,
+                 first_name, last_name, class, section, gender, date_of_birth, password,
+                 blood_group, house, religion, category, primary_contact_number, email_address,
+                 caste, mother_tongue, language_known, status, picture,
+                 has_siblings, has_transport, has_hostel, hostel_required, transport_required, passcode
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)`,
+              [
+                schoolId,
+                current.branch_id || null,
+                nextAcademicYear,
+                current.admission_number,
+                current.admission_date,
+                newRollNumber,
+                current.first_name,
+                current.last_name,
+                nextClassId,
+                nextSectionId,
+                current.gender,
+                current.date_of_birth,
+                current.password,
+                current.blood_group,
+                current.house,
+                current.religion,
+                current.category,
+                current.primary_contact_number,
+                current.email_address,
+                current.caste,
+                current.mother_tongue,
+                current.language_known,
+                current.picture,
+                current.has_siblings || 0,
+                current.has_transport || 0,
+                current.has_hostel || 0,
+                current.hostel_required || 0,
+                current.transport_required || 0,
+                current.passcode || null,
+              ]
+            );
+            newStudentId = insertRes.insertId;
+
+            // Copy associated student links (parents, addresses, transport, hostel, medical, previous school, documents)
+            await connection.query(
+              `INSERT INTO student_to_parent (school_id, branch_id, student_id, father_id, mother_id, guardian_id, status)
+               SELECT school_id, branch_id, ?, father_id, mother_id, guardian_id, status
+               FROM student_to_parent
+               WHERE student_id = ? AND school_id = ? AND status != 4`,
+              [newStudentId, studentId, schoolId]
+            );
+
+            await connection.query(
+              `INSERT INTO student_address (school_id, branch_id, student_id, address_type, same_permanent, country, state, city, postal_code, address1, address2, created_at)
+               SELECT school_id, branch_id, ?, address_type, same_permanent, country, state, city, postal_code, address1, address2, NOW()
+               FROM student_address
+               WHERE student_id = ? AND school_id = ?`,
+              [newStudentId, studentId, schoolId]
+            );
+
+            await connection.query(
+              `INSERT INTO student_transport (school_id, branch_id, student_id, route, vehicle_number, pickup_point, drop_point, status)
+               SELECT school_id, branch_id, ?, route, vehicle_number, pickup_point, drop_point, status
+               FROM student_transport
+               WHERE student_id = ? AND school_id = ? AND status = 1`,
+              [newStudentId, studentId, schoolId]
+            );
+
+            await connection.query(
+              `INSERT INTO student_hostel (school_id, branch_id, student_id, hostel_name, room_number, academic_year, status)
+               SELECT school_id, branch_id, ?, hostel_name, room_number, ?, status
+               FROM student_hostel
+               WHERE student_id = ? AND school_id = ? AND status = 1`,
+              [newStudentId, nextAcademicYear, studentId, schoolId]
+            );
+
+            await connection.query(
+              `INSERT INTO student_medical_history (school_id, branch_id, student_id, medical_condition, description, medical_time, is_informed, status)
+               SELECT school_id, branch_id, ?, medical_condition, description, medical_time, is_informed, status
+               FROM student_medical_history
+               WHERE student_id = ? AND school_id = ? AND status = 1`,
+              [newStudentId, studentId, schoolId]
+            );
+
+            await connection.query(
+              `INSERT INTO previous_school_address (school_id, branch_id, student_id, school_name, address1, address2, country, state, city, postal_code)
+               SELECT school_id, branch_id, ?, school_name, address1, address2, country, state, city, postal_code
+               FROM previous_school_address
+               WHERE student_id = ? AND school_id = ?`,
+              [newStudentId, studentId, schoolId]
+            );
+
+            await connection.query(
+              `INSERT INTO student_document (school_id, branch_id, student_id, document_type, file_name, attachments, status)
+               SELECT school_id, branch_id, ?, document_type, file_name, attachments, status
+               FROM student_document
+               WHERE student_id = ? AND school_id = ? AND status != 4`,
+              [newStudentId, studentId, schoolId]
+            );
+          }
         }
 
         await connection.query(
           `INSERT INTO student_promotion_history (
-             school_id, branch_id, student_id,
+             school_id, branch_id, student_id, new_student_id,
              from_academic_year, from_class_id, from_section_id, from_roll_number,
              to_academic_year, to_class_id, to_section_id, to_roll_number,
              promotion_status, promoted_by
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             schoolId,
             current.branch_id || null,
             studentId,
+            newStudentId,
             current.academic_year ? Number(current.academic_year) : null,
             current.class ? Number(current.class) : null,
             current.section ? Number(current.section) : null,
@@ -2132,22 +2279,6 @@ class StudentModel {
             promotedBy ? Number(promotedBy) : null,
           ]
         );
-
-        await connection.query(
-          `UPDATE student_master
-           SET academic_year = ?, class = ?, section = ?, roll_number = ?, status = ?
-           WHERE id = ? AND school_id = ?`,
-          [nextAcademicYear, nextClassId, nextSectionId, newRollNumber, nextStatus, studentId, schoolId]
-        );
-
-        if (nextStatus === 1) {
-          await connection.query(
-            `UPDATE student_hostel
-             SET academic_year = ?
-             WHERE student_id = ? AND school_id = ? AND status = 1`,
-            [nextAcademicYear, studentId, schoolId]
-          );
-        }
 
         promotedCount += 1;
       }
