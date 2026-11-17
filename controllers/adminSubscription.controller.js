@@ -32,11 +32,12 @@ class AdminSubscriptionController {
         return ApiResponse.error(res, 'School ID not found in session.', null, 400);
       }
 
-      const [subscription, upgradePlans, catalog, storageQuota] = await Promise.all([
+      const [subscription, upgradePlans, catalog, storageQuota, hardwareOrders] = await Promise.all([
         SubscriptionModel.getSchoolSubscription(schoolId),
         SubscriptionModel.getUpgradePlans(schoolId),
         SubscriptionModel.getConfigurationCatalog(),
         StorageQuotaService.getSchoolStorageQuota(schoolId).catch(() => null),
+        SubscriptionModel.getSchoolHardwareOrders(schoolId).catch(() => ({ attendance_machines: [], rfid_cards: [] })),
       ]);
 
       // Derive distinct active billing cycles dynamically from DB plans
@@ -52,6 +53,7 @@ class AdminSubscriptionController {
       return ApiResponse.success(res, 'Subscription status retrieved successfully.', {
         subscription,
         storage_quota: storageQuota,
+        hardware_orders: hardwareOrders,
         upgrade_plans: upgradePlans,
         active_cycles: activeCycles,
         catalog,
@@ -589,6 +591,7 @@ class AdminSubscriptionController {
         verifiedCalc,
         paymentMethod: 'bank_transfer',
         utrNumber: String(utrNumber).trim(),
+        bankAccountId: req.body.bank_account_id || req.body.bankAccountId || null,
         shippingAddress: req.body.shipping_address || req.body.shippingAddress || null,
         extraMetadata: { remarks: req.body.remarks || 'Offline standalone add-on purchase' },
       });
@@ -741,6 +744,7 @@ class AdminSubscriptionController {
         transition,
         paymentMethod: 'bank_transfer',
         utrNumber: String(txnId).trim(),
+        bankAccountId: req.body.bank_account_id || req.body.bankAccountId || null,
         shippingAddress: req.body.shipping_address || req.body.shippingAddress || null,
       });
 
@@ -809,9 +813,13 @@ class AdminSubscriptionController {
       if (!schoolId) {
         return ApiResponse.error(res, 'School ID not found in session.', null, 400);
       }
-      const history = await SubscriptionFulfillmentService.getSchoolBillingHistory(schoolId);
+      const [history, hardwareOrders] = await Promise.all([
+        SubscriptionFulfillmentService.getSchoolBillingHistory(schoolId),
+        SubscriptionModel.getSchoolHardwareOrders(schoolId).catch(() => ({ attendance_machines: [], rfid_cards: [] })),
+      ]);
       return ApiResponse.success(res, 'Billing history retrieved successfully.', {
         orders: history,
+        hardware_orders: hardwareOrders,
       });
     } catch (error) {
       next(error);

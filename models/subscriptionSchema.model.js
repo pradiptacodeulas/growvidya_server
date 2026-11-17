@@ -263,10 +263,36 @@ class SubscriptionSchemaModel {
     if (!cols.has('superseded_by_id')) {
       alterParts.push('ADD COLUMN `superseded_by_id` INT(11) DEFAULT NULL AFTER `verified_at`');
     }
+    if (!cols.has('snapshot_max_students')) {
+      alterParts.push('ADD COLUMN `snapshot_max_students` INT(11) DEFAULT NULL');
+    }
+    if (!cols.has('snapshot_storage_gb')) {
+      alterParts.push('ADD COLUMN `snapshot_storage_gb` INT(11) DEFAULT NULL');
+    }
+    if (!cols.has('snapshot_tier_rank')) {
+      alterParts.push('ADD COLUMN `snapshot_tier_rank` INT(11) DEFAULT NULL');
+    }
+    if (!cols.has('snapshot_billing_cycle')) {
+      alterParts.push('ADD COLUMN `snapshot_billing_cycle` VARCHAR(50) DEFAULT NULL');
+    }
 
     if (alterParts.length > 0) {
       await pool.query(`ALTER TABLE \`school_subscriptions\` ${alterParts.join(', ')}`);
     }
+
+    // Backfill contract snapshot fields once for existing school_subscriptions rows
+    await pool.query(`
+      UPDATE \`school_subscriptions\` s
+      JOIN \`subscription_plans\` p ON s.\`plan_id\` = p.\`id\`
+      SET s.\`snapshot_max_students\` = COALESCE(s.\`snapshot_max_students\`, p.\`max_students\`),
+          s.\`snapshot_storage_gb\` = COALESCE(s.\`snapshot_storage_gb\`, p.\`included_storage_gb\`),
+          s.\`snapshot_tier_rank\` = COALESCE(s.\`snapshot_tier_rank\`, p.\`tier_rank\`),
+          s.\`snapshot_billing_cycle\` = COALESCE(s.\`snapshot_billing_cycle\`, p.\`billing_cycle\`)
+      WHERE s.\`snapshot_max_students\` IS NULL
+         OR s.\`snapshot_storage_gb\` IS NULL
+         OR s.\`snapshot_tier_rank\` IS NULL
+         OR s.\`snapshot_billing_cycle\` IS NULL
+    `);
 
     // Remove legacy 'dummy' default on payment_gateway
     if (String(cols.get('payment_gateway')?.Default || '').toLowerCase() === 'dummy') {
@@ -351,6 +377,7 @@ class SubscriptionSchemaModel {
         \`razorpay_order_id\` VARCHAR(120) DEFAULT NULL,
         \`razorpay_payment_id\` VARCHAR(120) DEFAULT NULL,
         \`utr_number\` VARCHAR(150) DEFAULT NULL,
+        \`bank_account_id\` INT(11) DEFAULT NULL,
         \`shipping_address\` TEXT DEFAULT NULL,
         \`payload_snapshot_json\` LONGTEXT DEFAULT NULL,
         \`status\` ENUM('created','pending_verification','paid','failed','rejected','expired') NOT NULL DEFAULT 'created',
@@ -370,7 +397,7 @@ class SubscriptionSchemaModel {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
-    // Ensure billing_cycle column is VARCHAR(50) if table was created previously with narrower width or enum
+    // Ensure billing_cycle column is VARCHAR(50) and bank_account_id exists if table was created previously
     try {
       const orderCols = await SubscriptionSchemaModel._getColumnMap('subscription_payment_orders');
       if (orderCols.has('billing_cycle')) {
@@ -378,6 +405,11 @@ class SubscriptionSchemaModel {
         if (bType.startsWith('enum') || bType.includes('varchar(30)')) {
           await pool.query(`ALTER TABLE \`subscription_payment_orders\` MODIFY COLUMN \`billing_cycle\` VARCHAR(50) DEFAULT NULL`);
         }
+      }
+      if (!orderCols.has('bank_account_id')) {
+        await pool.query(
+          `ALTER TABLE \`subscription_payment_orders\` ADD COLUMN \`bank_account_id\` INT(11) DEFAULT NULL AFTER \`utr_number\``
+        );
       }
     } catch (_) {}
   }

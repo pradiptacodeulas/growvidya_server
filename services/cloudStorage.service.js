@@ -173,18 +173,23 @@ class CloudStorageService {
    */
   static extractRequestContext(req, overrides = {}) {
     const user = req?.user || {};
+    const isPlatformAdmin = Boolean(
+      user.portalType === 'SaaSAdminPortal' || req?.saasAdmin
+    );
     const roleRaw = String(
       overrides.uploaderRole ||
       user.roleName ||
       user.role_name ||
       user.role ||
-      (user.isSuperAdmin ? 'super_admin' : '')
+      (isPlatformAdmin ? 'saas_admin' : user.isSuperAdmin ? 'super_admin' : '')
     ).toLowerCase();
 
     const rawSchoolId =
       overrides.schoolId !== undefined
         ? overrides.schoolId
-        : (user.school_id ?? user.schoolId ?? req?.body?.school_id ?? req?.query?.school_id ?? null);
+        : isPlatformAdmin
+          ? (req?.body?.school_id ?? req?.query?.school_id ?? null)
+          : (user.school_id ?? user.schoolId ?? null);
 
     const rawBranchId =
       overrides.branchId !== undefined
@@ -194,7 +199,7 @@ class CloudStorageService {
     const rawUserId =
       overrides.uploadedBy !== undefined
         ? overrides.uploadedBy
-        : (user.id ?? user.userId ?? user.teacherId ?? user.studentId ?? user.parentId ?? null);
+        : (req?.saasAdmin?.id ?? user.id ?? user.userId ?? user.teacherId ?? user.studentId ?? user.parentId ?? null);
 
     const schoolId = rawSchoolId && Number(rawSchoolId) > 0 ? Number(rawSchoolId) : null;
     const branchId = rawBranchId && Number(rawBranchId) > 0 ? Number(rawBranchId) : null;
@@ -205,6 +210,7 @@ class CloudStorageService {
       branchId,
       uploadedBy,
       uploaderRole: roleRaw || null,
+      isPlatformAdmin,
     };
   }
 
@@ -218,6 +224,8 @@ class CloudStorageService {
     originalName = 'file',
     prefix = '',
     customExt = '',
+    allowPlatformScope = false,
+    allowSupportTicketScope = false,
   }) {
     const cleanFolder = CloudStorageService.sanitizeFolder(folder);
     const parsedExt = (customExt || path.extname(originalName || '') || '.bin').toLowerCase();
@@ -230,10 +238,10 @@ class CloudStorageService {
     const savedName = `${safeBase}-${uniqueSuffix}${parsedExt}`;
 
     let subKey = '';
-    if (cleanFolder === 'support_tickets') {
+    if (allowSupportTicketScope) {
       const scope = schoolId && Number(schoolId) > 0 ? `school_${Number(schoolId)}` : 'platform';
-      subKey = `support_tickets/${scope}/${savedName}`;
-    } else if (CloudStorageService.isPlatformFolder(cleanFolder) || !schoolId || Number(schoolId) <= 0) {
+      subKey = `platform/support_tickets/${scope}/${savedName}`;
+    } else if (allowPlatformScope || !schoolId || Number(schoolId) <= 0) {
       subKey = `platform/${cleanFolder}/${savedName}`;
     } else {
       const sId = Number(schoolId);
@@ -267,6 +275,8 @@ class CloudStorageService {
     uploadedBy = null,
     uploaderRole = null,
     skipQuotaCheck = false,
+    allowPlatformScope = false,
+    allowSupportTicketScope = false,
   }) {
     if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
       const err = new Error('Invalid or empty file buffer.');
@@ -276,12 +286,31 @@ class CloudStorageService {
 
     const actualSize = Number(sizeBytes) > 0 ? Number(sizeBytes) : buffer.length;
     const cleanFolder = CloudStorageService.sanitizeFolder(folder);
-    const category = CloudStorageService.classifyCategory(cleanFolder);
-    const isPlatformOrTicket =
-      CloudStorageService.isPlatformFolder(cleanFolder) || category === 'support_ticket';
+    const lowerFolder = cleanFolder.toLowerCase();
+
+    if (!allowPlatformScope && !allowSupportTicketScope) {
+      if (
+        CloudStorageService.isPlatformFolder(cleanFolder) ||
+        lowerFolder === 'support_tickets' ||
+        lowerFolder.startsWith('support_tickets/') ||
+        lowerFolder === 'platform' ||
+        lowerFolder.startsWith('platform/')
+      ) {
+        const err = new Error('Access denied: Reserved platform folder cannot be used for school uploads.');
+        err.statusCode = 403;
+        throw err;
+      }
+    }
+
+    const category = allowSupportTicketScope
+      ? 'support_ticket'
+      : allowPlatformScope
+        ? 'platform_asset'
+        : CloudStorageService.classifyCategory(cleanFolder);
+    const isCompanyScoped = Boolean(allowPlatformScope || allowSupportTicketScope);
 
     // Enforce school cloud storage quota before uploading to Backblaze B2
-    if (!skipQuotaCheck && !isPlatformOrTicket && schoolId && Number(schoolId) > 0) {
+    if (!skipQuotaCheck && !isCompanyScoped && schoolId && Number(schoolId) > 0) {
       const quota = await StorageQuotaService.checkUploadAllowed(Number(schoolId), actualSize);
       if (!quota.allowed) {
         const err = new Error(
@@ -302,12 +331,14 @@ class CloudStorageService {
 
     const { client, bucketName } = CloudStorageService.getS3Client();
     const { b2Key, filePath, savedName } = CloudStorageService.buildObjectKey({
-      schoolId: isPlatformOrTicket && category === 'platform_asset' ? null : schoolId,
-      branchId,
+      schoolId: allowPlatformScope && !allowSupportTicketScope ? null : schoolId,
+      branchId: isCompanyScoped ? null : branchId,
       folder: cleanFolder,
       originalName,
       prefix,
       customExt,
+      allowPlatformScope,
+      allowSupportTicketScope,
     });
 
     await client.send(
@@ -320,9 +351,10 @@ class CloudStorageService {
       })
     );
 
+    // Company/Platform & Support Ticket assets are tracked with schoolId = NULL so 0 bytes count against school storage
     await FileStorageLedgerModel.recordUpload({
-      schoolId: isPlatformOrTicket && category === 'platform_asset' ? null : schoolId,
-      branchId,
+      schoolId: isCompanyScoped ? null : schoolId,
+      branchId: isCompanyScoped ? null : branchId,
       category,
       filePath,
       b2Key,
@@ -356,6 +388,8 @@ class CloudStorageService {
 
     const ctx = CloudStorageService.extractRequestContext(req, options);
     const folder = options.folder || req?.query?.folder || req?.body?.folder || 'general';
+    const allowPlatformScope = Boolean(options.allowPlatformScope || ctx.isPlatformAdmin);
+    const allowSupportTicketScope = Boolean(options.allowSupportTicketScope);
 
     const uploaded = await CloudStorageService.uploadBuffer({
       buffer: file.buffer,
@@ -369,6 +403,8 @@ class CloudStorageService {
       uploadedBy: ctx.uploadedBy,
       uploaderRole: ctx.uploaderRole,
       skipQuotaCheck: Boolean(options.skipQuotaCheck),
+      allowPlatformScope,
+      allowSupportTicketScope,
     });
 
     file.filename = uploaded.saved_name;
@@ -419,6 +455,8 @@ class CloudStorageService {
       uploadedBy: context.uploadedBy ?? null,
       uploaderRole: context.uploaderRole ?? null,
       skipQuotaCheck: Boolean(context.skipQuotaCheck),
+      allowPlatformScope: Boolean(context.allowPlatformScope),
+      allowSupportTicketScope: Boolean(context.allowSupportTicketScope),
     });
 
     return uploaded.file_path;
@@ -426,8 +464,9 @@ class CloudStorageService {
 
   /**
    * Delete a file from Backblaze B2 and mark it deleted in file_storage_ledger
+   * Enforces strict schoolId tenant isolation when options.schoolId is provided.
    */
-  static async deleteFile(rawPath) {
+  static async deleteFile(rawPath, options = {}) {
     if (!rawPath || typeof rawPath !== 'string') return false;
     const trimmed = rawPath.trim();
     if (!trimmed || trimmed.startsWith('data:') || trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
@@ -435,6 +474,40 @@ class CloudStorageService {
     }
 
     const normalizedPath = FileStorageLedgerModel.normalizeFilePath(trimmed);
+    if (!normalizedPath || normalizedPath === 'upload' || normalizedPath === 'upload/') {
+      return false;
+    }
+
+    const lowerFilename = path.basename(normalizedPath).toLowerCase();
+    if (
+      normalizedPath.toLowerCase().includes('/template/') &&
+      (lowerFilename.startsWith('certificate_0') || lowerFilename.startsWith('default'))
+    ) {
+      return false;
+    }
+
+    const callerSchoolId = options?.schoolId && Number(options.schoolId) > 0 ? Number(options.schoolId) : null;
+    const existingLedger = await FileStorageLedgerModel.getByFilePath(normalizedPath);
+
+    if (callerSchoolId) {
+      if (
+        normalizedPath.toLowerCase().startsWith('upload/platform/') ||
+        normalizedPath.toLowerCase().startsWith('upload/support_tickets/') ||
+        (existingLedger && (existingLedger.category === 'platform_asset' || existingLedger.category === 'support_ticket'))
+      ) {
+        return false;
+      }
+
+      if (existingLedger && existingLedger.school_id && Number(existingLedger.school_id) !== callerSchoolId) {
+        return false;
+      }
+
+      const schoolPathMatch = normalizedPath.match(/^upload\/schools\/(\d+)\//i);
+      if (schoolPathMatch && Number(schoolPathMatch[1]) !== callerSchoolId) {
+        return false;
+      }
+    }
+
     const ledgerRow = await FileStorageLedgerModel.markDeletedByPath(normalizedPath);
     const rawSubKey = normalizedPath.replace(/^upload\/+/, '');
     const b2Key = ledgerRow?.b2_key || (rawSubKey.startsWith('growvidya/') ? rawSubKey : `growvidya/${rawSubKey}`);

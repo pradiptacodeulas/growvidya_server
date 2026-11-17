@@ -8,6 +8,7 @@ const AttendanceMachineMasterController = require('../controllers/attendanceMach
 const BankAccountMasterController = require('../controllers/bankAccountMaster.controller');
 const SupportTicketController = require('../controllers/supportTicket.controller');
 const NotificationController = require('../controllers/notification.controller');
+const WebhookController = require('../controllers/webhook.controller');
 const saasAdminAuthMiddleware = require('../middlewares/saasAdminAuth.middleware');
 const { checkPermission } = require('../middlewares/saasPermission.middleware');
 const { upload, machineImageMiddleware, rfidImageMiddleware, bankImageMiddleware, supportTicketAttachmentMiddleware } = require('../middlewares/upload.middleware');
@@ -48,6 +49,7 @@ router.put('/schools/:id', checkPermission('schools', 'can_edit'), SaasAdminCont
 
 // Subscription & Payment Verification
 router.get('/subscriptions', checkPermission(['subscriptions', 'schools'], 'can_view'), SaasAdminController.getSubscriptions);
+router.get('/subscriptions/assign-options', checkPermission(['subscriptions', 'schools'], ['can_manage', 'can_view']), SaasAdminController.getAssignSubscriptionOptions);
 router.post('/subscriptions/manual-assign', checkPermission(['subscriptions', 'schools'], 'can_manage'), SaasAdminController.manualAssignSubscription);
 router.get('/subscriptions/orders/:orderNo/invoice', checkPermission(['subscriptions', 'schools'], 'can_view'), SaasAdminController.getSubscriptionInvoice);
 router.get('/subscriptions/:id', checkPermission(['subscriptions', 'schools'], 'can_view'), SaasAdminController.getSubscriptionById);
@@ -56,6 +58,7 @@ router.post('/subscriptions/:id/reject', checkPermission(['subscriptions', 'scho
 router.post('/subscriptions/:id/verify', checkPermission(['subscriptions', 'schools'], 'can_manage'), SaasAdminController.verifySubscriptionPayment);
 router.patch('/subscriptions/:id/status', checkPermission(['subscriptions', 'schools'], 'can_manage'), SaasAdminController.updateSubscriptionStatus);
 router.post('/subscriptions/:id/extend', checkPermission(['subscriptions', 'schools'], 'can_manage'), SaasAdminController.extendSubscription);
+router.get('/webhooks/logs', checkPermission('subscriptions', 'can_view'), WebhookController.getWebhookLogs);
 
 // Package / Subscription Plan Management
 router.get('/packages/meta', checkPermission('packages', 'can_view'), SaasAdminController.getPackageMeta);
@@ -84,12 +87,12 @@ router.post('/coupons/validate', checkPermission('coupons', 'can_view'), SaasAdm
 
 // Storage Master Plan Management & Buyers
 router.get('/storage-plans', checkPermission('storage_plans', 'can_view'), StorageMasterController.getAll);
-router.get('/storage-plans/analytics', checkPermission('storage_plans', 'can_view'), StorageMasterController.getStorageAnalytics);
-router.get('/storage-analytics', checkPermission(['storage_plans', 'dashboard', 'schools'], 'can_view'), StorageMasterController.getStorageAnalytics);
+router.get('/storage-plans/analytics', checkPermission(['storage_plans', 'storage_buyers'], 'can_view'), StorageMasterController.getStorageAnalytics);
+router.get('/storage-analytics', checkPermission(['storage_plans', 'storage_buyers', 'dashboard', 'schools'], 'can_view'), StorageMasterController.getStorageAnalytics);
 router.get('/storage-plans/units', checkPermission('storage_plans', 'can_view'), StorageMasterController.getCapacityUnits);
 router.get('/capacity-units', checkPermission('storage_plans', 'can_view'), StorageMasterController.getCapacityUnits);
-router.get('/storage-plans/buyers', checkPermission('storage_plans', 'can_view'), StorageMasterController.getBuyers);
-router.patch('/storage-plans/buyers/:id', checkPermission('storage_plans', ['can_manage', 'can_edit']), StorageMasterController.updateBuyerOrder);
+router.get('/storage-plans/buyers', checkPermission(['storage_plans', 'storage_buyers'], 'can_view'), StorageMasterController.getBuyers);
+router.patch('/storage-plans/buyers/:id', checkPermission(['storage_plans', 'storage_buyers'], ['can_manage', 'can_edit']), StorageMasterController.updateBuyerOrder);
 router.get('/storage-plans/:id', checkPermission('storage_plans', 'can_view'), StorageMasterController.getById);
 router.post('/storage-plans', checkPermission('storage_plans', 'can_add'), StorageMasterController.create);
 router.put('/storage-plans/:id', checkPermission('storage_plans', 'can_edit'), StorageMasterController.update);
@@ -101,9 +104,9 @@ router.patch('/storage-plans/status', checkPermission('storage_plans', 'can_mana
 
 // RFID Card Master Management & Buyers
 router.get('/rfid-cards', checkPermission('rfid_cards', 'can_view'), RfidCardMasterController.getAll);
-router.get('/rfid-cards/active', checkPermission('rfid_cards', 'can_view'), RfidCardMasterController.getActive);
-router.get('/rfid-cards/buyers', checkPermission('rfid_cards', 'can_view'), RfidCardMasterController.getBuyers);
-router.patch('/rfid-cards/buyers/:id', checkPermission('rfid_cards', ['can_manage', 'can_edit']), RfidCardMasterController.updateBuyerOrder);
+router.get('/rfid-cards/active', checkPermission(['rfid_cards', 'rfid_buyers'], 'can_view'), RfidCardMasterController.getActive);
+router.get('/rfid-cards/buyers', checkPermission(['rfid_cards', 'rfid_buyers'], 'can_view'), RfidCardMasterController.getBuyers);
+router.patch('/rfid-cards/buyers/:id', checkPermission(['rfid_cards', 'rfid_buyers'], ['can_manage', 'can_edit']), RfidCardMasterController.updateBuyerOrder);
 router.get('/rfid-cards/:id', checkPermission('rfid_cards', 'can_view'), RfidCardMasterController.getById);
 router.post('/rfid-cards', checkPermission('rfid_cards', 'can_add'), rfidImageMiddleware, RfidCardMasterController.create);
 router.put('/rfid-cards/:id', checkPermission('rfid_cards', 'can_edit'), rfidImageMiddleware, RfidCardMasterController.update);
@@ -119,9 +122,9 @@ router.patch('/rfid-cards/status', checkPermission('rfid_cards', 'can_manage'), 
 
 // Attendance Machine Master Management & Buyers
 router.get('/attendance-machines', checkPermission('attendance_machines', 'can_view'), AttendanceMachineMasterController.getAll);
-router.get('/attendance-machines/active', checkPermission('attendance_machines', 'can_view'), AttendanceMachineMasterController.getActive);
-router.get('/attendance-machines/buyers', checkPermission('attendance_machines', 'can_view'), AttendanceMachineMasterController.getBuyers);
-router.patch('/attendance-machines/buyers/:id', checkPermission('attendance_machines', ['can_manage', 'can_edit']), AttendanceMachineMasterController.updateBuyerOrder);
+router.get('/attendance-machines/active', checkPermission(['attendance_machines', 'machines_buyers'], 'can_view'), AttendanceMachineMasterController.getActive);
+router.get('/attendance-machines/buyers', checkPermission(['attendance_machines', 'machines_buyers'], 'can_view'), AttendanceMachineMasterController.getBuyers);
+router.patch('/attendance-machines/buyers/:id', checkPermission(['attendance_machines', 'machines_buyers'], ['can_manage', 'can_edit']), AttendanceMachineMasterController.updateBuyerOrder);
 router.get('/attendance-machines/:id', checkPermission('attendance_machines', 'can_view'), AttendanceMachineMasterController.getById);
 router.post('/attendance-machines', checkPermission('attendance_machines', 'can_add'), machineImageMiddleware, AttendanceMachineMasterController.create);
 router.put('/attendance-machines/:id', checkPermission('attendance_machines', 'can_edit'), machineImageMiddleware, AttendanceMachineMasterController.update);
@@ -186,10 +189,12 @@ router.get('/settings/notification-pricing', checkPermission(['email_delivery', 
 router.put('/settings/notification-pricing', checkPermission(['email_delivery', 'packages'], 'can_edit'), SaasAdminController.updateNotificationPricing);
 router.get('/notifications/pricing', checkPermission(['email_delivery', 'packages'], 'can_view'), SaasAdminController.getNotificationPricing);
 router.put('/notifications/pricing', checkPermission(['email_delivery', 'packages'], 'can_edit'), SaasAdminController.updateNotificationPricing);
-router.get('/notifications/buyers', checkPermission(['email_delivery', 'packages', 'subscriptions'], 'can_view'), SaasAdminController.getNotificationBuyers);
-router.get('/notifications/buyers/:schoolId/ledger', checkPermission(['email_delivery', 'packages', 'subscriptions'], 'can_view'), SaasAdminController.getNotificationBuyerLedger);
-router.post('/notifications/orders/:orderId/approve', checkPermission(['email_delivery', 'packages', 'subscriptions'], ['can_manage', 'can_edit']), SaasAdminController.approveAddonOrder);
-router.post('/notifications/orders/:orderId/reject', checkPermission(['email_delivery', 'packages', 'subscriptions'], ['can_manage', 'can_edit']), SaasAdminController.rejectAddonOrder);
+router.get('/notifications/buyers', checkPermission(['email_delivery', 'packages', 'subscriptions', 'schools'], 'can_view'), SaasAdminController.getNotificationBuyers);
+router.get('/notifications/buyers/:schoolId/ledger', checkPermission(['email_delivery', 'packages', 'subscriptions', 'schools'], 'can_view'), SaasAdminController.getNotificationBuyerLedger);
+router.post('/notifications/orders/:orderId/approve', checkPermission(['email_delivery', 'packages', 'subscriptions', 'schools'], ['can_manage', 'can_edit']), SaasAdminController.approveAddonOrder);
+router.post('/notifications/orders/:orderId/reject', checkPermission(['email_delivery', 'packages', 'subscriptions', 'schools'], ['can_manage', 'can_edit']), SaasAdminController.rejectAddonOrder);
+router.post('/payment-orders/:orderId/approve', checkPermission(['subscriptions', 'schools', 'storage_plans', 'storage_buyers', 'attendance_machines', 'machines_buyers', 'rfid_cards', 'rfid_buyers', 'email_delivery', 'packages'], ['can_manage', 'can_edit']), SaasAdminController.approveAddonOrder);
+router.post('/payment-orders/:orderId/reject', checkPermission(['subscriptions', 'schools', 'storage_plans', 'storage_buyers', 'attendance_machines', 'machines_buyers', 'rfid_cards', 'rfid_buyers', 'email_delivery', 'packages'], ['can_manage', 'can_edit']), SaasAdminController.rejectAddonOrder);
 
 // Settings — Email Delivery (Mailjet & SMTP) Credentials Management
 router.get('/settings/email', checkPermission('email_delivery', 'can_view'), SaasAdminController.getEmailCredentials);

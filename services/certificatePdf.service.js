@@ -18,24 +18,54 @@ const getTemplateHtml = () => {
 };
 
 /**
- * Converts a Backblaze B2 upload path to a base64 Data URI
- * so Puppeteer can embed it reliably without network or CORS latency.
+ * Converts a Backblaze B2 upload path (or built-in public template) to a base64 Data URI
+ * while enforcing school tenant isolation.
  */
-const toBase64DataUri = async (imgUrlOrPath) => {
+const toBase64DataUri = async (imgUrlOrPath, schoolId = null) => {
   if (!imgUrlOrPath) return '';
   if (typeof imgUrlOrPath !== 'string') return '';
   if (imgUrlOrPath.startsWith('data:')) return imgUrlOrPath;
 
   try {
-    let cleanPath = imgUrlOrPath.replace(/^https?:\/\/[^\/]+/i, '').split('?')[0];
-    if (cleanPath.startsWith('/')) cleanPath = cleanPath.substring(1);
+    let cleanPath = imgUrlOrPath
+      .replace(/^https?:\/\/[^\/]+/i, '')
+      .split('?')[0]
+      .replace(/\\/g, '/')
+      .replace(/^\/+/, '');
 
-    const { buffer, mimeType } = await CloudStorageService.getFileBuffer(cleanPath);
-    if (buffer && buffer.length > 0) {
-      return `data:${mimeType || 'image/jpeg'};base64,${buffer.toString('base64')}`;
+    if (!cleanPath || cleanPath.includes('..')) return '';
+
+    const parsedSchoolId = Number(schoolId) || 0;
+    if (parsedSchoolId > 0) {
+      const schoolMatch = cleanPath.match(/^upload\/schools\/(\d+)\//i);
+      if (schoolMatch && Number(schoolMatch[1]) !== parsedSchoolId) {
+        return '';
+      }
+    }
+
+    try {
+      const { buffer, mimeType, ledgerRecord } = await CloudStorageService.getFileBuffer(cleanPath);
+      if (
+        parsedSchoolId > 0 &&
+        ledgerRecord?.school_id &&
+        Number(ledgerRecord.school_id) !== parsedSchoolId
+      ) {
+        return '';
+      }
+      if (buffer && buffer.length > 0) {
+        return `data:${mimeType || 'image/jpeg'};base64,${buffer.toString('base64')}`;
+      }
+    } catch (_) {
+      const publicRoot = path.resolve(__dirname, '../public');
+      const fullPath = path.resolve(publicRoot, cleanPath);
+      if (fullPath.startsWith(publicRoot + path.sep) && fs.existsSync(fullPath)) {
+        const ext = path.extname(fullPath).toLowerCase().replace('.', '') || 'jpeg';
+        const mime = ext === 'png' ? 'image/png' : ext === 'svg' ? 'image/svg+xml' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+        return `data:${mime};base64,${fs.readFileSync(fullPath).toString('base64')}`;
+      }
     }
   } catch (err) {
-    console.warn('[certificatePdf.service] Failed to convert B2 image to base64:', err.message);
+    console.warn('[certificatePdf.service] Failed to convert image to base64:', err.message);
   }
 
   return '';
@@ -116,8 +146,9 @@ const buildSingleCertificateHtml = async (cert, templateHtml) => {
   const formattedDate = d && m && y ? `${d}/${m}/${y}` : issueDateStr;
 
   const serialNo = cert.id ? `CERT-${String(cert.id).padStart(5, '0')}` : 'CERT-00001';
-  const borderUri = await toBase64DataUri(cert.borderImg || cert.border);
-  const logoUri = await toBase64DataUri(cert.school_logo);
+  const certSchoolId = cert.school_id || cert.schoolId || null;
+  const borderUri = await toBase64DataUri(cert.borderImg || cert.border, certSchoolId);
+  const logoUri = await toBase64DataUri(cert.school_logo, certSchoolId);
   const bodyHtml = formatCertificateBodyHtml(cert.certificate_description || cert.description, cert);
 
   let html = templateHtml

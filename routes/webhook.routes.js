@@ -1,8 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const WebhookController = require('../controllers/webhook.controller');
-const authMiddleware = require('../middlewares/auth.middleware');
-const rbacMiddleware = require('../middlewares/rbac.middleware');
+const saasAdminAuthMiddleware = require('../middlewares/saasAdminAuth.middleware');
+const { checkPermission } = require('../middlewares/saasPermission.middleware');
 
 /**
  * Public Webhook Receiver Endpoint (Invoked directly by Razorpay Gateway servers)
@@ -11,8 +11,8 @@ const rbacMiddleware = require('../middlewares/rbac.middleware');
 router.post('/razorpay', WebhookController.handleRazorpayWebhook);
 
 /**
- * Admin Webhook Audit Logs Endpoint (Protected for Super Admins & Admins)
+ * Company SuperAdmin Webhook Audit Logs Endpoint
  */
-router.get('/logs', authMiddleware, rbacMiddleware(['Super Admin', 'Admin']), WebhookController.getWebhookLogs);
+router.get('/logs', saasAdminAuthMiddleware, checkPermission('subscriptions', 'can_view'), WebhookController.getWebhookLogs);
 
 module.exports = router;

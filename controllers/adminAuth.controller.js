@@ -20,33 +20,35 @@ class AdminAuthController {
     const permissions = isSuperAdmin ? {} : await PermissionModel.getUserPermissionMap(user.role_id);
     const sub = await SubscriptionModel.getSchoolSubscription(user.school_id);
 
-    if (sub && sub.status === 'pending' && !sub.isTrial) {
-      return ApiResponse.error(
-        res,
-        `Your subscription plan "${sub.plan_name}" is currently awaiting review and approval by the Super Admin. You will be able to log in once your subscription is approved and activated.`,
-        {
-          subscription_id: sub.subscription_id,
-          plan_name: sub.plan_name,
-          status: 'pending',
-          is_pending: true,
-          is_trial: false,
-        },
-        403
-      );
-    }
+    if (!isSuperAdmin) {
+      if (sub && (sub.liveStatus === 'pending' || (sub.status === 'pending' && !sub.isTrial))) {
+        return ApiResponse.error(
+          res,
+          `Your subscription plan "${sub.plan_name}" is currently awaiting review and approval by the Super Admin. You will be able to log in once your subscription is approved and activated.`,
+          {
+            subscription_id: sub.subscription_id,
+            plan_name: sub.plan_name,
+            status: 'pending',
+            is_pending: true,
+            is_trial: false,
+          },
+          403
+        );
+      }
 
-    if (sub && (sub.status === 'suspended' || sub.liveStatus === 'suspended')) {
-      return ApiResponse.error(
-        res,
-        `Your school subscription for "${sub.plan_name}" has been marked inactive / suspended by the Super Admin. You cannot log in until your account is reactivated.`,
-        {
-          subscription_id: sub.subscription_id,
-          plan_name: sub.plan_name,
-          status: 'suspended',
-          is_suspended: true,
-        },
-        403
-      );
+      if (sub && (sub.status === 'suspended' || sub.liveStatus === 'suspended')) {
+        return ApiResponse.error(
+          res,
+          `Your school subscription for "${sub.plan_name}" has been marked inactive / suspended by the Super Admin. You cannot log in until your account is reactivated.`,
+          {
+            subscription_id: sub.subscription_id,
+            plan_name: sub.plan_name,
+            status: 'suspended',
+            is_suspended: true,
+          },
+          403
+        );
+      }
     }
 
     const tokenPayload = {
@@ -157,33 +159,35 @@ class AdminAuthController {
       }
 
       const sub = await SubscriptionModel.getSchoolSubscription(user.school_id);
-      if (sub && sub.status === 'pending' && !sub.isTrial) {
-        return ApiResponse.error(
-          res,
-          `Your subscription plan "${sub.plan_name}" is currently awaiting review and approval by the Super Admin. You will be able to log in once your subscription is approved and activated.`,
-          {
-            subscription_id: sub.subscription_id,
-            plan_name: sub.plan_name,
-            status: 'pending',
-            is_pending: true,
-            is_trial: false,
-          },
-          403
-        );
-      }
+      if (!isSuperAdmin) {
+        if (sub && (sub.liveStatus === 'pending' || (sub.status === 'pending' && !sub.isTrial))) {
+          return ApiResponse.error(
+            res,
+            `Your subscription plan "${sub.plan_name}" is currently awaiting review and approval by the Super Admin. You will be able to log in once your subscription is approved and activated.`,
+            {
+              subscription_id: sub.subscription_id,
+              plan_name: sub.plan_name,
+              status: 'pending',
+              is_pending: true,
+              is_trial: false,
+            },
+            403
+          );
+        }
 
-      if (sub && (sub.status === 'suspended' || sub.liveStatus === 'suspended')) {
-        return ApiResponse.error(
-          res,
-          `Your school subscription for "${sub.plan_name}" has been marked inactive / suspended by the Super Admin. You cannot log in until your account is reactivated.`,
-          {
-            subscription_id: sub.subscription_id,
-            plan_name: sub.plan_name,
-            status: 'suspended',
-            is_suspended: true,
-          },
-          403
-        );
+        if (sub && (sub.status === 'suspended' || sub.liveStatus === 'suspended')) {
+          return ApiResponse.error(
+            res,
+            `Your school subscription for "${sub.plan_name}" has been marked inactive / suspended by the Super Admin. You cannot log in until your account is reactivated.`,
+            {
+              subscription_id: sub.subscription_id,
+              plan_name: sub.plan_name,
+              status: 'suspended',
+              is_suspended: true,
+            },
+            403
+          );
+        }
       }
 
       const otpMode = await PasscodeService.getOtpMode();
@@ -380,33 +384,35 @@ class AdminAuthController {
       const permissions = isSuperAdmin ? {} : await PermissionModel.getUserPermissionMap(user.role_id);
       const sub = await SubscriptionModel.getSchoolSubscription(user.school_id);
 
-      if (sub && sub.status === 'pending' && !sub.isTrial) {
-        return ApiResponse.error(
-          res,
-          `Your subscription plan "${sub.plan_name}" is currently awaiting review and approval by the Super Admin.`,
-          {
-            subscription_id: sub.subscription_id,
-            plan_name: sub.plan_name,
-            status: 'pending',
-            is_pending: true,
-            is_trial: false,
-          },
-          403
-        );
-      }
+      if (!isSuperAdmin) {
+        if (sub && (sub.liveStatus === 'pending' || (sub.status === 'pending' && !sub.isTrial))) {
+          return ApiResponse.error(
+            res,
+            `Your subscription plan "${sub.plan_name}" is currently awaiting review and approval by the Super Admin.`,
+            {
+              subscription_id: sub.subscription_id,
+              plan_name: sub.plan_name,
+              status: 'pending',
+              is_pending: true,
+              is_trial: false,
+            },
+            403
+          );
+        }
 
-      if (sub && (sub.status === 'suspended' || sub.liveStatus === 'suspended')) {
-        return ApiResponse.error(
-          res,
-          `Your school subscription for "${sub.plan_name}" has been marked inactive / suspended by the Super Admin.`,
-          {
-            subscription_id: sub.subscription_id,
-            plan_name: sub.plan_name,
-            status: 'suspended',
-            is_suspended: true,
-          },
-          403
-        );
+        if (sub && (sub.status === 'suspended' || sub.liveStatus === 'suspended')) {
+          return ApiResponse.error(
+            res,
+            `Your school subscription for "${sub.plan_name}" has been marked inactive / suspended by the Super Admin.`,
+            {
+              subscription_id: sub.subscription_id,
+              plan_name: sub.plan_name,
+              status: 'suspended',
+              is_suspended: true,
+            },
+            403
+          );
+        }
       }
 
       return ApiResponse.success(res, 'Admin profile fetched successfully.', {
@@ -523,6 +529,8 @@ class AdminAuthController {
       const adminType = Number(refreshedUser.admin_type);
       const isSuperAdmin = adminType === 1;
       const roleName = isSuperAdmin ? 'Super Admin' : (refreshedUser.role_name || null);
+      const permissions = isSuperAdmin ? {} : await PermissionModel.getUserPermissionMap(refreshedUser.role_id);
+      const sub = await SubscriptionModel.getSchoolSubscription(refreshedUser.school_id);
 
       return ApiResponse.success(res, 'Profile updated successfully.', {
         profile: {
@@ -552,6 +560,10 @@ class AdminAuthController {
           adminType: adminType,
           admin_type: adminType,
           isSuperAdmin: Boolean(isSuperAdmin),
+          isTrial: Boolean(sub?.isTrial),
+          isExpired: Boolean(sub?.isExpired),
+          subscription: sub,
+          permissions,
         },
       });
     } catch (error) {

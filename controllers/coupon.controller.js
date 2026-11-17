@@ -158,6 +158,12 @@ class CouponController {
         );
       }
 
+      const resolvedStart = start_date || startDate;
+      const resolvedEnd = end_date || endDate;
+      if (resolvedStart && resolvedEnd && String(resolvedStart).slice(0, 10) > String(resolvedEnd).slice(0, 10)) {
+        return ApiResponse.badRequest(res, 'Coupon start_date cannot be after end_date.');
+      }
+
       // Check for code uniqueness
       const existing = await CouponModel.getByCode(code);
       if (existing) {
@@ -304,11 +310,50 @@ class CouponController {
           ? parseInt(existing.max_uses, 10)
           : null;
 
+      if (effectiveMaxUses !== null && (isNaN(effectiveMaxUses) || effectiveMaxUses < 1)) {
+        return ApiResponse.badRequest(res, 'Total usage limit (max_uses) must be a positive integer.');
+      }
+
+      const currentUsed = Number(existing.used_count || 0);
+      if (effectiveMaxUses !== null && effectiveMaxUses < currentUsed) {
+        return ApiResponse.badRequest(
+          res,
+          `Total usage limit (${effectiveMaxUses}) cannot be lower than already redeemed count (${currentUsed}).`
+        );
+      }
+
       if (effectiveMaxUses !== null && effectivePerUser > effectiveMaxUses) {
         return ApiResponse.badRequest(
           res,
           'Per-user usage limit (max_uses_per_user) cannot exceed the total usage limit (max_uses).'
         );
+      }
+
+      const effectiveDiscType = updateData.discount_type || existing.discount_type;
+      if (!['percentage', 'fixed'].includes(effectiveDiscType)) {
+        return ApiResponse.badRequest(res, 'Discount type must be percentage or fixed.');
+      }
+      const effectiveDiscVal =
+        updateData.discount_value !== undefined
+          ? parseFloat(updateData.discount_value)
+          : parseFloat(existing.discount_value);
+      if (isNaN(effectiveDiscVal) || effectiveDiscVal <= 0) {
+        return ApiResponse.badRequest(res, 'A valid positive discount value is required.');
+      }
+      if (effectiveDiscType === 'percentage' && effectiveDiscVal > 100) {
+        return ApiResponse.badRequest(res, 'Percentage discount cannot exceed 100%.');
+      }
+
+      const effectiveStart =
+        updateData.start_date !== undefined ? updateData.start_date : existing.start_date;
+      const effectiveEnd =
+        updateData.end_date !== undefined ? updateData.end_date : existing.end_date;
+      if (
+        effectiveStart &&
+        effectiveEnd &&
+        String(effectiveStart).slice(0, 10) > String(effectiveEnd).slice(0, 10)
+      ) {
+        return ApiResponse.badRequest(res, 'Coupon start_date cannot be after end_date.');
       }
 
       const success = await CouponModel.update(id, updateData);

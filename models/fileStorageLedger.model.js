@@ -170,6 +170,40 @@ class FileStorageLedgerModel {
   }
 
   /**
+   * Purge all active files belonging to a deleted branch from Backblaze B2 and mark their ledger rows deleted (status = 4)
+   */
+  static async purgeBranchFiles(schoolId, branchId) {
+    await FileStorageLedgerModel.initTable();
+    const parsedSchoolId = Number(schoolId);
+    const parsedBranchId = Number(branchId);
+    if (!parsedSchoolId || !parsedBranchId) return 0;
+
+    const [rows] = await pool.query(
+      `SELECT id, file_path, b2_key
+       FROM file_storage_ledger
+       WHERE school_id = ? AND branch_id = ? AND status = 1`,
+      [parsedSchoolId, parsedBranchId]
+    );
+    if (!rows || rows.length === 0) return 0;
+
+    const CloudStorageService = require('../services/cloudStorage.service');
+    for (const row of rows) {
+      if (row.file_path) {
+        await CloudStorageService.deleteFile(row.file_path, { schoolId: parsedSchoolId }).catch(() => {});
+      }
+    }
+
+    await pool.query(
+      `UPDATE file_storage_ledger
+       SET status = 4, deleted_at = NOW()
+       WHERE school_id = ? AND branch_id = ? AND status = 1`,
+      [parsedSchoolId, parsedBranchId]
+    );
+
+    return rows.length;
+  }
+
+  /**
    * Format bytes to human-readable string
    */
   static formatBytes(bytes, decimals = 2) {
@@ -258,10 +292,13 @@ class FileStorageLedgerModel {
     const mainBranchId = (branches.find((b) => Number(b.is_main_branch) === 1) || branches[0])?.id || null;
 
     const [ledgerRows] = await pool.query(
-      `SELECT branch_id, category, COUNT(*) AS file_count, COALESCE(SUM(size_bytes), 0) AS total_bytes
-       FROM file_storage_ledger
-       WHERE school_id = ? AND status = 1
-       GROUP BY branch_id, category`,
+      `SELECT fsl.branch_id, fsl.category, COUNT(*) AS file_count, COALESCE(SUM(fsl.size_bytes), 0) AS total_bytes
+       FROM file_storage_ledger fsl
+       LEFT JOIN branch_master bm ON bm.id = fsl.branch_id AND bm.school_id = fsl.school_id
+       WHERE fsl.school_id = ?
+         AND fsl.status = 1
+         AND (fsl.branch_id IS NULL OR fsl.branch_id = 0 OR bm.status IS NULL OR bm.status != 4)
+       GROUP BY fsl.branch_id, fsl.category`,
       [parsedSchoolId]
     );
 

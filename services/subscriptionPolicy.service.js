@@ -485,35 +485,51 @@ class SubscriptionPolicyService {
     if (coupon_code && String(coupon_code).trim()) {
       if (isTrial && planAmount === 0) {
         // On a Free Trial, coupons only apply if the school is purchasing eligible paid add-ons alongside the trial
-        if (subtotalAmount > 0) {
-          const existingCoupon = await CouponModel.getByCode(coupon_code);
-          const couponScope = String(existingCoupon?.applicable_scope || 'plan_only').toLowerCase();
-          const trialEligibleAmt =
-            couponScope === 'all'
-              ? subtotalAmount
-              : couponScope === 'software_and_storage'
-              ? storageAmount
-              : 0;
-
-          if (!existingCoupon || trialEligibleAmt > 0) {
-            const couponValidation = await CouponModel.validateCoupon(coupon_code, subtotalAmount, school_id, {
-              planAmount: 0,
-              storageAmount,
-              email,
-              phone,
-              excludeOrderId: exclude_order_id || null,
-              connection: db,
-              forUpdate: forUpdateCoupon,
-              isCheckoutVerification: true,
-            });
-            if (!couponValidation.valid) {
-              throw createPolicyError(couponValidation.message, 'INVALID_COUPON', 400);
-            }
-            couponInfo = couponValidation.coupon;
-            discountAmount = parseFloat(couponValidation.coupon.discountAmount) || 0;
-            payableDiscountAmount = discountAmount;
-          }
+        if (subtotalAmount <= 0) {
+          throw createPolicyError(
+            'Coupons cannot be applied to a ₹0 free trial without eligible add-ons.',
+            'INVALID_COUPON',
+            400
+          );
         }
+        const existingCoupon = await CouponModel.getByCode(coupon_code);
+        if (!existingCoupon) {
+          throw createPolicyError('Invalid coupon code.', 'INVALID_COUPON', 400);
+        }
+        const couponScope = String(existingCoupon.applicable_scope || 'plan_only').toLowerCase();
+        const trialEligibleAmt =
+          couponScope === 'all'
+            ? subtotalAmount
+            : couponScope === 'software_and_storage'
+            ? storageAmount
+            : 0;
+
+        if (trialEligibleAmt <= 0) {
+          throw createPolicyError(
+            couponScope === 'plan_only'
+              ? 'This coupon applies to paid software subscription plans only and cannot discount free trial add-ons.'
+              : 'This coupon applies to software plans and cloud storage only.',
+            'INVALID_COUPON',
+            400
+          );
+        }
+
+        const couponValidation = await CouponModel.validateCoupon(coupon_code, subtotalAmount, school_id, {
+          planAmount: 0,
+          storageAmount,
+          email,
+          phone,
+          excludeOrderId: exclude_order_id || null,
+          connection: db,
+          forUpdate: forUpdateCoupon,
+          isCheckoutVerification: true,
+        });
+        if (!couponValidation.valid) {
+          throw createPolicyError(couponValidation.message, 'INVALID_COUPON', 400);
+        }
+        couponInfo = couponValidation.coupon;
+        discountAmount = parseFloat(couponValidation.coupon.discountAmount) || 0;
+        payableDiscountAmount = discountAmount;
       } else {
         const couponValidation = await CouponModel.validateCoupon(coupon_code, subtotalAmount, school_id, {
           planAmount,

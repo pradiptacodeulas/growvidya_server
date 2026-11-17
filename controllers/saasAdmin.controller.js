@@ -318,6 +318,20 @@ class SaasAdminController {
   }
 
   /**
+   * Lookup options (active schools, active packages, billing cycles) for Manual Plan Assignment
+   * Permitted for admins with subscriptions OR schools management permission.
+   */
+  static async getAssignSubscriptionOptions(req, res, next) {
+    try {
+      const search = req.query.search ? String(req.query.search).trim() : '';
+      const options = await SaasAdminModel.getAssignSubscriptionOptions({ search });
+      return ApiResponse.success(res, 'Manual assignment options fetched successfully.', options);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Super Admin Manual Plan Assignment / Enterprise Override (Audit-logged)
    */
   static async manualAssignSubscription(req, res, next) {
@@ -468,12 +482,13 @@ class SaasAdminController {
       }
 
       const verifiedBy = req.saasAdmin?.id || null;
-      const success = await SaasAdminModel.updateSubscriptionStatus(id, status, notes, verifiedBy);
-      if (!success) {
+      const updatedStatus = await SaasAdminModel.updateSubscriptionStatus(id, status, notes, verifiedBy);
+      if (!updatedStatus) {
         return ApiResponse.notFound(res, 'Subscription not found.');
       }
 
-      const friendlyName = status === 'suspended' ? 'Inactive' : status;
+      const effectiveStatus = typeof updatedStatus === 'string' ? updatedStatus : status;
+      const friendlyName = effectiveStatus === 'suspended' ? 'Inactive' : effectiveStatus;
       return ApiResponse.success(res, `Subscription status updated to '${friendlyName}'.`);
     } catch (error) {
       next(error);
@@ -891,8 +906,17 @@ class SaasAdminController {
         return ApiResponse.error(res, 'Valid discount value is required.', null, 400);
       }
 
-      if (discount_type && !['percentage', 'fixed'].includes(discount_type)) {
+      const resolvedDiscType = discount_type || 'percentage';
+      if (!['percentage', 'fixed'].includes(resolvedDiscType)) {
         return ApiResponse.error(res, 'Discount type must be percentage or fixed.', null, 400);
+      }
+
+      if (resolvedDiscType === 'percentage' && parseFloat(discount_value) > 100) {
+        return ApiResponse.error(res, 'Percentage discount cannot exceed 100%.', null, 400);
+      }
+
+      if (start_date && end_date && String(start_date).slice(0, 10) > String(end_date).slice(0, 10)) {
+        return ApiResponse.error(res, 'Coupon start_date cannot be after end_date.', null, 400);
       }
 
       const rawScope = applicable_scope !== undefined ? applicable_scope : applicableScope;
@@ -926,6 +950,10 @@ class SaasAdminController {
         max_uses !== undefined && max_uses !== null && String(max_uses).trim() !== ''
           ? parseInt(max_uses, 10)
           : null;
+
+      if (parsedMaxUses !== null && (isNaN(parsedMaxUses) || parsedMaxUses < 1)) {
+        return ApiResponse.error(res, 'Total usage limit (max_uses) must be a positive integer.', null, 400);
+      }
 
       if (parsedMaxUses !== null && parsedPerUser > parsedMaxUses) {
         return ApiResponse.error(
@@ -1018,6 +1046,20 @@ class SaasAdminController {
           ? parseInt(coupon.max_uses, 10)
           : null;
 
+      if (effectiveMaxUses !== null && (isNaN(effectiveMaxUses) || effectiveMaxUses < 1)) {
+        return ApiResponse.error(res, 'Total usage limit (max_uses) must be a positive integer.', null, 400);
+      }
+
+      const currentUsed = Number(coupon.used_count || 0);
+      if (effectiveMaxUses !== null && effectiveMaxUses < currentUsed) {
+        return ApiResponse.error(
+          res,
+          `Total usage limit (${effectiveMaxUses}) cannot be lower than already redeemed count (${currentUsed}).`,
+          null,
+          400
+        );
+      }
+
       if (effectiveMaxUses !== null && effectivePerUser > effectiveMaxUses) {
         return ApiResponse.error(
           res,
@@ -1025,6 +1067,43 @@ class SaasAdminController {
           null,
           400
         );
+      }
+
+      const effectiveDiscType = payload.discount_type || payload.discountType || coupon.discount_type;
+      if (!['percentage', 'fixed'].includes(effectiveDiscType)) {
+        return ApiResponse.error(res, 'Discount type must be percentage or fixed.', null, 400);
+      }
+      const effectiveDiscVal =
+        payload.discount_value !== undefined
+          ? parseFloat(payload.discount_value)
+          : payload.discountValue !== undefined
+          ? parseFloat(payload.discountValue)
+          : parseFloat(coupon.discount_value);
+      if (isNaN(effectiveDiscVal) || effectiveDiscVal <= 0) {
+        return ApiResponse.error(res, 'Valid positive discount value is required.', null, 400);
+      }
+      if (effectiveDiscType === 'percentage' && effectiveDiscVal > 100) {
+        return ApiResponse.error(res, 'Percentage discount cannot exceed 100%.', null, 400);
+      }
+
+      const effectiveStart =
+        payload.start_date !== undefined
+          ? payload.start_date
+          : payload.startDate !== undefined
+          ? payload.startDate
+          : coupon.start_date;
+      const effectiveEnd =
+        payload.end_date !== undefined
+          ? payload.end_date
+          : payload.endDate !== undefined
+          ? payload.endDate
+          : coupon.end_date;
+      if (
+        effectiveStart &&
+        effectiveEnd &&
+        String(effectiveStart).slice(0, 10) > String(effectiveEnd).slice(0, 10)
+      ) {
+        return ApiResponse.error(res, 'Coupon start_date cannot be after end_date.', null, 400);
       }
 
       const success = await SaasAdminModel.updateCoupon(id, payload);

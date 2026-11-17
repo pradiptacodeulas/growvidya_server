@@ -128,6 +128,9 @@ class AttendanceMachineMasterController {
       const updated = await AttendanceMachineMasterModel.getBuyerOrderById(Number(id));
       return ApiResponse.success(res, 'Attendance machine order updated successfully.', updated);
     } catch (error) {
+      if (error.statusCode) {
+        return ApiResponse.error(res, error.message, { code: error.code || null }, error.statusCode);
+      }
       next(error);
     }
   }

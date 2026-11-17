@@ -1,23 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const StorageMasterController = require('../controllers/storageMaster.controller');
-const couponAuthMiddleware = require('../middlewares/couponAuth.middleware');
 
 // Public / School-readable active catalog endpoints
+// All SuperAdmin CRUD operations are strictly protected under /api/v1/saas-admin/storage-plans
 router.get('/active', StorageMasterController.getActive);
 router.get('/units', StorageMasterController.getCapacityUnits);
-
-// Protected SaaS Super Admin routes
-router.use(couponAuthMiddleware);
-
-// Listing & details
-router.get('/', StorageMasterController.getAll);
-router.get('/:id', StorageMasterController.getById);
-
-// Admin / Mutation routes
-router.post('/', StorageMasterController.create);
-router.put('/:id', StorageMasterController.update);
-router.delete('/:id', StorageMasterController.delete);
-router.patch('/:id/status', StorageMasterController.toggleStatus);
 
 module.exports = router;

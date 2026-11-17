@@ -315,11 +315,11 @@ class CertificateModel {
     return rows;
   }
 
-  static async getBorderById(id, schoolId, isSuperAdmin = false) {
-    let sql = `SELECT * FROM certificate_border_master WHERE id = ?`;
+  static async getBorderById(id, schoolId, isPlatformAdmin = false) {
+    let sql = `SELECT * FROM certificate_border_master WHERE id = ? AND status != 4`;
     const params = [id];
-    if (!isSuperAdmin && schoolId && Number(schoolId) !== 0) {
-      sql += ` AND school_id = ?`;
+    if (!isPlatformAdmin && schoolId && Number(schoolId) !== 0) {
+      sql += ` AND (school_id = ? OR school_id IS NULL)`;
       params.push(schoolId);
     }
     const [rows] = await pool.query(sql, params);

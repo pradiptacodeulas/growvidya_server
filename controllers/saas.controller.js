@@ -164,7 +164,9 @@ class SaasController {
         is_addon_only: false,
         storage_plan_id: req.body.storage_plan_id || req.body.storagePlanId || null,
         storage_qty: req.body.storage_qty || req.body.storageQty || 1,
-        storage_billing_cycle: req.body.storage_billing_cycle || (isTrialReq ? 'annual' : plan.billing_cycle),
+        storage_billing_cycle:
+          req.body.storage_billing_cycle ||
+          (String(plan.billing_cycle || '').toLowerCase() !== 'trial' ? plan.billing_cycle : null),
         selected_machines: req.body.selected_machines || req.body.selectedMachines || [],
         selected_cards: req.body.selected_cards || req.body.selectedCards || [],
         selected_notifications: req.body.selected_notifications || req.body.selectedNotifications || [],
@@ -425,7 +427,9 @@ class SaasController {
         is_addon_only: false,
         storage_plan_id: req.body.storage_plan_id || req.body.storagePlanId || null,
         storage_qty: req.body.storage_qty || req.body.storageQty || 1,
-        storage_billing_cycle: req.body.storage_billing_cycle || (isTrialRequested ? 'annual' : targetPlan.billing_cycle),
+        storage_billing_cycle:
+          req.body.storage_billing_cycle ||
+          (String(targetPlan.billing_cycle || '').toLowerCase() !== 'trial' ? targetPlan.billing_cycle : null),
         selected_machines: req.body.selected_machines || req.body.selectedMachines || [],
         selected_cards: req.body.selected_cards || req.body.selectedCards || [],
         selected_notifications: req.body.selected_notifications || req.body.selectedNotifications || [],
@@ -675,13 +679,34 @@ class SaasController {
    */
   static async recordPaymentFailure(req, res, next) {
     try {
+      const orderNo = String(req.body.order_no || req.body.orderNo || '').trim() || null;
+      const razorpayOrderId = String(req.body.razorpay_order_id || req.body.razorpayOrderId || '').trim() || null;
+
+      if (!orderNo && !razorpayOrderId) {
+        return ApiResponse.error(res, 'Valid onboarding order reference is required.', null, 400);
+      }
+
+      if (orderNo && !/^ORD-\d{8}-\d{6}$/.test(orderNo)) {
+        return ApiResponse.error(res, 'Invalid onboarding order reference format.', null, 400);
+      }
+
+      if (razorpayOrderId && !/^order_[A-Za-z0-9]+$/.test(razorpayOrderId)) {
+        return ApiResponse.error(res, 'Invalid gateway order reference format.', null, 400);
+      }
+
       const recorded = await SubscriptionFulfillmentService.recordPaymentFailure({
-        orderNo: req.body.order_no || req.body.orderNo || null,
-        razorpayOrderId: req.body.razorpay_order_id || req.body.razorpayOrderId || null,
+        orderNo,
+        razorpayOrderId,
         razorpayPaymentId: req.body.razorpay_payment_id || req.body.razorpayPaymentId || null,
         failureCode: req.body.error_code || req.body.failure_code || 'PAYMENT_FAILED',
         failureReason: req.body.error_description || req.body.failure_reason || 'Payment failed or cancelled at gateway.',
+        publicOnboardingOnly: true,
       });
+
+      if (!recorded) {
+        return ApiResponse.error(res, 'Onboarding order reference not found or cannot be updated.', null, 404);
+      }
+
       return ApiResponse.success(res, 'Onboarding payment failure recorded.', recorded);
     } catch (error) {
       next(error);
@@ -690,17 +715,19 @@ class SaasController {
 
   /**
    * GET /api/v1/saas/orders/:orderNo
-   * Retrieves order & Zero-GST Printable Receipt for Onboarding Payment Success & Payment Failed pages
+   * Retrieves order & Zero-GST Printable Receipt strictly for Onboarding Payment Success & Payment Failed pages
    */
   static async getPublicOrderDetails(req, res, next) {
     try {
       const orderNo = String(req.params.orderNo || '').trim();
-      // Only allow lookup by non-guessable order_no (ORD-...), razorpay_order_id (order_...), or invoice_no (INV-...)
-      if (!orderNo || /^\d+$/.test(orderNo)) {
-        return ApiResponse.error(res, 'Valid order reference number is required.', null, 400);
+      // Strictly restrict public lookups to non-sequential onboarding order_no (ORD-YYYYMMDD-XXXXXX) or Razorpay order_id (order_...)
+      if (!orderNo || !/^(ORD-\d{8}-\d{6}|order_[A-Za-z0-9]+)$/.test(orderNo)) {
+        return ApiResponse.error(res, 'Valid onboarding order reference number is required.', null, 400);
       }
 
-      const order = await SubscriptionFulfillmentService.getOrderWithInvoice(orderNo);
+      const order = await SubscriptionFulfillmentService.getOrderWithInvoice(orderNo, null, {
+        publicOnboardingOnly: true,
+      });
       if (!order) {
         return ApiResponse.error(res, 'Order reference not found.', null, 404);
       }

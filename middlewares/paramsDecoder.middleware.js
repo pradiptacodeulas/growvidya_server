@@ -68,7 +68,7 @@ const paramsDecoderMiddleware = (req, res, next) => {
       return new Proxy(currentParams, {
         get(target, prop) {
           const val = target[prop];
-          if (typeof prop === 'string' && prop in target) {
+          if (typeof prop === 'string' && prop in target && isIdKey(prop)) {
             return decodeParam(val);
           }
           return val;

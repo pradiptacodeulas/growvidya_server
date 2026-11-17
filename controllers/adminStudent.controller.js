@@ -5,6 +5,23 @@ const { getBase64FileSize } = require('../utils/file.util');
 const { pool } = require('../config/db.config');
 
 class AdminStudentController {
+  static validateStudentDocuments(documents) {
+    if (!Array.isArray(documents) || documents.length === 0) return null;
+    const MAX_DOC_SIZE = 4 * 1024 * 1024; // 4 MB
+    for (const doc of documents) {
+      const rawDoc = doc?.attachments || doc?.file_url || '';
+      if (typeof rawDoc === 'string' && rawDoc.startsWith('data:')) {
+        if (!/^data:application\/pdf;/i.test(rawDoc)) {
+          return 'Student document attachments must be PDF files only.';
+        }
+        if (getBase64FileSize(rawDoc) > MAX_DOC_SIZE) {
+          return 'Each student document attachment must not exceed 4 MB.';
+        }
+      }
+    }
+    return null;
+  }
+
   static async getAllStudents(req, res, next) {
     try {
       const schoolId = req.user?.schoolId || req.user?.school_id;
@@ -193,6 +210,11 @@ class AdminStudentController {
         return ApiResponse.error(res, "Mother's profile picture must not exceed 100 KB.", null, 400);
       }
 
+      const docError = AdminStudentController.validateStudentDocuments(req.body.documents);
+      if (docError) {
+        return ApiResponse.error(res, docError, null, 400);
+      }
+
       const newId = await StudentModel.create({
         ...req.body,
         branch_id: branchId,
@@ -201,6 +223,14 @@ class AdminStudentController {
 
       return ApiResponse.success(res, 'Student created successfully.', { id: newId }, 201);
     } catch (error) {
+      if (error && error.code === 'STUDENT_QUOTA_EXCEEDED') {
+        return ApiResponse.error(
+          res,
+          error.message,
+          { code: 'STUDENT_QUOTA_EXCEEDED', quota: error.quota || null },
+          403
+        );
+      }
       next(error);
     }
   }
@@ -275,6 +305,11 @@ class AdminStudentController {
         return ApiResponse.error(res, "Mother's profile picture must not exceed 100 KB.", null, 400);
       }
 
+      const docError = AdminStudentController.validateStudentDocuments(req.body.documents);
+      if (docError) {
+        return ApiResponse.error(res, docError, null, 400);
+      }
+
       if (branchId) {
         req.body.branch_id = branchId;
       }
@@ -287,6 +322,14 @@ class AdminStudentController {
 
       return ApiResponse.success(res, 'Student updated successfully.');
     } catch (error) {
+      if (error && error.code === 'STUDENT_QUOTA_EXCEEDED') {
+        return ApiResponse.error(
+          res,
+          error.message,
+          { code: 'STUDENT_QUOTA_EXCEEDED', quota: error.quota || null },
+          403
+        );
+      }
       next(error);
     }
   }

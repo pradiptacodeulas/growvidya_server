@@ -1,5 +1,5 @@
 const { pool } = require('../config/db.config');
-const { saveBase64File } = require('../utils/file.util');
+const { saveBase64File, hardDeleteFile } = require('../utils/file.util');
 const { hashPassword } = require('../utils/password.util');
 
 class ParentModel {
@@ -429,15 +429,25 @@ class ParentModel {
       params.push(hashedPassword);
     }
 
+    let oldParentPic = null;
+    let nextParentPic = undefined;
     if (picture !== undefined) {
-      const savedPic = picture
-      ? await saveBase64File(picture, 'parent/profile', 'Parent-Profile', {
-          schoolId,
-          branchId: finalBranchId ? Number(finalBranchId) : null,
-        })
-      : null;
+      try {
+        const [pRows] = await pool.query(
+          'SELECT picture FROM parent_master WHERE id = ? AND (school_id = ? OR ? IS NULL) LIMIT 1',
+          [id, schoolId, schoolId]
+        );
+        oldParentPic = pRows?.[0]?.picture || null;
+      } catch (_) {}
+
+      nextParentPic = picture
+        ? await saveBase64File(picture, 'parent/profile', 'Parent-Profile', {
+            schoolId,
+            branchId: finalBranchId ? Number(finalBranchId) : null,
+          })
+        : null;
       sql += `, picture = ?`;
-      params.push(savedPic);
+      params.push(nextParentPic);
     }
 
     sql += ` WHERE id = ? AND (school_id = ? OR ? IS NULL)`;
@@ -449,17 +459,36 @@ class ParentModel {
     }
 
     const [result] = await pool.query(sql, params);
+    if (result.affectedRows > 0 && picture !== undefined && oldParentPic && oldParentPic !== nextParentPic) {
+      await hardDeleteFile(oldParentPic, { schoolId });
+    }
     return result.affectedRows > 0;
   }
 
   static async delete(id, schoolId, branchId = null) {
-    let sql = `UPDATE parent_master SET status = 4 WHERE id = ? AND (school_id = ? OR ? IS NULL)`;
+    let oldParentPic = null;
+    try {
+      let picSql = `SELECT picture FROM parent_master WHERE id = ? AND (school_id = ? OR ? IS NULL) AND status != 4`;
+      const picParams = [id, schoolId, schoolId];
+      if (branchId) {
+        picSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+        picParams.push(Number(branchId));
+      }
+      const [pRows] = await pool.query(picSql + ' LIMIT 1', picParams);
+      oldParentPic = pRows?.[0]?.picture || null;
+    } catch (_) {}
+
+    let sql = `UPDATE parent_master SET status = 4, picture = NULL WHERE id = ? AND (school_id = ? OR ? IS NULL)`;
     const params = [id, schoolId, schoolId];
     if (branchId) {
       sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
       params.push(Number(branchId));
     }
     const [result] = await pool.query(sql, params);
+
+    if (result.affectedRows > 0 && oldParentPic) {
+      await hardDeleteFile(oldParentPic, { schoolId: Number(schoolId) || null }).catch(() => {});
+    }
 
     // Also soft-delete parent-child associations
     try {
@@ -1393,7 +1422,12 @@ class ParentModel {
       updates.push('occupation = ?');
       params.push(occupation);
     }
+    let oldProfilePic = null;
     if (picture !== undefined) {
+      try {
+        const [pRows] = await pool.query('SELECT picture FROM parent_master WHERE id = ? AND school_id = ? LIMIT 1', [parentId, schoolId]);
+        oldProfilePic = pRows?.[0]?.picture || null;
+      } catch (_) {}
       updates.push('picture = ?');
       params.push(picture);
     }
@@ -1406,6 +1440,9 @@ class ParentModel {
       params.push(parentId);
       params.push(schoolId);
       await pool.query(`UPDATE parent_master SET ${updates.join(', ')} WHERE id = ? AND school_id = ?`, params);
+      if (picture !== undefined && oldProfilePic && oldProfilePic !== (picture || null)) {
+        await hardDeleteFile(oldProfilePic, { schoolId });
+      }
     }
 
     // Sync Address into parent_master_address
@@ -1579,16 +1616,28 @@ class ParentModel {
         updates.push('language_known = ?');
         params.push(language_known || languages_known || null);
       }
+      let oldChildPic = null;
+      let nextChildPic = null;
       if (picture !== undefined && picture) {
+        try {
+          const [sRows] = await pool.query(
+            'SELECT picture FROM student_master WHERE id = ? AND (school_id = ? OR ? IS NULL) LIMIT 1',
+            [studentId, schoolId, schoolId]
+          );
+          oldChildPic = sRows?.[0]?.picture || null;
+        } catch (_) {}
+
         if (String(picture).startsWith('data:image')) {
           const savedPic = await saveBase64File(picture, 'student/student_pic', 'Profile', {
             schoolId,
           });
           if (savedPic) {
+            nextChildPic = savedPic;
             updates.push('picture = ?');
             params.push(savedPic);
           }
         } else {
+          nextChildPic = picture;
           updates.push('picture = ?');
           params.push(picture);
         }
@@ -1602,6 +1651,9 @@ class ParentModel {
           `UPDATE student_master SET ${updates.join(', ')} WHERE id = ? AND (school_id = ? OR ? IS NULL)`,
           params
         );
+        if (nextChildPic && oldChildPic && oldChildPic !== nextChildPic) {
+          await hardDeleteFile(oldChildPic, { schoolId });
+        }
       }
 
       return await ParentModel.getChildFullProfile(studentId, schoolId);

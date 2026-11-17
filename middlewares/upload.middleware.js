@@ -47,6 +47,29 @@ function wrapWithB2Upload(multerHandler, options = {}) {
 
       const uploadedPaths = [];
       try {
+        const allowPlatformScope = Boolean(
+          options.allowPlatformScope || req?.user?.portalType === 'SaaSAdminPortal' || req?.saasAdmin
+        );
+        const allowSupportTicketScope = Boolean(options.allowSupportTicketScope);
+
+        // When SaaS SuperAdmin replies to a school's support ticket, resolve the ticket's school_id so the school can view the attachment
+        let ticketSchoolIdOverride = undefined;
+        if (allowSupportTicketScope) {
+          const ctx = CloudStorageService.extractRequestContext(req);
+          if (!ctx.schoolId && req?.params?.id && Number(req.params.id) > 0) {
+            try {
+              const { pool } = require('../config/db.config');
+              const [tRows] = await pool.query(
+                'SELECT school_id FROM support_tickets WHERE id = ? LIMIT 1',
+                [Number(req.params.id)]
+              );
+              if (tRows && tRows[0]?.school_id) {
+                ticketSchoolIdOverride = Number(tRows[0].school_id);
+              }
+            } catch (_) {}
+          }
+        }
+
         // 1. Single file in req.file
         if (req.file && req.file.buffer) {
           const folder =
@@ -63,6 +86,9 @@ function wrapWithB2Upload(multerHandler, options = {}) {
               folder,
               prefix,
               skipQuotaCheck: Boolean(options.skipQuotaCheck),
+              allowPlatformScope,
+              allowSupportTicketScope,
+              ...(ticketSchoolIdOverride !== undefined ? { schoolId: ticketSchoolIdOverride } : {}),
             });
             uploadedPaths.push(uploaded.file_path);
           }
@@ -77,11 +103,9 @@ function wrapWithB2Upload(multerHandler, options = {}) {
 
           // Pre-check total incoming bytes against school quota before uploading batch
           const ctx = CloudStorageService.extractRequestContext(req);
-          const category = CloudStorageService.classifyCategory(folder);
-          const isPlatformOrTicket =
-            CloudStorageService.isPlatformFolder(folder) || category === 'support_ticket';
+          const isCompanyScoped = Boolean(allowPlatformScope || allowSupportTicketScope);
 
-          if (!options.skipQuotaCheck && !isPlatformOrTicket && ctx.schoolId) {
+          if (!options.skipQuotaCheck && !isCompanyScoped && ctx.schoolId) {
             const StorageQuotaService = require('../services/storageQuota.service');
             const totalIncomingBytes = req.files.reduce((sum, f) => sum + (f.size || f.buffer?.length || 0), 0);
             const quota = await StorageQuotaService.checkUploadAllowed(ctx.schoolId, totalIncomingBytes);
@@ -109,6 +133,9 @@ function wrapWithB2Upload(multerHandler, options = {}) {
               folder,
               prefix: options.prefix || '',
               skipQuotaCheck: true, // Already checked above for the full batch
+              allowPlatformScope,
+              allowSupportTicketScope,
+              ...(ticketSchoolIdOverride !== undefined ? { schoolId: ticketSchoolIdOverride } : {}),
             });
             uploadedPaths.push(uploaded.file_path);
           }
@@ -132,6 +159,9 @@ function wrapWithB2Upload(multerHandler, options = {}) {
                 folder,
                 prefix,
                 skipQuotaCheck: Boolean(options.skipQuotaCheck),
+                allowPlatformScope,
+                allowSupportTicketScope,
+                ...(ticketSchoolIdOverride !== undefined ? { schoolId: ticketSchoolIdOverride } : {}),
               });
               uploadedPaths.push(uploaded.file_path);
             }
@@ -233,6 +263,7 @@ const machineImageMiddleware = wrapWithB2Upload(
     folder: 'attendance_machines',
     prefix: 'machine',
     skipQuotaCheck: true,
+    allowPlatformScope: true,
     exposeSingleOnReqFile: true,
     sizeLimitMessage: 'Image size exceeds the 10 MB limit. Please upload a smaller image.',
   }
@@ -257,6 +288,7 @@ const rfidImageMiddleware = wrapWithB2Upload(
     folder: 'rfid_cards',
     prefix: 'rfid',
     skipQuotaCheck: true,
+    allowPlatformScope: true,
     exposeSingleOnReqFile: true,
     sizeLimitMessage: 'Image size exceeds the 10 MB limit. Please upload a smaller image.',
   }
@@ -282,6 +314,7 @@ const bankImageMiddleware = wrapWithB2Upload(
     folder: 'bank_accounts',
     prefix: 'bank_qr',
     skipQuotaCheck: true,
+    allowPlatformScope: true,
     exposeSingleOnReqFile: true,
     sizeLimitMessage: 'QR code image size exceeds the 10 MB limit. Please upload a smaller image.',
   }
@@ -372,6 +405,7 @@ const supportTicketAttachmentMiddleware = wrapWithB2Upload(
     folder: 'support_tickets',
     prefix: 'ticket',
     skipQuotaCheck: true,
+    allowSupportTicketScope: true,
     exposeSingleOnReqFile: true,
     sizeLimitMessage: 'Attachment size exceeds the 10 MB limit. Please upload a smaller file.',
   }

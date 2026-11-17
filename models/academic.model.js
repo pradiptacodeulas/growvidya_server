@@ -4539,7 +4539,7 @@ class AcademicModel {
     const [result] = await pool.query(sql, params);
     if (result.affectedRows > 0 && attachment && existing.attachment && attachment !== existing.attachment) {
       const { hardDeleteFile } = require('../utils/file.util');
-      await hardDeleteFile(existing.attachment);
+      await hardDeleteFile(existing.attachment, { schoolId });
     }
     return result.affectedRows > 0;
   }
@@ -4604,7 +4604,7 @@ class AcademicModel {
     const [result] = await pool.query(sql, params);
     if (result.affectedRows > 0 && rows[0].attachment) {
       const { hardDeleteFile } = require('../utils/file.util');
-      await hardDeleteFile(rows[0].attachment);
+      await hardDeleteFile(rows[0].attachment, { schoolId });
     }
     return result.affectedRows > 0;
   }

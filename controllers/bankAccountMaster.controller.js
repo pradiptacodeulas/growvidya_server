@@ -13,6 +13,12 @@ const extractBankAccountId = (req) => {
   return String(id).trim();
 };
 
+const parseDefaultFlag = (val) => {
+  if (val === true || val === 1 || val === '1') return 1;
+  if (typeof val === 'string' && val.trim().toLowerCase() === 'true') return 1;
+  return 0;
+};
+
 class BankAccountMasterController {
   /**
    * GET /bank-accounts
@@ -128,7 +134,7 @@ class BankAccountMasterController {
         swift_code: swift_code ? String(swift_code).trim() : null,
         instructions: instructions ? String(instructions).trim() : null,
         qr_code_image: finalQrImage,
-        is_default: is_default ? 1 : 0,
+        is_default: parseDefaultFlag(is_default),
         status: status !== undefined ? (Number(status) === 2 ? 2 : 1) : 1,
       });
 
@@ -154,6 +160,13 @@ class BankAccountMasterController {
       }
 
       const updateData = { ...req.body };
+      if (updateData.is_default !== undefined) {
+        updateData.is_default = parseDefaultFlag(updateData.is_default);
+      }
+      if (updateData.status !== undefined) {
+        updateData.status = Number(updateData.status) === 2 ? 2 : 1;
+      }
+
       if (req.file) {
         updateData.qr_code_image = req.file.filePath;
         if (existing.qr_code_image && existing.qr_code_image !== updateData.qr_code_image) {
@@ -166,6 +179,17 @@ class BankAccountMasterController {
           skipQuotaCheck: true,
         });
         if (existing.qr_code_image && existing.qr_code_image !== updateData.qr_code_image) {
+          const CloudStorageService = require('../services/cloudStorage.service');
+          await CloudStorageService.deleteFile(existing.qr_code_image);
+        }
+      } else if (
+        updateData.qr_code_image !== undefined &&
+        (updateData.qr_code_image === null ||
+          String(updateData.qr_code_image).trim() === '' ||
+          updateData.qr_code_image === 'null')
+      ) {
+        updateData.qr_code_image = null;
+        if (existing.qr_code_image) {
           const CloudStorageService = require('../services/cloudStorage.service');
           await CloudStorageService.deleteFile(existing.qr_code_image);
         }
@@ -199,6 +223,11 @@ class BankAccountMasterController {
       const deleted = await BankAccountMasterModel.delete(id);
       if (!deleted) {
         return ApiResponse.error(res, 'Failed to delete bank account.', null, 400);
+      }
+
+      if (existing.qr_code_image) {
+        const CloudStorageService = require('../services/cloudStorage.service');
+        await CloudStorageService.deleteFile(existing.qr_code_image);
       }
 
       return ApiResponse.success(res, 'Bank account deleted successfully.');

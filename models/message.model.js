@@ -1,4 +1,5 @@
 const { pool } = require('../config/db.config');
+const { hardDeleteFile } = require('../utils/file.util');
 
 /**
  * Message Model
@@ -70,6 +71,32 @@ class MessageModel {
     } catch (err) {
       console.error('[MessageModel] Error ensuring table schema:', err.message);
     }
+  }
+
+  /**
+   * Verify that a target user ID belongs to the given school tenant
+   */
+  static async isUserInSchool(schoolId, role, userId) {
+    const parsedSchoolId = Number(schoolId);
+    const parsedUserId = Number(userId);
+    if (!parsedSchoolId || !parsedUserId) return false;
+
+    const r = String(role || '').toLowerCase();
+    let sql = '';
+    if (r === 'teacher') {
+      sql = 'SELECT id FROM teacher_master WHERE id = ? AND school_id = ? AND status != 4 LIMIT 1';
+    } else if (r === 'student') {
+      sql = 'SELECT id FROM student_master WHERE id = ? AND school_id = ? AND status != 4 LIMIT 1';
+    } else if (r === 'parent') {
+      sql = 'SELECT id FROM parent_master WHERE id = ? AND school_id = ? AND status != 4 LIMIT 1';
+    } else if (r === 'admin') {
+      sql = 'SELECT id FROM user_master WHERE id = ? AND school_id = ? AND status != 4 LIMIT 1';
+    } else {
+      return false;
+    }
+
+    const [rows] = await pool.query(sql, [parsedUserId, parsedSchoolId]);
+    return rows.length > 0;
   }
 
   /**
@@ -777,11 +804,17 @@ class MessageModel {
       return { success: false, forbidden: true, message: 'You are not authorized to delete this message.' };
     }
 
-    // 2. Perform soft-delete (status = 0)
-    await pool.query(
-      `UPDATE message SET status = 0 WHERE id = ? AND school_id = ?`,
+    // 2. Perform soft-delete (status = 0) and clean up attached cloud file
+    const [delResult] = await pool.query(
+      `UPDATE message SET status = 0, file = NULL WHERE id = ? AND school_id = ?`,
       [parsedId, Number(school_id)]
     );
+
+    if (delResult.affectedRows > 0 && msg.file) {
+      await hardDeleteFile(msg.file, { schoolId: Number(school_id) }).catch((err) =>
+        console.error('[MessageModel.deleteMessage] Error deleting B2 attachment:', err.message)
+      );
+    }
 
     return {
       success: true,

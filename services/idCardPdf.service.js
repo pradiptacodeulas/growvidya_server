@@ -3,6 +3,7 @@ const path = require('path');
 const puppeteer = require('puppeteer');
 const QRCode = require('qrcode');
 const AdminIdCardModel = require('../models/adminIdCard.model');
+const CloudStorageService = require('./cloudStorage.service');
 
 const TEMPLATES_DIR = path.join(__dirname, '../templates/idcards');
 
@@ -20,24 +21,39 @@ const getTemplateHtml = (type) => {
 };
 
 /**
- * Converts a local file path to base64 Data URI for fast and reliable Puppeteer rendering
+ * Converts a Backblaze B2 upload path (or local public asset) to a base64 Data URI
+ * for fast and reliable Puppeteer rendering.
  */
-const toBase64DataUri = (imgUrlOrPath) => {
+const toBase64DataUri = async (imgUrlOrPath) => {
   if (!imgUrlOrPath) return '';
   if (typeof imgUrlOrPath !== 'string') return '';
   if (imgUrlOrPath.startsWith('data:')) return imgUrlOrPath;
 
   try {
-    let cleanPath = imgUrlOrPath.replace(/^https?:\/\/[^\/]+/i, '');
-    if (cleanPath.startsWith('/')) cleanPath = cleanPath.substring(1);
+    const cleanPath = imgUrlOrPath
+      .replace(/^https?:\/\/[^/]+/i, '')
+      .split('?')[0]
+      .replace(/\\/g, '/')
+      .replace(/^\/+/, '');
 
-    const fullPath = path.isAbsolute(imgUrlOrPath)
-      ? imgUrlOrPath
-      : path.join(__dirname, '../public', cleanPath);
+    if (!cleanPath || cleanPath.includes('..')) return '';
 
-    if (fs.existsSync(fullPath)) {
+    // 1. Try Backblaze B2 Cloud Storage first
+    try {
+      const { buffer, mimeType } = await CloudStorageService.getFileBuffer(cleanPath);
+      if (buffer && buffer.length > 0) {
+        return `data:${mimeType || 'image/jpeg'};base64,${buffer.toString('base64')}`;
+      }
+    } catch (_) {
+      // Fall through to local public/ static asset check
+    }
+
+    // 2. Fallback to safe containment-checked local public/ directory
+    const publicRoot = path.resolve(__dirname, '../public');
+    const fullPath = path.resolve(publicRoot, cleanPath);
+    if (fullPath.startsWith(publicRoot + path.sep) && fs.existsSync(fullPath)) {
       const ext = path.extname(fullPath).toLowerCase().replace('.', '') || 'jpeg';
-      const mime = ext === 'png' ? 'image/png' : ext === 'svg' ? 'image/svg+xml' : 'image/jpeg';
+      const mime = ext === 'png' ? 'image/png' : ext === 'svg' ? 'image/svg+xml' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
       const data = fs.readFileSync(fullPath).toString('base64');
       return `data:${mime};base64,${data}`;
     }
@@ -45,7 +61,7 @@ const toBase64DataUri = (imgUrlOrPath) => {
     console.warn('[idCardPdf.service] Failed to convert image to base64:', err.message);
   }
 
-  return imgUrlOrPath;
+  return '';
 };
 
 /**
@@ -121,7 +137,7 @@ const buildSingleCardBodyHtml = async (type, item, template, bgMap = {}) => {
   const schoolTitle = school.school_title || school.school_name || '';
   const schoolSubtitle = school.school_code ? `Code: ${school.school_code}` : '';
 
-  const rawSchoolLogo = toBase64DataUri(school.school_logo);
+  const rawSchoolLogo = await toBase64DataUri(school.school_logo);
   const schoolLogoHtml = rawSchoolLogo
     ? `<img src="${rawSchoolLogo}" alt="Logo" class="school-logo" onerror="this.parentElement.style.display='none'" />`
     : '';
@@ -139,7 +155,7 @@ const buildSingleCardBodyHtml = async (type, item, template, bgMap = {}) => {
     const academicYear = formatAcademicSession(item.academic_year || student.academic_year);
     const validUntil = getValidityString(academicYear);
 
-    const rawPhoto = toBase64DataUri(student.picture);
+    const rawPhoto = await toBase64DataUri(student.picture);
     const photoHtml = rawPhoto
       ? `<img src="${rawPhoto}" alt="Photo" class="photo-img" onerror="this.style.display='none'" />`
       : `<div class="photo-placeholder">STUDENT PHOTO</div>`;
@@ -193,7 +209,7 @@ const buildSingleCardBodyHtml = async (type, item, template, bgMap = {}) => {
     const contactNo = teacher.primary_contact_number || teacher.phone || '—';
     const validUntil = getValidityString(item.academic_year || teacher.academic_year);
 
-    const rawPhoto = toBase64DataUri(teacher.picture);
+    const rawPhoto = await toBase64DataUri(teacher.picture);
     const photoHtml = rawPhoto
       ? `<img src="${rawPhoto}" alt="Photo" class="photo-img" onerror="this.style.display='none'" />`
       : `<div class="photo-placeholder">FACULTY PHOTO</div>`;
@@ -224,7 +240,7 @@ const buildSingleCardBodyHtml = async (type, item, template, bgMap = {}) => {
   const email = staff.email || '—';
   const validUntil = getValidityString(item.academic_year || staff.academic_year);
 
-  const rawPhoto = toBase64DataUri(staff.picture);
+  const rawPhoto = await toBase64DataUri(staff.picture);
   const photoHtml = rawPhoto
     ? `<img src="${rawPhoto}" alt="Photo" class="photo-img" onerror="this.style.display='none'" />`
     : `<div class="photo-placeholder">STAFF PHOTO</div>`;

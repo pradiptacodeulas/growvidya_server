@@ -1,5 +1,4 @@
 const ApiResponse = require('../utils/api.response');
-const { hardDeleteFile } = require('../utils/file.util');
 
 class UploadController {
   /**
@@ -55,28 +54,6 @@ class UploadController {
         files: uploadedFiles,
         count: uploadedFiles.length,
       });
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /**
-   * Handle permanent deletion of a file from Backblaze B2 and file_storage_ledger
-   */
-  static async deleteFile(req, res, next) {
-    try {
-      const filePath = req.body.file_path || req.query.file_path || req.body.path;
-      if (!filePath) {
-        return ApiResponse.error(res, 'File path is required for deletion.', null, 400);
-      }
-
-      const deleted = await hardDeleteFile(filePath);
-
-      if (!deleted) {
-        return ApiResponse.error(res, 'File not found or could not be deleted.', null, 404);
-      }
-
-      return ApiResponse.success(res, 'File permanently deleted from cloud storage.');
     } catch (error) {
       next(error);
     }

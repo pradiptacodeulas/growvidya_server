@@ -19,15 +19,16 @@ async function saveBase64File(base64Data, subFolder = 'general', prefix = 'file'
 /**
  * Deletes a file from Backblaze B2 and marks it deleted in file_storage_ledger.
  * @param {string} relPath
+ * @param {object} options - { schoolId, allowPlatformDelete }
  * @returns {Promise<boolean>}
  */
-async function hardDeleteFile(relPath) {
+async function hardDeleteFile(relPath, options = {}) {
   if (!relPath || typeof relPath !== 'string') return false;
   if (relPath.startsWith('http://') || relPath.startsWith('https://') || relPath.startsWith('blob:')) {
     return false;
   }
 
-  return await CloudStorageService.deleteFile(relPath);
+  return await CloudStorageService.deleteFile(relPath, options);
 }
 
 /**

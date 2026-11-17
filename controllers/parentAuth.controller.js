@@ -27,6 +27,9 @@ class ParentAuthController {
     if (sub && (sub.status === 'suspended' || sub.liveStatus === 'suspended')) {
       return ApiResponse.error(res, 'Your school subscription has been marked inactive / suspended by the Super Admin. Login is disabled until reactivated.', null, 403);
     }
+    if (sub && (sub.liveStatus === 'pending' || (sub.status === 'pending' && !sub.isTrial))) {
+      return ApiResponse.error(res, 'School portal services are awaiting initial activation. Please contact your School Administration.', null, 403);
+    }
 
     const tokenPayload = {
       userId: parent.id,

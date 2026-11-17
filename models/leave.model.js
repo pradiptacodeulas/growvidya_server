@@ -1,4 +1,5 @@
 const { pool } = require('../config/db.config');
+const { hardDeleteFile } = require('../utils/file.util');
 
 class LeaveModel {
   /**
@@ -1071,20 +1072,36 @@ class LeaveModel {
   }
 
   /**
-   * Delete / Soft Delete Applied Leave (status = 4)
+   * Delete / Soft Delete Applied Leave (status = 4) and clean up B2 document
    */
   static async deleteLeave(schoolId, id, branchId = null) {
-    let sql = `UPDATE leaves SET status = 4 WHERE id = ? AND school_id = ?`;
+    let selectSql = `SELECT id, document FROM leaves WHERE id = ? AND school_id = ? AND status != 4`;
+    const selectParams = [id, schoolId];
+    if (branchId) {
+      selectSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      selectParams.push(Number(branchId));
+    }
+    const [existingRows] = await pool.query(selectSql + ' LIMIT 1', selectParams);
+    const oldDocument = existingRows?.[0]?.document || null;
+
+    let sql = `UPDATE leaves SET status = 4, document = NULL WHERE id = ? AND school_id = ?`;
     const params = [id, schoolId];
     if (branchId) {
       sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
       params.push(Number(branchId));
     }
-    await pool.query(sql, params);
+    const [delResult] = await pool.query(sql, params);
     await pool.query(
       `UPDATE leaves_date SET status = 4 WHERE staff_leave_id = ? AND school_id = ?`,
       [id, schoolId]
     );
+
+    if (delResult.affectedRows > 0 && oldDocument) {
+      await hardDeleteFile(oldDocument, { schoolId: Number(schoolId) }).catch((err) =>
+        console.error('[LeaveModel.deleteLeave] Error deleting B2 leave document:', err.message)
+      );
+    }
+
     return true;
   }
 }

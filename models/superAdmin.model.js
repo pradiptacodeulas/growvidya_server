@@ -85,6 +85,15 @@ class SuperAdminModel {
       totalStudents += c;
     });
 
+    let schoolWideStudents = totalStudents;
+    if (parsedBranchId) {
+      const [allStuRows] = await pool.query(
+        `SELECT COUNT(*) AS count FROM student_master WHERE school_id = ? AND status IN (1, 2)`,
+        [parsedSchoolId]
+      );
+      schoolWideStudents = Number(allStuRows[0]?.count || 0);
+    }
+
     // 4. Teachers Count
     let tchSql = `SELECT status, COUNT(*) as count FROM teacher_master WHERE school_id = ? AND status != 4`;
     const tchParams = [parsedSchoolId];
@@ -274,6 +283,8 @@ class SuperAdminModel {
         active: activeStudents,
         inactive: inactiveStudents,
         total: totalStudents,
+        schoolTotal: schoolWideStudents,
+        isBranchFiltered: Boolean(parsedBranchId),
         allowed: allowedStudents,
       },
       teachers: {

@@ -1,6 +1,7 @@
 const { pool } = require('../config/db.config');
-const { saveBase64File } = require('../utils/file.util');
+const { saveBase64File, hardDeleteFile } = require('../utils/file.util');
 const { hashPassword } = require('../utils/password.util');
+const SubscriptionModel = require('./subscription.model');
 
 class StudentModel {
   static async getAll(schoolId, { search = '', classId = '', sectionId = '', academicYear = '', academic_year = '', academicYearId = '', status = '', admissionDate = '', branchId = null, limit = 12, offset = 0 } = {}) {
@@ -965,6 +966,16 @@ class StudentModel {
         caste, mother_tongue, language_known, status, picture
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
+    // Pre-check student seat quota BEFORE uploading profile photo to Backblaze B2 so full-quota requests never orphan B2 files
+    const preQuotaCheck = await SubscriptionModel.checkQuota(data.school_id, 'students');
+    if (!preQuotaCheck.allowed) {
+      const quotaErr = new Error(preQuotaCheck.message);
+      quotaErr.statusCode = 403;
+      quotaErr.code = 'STUDENT_QUOTA_EXCEEDED';
+      quotaErr.quota = preQuotaCheck;
+      throw quotaErr;
+    }
+
     const savedStudentPic = data.picture
       ? await saveBase64File(data.picture, 'student/student_pic', 'Profile', {
           schoolId: data.school_id,
@@ -972,34 +983,62 @@ class StudentModel {
         })
       : null;
 
-    const [result] = await pool.execute(sql, [
-      data.school_id,
-      branchId,
-      data.academic_year || null,
-      data.admission_number || null,
-      data.admission_date || new Date().toISOString().slice(0, 10),
-      data.roll_number || null,
-      data.first_name,
-      data.last_name || '',
-      data.class_id,
-      data.section_id || null,
-      data.gender || null,
-      data.date_of_birth || null,
-      studentHashedPassword,
-      data.primary_contact_number || null,
-      data.email_address || null,
-      data.blood_group || null,
-      data.house || null,
-      data.religion || null,
-      data.category || null,
-      data.caste || null,
-      data.mother_tongue || null,
-      data.language_known || null,
-      Number(data.status) === 2 ? 2 : 1,
-      savedStudentPic,
-    ]);
+    let studentId = null;
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
 
-    const studentId = result.insertId;
+      // Enforce student seat-cap atomically with FOR UPDATE lock on active subscription
+      const quotaCheck = await SubscriptionModel.checkQuota(data.school_id, 'students', {
+        connection: conn,
+        forUpdate: true,
+      });
+      if (!quotaCheck.allowed) {
+        const quotaErr = new Error(quotaCheck.message);
+        quotaErr.statusCode = 403;
+        quotaErr.code = 'STUDENT_QUOTA_EXCEEDED';
+        quotaErr.quota = quotaCheck;
+        throw quotaErr;
+      }
+
+      const [result] = await conn.execute(sql, [
+        data.school_id,
+        branchId,
+        data.academic_year || null,
+        data.admission_number || null,
+        data.admission_date || new Date().toISOString().slice(0, 10),
+        data.roll_number || null,
+        data.first_name,
+        data.last_name || '',
+        data.class_id,
+        data.section_id || null,
+        data.gender || null,
+        data.date_of_birth || null,
+        studentHashedPassword,
+        data.primary_contact_number || null,
+        data.email_address || null,
+        data.blood_group || null,
+        data.house || null,
+        data.religion || null,
+        data.category || null,
+        data.caste || null,
+        data.mother_tongue || null,
+        data.language_known || null,
+        Number(data.status) === 2 ? 2 : 1,
+        savedStudentPic,
+      ]);
+
+      studentId = result.insertId;
+      await conn.commit();
+    } catch (txErr) {
+      await conn.rollback();
+      if (savedStudentPic) {
+        await hardDeleteFile(savedStudentPic, { schoolId: data.school_id }).catch(() => {});
+      }
+      throw txErr;
+    } finally {
+      conn.release();
+    }
 
     if (data.transport_required === '1' && data.transport_info && data.transport_info.route) {
       try {
@@ -1099,14 +1138,19 @@ class StudentModel {
 
     // Save student documents
     if (data.documents && Array.isArray(data.documents) && data.documents.length > 0) {
+      const newlyUploadedDocPaths = [];
       try {
         for (const doc of data.documents) {
           if (!doc.document_type && !doc.file_name && !doc.attachments && !doc.file_url) continue;
           const rawDoc = doc.attachments || doc.file_url || doc.file_name || '';
+          const isBase64Upload = typeof rawDoc === 'string' && rawDoc.startsWith('data:');
           const savedDocPath = await saveBase64File(rawDoc, 'student/attachment', 'Attachment', {
             schoolId: data.school_id,
             branchId,
           });
+          if (isBase64Upload && savedDocPath) {
+            newlyUploadedDocPaths.push(savedDocPath);
+          }
           await pool.execute(
             `INSERT INTO student_document (school_id, branch_id, student_id, document_type, attachments, file_name, status, created_at)
              VALUES (?, ?, ?, ?, ?, ?, 1, NOW())`,
@@ -1121,6 +1165,12 @@ class StudentModel {
           );
         }
       } catch (docErr) {
+        if (docErr.statusCode === 403 || docErr.quota) {
+          for (const p of newlyUploadedDocPaths) {
+            await hardDeleteFile(p, { schoolId: data.school_id }).catch(() => {});
+          }
+          throw docErr;
+        }
         console.error('[StudentModel.create] Error saving student_document:', docErr.message);
       }
     }
@@ -1136,17 +1186,21 @@ class StudentModel {
 
   static async update(id, schoolId, data, branchId = null) {
     let resolvedBranchId = branchId || data.branch_id || data.branchId || null;
-    if (!resolvedBranchId) {
-      try {
-        const [stRow] = await pool.query(
-          'SELECT branch_id FROM student_master WHERE id = ? AND school_id = ? LIMIT 1',
-          [id, schoolId]
-        );
-        if (stRow && stRow.length > 0 && stRow[0].branch_id) {
+    let oldStudentPic = null;
+    let oldStudentStatus = null;
+    try {
+      const [stRow] = await pool.query(
+        'SELECT branch_id, picture, status FROM student_master WHERE id = ? AND school_id = ? LIMIT 1',
+        [id, schoolId]
+      );
+      if (stRow && stRow.length > 0) {
+        if (!resolvedBranchId && stRow[0].branch_id) {
           resolvedBranchId = stRow[0].branch_id;
         }
-      } catch (e) {}
-    }
+        oldStudentPic = stRow[0].picture || null;
+        oldStudentStatus = Number(stRow[0].status);
+      }
+    } catch (e) {}
     resolvedBranchId = await StudentModel.resolveBranchId(schoolId, resolvedBranchId);
 
     if (data.email_address && String(data.email_address).trim()) {
@@ -1234,7 +1288,40 @@ class StudentModel {
       updateParams.push(Number(resolvedBranchId));
     }
 
-    const [result] = await pool.execute(sql, updateParams);
+    let result;
+    if (oldStudentStatus === 4) {
+      const conn = await pool.getConnection();
+      try {
+        await conn.beginTransaction();
+        const quotaCheck = await SubscriptionModel.checkQuota(schoolId, 'students', {
+          connection: conn,
+          forUpdate: true,
+        });
+        if (!quotaCheck.allowed) {
+          const quotaErr = new Error(quotaCheck.message);
+          quotaErr.statusCode = 403;
+          quotaErr.code = 'STUDENT_QUOTA_EXCEEDED';
+          quotaErr.quota = quotaCheck;
+          throw quotaErr;
+        }
+        [result] = await conn.execute(sql, updateParams);
+        await conn.commit();
+      } catch (txErr) {
+        await conn.rollback();
+        if (savedStudentPic && savedStudentPic !== oldStudentPic) {
+          await hardDeleteFile(savedStudentPic, { schoolId }).catch(() => {});
+        }
+        throw txErr;
+      } finally {
+        conn.release();
+      }
+    } else {
+      [result] = await pool.execute(sql, updateParams);
+    }
+
+    if (result.affectedRows > 0 && savedStudentPic && oldStudentPic && oldStudentPic !== savedStudentPic) {
+      await hardDeleteFile(oldStudentPic, { schoolId });
+    }
 
     // Handle Transport update
     if (data.transport_required === '1' && data.transport_info && data.transport_info.route) {
@@ -1403,34 +1490,78 @@ class StudentModel {
       }
     }
 
-    // Update student documents if provided
+    // Update student documents if provided (upload all new B2 files BEFORE deleting existing DB rows)
     if (data.documents && Array.isArray(data.documents)) {
+      const newlyUploadedDocPaths = [];
       try {
-        await pool.execute(
-          `DELETE FROM student_document WHERE student_id = ? AND school_id = ?`,
+        const [oldDocRows] = await pool.execute(
+          `SELECT attachments FROM student_document WHERE student_id = ? AND school_id = ?`,
           [id, schoolId]
         );
+        const oldDocPaths = (oldDocRows || []).map((r) => (r.attachments || '').trim()).filter(Boolean);
+        const keptDocPaths = new Set();
+        const preparedDocs = [];
+
         for (const doc of data.documents) {
           if (!doc.document_type && !doc.file_name && !doc.attachments && !doc.file_url) continue;
           const rawDoc = doc.attachments || doc.file_url || doc.file_name || '';
+          const isBase64Upload = typeof rawDoc === 'string' && rawDoc.startsWith('data:');
           const savedDocPath = await saveBase64File(rawDoc, 'student/attachment', 'Attachment', {
             schoolId,
             branchId: studentBranchId,
           });
-          await pool.execute(
-            `INSERT INTO student_document (school_id, branch_id, student_id, document_type, attachments, file_name, status, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, 1, NOW())`,
-            [
-              schoolId,
-              studentBranchId,
-              id,
-              doc.document_type || 1,
-              savedDocPath,
-              doc.file_name || null,
-            ]
+          if (isBase64Upload && savedDocPath) {
+            newlyUploadedDocPaths.push(savedDocPath);
+          }
+          if (savedDocPath) keptDocPaths.add(savedDocPath.trim());
+          preparedDocs.push({
+            document_type: doc.document_type || 1,
+            attachments: savedDocPath,
+            file_name: doc.file_name || null,
+          });
+        }
+
+        const docConn = await pool.getConnection();
+        try {
+          await docConn.beginTransaction();
+          await docConn.execute(
+            `DELETE FROM student_document WHERE student_id = ? AND school_id = ?`,
+            [id, schoolId]
           );
+          for (const pDoc of preparedDocs) {
+            await docConn.execute(
+              `INSERT INTO student_document (school_id, branch_id, student_id, document_type, attachments, file_name, status, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, 1, NOW())`,
+              [
+                schoolId,
+                studentBranchId,
+                id,
+                pDoc.document_type,
+                pDoc.attachments,
+                pDoc.file_name,
+              ]
+            );
+          }
+          await docConn.commit();
+        } catch (dbErr) {
+          await docConn.rollback();
+          throw dbErr;
+        } finally {
+          docConn.release();
+        }
+
+        for (const oldPath of oldDocPaths) {
+          if (!keptDocPaths.has(oldPath)) {
+            await hardDeleteFile(oldPath, { schoolId });
+          }
         }
       } catch (docErr) {
+        for (const p of newlyUploadedDocPaths) {
+          await hardDeleteFile(p, { schoolId }).catch(() => {});
+        }
+        if (docErr.statusCode === 403 || docErr.quota) {
+          throw docErr;
+        }
         console.error('[StudentModel.update] Error updating student_document:', docErr.message);
       }
     }
@@ -1483,6 +1614,11 @@ class StudentModel {
       if (fFirst || fPhone || fEmail) {
         if (existingStp && existingStp.father_id) {
           fatherId = existingStp.father_id;
+          let oldFatherPic = null;
+          if (fatherPic) {
+            const [fpRows] = await pool.query('SELECT picture FROM parent_master WHERE id = ? AND school_id = ? LIMIT 1', [fatherId, schoolId]);
+            oldFatherPic = fpRows?.[0]?.picture || null;
+          }
           let updateSql = `UPDATE parent_master SET first_name = ?, last_name = ?, phone = ?, email = ?, occupation = ?`;
           const params = [fFirst, fLast, fPhone, fEmail, fOcc];
           if (fatherPic) {
@@ -1492,6 +1628,9 @@ class StudentModel {
           updateSql += ` WHERE id = ? AND school_id = ?`;
           params.push(fatherId, schoolId);
           await pool.execute(updateSql, params);
+          if (fatherPic && oldFatherPic && oldFatherPic !== fatherPic) {
+            await hardDeleteFile(oldFatherPic, { schoolId });
+          }
 
           // Update father address
           const [faRows] = await pool.execute(`SELECT id FROM parent_master_address WHERE parent_id = ? AND (parent_type = 1 OR parent_type IS NULL)`, [fatherId]);
@@ -1582,6 +1721,11 @@ class StudentModel {
       if (mFirst || mPhone || mEmail) {
         if (existingStp && existingStp.mother_id) {
           motherId = existingStp.mother_id;
+          let oldMotherPic = null;
+          if (motherPic) {
+            const [mpRows] = await pool.query('SELECT picture FROM parent_master WHERE id = ? AND school_id = ? LIMIT 1', [motherId, schoolId]);
+            oldMotherPic = mpRows?.[0]?.picture || null;
+          }
           let updateSql = `UPDATE parent_master SET first_name = ?, last_name = ?, phone = ?, email = ?, occupation = ?`;
           const params = [mFirst, mLast, mPhone, mEmail, mOcc];
           if (motherPic) {
@@ -1591,6 +1735,9 @@ class StudentModel {
           updateSql += ` WHERE id = ? AND school_id = ?`;
           params.push(motherId, schoolId);
           await pool.execute(updateSql, params);
+          if (motherPic && oldMotherPic && oldMotherPic !== motherPic) {
+            await hardDeleteFile(oldMotherPic, { schoolId });
+          }
 
           // Update mother address
           const [maRows] = await pool.execute(`SELECT id FROM parent_master_address WHERE parent_id = ? AND (parent_type = 2 OR parent_type IS NULL)`, [motherId]);
@@ -1784,6 +1931,26 @@ class StudentModel {
 
   static async delete(id, schoolId, branchId = null) {
     let linkedParentIds = [];
+    let oldStudentPic = null;
+    let oldDocPaths = [];
+
+    try {
+      let stSql = `SELECT picture FROM student_master WHERE id = ? AND school_id = ? AND status != 4`;
+      const stParams = [id, schoolId];
+      if (branchId) {
+        stSql += ` AND branch_id = ?`;
+        stParams.push(Number(branchId));
+      }
+      const [stRows] = await pool.execute(stSql + ' LIMIT 1', stParams);
+      oldStudentPic = stRows?.[0]?.picture || null;
+
+      const [docRows] = await pool.execute(
+        `SELECT attachments FROM student_document WHERE student_id = ? AND school_id = ? AND status != 4`,
+        [id, schoolId]
+      );
+      oldDocPaths = (docRows || []).map((r) => (r.attachments || '').trim()).filter(Boolean);
+    } catch (_) {}
+
     try {
       const [stpRows] = await pool.execute(
         `SELECT father_id, mother_id, guardian_id FROM student_to_parent WHERE student_id = ? AND school_id = ? AND status != 4`,
@@ -1800,13 +1967,29 @@ class StudentModel {
       console.error('[StudentModel.delete] Error fetching linked parent IDs:', stpErr.message);
     }
 
-    let sql = `UPDATE student_master SET status = 4 WHERE id = ? AND school_id = ?`;
+    let sql = `UPDATE student_master SET status = 4, picture = NULL WHERE id = ? AND school_id = ?`;
     const params = [id, schoolId];
     if (branchId) {
       sql += ` AND branch_id = ?`;
       params.push(Number(branchId));
     }
     const [result] = await pool.execute(sql, params);
+
+    if (result.affectedRows > 0) {
+      try {
+        await pool.execute(
+          `UPDATE student_document SET status = 4, attachments = '' WHERE student_id = ? AND school_id = ?`,
+          [id, schoolId]
+        );
+      } catch (_) {}
+
+      if (oldStudentPic) {
+        await hardDeleteFile(oldStudentPic, { schoolId: Number(schoolId) }).catch(() => {});
+      }
+      for (const docPath of oldDocPaths) {
+        await hardDeleteFile(docPath, { schoolId: Number(schoolId) }).catch(() => {});
+      }
+    }
 
     // Cascade soft delete to student associations
     try {
@@ -1841,10 +2024,18 @@ class StudentModel {
           [parentId, parentId, parentId]
         );
         if (Number(remainingRows[0]?.remaining_children || 0) === 0) {
-          await pool.execute(
-            `UPDATE parent_master SET status = 4 WHERE id = ? AND school_id = ?`,
+          const [pPicRows] = await pool.execute(
+            `SELECT picture FROM parent_master WHERE id = ? AND school_id = ? LIMIT 1`,
             [parentId, schoolId]
           );
+          const oldParentPic = pPicRows?.[0]?.picture || null;
+          await pool.execute(
+            `UPDATE parent_master SET status = 4, picture = NULL WHERE id = ? AND school_id = ?`,
+            [parentId, schoolId]
+          );
+          if (oldParentPic) {
+            await hardDeleteFile(oldParentPic, { schoolId: Number(schoolId) }).catch(() => {});
+          }
         }
       }
     } catch (cascadeErr) {

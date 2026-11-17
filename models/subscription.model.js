@@ -122,13 +122,13 @@ class SubscriptionModel {
         p.plan_name,
         p.plan_code,
         p.plan_group,
-        p.tier_rank,
+        COALESCE(s.snapshot_tier_rank, p.tier_rank) AS tier_rank,
         p.description AS plan_description,
         p.price,
-        p.billing_cycle,
+        COALESCE(s.snapshot_billing_cycle, p.billing_cycle) AS billing_cycle,
         p.free_trial_days,
-        p.max_students,
-        p.included_storage_gb,
+        COALESCE(s.snapshot_max_students, p.max_students) AS max_students,
+        COALESCE(s.snapshot_storage_gb, p.included_storage_gb) AS included_storage_gb,
         p.included_push_credits,
         p.included_sms_credits,
         p.is_popular,
@@ -140,13 +140,13 @@ class SubscriptionModel {
       ORDER BY 
         CASE 
           -- 1. Active paid subscriptions first (valid end_date >= today IST)
-          WHEN s.status = 'active' AND LOWER(p.billing_cycle) != 'trial' AND DATEDIFF(DATE(s.end_date), ?) >= 0 THEN 1
+          WHEN s.status = 'active' AND LOWER(COALESCE(s.snapshot_billing_cycle, p.billing_cycle)) != 'trial' AND DATEDIFF(DATE(s.end_date), ?) >= 0 THEN 1
           -- 2. Active trials next (valid end_date >= today IST)
           WHEN s.status IN ('trial', 'active') AND DATEDIFF(DATE(s.end_date), ?) >= 0 THEN 2
           -- 3. Suspended subscriptions
           WHEN s.status = 'suspended' THEN 3
           -- 4. Expired paid subscriptions (prioritized over pending so lifecycle history is preserved)
-          WHEN s.status != 'pending' AND LOWER(p.billing_cycle) != 'trial' THEN 4
+          WHEN s.status != 'pending' AND LOWER(COALESCE(s.snapshot_billing_cycle, p.billing_cycle)) != 'trial' THEN 4
           -- 5. Expired trials
           WHEN s.status != 'pending' THEN 5
           -- 6. Standalone pending offline subscriptions (only primary when school has no prior active/expired row)
@@ -187,13 +187,13 @@ class SubscriptionModel {
         p.plan_name,
         p.plan_code,
         p.plan_group,
-        p.tier_rank,
+        COALESCE(s.snapshot_tier_rank, p.tier_rank) AS tier_rank,
         p.description AS plan_description,
         p.price,
-        p.billing_cycle,
+        COALESCE(s.snapshot_billing_cycle, p.billing_cycle) AS billing_cycle,
         p.free_trial_days,
-        p.max_students,
-        p.included_storage_gb
+        COALESCE(s.snapshot_max_students, p.max_students) AS max_students,
+        COALESCE(s.snapshot_storage_gb, p.included_storage_gb) AS included_storage_gb
       FROM school_subscriptions s
       JOIN subscription_plans p ON s.plan_id = p.id
       WHERE s.school_id = ? AND s.status = 'pending'
@@ -217,12 +217,22 @@ class SubscriptionModel {
     const wallet = await SubscriptionModel.getNotificationWallet(targetSchoolId);
     const lifecycle = await SubscriptionFulfillmentService.loadSchoolLifecycleSnapshot(targetSchoolId);
 
+    let schoolAddress = null;
+    try {
+      const [smRows] = await pool.query(
+        'SELECT address FROM school_master WHERE id = ? LIMIT 1',
+        [targetSchoolId]
+      );
+      schoolAddress = smRows[0]?.address || null;
+    } catch (_) {}
+
     if (rows.length === 0) {
       if (pendingSubscription) {
         const pendingDaysLeft = pendingSubscription.days_left !== null ? Number(pendingSubscription.days_left) : 0;
         return {
           subscription_id: pendingSubscription.subscription_id,
           school_id: targetSchoolId,
+          school_address: schoolAddress,
           plan_id: pendingSubscription.plan_id,
           storage_plan_id: pendingSubscription.storage_plan_id,
           plan_name: pendingSubscription.plan_name,
@@ -262,6 +272,7 @@ class SubscriptionModel {
       return {
         subscription_id: null,
         school_id: targetSchoolId,
+        school_address: schoolAddress,
         plan_name: 'No Active Subscription',
         status: latestRejected ? 'rejected' : 'expired',
         liveStatus: latestRejected ? 'rejected' : 'expired',
@@ -347,6 +358,7 @@ class SubscriptionModel {
 
     return {
       ...sub,
+      school_address: schoolAddress,
       tier_rank: Number(sub.tier_rank) || 1,
       included_storage_gb: Math.max(0, parseInt(sub.included_storage_gb, 10) || 0),
       included_push_credits: Math.max(0, parseInt(sub.included_push_credits, 10) || 0),
@@ -558,7 +570,7 @@ class SubscriptionModel {
    * Check if school has reached its quota for a specific entity ('students', 'teachers', 'branches')
    * Note: Teachers and Branches are unlimited (0) on all plans per business rules.
    */
-  static async checkQuota(schoolId, type) {
+  static async checkQuota(schoolId, type, { connection = null, forUpdate = false } = {}) {
     const targetSchoolId = parseInt(schoolId, 10);
     if (!targetSchoolId) return { allowed: true };
 
@@ -566,17 +578,33 @@ class SubscriptionModel {
       return { allowed: true };
     }
 
-    const sub = await this.getSchoolSubscription(targetSchoolId);
-    if (!sub) return { allowed: true };
-
     if (type === 'students') {
+      const db = connection || pool;
+      const todayStr = getTodayIST();
+      const lockClause = forUpdate && connection ? ' FOR UPDATE' : '';
+
+      const [subRows] = await db.query(
+        `SELECT s.id, p.plan_name, COALESCE(s.snapshot_max_students, p.max_students) AS max_students
+         FROM school_subscriptions s
+         JOIN subscription_plans p ON s.plan_id = p.id
+         WHERE s.school_id = ?
+           AND s.status IN ('active', 'trial')
+           AND DATE(s.end_date) >= ?
+         ORDER BY CASE WHEN s.status = 'active' THEN 1 ELSE 2 END ASC, s.id DESC
+         LIMIT 1${lockClause}`,
+        [targetSchoolId, todayStr]
+      );
+
+      const sub = subRows[0] || null;
+      if (!sub) return { allowed: true };
+
       const maxStudents =
         sub.max_students !== null && sub.max_students !== undefined
           ? Number(sub.max_students)
           : 0;
       // 0 indicates unlimited student quota; count both Active (1) and Inactive (2) students, excluding soft-deleted (4)
       if (maxStudents > 0) {
-        const [rows] = await pool.query(
+        const [rows] = await db.query(
           'SELECT COUNT(id) AS count FROM student_master WHERE school_id = ? AND status IN (1, 2)',
           [targetSchoolId]
         );
@@ -657,6 +685,50 @@ class SubscriptionModel {
       bank_accounts: bankAccounts || [],
       notification_pricing: notificationPricing || [],
       notification_records: notificationRecords,
+    };
+  }
+
+  /**
+   * Fetch live fulfillment & dispatch status for a school's purchased Biometric Machines & RFID Smart Cards
+   */
+  static async getSchoolHardwareOrders(schoolId) {
+    const parsedSchoolId = parseInt(schoolId, 10);
+    if (!parsedSchoolId) {
+      return { attendance_machines: [], rfid_cards: [] };
+    }
+
+    const [machineRows] = await pool.query(
+      `SELECT sam.id, sam.order_no, sam.school_id, sam.branch_id, sam.machine_master_id,
+              sam.quantity, sam.unit_price, sam.total_amount, sam.device_serial_number,
+              sam.device_location, sam.status, sam.order_status, sam.payment_order_id,
+              sam.shipping_address, sam.remarks, sam.created_at, sam.updated_at,
+              amm.machine_name, amm.model_number, amm.brand, amm.machine_type, amm.machine_image,
+              spo.order_no AS payment_order_no, spo.status AS payment_order_status, spo.payment_method
+       FROM school_attendance_machines sam
+       JOIN attendance_machine_master amm ON sam.machine_master_id = amm.id
+       LEFT JOIN subscription_payment_orders spo ON sam.payment_order_id = spo.id
+       WHERE sam.school_id = ?
+       ORDER BY sam.id DESC`,
+      [parsedSchoolId]
+    );
+
+    const [rfidRows] = await pool.query(
+      `SELECT sro.id, sro.order_no, sro.school_id, sro.rfid_card_id,
+              sro.quantity, sro.unit_price, sro.total_amount, sro.order_status, sro.payment_order_id,
+              sro.shipping_address, sro.remarks, sro.created_at, sro.updated_at,
+              rcm.card_name, rcm.card_code, rcm.card_type, rcm.frequency, rcm.card_image,
+              spo.order_no AS payment_order_no, spo.status AS payment_order_status, spo.payment_method
+       FROM school_rfid_orders sro
+       JOIN rfid_card_master rcm ON sro.rfid_card_id = rcm.id
+       LEFT JOIN subscription_payment_orders spo ON sro.payment_order_id = spo.id
+       WHERE sro.school_id = ?
+       ORDER BY sro.id DESC`,
+      [parsedSchoolId]
+    );
+
+    return {
+      attendance_machines: machineRows || [],
+      rfid_cards: rfidRows || [],
     };
   }
 }

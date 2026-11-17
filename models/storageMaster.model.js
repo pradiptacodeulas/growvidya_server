@@ -1,7 +1,9 @@
 const { pool } = require('../config/db.config');
 const CapacityUnitMasterModel = require('./capacityUnitMaster.model');
 const FileStorageLedgerModel = require('./fileStorageLedger.model');
+const SubscriptionSchemaModel = require('./subscriptionSchema.model');
 const { parsePagination, buildPagination } = require('../utils/pagination.util');
+const { getTodayIST, parseDateParts, formatDateParts, addCycleDuration } = require('../constants/subscriptionModules.constant');
 
 class StorageMasterModel {
   /**
@@ -300,6 +302,8 @@ class StorageMasterModel {
       JOIN storage_master stm ON sso.storage_plan_id = stm.id
       JOIN capacity_unit_master cu ON stm.capacity_unit_id = cu.id
       JOIN school_master s ON sso.school_id = s.id
+      LEFT JOIN subscription_payment_orders spo ON sso.payment_order_id = spo.id
+      LEFT JOIN bank_account_master bam ON spo.bank_account_id = bam.id
       LEFT JOIN (
         SELECT um1.school_id,
                um1.id AS admin_user_id,
@@ -345,6 +349,19 @@ class StorageMasterModel {
         sso.unit_price,
         sso.total_amount,
         sso.payment_transaction_id,
+        sso.payment_order_id,
+        spo.order_no AS payment_order_no,
+        spo.order_type AS payment_order_type,
+        spo.payment_method,
+        spo.status AS payment_order_status,
+        spo.utr_number,
+        spo.grand_total AS payment_order_total,
+        spo.bank_account_id,
+        bam.bank_name AS company_bank_name,
+        bam.account_title AS company_bank_title,
+        bam.beneficiary_name AS company_bank_beneficiary,
+        bam.account_number AS company_account_number,
+        bam.ifsc_code AS company_ifsc_code,
         sso.order_status,
         sso.start_date,
         sso.end_date,
@@ -396,7 +413,7 @@ class StorageMasterModel {
       ${where}
     `;
 
-    await FileStorageLedgerModel.initTable();
+    await Promise.all([SubscriptionSchemaModel.initTable(), FileStorageLedgerModel.initTable()]);
     const [[rows], [[countRow]], counts] = await Promise.all([
       pool.query(selectQuery, [...params, pageSize, offset]),
       pool.query(countQuery, params),
@@ -469,6 +486,7 @@ class StorageMasterModel {
    * Update storage plan buyer order status / dates / remarks
    */
   static async updateBuyerOrder(id, data) {
+    await SubscriptionSchemaModel.initTable();
     const existing = await this.getBuyerOrderById(id);
     if (!existing) return false;
 
@@ -481,13 +499,85 @@ class StorageMasterModel {
       updates.push('order_status = ?');
       params.push(normalizedStatus);
     }
-    if (data.start_date !== undefined) {
-      updates.push('start_date = ?');
-      params.push(data.start_date || null);
+
+    // Enforce Payment Order UTR verification BEFORE activating a storage add-on
+    if (existing.payment_order_id && normalizedStatus === 'active') {
+      const [ordRows] = await pool.query(
+        'SELECT id, order_no, order_type, status FROM subscription_payment_orders WHERE id = ? LIMIT 1',
+        [existing.payment_order_id]
+      );
+      const ord = ordRows[0];
+      if (ord && ord.status !== 'paid') {
+        const err = new Error(
+          `Cannot mark storage order as active while Payment Order ${ord.order_no} is "${ord.status}". Please verify the UTR payment order first.`
+        );
+        err.statusCode = 400;
+        err.code = 'PAYMENT_UNVERIFIED';
+        throw err;
+      }
     }
-    if (data.end_date !== undefined) {
+
+    const toValidDateStr = (val) => {
+      if (!val) return null;
+      const parts = parseDateParts(val);
+      return parts ? formatDateParts(parts) : null;
+    };
+
+    const explicitStart =
+      typeof data.start_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(data.start_date.trim())
+        ? data.start_date.trim()
+        : null;
+    const explicitEnd =
+      typeof data.end_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(data.end_date.trim())
+        ? data.end_date.trim()
+        : null;
+
+    if (data.start_date !== undefined && data.start_date !== null && String(data.start_date).trim() !== '' && !explicitStart) {
+      const err = new Error('Invalid start_date format. Expected YYYY-MM-DD.');
+      err.statusCode = 400;
+      throw err;
+    }
+    if (data.end_date !== undefined && data.end_date !== null && String(data.end_date).trim() !== '' && !explicitEnd) {
+      const err = new Error('Invalid end_date format. Expected YYYY-MM-DD.');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const existingStart = toValidDateStr(existing.start_date);
+    const existingEnd = toValidDateStr(existing.end_date);
+    const targetStatus = normalizedStatus || String(existing.order_status || '').toLowerCase();
+
+    let finalStart = explicitStart;
+    let finalEnd = explicitEnd;
+
+    // Never wipe start_date or end_date to NULL; guarantee a full paid cycle when active
+    if (targetStatus === 'active') {
+      const effectiveStart = finalStart || existingStart || getTodayIST();
+      const effectiveEnd = finalEnd || existingEnd || addCycleDuration(effectiveStart, existing.billing_cycle);
+      if (effectiveEnd < effectiveStart) {
+        const err = new Error('Storage end_date cannot be earlier than start_date.');
+        err.statusCode = 400;
+        throw err;
+      }
+      if (!existingStart && !finalStart) finalStart = effectiveStart;
+      if (!existingEnd && !finalEnd) finalEnd = effectiveEnd;
+    } else if ((finalStart || existingStart) && (finalEnd || existingEnd)) {
+      const cmpStart = finalStart || existingStart;
+      const cmpEnd = finalEnd || existingEnd;
+      if (cmpEnd < cmpStart) {
+        const err = new Error('Storage end_date cannot be earlier than start_date.');
+        err.statusCode = 400;
+        throw err;
+      }
+    }
+
+    if (finalStart) {
+      updates.push('start_date = ?');
+      params.push(finalStart);
+    }
+    if (finalEnd) {
       updates.push('end_date = ?');
-      params.push(data.end_date || null);
+      params.push(finalEnd);
     }
     if (data.remarks !== undefined) {
       updates.push('remarks = ?');
@@ -495,28 +585,6 @@ class StorageMasterModel {
     }
 
     if (updates.length === 0) return false;
-
-    const isApprovingPending =
-      existing.payment_order_id && normalizedStatus === 'active' && existing.order_status === 'pending';
-
-    if (isApprovingPending) {
-      try {
-        const [ordRows] = await pool.query(
-          'SELECT id, order_type, status FROM subscription_payment_orders WHERE id = ? LIMIT 1',
-          [existing.payment_order_id]
-        );
-        const ord = ordRows[0];
-        if (ord && ord.order_type === 'addon_only' && ord.status === 'pending_verification') {
-          const SubscriptionFulfillmentService = require('../services/subscriptionFulfillment.service');
-          await SubscriptionFulfillmentService.approveOfflineAddonOrder({
-            orderId: ord.id,
-            verificationNotes: data.remarks || 'Approved via Storage Plan Buyers',
-          });
-        }
-      } catch (e) {
-        console.error('[StorageMasterModel.updateBuyerOrder approval sync error]:', e.message);
-      }
-    }
 
     params.push(id);
     const [result] = await pool.query(

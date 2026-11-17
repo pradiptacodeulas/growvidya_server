@@ -6,6 +6,7 @@ const SubscriptionAlertService = require('../services/subscriptionAlert.service'
 const {
   getBillingCycleMeta,
   getTodayIST,
+  normalizeDateStr,
 } = require('../constants/subscriptionModules.constant');
 
 function buildPlanFeaturesMap(planFeaturesJson = null, items = []) {
@@ -43,7 +44,8 @@ class SaasModel {
   static async getActivePlans() {
     const query = `
       SELECT id, plan_name, plan_code, plan_group, tier_rank, description, price, original_price, billing_cycle,
-             free_trial_days, max_students, included_storage_gb, is_popular, features_json, status, created_at
+             free_trial_days, max_students, included_storage_gb, included_push_credits, included_sms_credits,
+             is_popular, features_json, status, created_at
       FROM subscription_plans
       WHERE status = 1
       ORDER BY tier_rank ASC, price ASC
@@ -75,8 +77,13 @@ class SaasModel {
         discount_percent: validOrig
           ? Math.round(((validOrig - sellingPrice) / validOrig) * 100)
           : 0,
-        tier_rank: Number(row.tier_rank) || 1,
+        tier_rank:
+          String(row.billing_cycle || '').toLowerCase() === 'trial'
+            ? 0
+            : Number(row.tier_rank) || 1,
         included_storage_gb: Math.max(0, parseInt(row.included_storage_gb, 10) || 0),
+        included_push_credits: Math.max(0, parseInt(row.included_push_credits, 10) || 0),
+        included_sms_credits: Math.max(0, parseInt(row.included_sms_credits, 10) || 0),
         is_popular: Number(row.is_popular) === 1 ? 1 : 0,
         max_students: Number(row.max_students) || 0,
         max_teachers: 0, // Unlimited teachers on all plans
@@ -187,7 +194,7 @@ class SaasModel {
 
         const trialRecord = priorSubs[0];
         const todayStr = getTodayIST();
-        const endStr = trialRecord.end_date ? new Date(trialRecord.end_date).toISOString().slice(0, 10) : '';
+        const endStr = trialRecord.end_date ? normalizeDateStr(trialRecord.end_date) : '';
         const isExpired = trialRecord.status === 'expired' || (endStr && endStr < todayStr);
 
         return {

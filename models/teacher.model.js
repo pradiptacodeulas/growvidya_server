@@ -1185,15 +1185,20 @@ class TeacherModel {
 
     // 8. Insert Documents
     if (Array.isArray(documents) && documents.length > 0) {
+      const newlyUploadedDocPaths = [];
       try {
         for (const doc of documents) {
           if (doc.document_type || doc.attachments) {
+            const isBase64Upload = typeof doc.attachments === 'string' && doc.attachments.startsWith('data:');
             const savedDoc = doc.attachments
               ? await saveBase64File(doc.attachments, 'teacher/attachment', 'TeacherDoc', {
                   schoolId,
                   branchId,
                 })
               : '';
+            if (isBase64Upload && savedDoc) {
+              newlyUploadedDocPaths.push(savedDoc);
+            }
             await pool.query(
               `INSERT INTO teacher_document 
                (school_id, branch_id, teacher_id, document_type, academic_year, file_name, attachments, status)
@@ -1211,6 +1216,13 @@ class TeacherModel {
           }
         }
       } catch (docErr) {
+        if (docErr.statusCode === 403 || docErr.quota) {
+          const { hardDeleteFile } = require('../utils/file.util');
+          for (const p of newlyUploadedDocPaths) {
+            await hardDeleteFile(p, { schoolId }).catch(() => {});
+          }
+          throw docErr;
+        }
         console.error('[TeacherModel.createTeacher] Error saving teacher_document:', docErr.message);
       }
     }
@@ -1332,14 +1344,15 @@ class TeacherModel {
       take_attendance !== undefined ? take_attendance : 2,
     ];
 
+    let savedTeacherPic = null;
     if (data.picture) {
       const { saveBase64File } = require('../utils/file.util');
-      const savedPic = await saveBase64File(data.picture, 'teacher', 'Teacher', {
+      savedTeacherPic = await saveBase64File(data.picture, 'teacher', 'Teacher', {
         schoolId,
         branchId: teacherBranchId,
       });
       updateSql += `, picture = ?`;
-      params.push(savedPic);
+      params.push(savedTeacherPic);
     }
     if (data.password) {
       updateSql += `, password = ?`;
@@ -1355,6 +1368,11 @@ class TeacherModel {
     }
 
     await pool.query(updateSql, params);
+
+    if (savedTeacherPic && existing.picture && existing.picture !== savedTeacherPic) {
+      const { hardDeleteFile } = require('../utils/file.util');
+      await hardDeleteFile(existing.picture, { schoolId });
+    }
 
     // 1. Update Address (only if current_address is provided)
     if (data.current_address) {
@@ -1643,20 +1661,46 @@ class TeacherModel {
       }
     }
 
-    // 8. Update Documents (only if documents provided)
+    // 8. Update Documents (upload all new B2 files BEFORE deleting existing DB rows)
     if (data.documents !== undefined && Array.isArray(data.documents)) {
+      const { saveBase64File, hardDeleteFile } = require('../utils/file.util');
+      const newlyUploadedDocPaths = [];
       try {
-        const { saveBase64File } = require('../utils/file.util');
-        await pool.query(`DELETE FROM teacher_document WHERE teacher_id = ? AND school_id = ?`, [id, schoolId]);
+        const [oldDocRows] = await pool.query(
+          `SELECT attachments FROM teacher_document WHERE teacher_id = ? AND school_id = ?`,
+          [id, schoolId]
+        );
+        const oldDocPaths = (oldDocRows || []).map((r) => (r.attachments || '').trim()).filter(Boolean);
+        const keptDocPaths = new Set();
+        const preparedDocs = [];
+
         for (const doc of data.documents) {
           if (doc.document_type || doc.attachments) {
+            const isBase64Upload = typeof doc.attachments === 'string' && doc.attachments.startsWith('data:');
             const savedDoc = doc.attachments
               ? await saveBase64File(doc.attachments, 'teacher/attachment', 'TeacherDoc', {
                   schoolId,
                   branchId: teacherBranchId,
                 })
               : '';
-            await pool.query(
+            if (isBase64Upload && savedDoc) {
+              newlyUploadedDocPaths.push(savedDoc);
+            }
+            if (savedDoc) keptDocPaths.add(savedDoc.trim());
+            preparedDocs.push({
+              document_type: doc.document_type || 1,
+              file_name: doc.file_name || null,
+              attachments: savedDoc || '',
+            });
+          }
+        }
+
+        const docConn = await pool.getConnection();
+        try {
+          await docConn.beginTransaction();
+          await docConn.query(`DELETE FROM teacher_document WHERE teacher_id = ? AND school_id = ?`, [id, schoolId]);
+          for (const pDoc of preparedDocs) {
+            await docConn.query(
               `INSERT INTO teacher_document 
                (school_id, branch_id, teacher_id, document_type, academic_year, file_name, attachments, status)
                VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
@@ -1664,15 +1708,33 @@ class TeacherModel {
                 schoolId,
                 teacherBranchId,
                 id,
-                doc.document_type || 1,
+                pDoc.document_type,
                 academic_year || null,
-                doc.file_name || null,
-                savedDoc || '',
+                pDoc.file_name,
+                pDoc.attachments,
               ]
             );
           }
+          await docConn.commit();
+        } catch (dbErr) {
+          await docConn.rollback();
+          throw dbErr;
+        } finally {
+          docConn.release();
+        }
+
+        for (const oldPath of oldDocPaths) {
+          if (!keptDocPaths.has(oldPath)) {
+            await hardDeleteFile(oldPath, { schoolId });
+          }
         }
       } catch (docErr) {
+        for (const p of newlyUploadedDocPaths) {
+          await hardDeleteFile(p, { schoolId }).catch(() => {});
+        }
+        if (docErr.statusCode === 403 || docErr.quota) {
+          throw docErr;
+        }
         console.error('[TeacherModel.updateTeacher] Error saving teacher_document:', docErr.message);
       }
     }
@@ -1874,7 +1936,28 @@ class TeacherModel {
 
   static async deleteTeacher(id, schoolId, branchId = null) {
     const cleanBranchId = TeacherModel.parseBranchId(branchId);
-    let sql = `UPDATE teacher_master SET status = 4 WHERE id = ? AND school_id = ?`;
+    const { hardDeleteFile } = require('../utils/file.util');
+
+    let existingPicture = null;
+    let oldDocPaths = [];
+    try {
+      let existingSql = `SELECT picture FROM teacher_master WHERE id = ? AND school_id = ? AND status != 4`;
+      const existingParams = [id, schoolId];
+      if (cleanBranchId) {
+        existingSql += ` AND branch_id = ?`;
+        existingParams.push(cleanBranchId);
+      }
+      const [tRows] = await pool.query(existingSql + ' LIMIT 1', existingParams);
+      existingPicture = tRows?.[0]?.picture || null;
+
+      const [docRows] = await pool.query(
+        `SELECT attachments FROM teacher_document WHERE teacher_id = ? AND school_id = ? AND status != 4`,
+        [id, schoolId]
+      );
+      oldDocPaths = (docRows || []).map((r) => (r.attachments || '').trim()).filter(Boolean);
+    } catch (_) {}
+
+    let sql = `UPDATE teacher_master SET status = 4, picture = NULL WHERE id = ? AND school_id = ?`;
     const params = [id, schoolId];
     if (cleanBranchId) {
       sql += ` AND branch_id = ?`;
@@ -1883,6 +1966,21 @@ class TeacherModel {
     const [result] = await pool.query(sql, params);
     if (!result || result.affectedRows === 0) {
       return false;
+    }
+
+    // Soft-delete teacher documents & clean up B2 files
+    try {
+      await pool.query(
+        `UPDATE teacher_document SET status = 4, attachments = '' WHERE teacher_id = ? AND school_id = ?`,
+        [id, schoolId]
+      );
+    } catch (_) {}
+
+    if (existingPicture) {
+      await hardDeleteFile(existingPicture, { schoolId: Number(schoolId) }).catch(() => {});
+    }
+    for (const docPath of oldDocPaths) {
+      await hardDeleteFile(docPath, { schoolId: Number(schoolId) }).catch(() => {});
     }
 
     // Also soft-delete teacher class assignments

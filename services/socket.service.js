@@ -1,12 +1,29 @@
 const { Server } = require('socket.io');
 const { verifyToken } = require('../utils/jwt.util');
+const { pool } = require('../config/db.config');
+const SubscriptionModel = require('../models/subscription.model');
 const MessageModel = require('../models/message.model');
 const PushNotificationService = require('./pushNotification.service');
 
 let io = null;
 
-// Map to track online users: key = "${role}_${userId}" -> Set of socket.id strings
-const onlineUsers = new Map();
+// Tenant-isolated map: schoolId (number) -> Map(key = "${role}_${userId}" -> Set of socket.id strings)
+const onlineUsersBySchool = new Map();
+
+function getSchoolOnlineMap(schoolId, createIfMissing = false) {
+  const sid = Number(schoolId);
+  if (!sid) return null;
+  let map = onlineUsersBySchool.get(sid);
+  if (!map && createIfMissing) {
+    map = new Map();
+    onlineUsersBySchool.set(sid, map);
+  }
+  return map || null;
+}
+
+function getUserRoom(schoolId, role, userId) {
+  return `school_${Number(schoolId)}_user_${String(role).toLowerCase()}_${Number(userId)}`;
+}
 
 /**
  * Check if communication is allowed between two roles
@@ -47,10 +64,12 @@ function isCommunicationAllowed(senderRole, receiverRole) {
 /**
  * Initialize Socket.IO Server
  */
-function initSocket(server, config) {
+function initSocket(server, config = {}) {
+  const allowedOrigins = Array.isArray(config?.corsOrigins) ? config.corsOrigins : [];
+
   io = new Server(server, {
     cors: {
-      origin: true,
+      origin: allowedOrigins,
       credentials: true,
       methods: ['GET', 'POST'],
     },
@@ -58,8 +77,8 @@ function initSocket(server, config) {
     pingInterval: 25000,
   });
 
-  // Socket Authentication Middleware
-  io.use((socket, next) => {
+  // Socket Authentication, Tenant & Subscription Guard Middleware
+  io.use(async (socket, next) => {
     try {
       let token =
         socket.handshake.auth?.token ||
@@ -69,7 +88,9 @@ function initSocket(server, config) {
       // Also check cookies if passed in handshake headers
       if ((!token || token === 'cookie_session') && socket.handshake.headers?.cookie) {
         const cookieStr = socket.handshake.headers.cookie;
-        const cookieMatch = cookieStr.match(/(?:growvidya_admin_session|growvidya_teacher_session|growvidya_parent_session|growvidya_student_session|growvidya_session|token)=([^;]+)/);
+        const cookieMatch = cookieStr.match(
+          /(?:growvidya_admin_session|growvidya_teacher_session|growvidya_parent_session|growvidya_student_session|growvidya_session|token)=([^;]+)/
+        );
         if (cookieMatch) {
           token = decodeURIComponent(cookieMatch[1]);
         }
@@ -82,6 +103,15 @@ function initSocket(server, config) {
       const decoded = verifyToken(token);
       if (!decoded) {
         return next(new Error('Authentication failed: Invalid or expired token'));
+      }
+
+      if (decoded.portalType === 'SaaSAdminPortal') {
+        return next(new Error('SaaS Admin portal does not use school chat sockets'));
+      }
+
+      const schoolId = Number(decoded.schoolId || decoded.school_id);
+      if (!schoolId || schoolId <= 0) {
+        return next(new Error('Authentication failed: Missing school tenant context'));
       }
 
       // Normalize user role
@@ -100,10 +130,31 @@ function initSocket(server, config) {
         return next(new Error('Authentication failed: Invalid user ID'));
       }
 
+      // Verify school is active & has an active/trial subscription
+      const [schoolRows] = await pool.query(
+        'SELECT status FROM school_master WHERE id = ? LIMIT 1',
+        [schoolId]
+      );
+      if (!schoolRows.length || Number(schoolRows[0].status) !== 1) {
+        return next(new Error('Access denied: School account is inactive'));
+      }
+
+      const sub = await SubscriptionModel.getSchoolSubscription(schoolId);
+      if (
+        !sub ||
+        sub.isExpired ||
+        ['expired', 'suspended', 'pending', 'rejected'].includes(String(sub.liveStatus || sub.status || '').toLowerCase())
+      ) {
+        return next(new Error('Subscription inactive: Real-time messaging is paused'));
+      }
+
+      const branchId = Number(decoded.branchId || decoded.branch_id) || null;
+
       socket.user = {
         userId,
         role,
-        schoolId: Number(decoded.schoolId || decoded.school_id) || 1,
+        schoolId,
+        branchId,
         email: decoded.email || decoded.email_address || '',
         name: `${decoded.firstName || decoded.first_name || ''} ${decoded.lastName || decoded.last_name || ''}`.trim(),
       };
@@ -111,32 +162,33 @@ function initSocket(server, config) {
       next();
     } catch (err) {
       console.error('[Socket Auth Error]:', err.message);
-      next(new Error('Socket authentication error: ' + err.message));
+      next(new Error('Socket authentication error'));
     }
   });
 
   io.on('connection', (socket) => {
-    const { userId, role, schoolId } = socket.user;
-    const userRoom = `user_${role}_${userId}`;
+    const { userId, role, schoolId, branchId } = socket.user;
+    const userRoom = getUserRoom(schoolId, role, userId);
     const schoolRoom = `school_${schoolId}`;
     const userKey = `${role}_${userId}`;
 
     socket.join(userRoom);
     socket.join(schoolRoom);
 
-    // Track online presence
-    const userSockets = onlineUsers.get(userKey) || new Set();
+    // Track online presence scoped strictly to this school
+    const schoolMap = getSchoolOnlineMap(schoolId, true);
+    const userSockets = schoolMap.get(userKey) || new Set();
     const isFirstConnection = userSockets.size === 0;
     userSockets.add(socket.id);
-    onlineUsers.set(userKey, userSockets);
+    schoolMap.set(userKey, userSockets);
 
-    // If first socket connection, notify others in the school
+    // If first socket connection, notify others in the same school
     if (isFirstConnection) {
       socket.to(schoolRoom).emit('user_online', { userId, role });
     }
 
-    // Send current list of online users to the newly connected user
-    const currentOnline = Array.from(onlineUsers.keys());
+    // Send current list of online users in THIS school only
+    const currentOnline = Array.from(schoolMap.keys());
     socket.emit('online_users_list', currentOnline);
 
     // Event: send_message
@@ -159,6 +211,7 @@ function initSocket(server, config) {
         }
 
         const normalizedReceiverRole = String(receiverRole).toLowerCase();
+        const numericReceiverId = Number(receiverId);
 
         // Enforce communication matrix
         if (!isCommunicationAllowed(role, normalizedReceiverRole)) {
@@ -169,12 +222,27 @@ function initSocket(server, config) {
           return socket.emit('chat_error', { message: err });
         }
 
+        // Enforce same-school recipient membership
+        const recipientBelongsToSchool = await MessageModel.isUserInSchool(
+          schoolId,
+          normalizedReceiverRole,
+          numericReceiverId
+        );
+        if (!recipientBelongsToSchool) {
+          const err = 'Recipient not found in your school.';
+          if (typeof callback === 'function') {
+            return callback({ success: false, error: err });
+          }
+          return socket.emit('chat_error', { message: err });
+        }
+
         // Persist message to database
         const savedMessage = await MessageModel.saveMessage({
           school_id: schoolId,
+          branch_id: branchId,
           sender: userId,
           sender_role: role,
-          reciver: Number(receiverId),
+          reciver: numericReceiverId,
           receiver_role: normalizedReceiverRole,
           message: message ? String(message) : '',
           file: file || null,
@@ -184,16 +252,16 @@ function initSocket(server, config) {
         // Attach sender name for client notification
         savedMessage.sender_name = socket.user?.name || `${role.charAt(0).toUpperCase() + role.slice(1)}`;
 
-        // Target recipient room
-        const receiverRoom = `user_${normalizedReceiverRole}_${Number(receiverId)}`;
+        // Target tenant-isolated recipient room
+        const receiverRoom = getUserRoom(schoolId, normalizedReceiverRole, numericReceiverId);
 
         // Emit real-time message to recipient
         io.to(receiverRoom).emit('receive_message', savedMessage);
 
-        // Also broadcast to other sockets of the sender (so other tabs update without echoing back to current socket)
+        // Also broadcast to other sockets of the sender
         socket.to(userRoom).emit('message_sent', savedMessage);
 
-        // Dispatch background push notification (Web Push and Mobile Expo Push)
+        // Dispatch background push notification
         const messagePreview = message
           ? (String(message).length > 100 ? String(message).substring(0, 97) + '...' : String(message))
           : (file ? '📎 Sent an attachment' : 'Sent you a message');
@@ -206,7 +274,7 @@ function initSocket(server, config) {
 
         PushNotificationService.sendToUser({
           school_id: schoolId,
-          user_id: Number(receiverId),
+          user_id: numericReceiverId,
           role: normalizedReceiverRole,
           title: savedMessage.sender_name || 'New Message',
           body: messagePreview,
@@ -226,7 +294,7 @@ function initSocket(server, config) {
       } catch (err) {
         console.error('[Socket send_message error]:', err);
         if (typeof callback === 'function') {
-          callback({ success: false, error: 'Failed to send message: ' + err.message });
+          callback({ success: false, error: 'Failed to send message.' });
         }
       }
     });
@@ -234,7 +302,7 @@ function initSocket(server, config) {
     // Event: typing
     socket.on('typing', ({ receiverId, receiverRole }) => {
       if (!receiverId || !receiverRole) return;
-      const receiverRoom = `user_${String(receiverRole).toLowerCase()}_${Number(receiverId)}`;
+      const receiverRoom = getUserRoom(schoolId, receiverRole, receiverId);
       socket.to(receiverRoom).emit('user_typing', {
         senderId: userId,
         senderRole: role,
@@ -244,7 +312,7 @@ function initSocket(server, config) {
     // Event: stop_typing
     socket.on('stop_typing', ({ receiverId, receiverRole }) => {
       if (!receiverId || !receiverRole) return;
-      const receiverRoom = `user_${String(receiverRole).toLowerCase()}_${Number(receiverId)}`;
+      const receiverRoom = getUserRoom(schoolId, receiverRole, receiverId);
       socket.to(receiverRoom).emit('user_stop_typing', {
         senderId: userId,
         senderRole: role,
@@ -265,14 +333,12 @@ function initSocket(server, config) {
           senderRole: normalizedSenderRole,
         });
 
-        // Notify the original sender that their messages were read
-        const senderRoom = `user_${normalizedSenderRole}_${Number(senderId)}`;
+        const senderRoom = getUserRoom(schoolId, normalizedSenderRole, senderId);
         io.to(senderRoom).emit('messages_read', {
           readerId: userId,
           readerRole: role,
         });
 
-        // Also notify reader's other tabs that unread count has changed
         socket.to(userRoom).emit('unread_count_updated', {
           senderId: Number(senderId),
           senderRole: normalizedSenderRole,
@@ -284,7 +350,7 @@ function initSocket(server, config) {
       } catch (err) {
         console.error('[Socket mark_read error]:', err);
         if (typeof callback === 'function') {
-          callback({ success: false, error: err.message });
+          callback({ success: false, error: 'Failed to mark messages read.' });
         }
       }
     });
@@ -314,8 +380,8 @@ function initSocket(server, config) {
         }
 
         const { deletedMessage } = result;
-        const senderRoom = `user_${String(deletedMessage.sender_role).toLowerCase()}_${Number(deletedMessage.sender)}`;
-        const receiverRoom = `user_${String(deletedMessage.receiver_role).toLowerCase()}_${Number(deletedMessage.reciver)}`;
+        const senderRoom = getUserRoom(schoolId, deletedMessage.sender_role, deletedMessage.sender);
+        const receiverRoom = getUserRoom(schoolId, deletedMessage.receiver_role, deletedMessage.reciver);
 
         const deletePayload = {
           messageId: deletedMessage.id,
@@ -334,19 +400,25 @@ function initSocket(server, config) {
       } catch (err) {
         console.error('[Socket delete_message error]:', err);
         if (typeof callback === 'function') {
-          callback({ success: false, error: err.message });
+          callback({ success: false, error: 'Failed to delete message.' });
         }
       }
     });
 
     // Event: disconnect
     socket.on('disconnect', () => {
-      const userSockets = onlineUsers.get(userKey);
-      if (userSockets) {
-        userSockets.delete(socket.id);
-        if (userSockets.size === 0) {
-          onlineUsers.delete(userKey);
-          socket.to(schoolRoom).emit('user_offline', { userId, role });
+      const currentSchoolMap = getSchoolOnlineMap(schoolId, false);
+      if (currentSchoolMap) {
+        const sockets = currentSchoolMap.get(userKey);
+        if (sockets) {
+          sockets.delete(socket.id);
+          if (sockets.size === 0) {
+            currentSchoolMap.delete(userKey);
+            socket.to(schoolRoom).emit('user_offline', { userId, role });
+          }
+        }
+        if (currentSchoolMap.size === 0) {
+          onlineUsersBySchool.delete(Number(schoolId));
         }
       }
     });
@@ -366,16 +438,26 @@ function getIO() {
 }
 
 /**
- * Check if a specific user is currently online
+ * Check if a specific user is currently online within their school tenant
  */
-function isUserOnline(role, userId) {
+function isUserOnline(role, userId, schoolId = null) {
   const userKey = `${String(role).toLowerCase()}_${Number(userId)}`;
-  return onlineUsers.has(userKey) && onlineUsers.get(userKey).size > 0;
+  if (schoolId) {
+    const schoolMap = getSchoolOnlineMap(schoolId, false);
+    return Boolean(schoolMap && schoolMap.has(userKey) && schoolMap.get(userKey).size > 0);
+  }
+  for (const schoolMap of onlineUsersBySchool.values()) {
+    if (schoolMap.has(userKey) && schoolMap.get(userKey).size > 0) {
+      return true;
+    }
+  }
+  return false;
 }
 
 module.exports = {
   initSocket,
   getIO,
+  getUserRoom,
   isUserOnline,
   isCommunicationAllowed,
 };

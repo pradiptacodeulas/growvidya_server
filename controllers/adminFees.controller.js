@@ -805,7 +805,7 @@ class AdminFeesController {
         return ApiResponse.error(res, 'Payment record not found.', null, 404);
       }
 
-      const receiptHtml = FeeReceiptPdfService.generateReceiptHtml(payment);
+      const receiptHtml = await FeeReceiptPdfService.generateReceiptHtml(payment);
 
       if (req.query.format === 'json') {
         return ApiResponse.success(res, 'Receipt generated successfully.', {

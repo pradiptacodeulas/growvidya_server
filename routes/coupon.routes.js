@@ -1,21 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const CouponController = require('../controllers/coupon.controller');
-const couponAuthMiddleware = require('../middlewares/couponAuth.middleware');
 
-// Validation route (Public / Accessible during checkout & onboarding)
+// Validation routes (Public / Accessible during checkout & onboarding)
+// All SuperAdmin CRUD operations are strictly protected under /api/v1/saas-admin/coupons
 router.post('/validate', CouponController.validateCoupon);
 router.post('/remove', CouponController.removeCoupon);
-
-// Protected routes (Requires authentication)
-router.use(couponAuthMiddleware);
-
-// CRUD routes
-router.get('/', CouponController.getCoupons);
-router.get('/:id', CouponController.getCouponById);
-router.post('/', CouponController.createCoupon);
-router.put('/:id', CouponController.updateCoupon);
-router.delete('/:id', CouponController.deleteCoupon);
-router.patch('/:id/status', CouponController.toggleStatus);
 
 module.exports = router;

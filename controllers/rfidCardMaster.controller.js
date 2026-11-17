@@ -113,6 +113,9 @@ class RfidCardMasterController {
       const updated = await RfidCardMasterModel.getBuyerOrderById(Number(id));
       return ApiResponse.success(res, 'RFID card order updated successfully.', updated);
     } catch (error) {
+      if (error.statusCode) {
+        return ApiResponse.error(res, error.message, { code: error.code || null }, error.statusCode);
+      }
       next(error);
     }
   }

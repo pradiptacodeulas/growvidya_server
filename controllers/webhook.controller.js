@@ -19,9 +19,10 @@ class WebhookController {
         return ApiResponse.error(res, 'Missing webhook signature header.', null, 400);
       }
 
-      const { webhookSecret } = await getRazorpayConfig();
-      if (!webhookSecret) {
-        console.warn('[Webhook Warning] Razorpay webhook_secret is not configured in Payment Gateway Settings.');
+      const rzpConfig = await getRazorpayConfig();
+      const webhookSecret = rzpConfig?.webhookSecret || null;
+      if (!rzpConfig || !webhookSecret) {
+        console.warn('[Webhook Warning] Active Razorpay credentials or webhook_secret not configured in Payment Gateway Settings.');
         return ApiResponse.error(res, 'Webhook secret is not configured on server.', null, 503);
       }
 

@@ -1,5 +1,6 @@
 const { pool } = require('../config/db.config');
 const CouponModel = require('../models/coupon.model');
+const SubscriptionSchemaModel = require('../models/subscriptionSchema.model');
 const SubscriptionPolicyService = require('./subscriptionPolicy.service');
 const SubscriptionAlertService = require('./subscriptionAlert.service');
 const {
@@ -48,8 +49,12 @@ class SubscriptionFulfillmentService {
     const lockClause = forUpdate && connection ? ' FOR UPDATE' : '';
 
     const [subs] = await db.query(
-      `SELECT s.*, p.plan_name, p.plan_code, p.billing_cycle, p.tier_rank, p.plan_group,
-              p.price AS catalog_price, p.max_students, p.included_storage_gb,
+      `SELECT s.*, p.plan_name, p.plan_code, p.plan_group,
+              COALESCE(s.snapshot_billing_cycle, p.billing_cycle) AS billing_cycle,
+              COALESCE(s.snapshot_tier_rank, p.tier_rank) AS tier_rank,
+              p.price AS catalog_price,
+              COALESCE(s.snapshot_max_students, p.max_students) AS max_students,
+              COALESCE(s.snapshot_storage_gb, p.included_storage_gb) AS included_storage_gb,
               p.included_push_credits, p.included_sms_credits, p.free_trial_days,
               DATEDIFF(s.end_date, ?) AS days_left
        FROM school_subscriptions s
@@ -59,6 +64,31 @@ class SubscriptionFulfillmentService {
        ORDER BY s.id DESC${lockClause}`,
       [todayStr, parsedSchoolId]
     );
+
+    const [histRows] = await db.query(
+      `SELECT s.id, s.plan_id, s.status, s.action_type, s.payment_gateway, s.storage_plan_id,
+              p.plan_name, p.plan_code, p.plan_group, p.price AS catalog_price,
+              COALESCE(s.snapshot_billing_cycle, p.billing_cycle) AS billing_cycle,
+              COALESCE(s.snapshot_tier_rank, p.tier_rank) AS tier_rank
+       FROM school_subscriptions s
+       JOIN subscription_plans p ON s.plan_id = p.id
+       WHERE s.school_id = ? AND s.status = 'superseded'
+       ORDER BY COALESCE(s.snapshot_tier_rank, p.tier_rank) DESC, s.id DESC`,
+      [parsedSchoolId]
+    );
+
+    // If Super Admin manually assigned a plan, that override becomes the new baseline floor (older superseded/expired rows do not lock renewals)
+    let latestManualOverrideId = 0;
+    for (const r of subs) {
+      if (r.action_type === 'manual_override' && r.status !== 'pending' && Number(r.id) > latestManualOverrideId) {
+        latestManualOverrideId = Number(r.id);
+      }
+    }
+    for (const h of histRows) {
+      if (h.action_type === 'manual_override' && Number(h.id) > latestManualOverrideId) {
+        latestManualOverrideId = Number(h.id);
+      }
+    }
 
     let activeSub = null;
     let lastPaidSub = null;
@@ -79,13 +109,13 @@ class SubscriptionFulfillmentService {
         continue;
       }
 
-      if (!isTrialRow && row.status !== 'pending') {
+      if (!isTrialRow && row.status !== 'pending' && Number(row.id) >= latestManualOverrideId) {
         const rowRank = Number(row.tier_rank) || 1;
         const rowMonths = getBillingCycleMeta(row.billing_cycle)?.months || 1;
         const lastRank = lastPaidSub ? Number(lastPaidSub.tier_rank) || 1 : 0;
         const lastMonths = lastPaidSub ? getBillingCycleMeta(lastPaidSub.billing_cycle)?.months || 1 : 0;
 
-        // Track highest tier_rank and longest billing_cycle paid subscription for strict no-downgrade enforcement
+        // Track highest tier_rank and longest billing_cycle paid subscription since latest manual override
         if (
           !lastPaidSub ||
           rowRank > lastRank ||
@@ -101,21 +131,11 @@ class SubscriptionFulfillmentService {
       }
     }
 
-    // Also check superseded rows for prior trial / highest paid tier & cycle history
-    const [histRows] = await db.query(
-      `SELECT s.id, s.plan_id, s.status, s.payment_gateway, s.storage_plan_id,
-              p.plan_name, p.plan_code, p.plan_group, p.billing_cycle, p.tier_rank, p.price AS catalog_price
-       FROM school_subscriptions s
-       JOIN subscription_plans p ON s.plan_id = p.id
-       WHERE s.school_id = ? AND s.status = 'superseded'
-       ORDER BY p.tier_rank DESC, s.id DESC`,
-      [parsedSchoolId]
-    );
     for (const h of histRows) {
       const isTr = String(h.billing_cycle).toLowerCase() === 'trial' || h.payment_gateway === 'free_trial';
       if (isTr) {
         hasClaimedTrial = true;
-      } else {
+      } else if (Number(h.id) >= latestManualOverrideId) {
         const hRank = Number(h.tier_rank) || 1;
         const hMonths = getBillingCycleMeta(h.billing_cycle)?.months || 1;
         const lastRank = lastPaidSub ? Number(lastPaidSub.tier_rank) || 1 : 0;
@@ -160,15 +180,19 @@ class SubscriptionFulfillmentService {
     paymentMethod = 'razorpay',
     razorpayOrderId = null,
     utrNumber = null,
+    bankAccountId = null,
     shippingAddress = null,
     extraMetadata = {},
   }) {
+    await SubscriptionSchemaModel.initTable();
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();
 
       const parsedSchoolId = schoolId ? parseInt(schoolId, 10) : null;
       const cleanUtr = utrNumber && String(utrNumber).trim() ? String(utrNumber).trim().toUpperCase() : null;
+      let resolvedBankAccountId = null;
+      let resolvedBankSnapshot = null;
 
       // Enforce unique UTR number & prevent duplicate pending offline requests (both subscription & standalone add-on orders)
       if (paymentMethod === 'bank_transfer') {
@@ -177,6 +201,43 @@ class SubscriptionFulfillmentService {
           err.statusCode = 400;
           err.code = 'UTR_REQUIRED';
           throw err;
+        }
+
+        if (bankAccountId !== null && bankAccountId !== undefined && String(bankAccountId).trim() !== '') {
+          const parsedBankId = parseInt(bankAccountId, 10);
+          if (!parsedBankId || parsedBankId <= 0) {
+            const err = new Error('Please select a valid active company bank account.');
+            err.statusCode = 400;
+            err.code = 'INVALID_BANK_ACCOUNT';
+            throw err;
+          }
+          const [bankRows] = await conn.query(
+            `SELECT id, account_title, beneficiary_name, account_number, bank_name, branch_name, ifsc_code, upi_id
+             FROM bank_account_master
+             WHERE id = ? AND status = 1
+             LIMIT 1`,
+            [parsedBankId]
+          );
+          if (bankRows.length === 0) {
+            const err = new Error('Selected company bank account is inactive or does not exist.');
+            err.statusCode = 400;
+            err.code = 'INVALID_BANK_ACCOUNT';
+            throw err;
+          }
+          resolvedBankAccountId = bankRows[0].id;
+          resolvedBankSnapshot = bankRows[0];
+        } else {
+          const [defaultBankRows] = await conn.query(
+            `SELECT id, account_title, beneficiary_name, account_number, bank_name, branch_name, ifsc_code, upi_id
+             FROM bank_account_master
+             WHERE status = 1
+             ORDER BY is_default DESC, id ASC
+             LIMIT 1`
+          );
+          if (defaultBankRows.length > 0) {
+            resolvedBankAccountId = defaultBankRows[0].id;
+            resolvedBankSnapshot = defaultBankRows[0];
+          }
         }
 
         const [existingUtrRows] = await conn.query(
@@ -307,7 +368,10 @@ class SubscriptionFulfillmentService {
       const snapshot = {
         breakdown: verifiedCalc.breakdown,
         transition,
-        extra: extraMetadata,
+        extra: {
+          ...extraMetadata,
+          ...(resolvedBankSnapshot ? { bank_account: resolvedBankSnapshot } : {}),
+        },
       };
 
       const [orderResult] = await conn.query(
@@ -316,9 +380,9 @@ class SubscriptionFulfillmentService {
            plan_amount, storage_plan_id, storage_qty, storage_amount,
            machines_amount, rfid_amount, notifications_amount, subtotal_amount,
            coupon_id, coupon_code, discount_amount, grand_total, currency,
-           payment_method, razorpay_order_id, utr_number, shipping_address,
+           payment_method, razorpay_order_id, utr_number, bank_account_id, shipping_address,
            payload_snapshot_json, status
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'INR', ?, ?, ?, ?, ?, ?)`,
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'INR', ?, ?, ?, ?, ?, ?, ?)`,
         [
           orderNo,
           parsedSchoolId,
@@ -341,6 +405,7 @@ class SubscriptionFulfillmentService {
           paymentMethod,
           razorpayOrderId || null,
           utrNumber || null,
+          resolvedBankAccountId,
           resolvedShipping,
           JSON.stringify(snapshot),
           initialStatus,
@@ -357,20 +422,16 @@ class SubscriptionFulfillmentService {
         const endDate = transition?.end_date || (plan ? addCycleDuration(todayStr, plan.billing_cycle) : todayStr);
 
         if (orderType !== 'addon_only' && plan) {
-          const snapshotState = await SubscriptionFulfillmentService.loadSchoolLifecycleSnapshot(parsedSchoolId, conn, false);
-          const carryStorageId =
-            verifiedCalc.breakdown?.storage?.id ||
-            snapshotState.activeSub?.storage_plan_id ||
-            snapshotState.lastPaidSub?.storage_plan_id ||
-            null;
+          const carryStorageId = verifiedCalc.breakdown?.storage?.id || null;
 
           const [subRes] = await conn.query(
             `INSERT INTO school_subscriptions (
                school_id, plan_id, storage_plan_id, action_type, plan_amount, addons_amount, amount_paid,
                payment_gateway, payment_transaction_id, payment_order_id,
                coupon_id, discount_amount, original_amount,
-               payment_status, start_date, end_date, status
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, 'bank_transfer', ?, ?, ?, ?, ?, 'pending', ?, ?, 'pending')`,
+               payment_status, start_date, end_date, status,
+               snapshot_max_students, snapshot_storage_gb, snapshot_tier_rank, snapshot_billing_cycle
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, 'bank_transfer', ?, ?, ?, ?, ?, 'pending', ?, ?, 'pending', ?, ?, ?, ?)`,
             [
               parsedSchoolId,
               plan.id,
@@ -386,6 +447,10 @@ class SubscriptionFulfillmentService {
               verifiedCalc.subtotalAmount || 0,
               startDate,
               endDate,
+              Number(plan.max_students) || 0,
+              Math.max(0, parseInt(plan.included_storage_gb, 10) || 0),
+              Number(plan.tier_rank) || 1,
+              plan.billing_cycle,
             ]
           );
           pendingSubscriptionId = subRes.insertId;
@@ -396,7 +461,7 @@ class SubscriptionFulfillmentService {
           );
         }
 
-        // Insert pending add-on rows linked by payment_order_id
+        // Insert pending add-on rows linked by payment_order_id (each paid storage add-on runs for its own full cycle from todayStr)
         await SubscriptionFulfillmentService._insertAddonRows(conn, {
           schoolId: parsedSchoolId,
           paymentOrderId,
@@ -404,7 +469,7 @@ class SubscriptionFulfillmentService {
           paymentTxnId: utrNumber || orderNo,
           shippingAddress: resolvedShipping,
           isPaidAndApproved: false,
-          startDate,
+          startDate: todayStr,
         });
 
         await conn.query(
@@ -715,6 +780,8 @@ class SubscriptionFulfillmentService {
     actorType = 'school_admin',
     actorId = null,
     verificationNotes = null,
+    startDateOverride = null,
+    endDateOverride = null,
     externalConnection = null,
   }) {
     const ownsConnection = !externalConnection;
@@ -796,6 +863,15 @@ class SubscriptionFulfillmentService {
         };
       }
 
+      if (order.status === 'rejected') {
+        const err = new Error(
+          'Cannot approve an already rejected payment order because its bundled items and coupons were cancelled. Ask the school to submit a fresh order with a valid UTR.'
+        );
+        err.statusCode = 400;
+        err.code = 'ORDER_ALREADY_REJECTED';
+        throw err;
+      }
+
       isOfflineApproval = order.payment_method === 'bank_transfer';
       const todayStr = getTodayIST();
       const invoiceNo = order.invoice_no || formatInvoiceNo(order.id, todayStr);
@@ -831,8 +907,17 @@ class SubscriptionFulfillmentService {
 
         const lifecycle = await SubscriptionFulfillmentService.loadSchoolLifecycleSnapshot(targetSchoolId, conn, true);
         const isTrialSub = order.order_type === 'trial_with_addons' || order.payment_method === 'free_trial';
+        const customStartStr = normalizeDateStr(startDateOverride);
+        const customEndStr = normalizeDateStr(endDateOverride);
 
-        if (isTrialSub) {
+        if (customStartStr || customEndStr) {
+          const trialDays = Math.max(0, parseInt(targetPlan.free_trial_days, 10) || 0);
+          finalStartDate = customStartStr || todayStr;
+          finalEndDate =
+            customEndStr ||
+            addCycleDuration(finalStartDate, isTrialSub ? 'trial' : targetPlan.billing_cycle, trialDays);
+          bundledStorageStartDate = finalStartDate;
+        } else if (isTrialSub) {
           const trialDays = Math.max(0, parseInt(targetPlan.free_trial_days, 10) || 0);
           finalStartDate = todayStr;
           finalEndDate = addCycleDuration(todayStr, 'trial', trialDays);
@@ -852,19 +937,15 @@ class SubscriptionFulfillmentService {
             const activeEndStr = normalizeDateStr(lifecycle.activeSub.end_date);
             finalStartDate = normalizeDateStr(lifecycle.activeSub.start_date) || todayStr;
             finalEndDate = addCycleDuration(activeEndStr, targetPlan.billing_cycle);
-            bundledStorageStartDate = activeEndStr || todayStr;
+            bundledStorageStartDate = todayStr;
           } else {
             finalStartDate = todayStr;
             finalEndDate = addCycleDuration(todayStr, targetPlan.billing_cycle);
           }
         }
 
-        // Preserve existing storage_plan_id across renewals/upgrades unless a new storage plan was bought
-        const effectiveStoragePlanId =
-          order.storage_plan_id ||
-          lifecycle.activeSub?.storage_plan_id ||
-          lifecycle.lastPaidSub?.storage_plan_id ||
-          null;
+        // Only record storage_plan_id if a storage add-on was explicitly purchased in this order
+        const effectiveStoragePlanId = order.storage_plan_id || null;
 
         const targetSubStatus = isTrialSub ? 'trial' : 'active';
         const grossPlanAmt = parseFloat(order.plan_amount) || 0;
@@ -900,10 +981,15 @@ class SubscriptionFulfillmentService {
           if (pendRows.length > 0) existingPendingSubId = pendRows[0].id;
         }
 
+        const snapMaxStudents = Number(targetPlan.max_students) || 0;
+        const snapStorageGb = Math.max(0, parseInt(targetPlan.included_storage_gb, 10) || 0);
+        const snapTierRank = isTrialSub ? 0 : (Number(targetPlan.tier_rank) || 1);
+        const snapBillingCycle = isTrialSub ? 'trial' : targetPlan.billing_cycle;
+
         if (existingPendingSubId) {
           await conn.query(
             `UPDATE school_subscriptions
-             SET storage_plan_id = COALESCE(storage_plan_id, ?),
+             SET storage_plan_id = ?,
                  plan_amount = ?,
                  addons_amount = ?,
                  amount_paid = ?,
@@ -915,7 +1001,11 @@ class SubscriptionFulfillmentService {
                  status = ?,
                  verified_by = ?,
                  verified_at = NOW(),
-                 verification_notes = ?
+                 verification_notes = ?,
+                 snapshot_max_students = ?,
+                 snapshot_storage_gb = ?,
+                 snapshot_tier_rank = ?,
+                 snapshot_billing_cycle = ?
              WHERE id = ?`,
             [
               effectiveStoragePlanId,
@@ -929,6 +1019,10 @@ class SubscriptionFulfillmentService {
               targetSubStatus,
               actorId || null,
               verificationNotes || 'Verified and activated',
+              snapMaxStudents,
+              snapStorageGb,
+              snapTierRank,
+              snapBillingCycle,
               existingPendingSubId,
             ]
           );
@@ -941,8 +1035,9 @@ class SubscriptionFulfillmentService {
                payment_gateway, payment_transaction_id, payment_order_id, invoice_no,
                coupon_id, discount_amount, original_amount,
                payment_status, start_date, end_date, status,
-               verified_by, verified_at, verification_notes
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, NOW(), ?)`,
+               verified_by, verified_at, verification_notes,
+               snapshot_max_students, snapshot_storage_gb, snapshot_tier_rank, snapshot_billing_cycle
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?)`,
             [
               targetSchoolId,
               targetPlan.id,
@@ -965,6 +1060,10 @@ class SubscriptionFulfillmentService {
               targetSubStatus,
               actorId || null,
               verificationNotes || 'Auto-activated upon verified payment',
+              snapMaxStudents,
+              snapStorageGb,
+              snapTierRank,
+              snapBillingCycle,
             ]
           );
           activatedSubscriptionId = insSub.insertId;
@@ -993,13 +1092,19 @@ class SubscriptionFulfillmentService {
         // Offline order already inserted pending add-on rows with payment_order_id = order.id; activate non-cancelled items!
         if (order.storage_plan_id) {
           const sCycle = breakdown?.storage?.billing_cycle || breakdown?.billing_cycle;
-          const sEnd = addCycleDuration(bundledStorageStartDate, sCycle);
+          const customStartStr = normalizeDateStr(startDateOverride);
+          const customEndStr = normalizeDateStr(endDateOverride);
+          const sStart = customStartStr || bundledStorageStartDate;
+          const sEnd =
+            customEndStr && (!order.plan_id || String(sCycle || '').toLowerCase() === String(breakdown?.billing_cycle || '').toLowerCase())
+              ? customEndStr
+              : addCycleDuration(sStart, sCycle);
           await conn.query(
             `UPDATE school_storage_orders
              SET order_status = 'active', start_date = ?, end_date = ?,
                  remarks = 'Approved and activated by Super Admin', updated_at = NOW()
              WHERE payment_order_id = ? AND order_status != 'cancelled'`,
-            [bundledStorageStartDate, sEnd, order.id]
+            [sStart, sEnd, order.id]
           );
         }
         await conn.query(
@@ -1025,16 +1130,6 @@ class SubscriptionFulfillmentService {
           isPaidAndApproved: true,
           startDate: bundledStorageStartDate,
         });
-      }
-
-      // If standalone storage add-on was bought, ensure active school_subscriptions reflects storage_plan_id if null
-      if (order.order_type === 'addon_only' && order.storage_plan_id) {
-        await conn.query(
-          `UPDATE school_subscriptions
-           SET storage_plan_id = COALESCE(storage_plan_id, ?)
-           WHERE school_id = ? AND status IN ('active', 'trial')`,
-          [order.storage_plan_id, targetSchoolId]
-        );
       }
 
       // 4. Credit SMS & Push Notification Wallet
@@ -1510,7 +1605,7 @@ class SubscriptionFulfillmentService {
         await conn.query('UPDATE subscription_payment_orders SET invoice_no = ? WHERE id = ?', [invoiceNo, paymentOrderId]);
       }
 
-      const carryStorageId = lifecycle.activeSub?.storage_plan_id || lifecycle.lastPaidSub?.storage_plan_id || null;
+      const carryStorageId = null;
 
       const [subRes] = await conn.query(
         `INSERT INTO school_subscriptions (
@@ -1518,8 +1613,9 @@ class SubscriptionFulfillmentService {
            plan_amount, addons_amount, amount_paid,
            payment_gateway, payment_transaction_id, payment_order_id, invoice_no,
            payment_status, start_date, end_date, status,
-           verified_by, verified_at, verification_notes
-         ) VALUES (?, ?, ?, 'manual_override', ?, 0.00, ?, 'super_admin_manual', ?, ?, ?, 'completed', ?, ?, ?, ?, NOW(), ?)`,
+           verified_by, verified_at, verification_notes,
+           snapshot_max_students, snapshot_storage_gb, snapshot_tier_rank, snapshot_billing_cycle
+         ) VALUES (?, ?, ?, 'manual_override', ?, 0.00, ?, 'super_admin_manual', ?, ?, ?, 'completed', ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?)`,
         [
           parsedSchoolId,
           plan.id,
@@ -1533,6 +1629,10 @@ class SubscriptionFulfillmentService {
           isTrialPlan ? 'trial' : 'active',
           adminId || null,
           reason,
+          Number(plan.max_students) || 0,
+          Math.max(0, parseInt(plan.included_storage_gb, 10) || 0),
+          isTrialPlan ? 0 : (Number(plan.tier_rank) || 1),
+          plan.billing_cycle,
         ]
       );
 
@@ -1545,6 +1645,46 @@ class SubscriptionFulfillmentService {
          WHERE school_id = ? AND id != ? AND status IN ('active', 'trial', 'pending')`,
         [newSubId, parsedSchoolId, newSubId]
       );
+
+      // Cancel any dangling unpaid software plan orders (and their pending bundled add-on rows), releasing reserved coupons automatically
+      const [danglingOrders] = await conn.query(
+        `SELECT id FROM subscription_payment_orders
+         WHERE school_id = ?
+           AND id != ?
+           AND order_type != 'addon_only'
+           AND status IN ('created', 'pending_verification')
+         FOR UPDATE`,
+        [parsedSchoolId, paymentOrderId]
+      );
+      if (danglingOrders.length > 0) {
+        const danglingIds = danglingOrders.map((o) => o.id);
+        await conn.query(
+          `UPDATE subscription_payment_orders
+           SET status = 'rejected',
+               verified_by = ?,
+               verification_notes = 'Superseded by Super Admin manual plan assignment'
+           WHERE id IN (?)`,
+          [adminId || null, danglingIds]
+        );
+        await conn.query(
+          `UPDATE school_storage_orders
+           SET order_status = 'cancelled', remarks = 'Cancelled — superseded by Super Admin manual plan assignment', updated_at = NOW()
+           WHERE payment_order_id IN (?) AND order_status = 'pending'`,
+          [danglingIds]
+        );
+        await conn.query(
+          `UPDATE school_rfid_orders
+           SET order_status = 'cancelled', remarks = 'Cancelled — superseded by Super Admin manual plan assignment', updated_at = NOW()
+           WHERE payment_order_id IN (?) AND order_status = 'pending'`,
+          [danglingIds]
+        );
+        await conn.query(
+          `UPDATE school_attendance_machines
+           SET status = 2, order_status = 'cancelled', remarks = 'Cancelled — superseded by Super Admin manual plan assignment', updated_at = NOW()
+           WHERE payment_order_id IN (?) AND order_status = 'pending'`,
+          [danglingIds]
+        );
+      }
 
       // Credit any Push or SMS Notification Credits bundled with this subscription plan
       await SubscriptionFulfillmentService._creditIncludedPlanNotifications(conn, {
@@ -1588,7 +1728,7 @@ class SubscriptionFulfillmentService {
   }
 
   /**
-   * Record a Razorpay payment failure without ever overwriting an already 'paid' order
+   * Record a Razorpay payment failure without ever overwriting an already 'paid', 'pending_verification', or 'rejected' order
    */
   static async recordPaymentFailure({
     orderNo = null,
@@ -1597,19 +1737,22 @@ class SubscriptionFulfillmentService {
     failureCode = null,
     failureReason = null,
     schoolId = null,
+    publicOnboardingOnly = false,
   }) {
     if (!orderNo && !razorpayOrderId) return null;
 
     let whereSql = razorpayOrderId ? 'razorpay_order_id = ?' : 'order_no = ?';
     const params = [razorpayOrderId || orderNo];
 
-    if (schoolId) {
-      whereSql += ' AND (school_id = ? OR school_id IS NULL)';
+    if (publicOnboardingOnly || !schoolId) {
+      whereSql += " AND school_id IS NULL AND order_type IN ('onboarding', 'trial_with_addons')";
+    } else {
+      whereSql += ' AND school_id = ?';
       params.push(parseInt(schoolId, 10));
     }
 
     const [rows] = await pool.query(
-      `SELECT id, order_no, razorpay_order_id, status, grand_total
+      `SELECT id, order_no, razorpay_order_id, order_type, payment_method, status, grand_total
        FROM subscription_payment_orders
        WHERE ${whereSql}
        LIMIT 1`,
@@ -1622,13 +1765,18 @@ class SubscriptionFulfillmentService {
       return { ...ord, alreadyPaid: true };
     }
 
+    // Never allow gateway failure callbacks to overwrite offline bank_transfer or rejected orders
+    if (ord.payment_method !== 'razorpay' || !['created', 'failed'].includes(ord.status)) {
+      return null;
+    }
+
     await pool.query(
       `UPDATE subscription_payment_orders
        SET status = 'failed',
            razorpay_payment_id = COALESCE(?, razorpay_payment_id),
            failure_code = ?,
            failure_reason = ?
-       WHERE id = ? AND status != 'paid'`,
+       WHERE id = ? AND payment_method = 'razorpay' AND status IN ('created', 'failed')`,
       [
         razorpayPaymentId || null,
         failureCode ? String(failureCode).slice(0, 95) : 'PAYMENT_DECLINED',
@@ -1637,29 +1785,47 @@ class SubscriptionFulfillmentService {
       ]
     );
 
-    return await SubscriptionFulfillmentService.getOrderWithInvoice(ord.order_no, schoolId);
+    return await SubscriptionFulfillmentService.getOrderWithInvoice(ord.order_no, schoolId, {
+      publicOnboardingOnly: Boolean(publicOnboardingOnly || !schoolId),
+    });
   }
 
   /**
    * Fetch complete Order + Zero-GST Printable Invoice payload by order_no, razorpay_order_id, invoice_no, or id
    */
-  static async getOrderWithInvoice(identifier, schoolId = null) {
+  static async getOrderWithInvoice(identifier, schoolId = null, options = {}) {
     if (!identifier) return null;
     const cleanId = String(identifier).trim();
-    const numericId = /^\d+$/.test(cleanId) ? parseInt(cleanId, 10) : -1;
+    const publicOnboardingOnly = Boolean(options?.publicOnboardingOnly);
+    const numericId = !publicOnboardingOnly && /^\d+$/.test(cleanId) ? parseInt(cleanId, 10) : -1;
 
     let sql = `
       SELECT o.*,
              p.plan_name, p.plan_code, p.max_students, p.included_storage_gb,
              ss.start_date AS sub_start_date, ss.end_date AS sub_end_date, ss.status AS sub_status,
-             sm.school_name, sm.school_code, sm.email AS school_email, sm.phone_number AS school_phone, sm.address AS school_address
+             sm.school_name, sm.school_code, sm.email AS school_email, sm.phone_number AS school_phone, sm.address AS school_address,
+             bam.account_title AS company_bank_title,
+             bam.beneficiary_name AS company_bank_beneficiary,
+             bam.account_number AS company_bank_account_number,
+             bam.bank_name AS company_bank_name,
+             bam.branch_name AS company_bank_branch,
+             bam.ifsc_code AS company_bank_ifsc,
+             bam.upi_id AS company_bank_upi
       FROM subscription_payment_orders o
       LEFT JOIN subscription_plans p ON o.plan_id = p.id
       LEFT JOIN school_subscriptions ss ON o.activated_subscription_id = ss.id
       LEFT JOIN school_master sm ON o.school_id = sm.id
-      WHERE (o.id = ? OR o.order_no = ? OR o.razorpay_order_id = ? OR o.invoice_no = ?)
+      LEFT JOIN bank_account_master bam ON o.bank_account_id = bam.id
     `;
-    const params = [numericId, cleanId, cleanId, cleanId];
+    const params = [];
+
+    if (publicOnboardingOnly) {
+      sql += ` WHERE (o.order_no = ? OR o.razorpay_order_id = ?) AND o.order_type IN ('onboarding', 'trial_with_addons')`;
+      params.push(cleanId, cleanId);
+    } else {
+      sql += ` WHERE (o.id = ? OR o.order_no = ? OR o.razorpay_order_id = ? OR o.invoice_no = ?)`;
+      params.push(numericId, cleanId, cleanId, cleanId);
+    }
 
     if (schoolId) {
       sql += ' AND o.school_id = ?';
@@ -1681,72 +1847,100 @@ class SubscriptionFulfillmentService {
     const lineItems = [];
 
     if (row.order_type !== 'addon_only' && row.plan_id) {
+      const planTotal = parseFloat(row.plan_amount) || 0;
       lineItems.push({
         category: 'subscription_plan',
         title: `${row.plan_name || breakdown.plan_name || 'Subscription Plan'} (${String(row.billing_cycle || '').replace('_', ' ').toUpperCase()})`,
         quantity: 1,
-        unit_price: parseFloat(row.plan_amount) || 0,
-        total_price: parseFloat(row.plan_amount) || 0,
+        unit_price: planTotal,
+        total_price: planTotal,
+        total: planTotal,
       });
     }
 
     if (breakdown.storage) {
+      const storageTotal = parseFloat(breakdown.storage.total_price) || 0;
       lineItems.push({
         category: 'cloud_storage',
         title: `Cloud Storage: ${breakdown.storage.plan_name} (${breakdown.storage.billing_cycle || breakdown.billing_cycle})`,
         quantity: breakdown.storage.quantity || 1,
         unit_price: parseFloat(breakdown.storage.unit_price) || 0,
-        total_price: parseFloat(breakdown.storage.total_price) || 0,
+        total_price: storageTotal,
+        total: storageTotal,
       });
     }
 
     if (Array.isArray(breakdown.machines)) {
       for (const m of breakdown.machines) {
+        const machineTotal = parseFloat(m.total_price) || 0;
         lineItems.push({
           category: 'attendance_machine',
           title: `Biometric Machine: ${m.machine_name} (${m.model_number || 'Hardware'})`,
           quantity: m.quantity || 1,
           unit_price: parseFloat(m.unit_price) || 0,
-          total_price: parseFloat(m.total_price) || 0,
+          total_price: machineTotal,
+          total: machineTotal,
         });
       }
     }
 
     if (Array.isArray(breakdown.cards)) {
       for (const c of breakdown.cards) {
+        const cardTotal = parseFloat(c.total_price) || 0;
         lineItems.push({
           category: 'rfid_cards',
           title: `RFID Smart Cards: ${c.card_name} (${c.card_code || 'RFID'})`,
           quantity: c.quantity || 1,
           unit_price: parseFloat(c.unit_price) || 0,
-          total_price: parseFloat(c.total_price) || 0,
+          total_price: cardTotal,
+          total: cardTotal,
         });
       }
     }
 
     if (Array.isArray(breakdown.notifications)) {
       for (const n of breakdown.notifications) {
+        const notifTotal = parseFloat(n.total_price) || 0;
         lineItems.push({
           category: 'notification_credits',
           title: `${n.name || `${String(n.type || '').toUpperCase()} Credits`}`,
           quantity: n.quantity || 0,
           unit_price: parseFloat(n.unit_price) || 0,
-          total_price: parseFloat(n.total_price) || 0,
+          total_price: notifTotal,
+          total: notifTotal,
         });
       }
     }
+
+    const storageAmount = parseFloat(row.storage_amount) || 0;
+    const machinesAmount = parseFloat(row.machines_amount) || 0;
+    const rfidAmount = parseFloat(row.rfid_amount) || 0;
+    const notificationsAmount = parseFloat(row.notifications_amount) || 0;
+    const addonsAmount =
+      Math.round((storageAmount + machinesAmount + rfidAmount + notificationsAmount) * 100) / 100;
+
+    const schoolName = row.school_name || snapshot?.extra?.school_name || null;
+    const schoolCode = row.school_code || null;
+    const schoolEmail = row.school_email || snapshot?.extra?.email || null;
+    const schoolPhone = row.school_phone || snapshot?.extra?.phone || null;
+    const schoolAddress = row.school_address || row.shipping_address || null;
 
     return {
       id: row.id,
       order_no: row.order_no,
       invoice_no: row.invoice_no,
       school_id: row.school_id,
+      school_name: schoolName,
+      school_code: schoolCode,
+      school_email: schoolEmail,
+      school_phone: schoolPhone,
+      school_address: schoolAddress,
       school: {
-        name: row.school_name || snapshot?.extra?.school_name || null,
-        code: row.school_code || null,
-        email: row.school_email || snapshot?.extra?.email || null,
-        phone: row.school_phone || snapshot?.extra?.phone || null,
-        address: row.school_address || row.shipping_address || null,
+        name: schoolName,
+        code: schoolCode,
+        email: schoolEmail,
+        phone: schoolPhone,
+        address: schoolAddress,
       },
       order_type: row.order_type,
       action_type: row.action_type,
@@ -1755,10 +1949,11 @@ class SubscriptionFulfillmentService {
       billing_cycle: row.billing_cycle,
       cycle_meta: row.billing_cycle ? getBillingCycleMeta(row.billing_cycle) : null,
       plan_amount: parseFloat(row.plan_amount) || 0,
-      storage_amount: parseFloat(row.storage_amount) || 0,
-      machines_amount: parseFloat(row.machines_amount) || 0,
-      rfid_amount: parseFloat(row.rfid_amount) || 0,
-      notifications_amount: parseFloat(row.notifications_amount) || 0,
+      storage_amount: storageAmount,
+      machines_amount: machinesAmount,
+      rfid_amount: rfidAmount,
+      notifications_amount: notificationsAmount,
+      addons_amount: addonsAmount,
       subtotal_amount: parseFloat(row.subtotal_amount) || 0,
       coupon_code: row.coupon_code || null,
       discount_amount: parseFloat(row.discount_amount) || 0,
@@ -1769,6 +1964,20 @@ class SubscriptionFulfillmentService {
       razorpay_order_id: row.razorpay_order_id,
       razorpay_payment_id: row.razorpay_payment_id,
       utr_number: row.utr_number,
+      bank_account_id: row.bank_account_id || snapshot?.extra?.bank_account?.id || null,
+      company_bank_account:
+        row.bank_account_id || snapshot?.extra?.bank_account
+          ? {
+              id: row.bank_account_id || snapshot?.extra?.bank_account?.id || null,
+              account_title: row.company_bank_title || snapshot?.extra?.bank_account?.account_title || null,
+              beneficiary_name: row.company_bank_beneficiary || snapshot?.extra?.bank_account?.beneficiary_name || null,
+              account_number: row.company_bank_account_number || snapshot?.extra?.bank_account?.account_number || null,
+              bank_name: row.company_bank_name || snapshot?.extra?.bank_account?.bank_name || null,
+              branch_name: row.company_bank_branch || snapshot?.extra?.bank_account?.branch_name || null,
+              ifsc_code: row.company_bank_ifsc || snapshot?.extra?.bank_account?.ifsc_code || null,
+              upi_id: row.company_bank_upi || snapshot?.extra?.bank_account?.upi_id || null,
+            }
+          : null,
       shipping_address: row.shipping_address,
       status: row.status,
       failure_code: row.failure_code,
@@ -1796,12 +2005,14 @@ class SubscriptionFulfillmentService {
       `SELECT o.id, o.order_no, o.invoice_no, o.order_type, o.action_type, o.plan_id,
               COALESCE(p.plan_name, 'Add-ons & Credits') AS plan_name,
               o.billing_cycle, o.subtotal_amount, o.coupon_code, o.discount_amount, o.grand_total,
-              o.payment_method, o.razorpay_order_id, o.razorpay_payment_id, o.utr_number,
+              o.payment_method, o.razorpay_order_id, o.razorpay_payment_id, o.utr_number, o.bank_account_id,
+              bam.bank_name AS company_bank_name, bam.account_number AS company_bank_account_number, bam.ifsc_code AS company_bank_ifsc,
               o.status, o.failure_reason, o.paid_at, o.created_at,
               ss.start_date, ss.end_date, ss.status AS subscription_status
        FROM subscription_payment_orders o
        LEFT JOIN subscription_plans p ON o.plan_id = p.id
        LEFT JOIN school_subscriptions ss ON o.activated_subscription_id = ss.id
+       LEFT JOIN bank_account_master bam ON o.bank_account_id = bam.id
        WHERE o.school_id = ?
          AND o.status != 'created'
        ORDER BY o.id DESC
@@ -1843,6 +2054,10 @@ class SubscriptionFulfillmentService {
       tax_amount: 0,
       grand_total: parseFloat(o.grand_total) || 0,
       payment_method: o.payment_method,
+      bank_account_id: o.bank_account_id || null,
+      company_bank_name: o.company_bank_name || null,
+      company_bank_account_number: o.company_bank_account_number || null,
+      company_bank_ifsc: o.company_bank_ifsc || null,
       transaction_ref: o.razorpay_payment_id || o.utr_number || o.razorpay_order_id || o.order_no,
       status: o.status,
       subscription_status: o.subscription_status,
@@ -1884,7 +2099,7 @@ class SubscriptionFulfillmentService {
       end_date: s.end_date ? normalizeDateStr(s.end_date) : null,
       date: s.created_at,
     }));
-
+//
     return [...formattedOrders, ...formattedLegacy].sort(
       (a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime()
     );

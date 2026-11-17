@@ -1,6 +1,6 @@
 const MessageModel = require('../models/message.model');
 const ApiResponse = require('../utils/api.response');
-const { getIO, isUserOnline, isCommunicationAllowed } = require('../services/socket.service');
+const { getIO, getUserRoom, isUserOnline, isCommunicationAllowed } = require('../services/socket.service');
 const PushNotificationService = require('../services/pushNotification.service');
 
 class MessageController {
@@ -47,7 +47,7 @@ class MessageController {
       // Enrich with real-time online status
       const enrichedContacts = contacts.map((c) => ({
         ...c,
-        is_online: isUserOnline(c.role, c.id),
+        is_online: isUserOnline(c.role, c.id, schoolId),
       }));
 
       return ApiResponse.success(res, 'Contacts retrieved successfully.', enrichedContacts);
@@ -103,7 +103,7 @@ class MessageController {
       if (affected > 0) {
         try {
           const io = getIO();
-          io.to(`user_${contactRole}_${contactId}`).emit('messages_read', {
+          io.to(getUserRoom(schoolId, contactRole, contactId)).emit('messages_read', {
             readerId: userId,
             readerRole: role,
           });
@@ -119,7 +119,7 @@ class MessageController {
         contact: {
           id: contactId,
           role: contactRole,
-          is_online: isUserOnline(contactRole, contactId),
+          is_online: isUserOnline(contactRole, contactId, schoolId),
         },
       });
     } catch (error) {
@@ -144,6 +144,7 @@ class MessageController {
       }
 
       const normalizedReceiverRole = String(receiverRole).toLowerCase();
+      const numericReceiverId = Number(receiverId);
 
       if (!isCommunicationAllowed(role, normalizedReceiverRole)) {
         return ApiResponse.error(
@@ -152,6 +153,15 @@ class MessageController {
           null,
           403
         );
+      }
+
+      const recipientBelongsToSchool = await MessageModel.isUserInSchool(
+        schoolId,
+        normalizedReceiverRole,
+        numericReceiverId
+      );
+      if (!recipientBelongsToSchool) {
+        return ApiResponse.error(res, 'Recipient not found in your school.', null, 404);
       }
 
       let fileUrl = file || null;
@@ -167,7 +177,7 @@ class MessageController {
         branch_id: branchId,
         sender: userId,
         sender_role: role,
-        reciver: Number(receiverId),
+        reciver: numericReceiverId,
         receiver_role: normalizedReceiverRole,
         message: message ? String(message) : '',
         file: fileUrl,
@@ -182,8 +192,8 @@ class MessageController {
       // Emit to recipient and sender via Socket.IO
       try {
         const io = getIO();
-        io.to(`user_${normalizedReceiverRole}_${Number(receiverId)}`).emit('receive_message', savedMessage);
-        io.to(`user_${role}_${userId}`).emit('message_sent', savedMessage);
+        io.to(getUserRoom(schoolId, normalizedReceiverRole, numericReceiverId)).emit('receive_message', savedMessage);
+        io.to(getUserRoom(schoolId, role, userId)).emit('message_sent', savedMessage);
       } catch (_) {}
 
       // Dispatch background push notification (Web Push and Mobile Expo Push)
@@ -243,7 +253,7 @@ class MessageController {
 
       try {
         const io = getIO();
-        io.to(`user_${String(senderRole).toLowerCase()}_${Number(senderId)}`).emit('messages_read', {
+        io.to(getUserRoom(schoolId, String(senderRole).toLowerCase(), Number(senderId))).emit('messages_read', {
           readerId: userId,
           readerRole: role,
         });
@@ -305,8 +315,8 @@ class MessageController {
       try {
         const io = getIO();
         const { deletedMessage } = result;
-        const senderRoom = `user_${String(deletedMessage.sender_role).toLowerCase()}_${Number(deletedMessage.sender)}`;
-        const receiverRoom = `user_${String(deletedMessage.receiver_role).toLowerCase()}_${Number(deletedMessage.reciver)}`;
+        const senderRoom = getUserRoom(schoolId, deletedMessage.sender_role, deletedMessage.sender);
+        const receiverRoom = getUserRoom(schoolId, deletedMessage.receiver_role, deletedMessage.reciver);
 
         const deletePayload = {
           messageId: deletedMessage.id,

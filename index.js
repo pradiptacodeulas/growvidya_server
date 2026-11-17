@@ -10,13 +10,6 @@ const { testConnection } = require('./config/db.config');
 const { initSocket } = require('./services/socket.service');
 const MessageModel = require('./models/message.model');
 const BranchModel = require('./models/branch.model');
-const RazorpayCredentialModel = require('./models/razorpayCredential.model');
-const EmailCredentialModel = require('./models/emailCredential.model');
-const SaasRoleModel = require('./models/saasRole.model');
-const AttendanceMachineMasterModel = require('./models/attendanceMachineMaster.model');
-const RfidCardMasterModel = require('./models/rfidCardMaster.model');
-const StorageMasterModel = require('./models/storageMaster.model');
-const CouponModel = require('./models/coupon.model');
 const SupportTicketModel = require('./models/supportTicket.model');
 const DeviceTokenModel = require('./models/deviceToken.model');
 const TeacherSelfAttendanceModel = require('./models/teacherSelfAttendance.model');
@@ -38,12 +31,9 @@ const app = express();
 // ==========================================
 // 1. Security & Body Parsing Middlewares
 // ==========================================
-// app.use(helmet({ crossOriginResourcePolicy: false }));
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 
-const allowedOrigins = (process.env.CORS_ORIGINS ?? '')
-  .split(',')
-  .map(o => o.trim())
-  .filter(Boolean);
+const allowedOrigins = config.corsOrigins;
 
 if (allowedOrigins.length === 0) {
   console.warn('CORS_ORIGINS is empty: all cross-origin browser requests will be blocked');
@@ -128,30 +118,44 @@ app.use(errorMiddleware);
 const server = http.createServer(app);
 initSocket(server, config);
 
-server.listen(config.port, async () => {
+async function startServer() {
   const dbStatus = await testConnection();
-  await SubscriptionSchemaModel.initTable();
-  await FileStorageLedgerModel.initTable();
-  await BranchModel.initTable();
-  await TeacherSelfAttendanceModel.initTable();
-  await MessageModel.initTable();
-  await SupportTicketModel.initTable();
-  await DeviceTokenModel.initTable();
-  SubscriptionLifecycleJob.start();
-
-  console.log(`\n  \x1b[1m\x1b[36mGrowvidya Core API Server\x1b[0m \x1b[90mv1.0.0\x1b[0m`);
-  console.log(`  \x1b[90m──────────────────────────────────────────────────\x1b[0m`);
-  console.log(`  \x1b[32m●\x1b[0m \x1b[1mStatus\x1b[0m       : Ready and listening`);
-  console.log(`    \x1b[1mLocal\x1b[0m        : \x1b[36mhttp://localhost:${config.port}\x1b[0m`);
-  console.log(`    \x1b[1mHealth\x1b[0m       : \x1b[36mhttp://localhost:${config.port}/api/health\x1b[0m`);
-  console.log(`    \x1b[1mEnvironment\x1b[0m  : \x1b[33m${config.nodeEnv}\x1b[0m`);
   if (dbStatus?.ok) {
-    console.log(`    \x1b[1mDatabase\x1b[0m     : \x1b[32mConnected\x1b[0m (MySQL: ${config.db.database} @ ${config.db.host}:${config.db.port})`);
-  } else {
-    console.log(`    \x1b[1mDatabase\x1b[0m     : \x1b[31mConnection Failed\x1b[0m (${dbStatus?.error || 'Unknown error'})`);
+    await SubscriptionSchemaModel.initTable();
+    await FileStorageLedgerModel.initTable();
+    await BranchModel.initTable();
+    await TeacherSelfAttendanceModel.initTable();
+    await MessageModel.initTable();
+    await SupportTicketModel.initTable();
+    await DeviceTokenModel.initTable();
   }
-  console.log(`    \x1b[1mRealtime\x1b[0m     : \x1b[32mInitialized\x1b[0m (Socket.IO active)`);
-  console.log(`  \x1b[90m──────────────────────────────────────────────────\x1b[0m\n`);
-});
 
-module.exports = { app, server };
+  server.listen(config.port, () => {
+    if (dbStatus?.ok) {
+      SubscriptionLifecycleJob.start();
+    }
+
+    console.log(`\n  \x1b[1m\x1b[36mGrowvidya Core API Server\x1b[0m \x1b[90mv1.0.0\x1b[0m`);
+    console.log(`  \x1b[90m──────────────────────────────────────────────────\x1b[0m`);
+    console.log(`  \x1b[32m●\x1b[0m \x1b[1mStatus\x1b[0m       : Ready and listening`);
+    console.log(`    \x1b[1mLocal\x1b[0m        : \x1b[36mhttp://localhost:${config.port}\x1b[0m`);
+    console.log(`    \x1b[1mHealth\x1b[0m       : \x1b[36mhttp://localhost:${config.port}/api/health\x1b[0m`);
+    console.log(`    \x1b[1mEnvironment\x1b[0m  : \x1b[33m${config.nodeEnv}\x1b[0m`);
+    if (dbStatus?.ok) {
+      console.log(`    \x1b[1mDatabase\x1b[0m     : \x1b[32mConnected\x1b[0m (MySQL: ${config.db.database} @ ${config.db.host}:${config.db.port})`);
+    } else {
+      console.log(`    \x1b[1mDatabase\x1b[0m     : \x1b[31mConnection Failed\x1b[0m (${dbStatus?.error || 'Unknown error'})`);
+    }
+    console.log(`    \x1b[1mRealtime\x1b[0m     : \x1b[32mInitialized\x1b[0m (Socket.IO active)`);
+    console.log(`  \x1b[90m──────────────────────────────────────────────────\x1b[0m\n`);
+  });
+}
+
+if (require.main === module) {
+  startServer().catch((err) => {
+    console.error('[Server Startup Fatal Error]:', err);
+    process.exit(1);
+  });
+}
+
+module.exports = { app, server, startServer };

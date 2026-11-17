@@ -69,18 +69,22 @@ function errorMiddleware(err, req, res, next) {
     statusCode = 400;
     message = 'Unexpected file uploaded. Please check the file attachment and try again.';
   } else if (statusCode >= 500) {
-    // Sanitize any raw SQL leaks from reaching the user interface
+    // Sanitize raw SQL or internal server errors from reaching client responses
     const rawMsg = String(err.message || '');
+    const isProd = process.env.NODE_ENV === 'production';
     if (
-      rawMsg.includes('SELECT') ||
-      rawMsg.includes('UPDATE') ||
-      rawMsg.includes('INSERT') ||
-      rawMsg.includes('DELETE') ||
-      rawMsg.includes('COALESCE') ||
+      isProd ||
+      Boolean(err.sql) ||
+      Boolean(err.sqlMessage) ||
+      (typeof err.code === 'string' && err.code.startsWith('ER_')) ||
+      /\b(SELECT|UPDATE|INSERT|DELETE|COALESCE|ALTER|CREATE|DROP)\b/i.test(rawMsg) ||
       rawMsg.includes('SQL syntax') ||
-      rawMsg.includes('ER_')
+      rawMsg.includes('Unknown column') ||
+      rawMsg.includes("doesn't exist")
     ) {
-      message = 'An unexpected database error occurred while processing the request. Please verify entered details and try again.';
+      message = isProd
+        ? 'Internal Server Error'
+        : 'An unexpected database error occurred while processing the request. Please verify entered details and try again.';
     }
   }
 

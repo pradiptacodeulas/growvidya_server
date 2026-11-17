@@ -772,6 +772,15 @@ class BranchModel {
 
       await conn.commit();
       DataScope.invalidateMainBranchCache(parsedSchoolId);
+
+      // Purge deleted branch files from Backblaze B2 & file_storage_ledger so storage quota is reclaimed immediately
+      try {
+        const FileStorageLedgerModel = require('./fileStorageLedger.model');
+        await FileStorageLedgerModel.purgeBranchFiles(parsedSchoolId, parsedId);
+      } catch (purgeErr) {
+        console.error('[BranchModel.deleteBranch] Error purging branch files:', purgeErr.message);
+      }
+
       return result.affectedRows > 0;
     } catch (err) {
       await conn.rollback();

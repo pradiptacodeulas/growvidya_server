@@ -2,60 +2,34 @@ const { pool } = require('../config/db.config');
 
 class GeneralSettingModel {
   /**
-   * Fetches lightweight public school configuration & branding
+   * Fetches lightweight non-sensitive school branding configuration (active schools only)
    */
   static async getSchoolConfig(schoolId) {
     if (!schoolId) return {};
-    const targetId = schoolId;
+    const targetId = Number(schoolId);
     const [schools] = await pool.query(
       `SELECT 
         id, 
         school_name AS school_title, 
         school_code, 
         school_logo, 
-        qr_code, 
-        address, 
-        city, 
-        state, 
-        country, 
-        postal_code, 
-        phone_number AS phone, 
-        email, 
-        website, 
-        established_year, 
-        school_type, 
-        affiliation_board, 
-        footer, 
-        status,
-        bank_name,
-        account_holder_name,
-        account_number,
-        ifsc_code,
-        branch_name,
-        upi_id
+        footer
        FROM school_master 
-       WHERE id = ?`,
+       WHERE id = ? AND status = 1
+       LIMIT 1`,
       [targetId]
     );
 
-    const school = schools[0] || {};
+    const school = schools[0];
+    if (!school) return {};
+
     return {
-      id: school.id || null,
+      id: school.id,
       school_title: school.school_title || '',
       school_name: school.school_title || '',
+      school_code: school.school_code || '',
       school_logo: school.school_logo || '',
-      qr_code: school.qr_code || '',
       footer: school.footer || '',
-      phone: school.phone || '',
-      email: school.email || '',
-      website: school.website || '',
-      address: school.address || '',
-      bank_name: school.bank_name || '',
-      account_holder_name: school.account_holder_name || '',
-      account_number: school.account_number || '',
-      ifsc_code: school.ifsc_code || '',
-      branch_name: school.branch_name || '',
-      upi_id: school.upi_id || '',
     };
   }
 
@@ -188,6 +162,12 @@ class GeneralSettingModel {
       upi_id,
     } = data;
 
+    const [oldRows] = await pool.query(
+      `SELECT school_logo, qr_code FROM school_master WHERE id = ? LIMIT 1`,
+      [schoolId]
+    );
+    const oldSchool = oldRows?.[0] || {};
+
     // Update school_master
     await pool.query(
       `UPDATE school_master SET 
@@ -243,6 +223,17 @@ class GeneralSettingModel {
         schoolId,
       ]
     );
+
+    const { hardDeleteFile } = require('../utils/file.util');
+    if (school_logo !== undefined && school_logo !== null && oldSchool.school_logo && oldSchool.school_logo !== school_logo) {
+      await hardDeleteFile(oldSchool.school_logo, { schoolId });
+    }
+    if (qr_code !== undefined) {
+      const nextQr = qr_code ? String(qr_code).trim() : null;
+      if (oldSchool.qr_code && oldSchool.qr_code !== nextQr) {
+        await hardDeleteFile(oldSchool.qr_code, { schoolId });
+      }
+    }
 
     // Update weekends
     if (Array.isArray(weekends)) {

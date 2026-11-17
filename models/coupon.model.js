@@ -343,46 +343,52 @@ class CouponModel {
         : null;
     const cleanEmailForExclude = options.email ? String(options.email).trim().toLowerCase() : null;
     const cleanPhoneForExclude = options.phone ? String(options.phone).trim() : null;
-    try {
-      const [pendRows] = await db.query(
-        `SELECT COUNT(*) AS cnt FROM subscription_payment_orders spo
-         WHERE spo.coupon_id = ?
-           AND (
-             spo.status = 'pending_verification'
-             OR (
-               spo.status = 'created'
-               AND spo.created_at >= DATE_SUB(NOW(), INTERVAL 15 MINUTE)
-               AND (? IS NULL OR spo.school_id IS NULL OR spo.school_id != ?)
-               AND (? IS NULL OR LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(spo.payload_snapshot_json, '$.extra.email')), '')) != ?)
-               AND (? IS NULL OR COALESCE(JSON_UNQUOTE(JSON_EXTRACT(spo.payload_snapshot_json, '$.extra.phone')), '') != ?)
+
+    const [pendRows] = await db.query(
+      `SELECT COUNT(*) AS cnt FROM subscription_payment_orders spo
+       WHERE spo.coupon_id = ?
+         AND (
+           spo.status = 'pending_verification'
+           OR (
+             spo.status = 'created'
+             AND spo.created_at >= DATE_SUB(NOW(), INTERVAL 15 MINUTE)
+             AND NOT (
+               (? IS NOT NULL AND spo.school_id = ?)
+               OR (
+                 ? IS NULL AND spo.school_id IS NULL AND (
+                   (? IS NOT NULL AND LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(spo.payload_snapshot_json, '$.extra.email')), '')) = ?)
+                   OR (? IS NOT NULL AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(spo.payload_snapshot_json, '$.extra.phone')), '') = ?)
+                 )
+               )
              )
            )
-           AND (? IS NULL OR spo.id != ?)
-           AND NOT EXISTS (
-             SELECT 1 FROM coupon_usages cu
-             WHERE cu.coupon_id = spo.coupon_id
-               AND (cu.payment_order_id = spo.id OR (spo.activated_subscription_id IS NOT NULL AND cu.subscription_id = spo.activated_subscription_id))
-           )`,
-        [
-          coupon.id,
-          targetSchoolIdForExclude,
-          targetSchoolIdForExclude,
-          cleanEmailForExclude,
-          cleanEmailForExclude,
-          cleanPhoneForExclude,
-          cleanPhoneForExclude,
-          options.excludeOrderId || null,
-          options.excludeOrderId || null,
-        ]
-      );
-      pendingGlobalReservations = parseInt(pendRows[0]?.cnt, 10) || 0;
+         )
+         AND (? IS NULL OR spo.id != ?)
+         AND NOT EXISTS (
+           SELECT 1 FROM coupon_usages cu
+           WHERE cu.coupon_id = spo.coupon_id
+             AND (cu.payment_order_id = spo.id OR (spo.activated_subscription_id IS NOT NULL AND cu.subscription_id = spo.activated_subscription_id))
+         )`,
+      [
+        coupon.id,
+        targetSchoolIdForExclude,
+        targetSchoolIdForExclude,
+        targetSchoolIdForExclude,
+        cleanEmailForExclude,
+        cleanEmailForExclude,
+        cleanPhoneForExclude,
+        cleanPhoneForExclude,
+        options.excludeOrderId || null,
+        options.excludeOrderId || null,
+      ]
+    );
+    pendingGlobalReservations = parseInt(pendRows[0]?.cnt, 10) || 0;
 
-      const [redempRows] = await db.query(
-        'SELECT COUNT(*) AS cnt FROM coupon_usages WHERE coupon_id = ?',
-        [coupon.id]
-      );
-      recordedUsagesCount = parseInt(redempRows[0]?.cnt, 10) || 0;
-    } catch (_) {}
+    const [redempRows] = await db.query(
+      'SELECT COUNT(*) AS cnt FROM coupon_usages WHERE coupon_id = ?',
+      [coupon.id]
+    );
+    recordedUsagesCount = parseInt(redempRows[0]?.cnt, 10) || 0;
 
     const currentUsedCount = recordedUsagesCount + pendingGlobalReservations;
     const maxUsesLimit =

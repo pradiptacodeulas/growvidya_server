@@ -414,7 +414,7 @@ class TransportModel {
         const [oldRows] = await pool.query('SELECT image FROM bus_master WHERE id = ? AND school_id = ? LIMIT 1', [id, schoolId]);
         const oldImage = oldRows[0]?.image;
         if (oldImage && oldImage !== image) {
-          await hardDeleteFile(oldImage);
+          await hardDeleteFile(oldImage, { schoolId });
         }
       } catch (e) {
         console.error('Error removing old bus image on update:', e);
@@ -476,7 +476,7 @@ class TransportModel {
     try {
       const [oldRows] = await pool.query('SELECT image FROM bus_master WHERE id = ? AND school_id = ? LIMIT 1', [id, schoolId]);
       if (oldRows[0]?.image) {
-        await hardDeleteFile(oldRows[0].image);
+        await hardDeleteFile(oldRows[0].image, { schoolId });
       }
     } catch (e) {
       console.error('Error removing bus image on delete:', e);
@@ -708,7 +708,7 @@ class TransportModel {
 
     // Fetch existing driver to handle file replacement/deletion
     const [existing] = await pool.query(
-      `SELECT lisence_doc, id_proof_doc FROM operator_master WHERE id = ? AND school_id = ? AND type = 1`,
+      `SELECT lisence_doc, id_proof_doc, picture FROM operator_master WHERE id = ? AND school_id = ? AND type = 1`,
       [id, schoolId]
     );
     const currentDoc = existing?.[0] || {};
@@ -717,12 +717,12 @@ class TransportModel {
     const newLicenseDoc = license_doc !== undefined ? license_doc : lisence_doc;
     if (newLicenseDoc) {
       if (currentDoc.lisence_doc && currentDoc.lisence_doc !== newLicenseDoc) {
-        hardDeleteFile(currentDoc.lisence_doc);
+        await hardDeleteFile(currentDoc.lisence_doc, { schoolId });
       }
       finalLicenseDoc = newLicenseDoc;
     } else if (remove_license_doc === true || remove_license_doc === 'true') {
       if (currentDoc.lisence_doc) {
-        hardDeleteFile(currentDoc.lisence_doc);
+        await hardDeleteFile(currentDoc.lisence_doc, { schoolId });
       }
       finalLicenseDoc = null;
     }
@@ -730,14 +730,18 @@ class TransportModel {
     let finalIdProofDoc = currentDoc.id_proof_doc || null;
     if (id_proof_doc) {
       if (currentDoc.id_proof_doc && currentDoc.id_proof_doc !== id_proof_doc) {
-        hardDeleteFile(currentDoc.id_proof_doc);
+        await hardDeleteFile(currentDoc.id_proof_doc, { schoolId });
       }
       finalIdProofDoc = id_proof_doc;
     } else if (remove_id_proof_doc === true || remove_id_proof_doc === 'true') {
       if (currentDoc.id_proof_doc) {
-        hardDeleteFile(currentDoc.id_proof_doc);
+        await hardDeleteFile(currentDoc.id_proof_doc, { schoolId });
       }
       finalIdProofDoc = null;
+    }
+
+    if (picture && currentDoc.picture && currentDoc.picture !== picture) {
+      await hardDeleteFile(currentDoc.picture, { schoolId });
     }
 
     const resolvedIdProofType = id_proof_type !== undefined ? (id_proof_type ? String(id_proof_type).trim() : null) : undefined;
@@ -778,12 +782,13 @@ class TransportModel {
 
   static async deleteDriver(schoolId, id, branchId = null) {
     const [existing] = await pool.query(
-      `SELECT lisence_doc, id_proof_doc FROM operator_master WHERE id = ? AND school_id = ? AND type = 1`,
+      `SELECT lisence_doc, id_proof_doc, picture FROM operator_master WHERE id = ? AND school_id = ? AND type = 1`,
       [id, schoolId]
     );
     if (existing && existing.length > 0) {
-      if (existing[0].lisence_doc) hardDeleteFile(existing[0].lisence_doc);
-      if (existing[0].id_proof_doc) hardDeleteFile(existing[0].id_proof_doc);
+      if (existing[0].lisence_doc) await hardDeleteFile(existing[0].lisence_doc, { schoolId });
+      if (existing[0].id_proof_doc) await hardDeleteFile(existing[0].id_proof_doc, { schoolId });
+      if (existing[0].picture) await hardDeleteFile(existing[0].picture, { schoolId });
     }
 
     let sql = `UPDATE operator_master SET status = 4, lisence_doc = NULL, id_proof_doc = NULL WHERE id = ? AND school_id = ? AND type = 1`;
@@ -988,7 +993,7 @@ class TransportModel {
 
     // Fetch existing helper to handle file replacement/deletion
     const [existing] = await pool.query(
-      `SELECT id_proof_doc FROM operator_master WHERE id = ? AND school_id = ? AND type = 2`,
+      `SELECT id_proof_doc, picture FROM operator_master WHERE id = ? AND school_id = ? AND type = 2`,
       [id, schoolId]
     );
     const currentDoc = existing?.[0] || {};
@@ -996,14 +1001,18 @@ class TransportModel {
     let finalIdProofDoc = currentDoc.id_proof_doc || null;
     if (id_proof_doc) {
       if (currentDoc.id_proof_doc && currentDoc.id_proof_doc !== id_proof_doc) {
-        hardDeleteFile(currentDoc.id_proof_doc);
+        await hardDeleteFile(currentDoc.id_proof_doc, { schoolId });
       }
       finalIdProofDoc = id_proof_doc;
     } else if (remove_id_proof_doc === true || remove_id_proof_doc === 'true') {
       if (currentDoc.id_proof_doc) {
-        hardDeleteFile(currentDoc.id_proof_doc);
+        await hardDeleteFile(currentDoc.id_proof_doc, { schoolId });
       }
       finalIdProofDoc = null;
+    }
+
+    if (picture && currentDoc.picture && currentDoc.picture !== picture) {
+      await hardDeleteFile(currentDoc.picture, { schoolId });
     }
 
     const resolvedIdProofType = id_proof_type !== undefined ? (id_proof_type ? String(id_proof_type).trim() : null) : undefined;
@@ -1045,11 +1054,12 @@ class TransportModel {
 
   static async deleteHelper(schoolId, id, branchId = null) {
     const [existing] = await pool.query(
-      `SELECT id_proof_doc FROM operator_master WHERE id = ? AND school_id = ? AND type = 2`,
+      `SELECT id_proof_doc, picture FROM operator_master WHERE id = ? AND school_id = ? AND type = 2`,
       [id, schoolId]
     );
-    if (existing && existing.length > 0 && existing[0].id_proof_doc) {
-      hardDeleteFile(existing[0].id_proof_doc);
+    if (existing && existing.length > 0) {
+      if (existing[0].id_proof_doc) await hardDeleteFile(existing[0].id_proof_doc, { schoolId });
+      if (existing[0].picture) await hardDeleteFile(existing[0].picture, { schoolId });
     }
 
     let sql = `UPDATE operator_master SET status = 4, id_proof_doc = NULL WHERE id = ? AND school_id = ? AND type = 2`;

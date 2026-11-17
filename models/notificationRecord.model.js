@@ -68,6 +68,162 @@ class NotificationRecordModel {
   }
 
   /**
+   * Atomically reserve push credits up-front using a single row-locked transaction.
+   * Caps reservation up to available push_balance (allowing partial batch delivery when low on credits).
+   */
+  static async reservePushCredits({
+    schoolId,
+    requestedUnits = 1,
+    referenceNote = null,
+  }) {
+    const parsedSchoolId = parseInt(schoolId, 10);
+    const reqUnits = Math.max(1, parseInt(requestedUnits, 10) || 1);
+    if (!parsedSchoolId) {
+      return { allowed: false, reservedUnits: 0, balanceBefore: 0, balanceAfter: 0, unitCost: 0 };
+    }
+
+    const rates = await NotificationRecordModel.getDynamicRates();
+    const unitCost = parseFloat(rates.PUSH) || 0;
+
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+
+      const [rows] = await conn.query(
+        'SELECT * FROM school_notification_wallets WHERE school_id = ? LIMIT 1 FOR UPDATE',
+        [parsedSchoolId]
+      );
+      if (rows.length === 0) {
+        await conn.commit();
+        return { allowed: false, reservedUnits: 0, balanceBefore: 0, balanceAfter: 0, unitCost };
+      }
+
+      const wallet = rows[0];
+      const currentBalance = parseInt(wallet.push_balance, 10) || 0;
+      const reservedUnits = Math.min(currentBalance, reqUnits);
+      if (reservedUnits <= 0) {
+        await conn.commit();
+        return {
+          allowed: false,
+          reservedUnits: 0,
+          balanceBefore: currentBalance,
+          balanceAfter: currentBalance,
+          unitCost,
+        };
+      }
+
+      const balanceAfter = currentBalance - reservedUnits;
+      await conn.query(
+        `UPDATE school_notification_wallets
+         SET push_balance = ?, total_push_used = total_push_used + ?
+         WHERE school_id = ?`,
+        [balanceAfter, reservedUnits, parsedSchoolId]
+      );
+
+      const totalAmt = Math.round(reservedUnits * unitCost * 100) / 100;
+      await conn.query(
+        `INSERT INTO school_notification_ledger
+           (school_id, channel, entry_type, units, balance_after, unit_price, total_amount, reference_note)
+         VALUES (?, 'push', 'debit', ?, ?, ?, ?, ?)`,
+        [
+          parsedSchoolId,
+          reservedUnits,
+          balanceAfter,
+          unitCost,
+          totalAmt,
+          referenceNote || `Reserved ${reservedUnits} PUSH unit(s)`,
+        ]
+      );
+
+      await conn.commit();
+      return {
+        allowed: true,
+        reservedUnits,
+        balanceBefore: currentBalance,
+        balanceAfter,
+        unitCost,
+      };
+    } catch (err) {
+      await conn.rollback();
+      console.error('[NotificationRecordModel.reservePushCredits Error]:', err.message);
+      return { allowed: false, reservedUnits: 0, balanceBefore: 0, balanceAfter: 0, unitCost };
+    } finally {
+      conn.release();
+    }
+  }
+
+  /**
+   * Atomically refund unused/failed reserved push credits back to `school_notification_wallets`
+   * and record an adjustment entry in `school_notification_ledger`.
+   */
+  static async refundUnusedPushCredits({
+    schoolId,
+    refundUnits = 0,
+    unitCost = null,
+    referenceNote = null,
+  }) {
+    const parsedSchoolId = parseInt(schoolId, 10);
+    const unitsToRefund = parseInt(refundUnits, 10) || 0;
+    if (!parsedSchoolId || unitsToRefund <= 0) {
+      return { refunded: false, refundedUnits: 0 };
+    }
+
+    const resolvedUnitCost =
+      unitCost !== null && unitCost !== undefined
+        ? parseFloat(unitCost) || 0
+        : parseFloat((await NotificationRecordModel.getDynamicRates()).PUSH) || 0;
+
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+
+      const [rows] = await conn.query(
+        'SELECT * FROM school_notification_wallets WHERE school_id = ? LIMIT 1 FOR UPDATE',
+        [parsedSchoolId]
+      );
+      if (rows.length === 0) {
+        await conn.commit();
+        return { refunded: false, refundedUnits: 0 };
+      }
+
+      const wallet = rows[0];
+      const currentBalance = parseInt(wallet.push_balance, 10) || 0;
+      const balanceAfter = currentBalance + unitsToRefund;
+
+      await conn.query(
+        `UPDATE school_notification_wallets
+         SET push_balance = ?, total_push_used = GREATEST(0, total_push_used - ?)
+         WHERE school_id = ?`,
+        [balanceAfter, unitsToRefund, parsedSchoolId]
+      );
+
+      const totalAmt = Math.round(unitsToRefund * resolvedUnitCost * 100) / 100;
+      await conn.query(
+        `INSERT INTO school_notification_ledger
+           (school_id, channel, entry_type, units, balance_after, unit_price, total_amount, reference_note)
+         VALUES (?, 'push', 'adjustment', ?, ?, ?, ?, ?)`,
+        [
+          parsedSchoolId,
+          unitsToRefund,
+          balanceAfter,
+          resolvedUnitCost,
+          totalAmt,
+          referenceNote || `Refunded ${unitsToRefund} failed PUSH unit(s)`,
+        ]
+      );
+
+      await conn.commit();
+      return { refunded: true, refundedUnits: unitsToRefund, balanceAfter };
+    } catch (err) {
+      await conn.rollback();
+      console.error('[NotificationRecordModel.refundUnusedPushCredits Error]:', err.message);
+      return { refunded: false, refundedUnits: 0 };
+    } finally {
+      conn.release();
+    }
+  }
+
+  /**
    * Atomically debit sent notification units from `school_notification_wallets` and record in `school_notification_ledger`
    */
   static async debitWalletCredits({
@@ -253,9 +409,15 @@ class NotificationRecordModel {
     sender_role = 'system',
     error_message = null,
     billable = true,
+    skipWalletDebit = false,
+    unitCostOverride = null,
   }) {
-    const rates = await NotificationRecordModel.getDynamicRates();
-    const unit_cost = billable ? rates.PUSH : 0;
+    const rates = unitCostOverride === null ? await NotificationRecordModel.getDynamicRates() : null;
+    const unit_cost = billable
+      ? unitCostOverride !== null
+        ? parseFloat(unitCostOverride) || 0
+        : rates.PUSH
+      : 0;
     const normalizedUnits = Math.max(1, parseInt(units_count, 10) || 1);
     const isBillable = Boolean(billable) && ['sent', 'delivered'].includes(status);
     const total_cost = isBillable ? unit_cost * normalizedUnits : 0.0000;
@@ -296,7 +458,7 @@ class NotificationRecordModel {
       sent_at,
     ]);
 
-    if (isBillable && school_id) {
+    if (isBillable && school_id && !skipWalletDebit) {
       await NotificationRecordModel.debitWalletCredits({
         schoolId: school_id,
         channel: 'push',
@@ -307,6 +469,78 @@ class NotificationRecordModel {
     }
 
     return { id: result.insertId, channel: 'push', unit_cost, total_cost, status };
+  }
+
+  /**
+   * Bulk-insert push notification records in chunks (used after atomic batch wallet reservation)
+   */
+  static async logPushBatch(records = [], { unitCostOverride = null } = {}) {
+    if (!Array.isArray(records) || records.length === 0) {
+      return { insertedCount: 0 };
+    }
+
+    const basePushRate =
+      unitCostOverride !== null && unitCostOverride !== undefined
+        ? parseFloat(unitCostOverride) || 0
+        : parseFloat((await NotificationRecordModel.getDynamicRates()).PUSH) || 0;
+
+    const CHUNK_SIZE = 250;
+    let insertedCount = 0;
+
+    for (let i = 0; i < records.length; i += CHUNK_SIZE) {
+      const chunk = records.slice(i, i + CHUNK_SIZE);
+      const values = [];
+      const placeholders = [];
+
+      for (const rec of chunk) {
+        const status = rec.status || 'pending';
+        const normalizedUnits = Math.max(1, parseInt(rec.units_count, 10) || 1);
+        const isBillable = Boolean(rec.billable) && ['sent', 'delivered'].includes(status);
+        const unitCost = isBillable ? basePushRate : 0;
+        const totalCost = isBillable ? unitCost * normalizedUnits : 0.0000;
+        const sentAt = ['sent', 'delivered'].includes(status) ? rec.sent_at || new Date() : null;
+
+        placeholders.push("(?, ?, 'push', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'INR', ?, ?, ?, ?, ?, ?, ?, ?)");
+        values.push(
+          rec.school_id || null,
+          rec.branch_id || null,
+          rec.category || 'general',
+          rec.title || null,
+          rec.message || null,
+          rec.payload ? JSON.stringify(rec.payload) : null,
+          rec.recipient_role || 'other',
+          rec.recipient_id || null,
+          rec.recipient_name || null,
+          rec.recipient_device_token || null,
+          rec.recipient_device_type || 'all',
+          normalizedUnits,
+          unitCost,
+          totalCost,
+          status,
+          rec.provider || 'fcm',
+          rec.provider_message_id || null,
+          rec.provider_response ? JSON.stringify(rec.provider_response) : null,
+          rec.error_message || null,
+          rec.sender_id || null,
+          rec.sender_role || 'system',
+          sentAt
+        );
+      }
+
+      const [res] = await pool.query(
+        `INSERT INTO notification_records (
+          school_id, branch_id, channel, category, title, message, payload,
+          recipient_role, recipient_id, recipient_name, recipient_device_token, recipient_device_type,
+          units_count, unit_cost, total_cost, currency, status,
+          provider, provider_message_id, provider_response, error_message,
+          sender_id, sender_role, sent_at
+        ) VALUES ${placeholders.join(', ')}`,
+        values
+      );
+      insertedCount += Number(res?.affectedRows) || chunk.length;
+    }
+
+    return { insertedCount };
   }
 
   /**

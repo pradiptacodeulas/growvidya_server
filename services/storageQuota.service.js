@@ -41,9 +41,10 @@ class StorageQuotaService {
 
     const todayStr = getTodayIST();
 
-    // 1. Base storage from active/trial subscription plan
+    // 1. Base storage from active/trial subscription contract snapshot (fallback to plan catalog only if null)
     const [subRows] = await pool.query(
-      `SELECT s.id, s.plan_id, s.storage_plan_id, p.plan_name, p.included_storage_gb
+      `SELECT s.id, s.plan_id, s.storage_plan_id, p.plan_name,
+              COALESCE(s.snapshot_storage_gb, p.included_storage_gb) AS included_storage_gb
        FROM school_subscriptions s
        JOIN subscription_plans p ON s.plan_id = p.id
        WHERE s.school_id = ?
@@ -89,21 +90,6 @@ class StorageQuotaService {
         capacity_gb: Number((capMb / 1024).toFixed(2)),
         end_date: ord.end_date,
       });
-    }
-
-    // Fallback if legacy activeSub.storage_plan_id exists without a school_storage_orders row
-    if (orderRows.length === 0 && activeSub && activeSub.storage_plan_id) {
-      const [legacyRows] = await pool.query(
-        `SELECT sm.plan_name, sm.storage_capacity, COALESCE(cu.factor_in_mb, 1024) AS factor_in_mb
-         FROM storage_master sm
-         LEFT JOIN capacity_unit_master cu ON sm.capacity_unit_id = cu.id
-         WHERE sm.id = ? LIMIT 1`,
-        [activeSub.storage_plan_id]
-      );
-      if (legacyRows.length > 0) {
-        const capMb = (Number(legacyRows[0].storage_capacity) || 0) * (Number(legacyRows[0].factor_in_mb) || 1024);
-        addonStorageMb += capMb;
-      }
     }
 
     const addonBytes = addonStorageMb * 1024 * 1024;
@@ -152,6 +138,8 @@ class StorageQuotaService {
     const usedBytes = Number(usage?.totalBytes) || 0;
     const usedFormatted = StorageQuotaService.formatBytes(usedBytes);
     const totalAllowedBytes = allocation.totalAllowedBytes || 0;
+    const remainingBytes = Math.max(0, totalAllowedBytes - usedBytes);
+    const remainingFormatted = StorageQuotaService.formatBytes(remainingBytes);
     const usagePercent =
       totalAllowedBytes > 0 ? Math.min(100, Number(((usedBytes / totalAllowedBytes) * 100).toFixed(1))) : 0;
 
@@ -159,7 +147,12 @@ class StorageQuotaService {
       ...allocation,
       usedBytes,
       usedFormatted,
+      usedMBFormatted: usage?.totalMBFormatted || '0.00 MB',
+      remainingBytes,
+      remainingFormatted,
       usagePercent,
+      categoriesBreakdown: Array.isArray(usage?.categoriesBreakdown) ? usage.categoriesBreakdown : [],
+      branchesUsage: Array.isArray(usage?.branchesUsage) ? usage.branchesUsage : [],
     };
   }
 
@@ -171,15 +164,18 @@ class StorageQuotaService {
     if (!parsedSchoolId) return { allowed: true };
 
     const quota = await StorageQuotaService.getSchoolStorageQuota(parsedSchoolId);
-    const projectedBytes = quota.usedBytes + Math.max(0, Number(incomingBytes) || 0);
+    const incoming = Math.max(0, Number(incomingBytes) || 0);
+    const projectedBytes = quota.usedBytes + incoming;
+    const remainingBytes = Math.max(0, (quota.totalAllowedBytes || 0) - quota.usedBytes);
 
-    if (quota.totalAllowedBytes > 0 && projectedBytes > quota.totalAllowedBytes) {
+    if (quota.totalAllowedBytes <= 0 || projectedBytes > quota.totalAllowedBytes) {
       return {
         allowed: false,
         usedBytes: quota.usedBytes,
         usedFormatted: quota.usedFormatted,
         allocatedBytes: quota.totalAllowedBytes,
         allocatedFormatted: quota.allowedFormatted,
+        remainingBytes,
         message: `Cloud storage limit reached (${quota.usedFormatted} / ${quota.allowedFormatted}). Please purchase a Cloud Storage Expansion pack in Subscription & Billing.`,
       };
     }
@@ -187,8 +183,10 @@ class StorageQuotaService {
     return {
       allowed: true,
       usedBytes: quota.usedBytes,
+      usedFormatted: quota.usedFormatted,
       allocatedBytes: quota.totalAllowedBytes,
       allocatedFormatted: quota.allowedFormatted,
+      remainingBytes,
     };
   }
 }

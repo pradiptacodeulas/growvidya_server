@@ -237,18 +237,43 @@ async function storageAccessMiddleware(req, res, next) {
 
     if (!isPlatformSuperAdmin) {
       const lowerPath = normalizedPath.toLowerCase();
+      const ticketPathMatch = normalizedPath.match(/^upload\/(?:platform\/)?support_tickets\/school_(\d+)\//i);
 
-      // Block school users from accessing SaaS Admin profile pictures
-      if (
-        lowerPath.includes('/admin/profile_pic/') ||
-        (ledgerRecord && ledgerRecord.category === 'platform_asset')
-      ) {
-        return ApiResponse.error(res, 'Access denied: Platform admin assets are restricted.', null, 403);
-      }
+      if (ticketPathMatch) {
+        if (Number(ticketPathMatch[1]) !== callerSchoolId) {
+          return ApiResponse.error(
+            res,
+            'Access denied: You do not have permission to access another school\'s support attachment.',
+            null,
+            403
+          );
+        }
+      } else {
+        // Block school users from accessing SaaS Admin profile pictures or non-ticket platform assets
+        if (
+          lowerPath.includes('/admin/profile_pic/') ||
+          lowerPath.startsWith('upload/platform/') ||
+          lowerPath.startsWith('upload/support_tickets/') ||
+          (ledgerRecord && ledgerRecord.category === 'platform_asset')
+        ) {
+          return ApiResponse.error(res, 'Access denied: Platform admin assets are restricted.', null, 403);
+        }
 
-      // Check 1: Ledger school_id ownership
-      if (ledgerRecord && ledgerRecord.school_id && Number(ledgerRecord.school_id) > 0) {
-        if (Number(ledgerRecord.school_id) !== callerSchoolId) {
+        // Check 1: Ledger school_id ownership
+        if (ledgerRecord && ledgerRecord.school_id && Number(ledgerRecord.school_id) > 0) {
+          if (Number(ledgerRecord.school_id) !== callerSchoolId) {
+            return ApiResponse.error(
+              res,
+              'Access denied: You do not have permission to access another school\'s file.',
+              null,
+              403
+            );
+          }
+        }
+
+        // Check 2: Path-embedded school_id (upload/schools/{schoolId}/...)
+        const schoolPathMatch = normalizedPath.match(/^upload\/schools\/(\d+)\//i);
+        if (schoolPathMatch && Number(schoolPathMatch[1]) !== callerSchoolId) {
           return ApiResponse.error(
             res,
             'Access denied: You do not have permission to access another school\'s file.',
@@ -256,27 +281,6 @@ async function storageAccessMiddleware(req, res, next) {
             403
           );
         }
-      }
-
-      // Check 2: Path-embedded school_id (upload/schools/{schoolId}/... or upload/support_tickets/school_{schoolId}/...)
-      const schoolPathMatch = normalizedPath.match(/^upload\/schools\/(\d+)\//i);
-      if (schoolPathMatch && Number(schoolPathMatch[1]) !== callerSchoolId) {
-        return ApiResponse.error(
-          res,
-          'Access denied: You do not have permission to access another school\'s file.',
-          null,
-          403
-        );
-      }
-
-      const ticketPathMatch = normalizedPath.match(/^upload\/support_tickets\/school_(\d+)\//i);
-      if (ticketPathMatch && Number(ticketPathMatch[1]) !== callerSchoolId) {
-        return ApiResponse.error(
-          res,
-          'Access denied: You do not have permission to access another school\'s support attachment.',
-          null,
-          403
-        );
       }
 
       // Check 3: Certificate border / template files (/template/)

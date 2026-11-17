@@ -296,6 +296,11 @@ function getAllBillingCycles() {
   return Array.from(_billingCycleCache.values());
 }
 
+function normalizeDateStr(val) {
+  if (!val) return null;
+  return formatDateParts(parseDateParts(val));
+}
+
 module.exports = {
   BILLING_CYCLES,
   PAID_BILLING_CYCLE_LIST,
@@ -303,6 +308,7 @@ module.exports = {
   getTodayIST,
   parseDateParts,
   formatDateParts,
+  normalizeDateStr,
   addDaysToDateStr,
   addMonthsToDateStr,
   addCycleDuration,

@@ -375,35 +375,87 @@ const formatBorderResponse = (border) => {
   };
 };
 
+const isSafeDefaultBorderPath = (rawPath) => {
+  if (!rawPath || typeof rawPath !== 'string') return false;
+  const normalized = rawPath.trim().replace(/\\/g, '/').replace(/^\/+/, '');
+  if (!normalized || normalized.includes('..')) return false;
+  return /^(?:upload\/)?template\/(?:certificate_0[1-9]|default[-_a-z0-9]*)\.(?:jpe?g|png|webp)$/i.test(normalized);
+};
+
 // ================= BORDERS =================
 exports.getBorderPreview = async (req, res) => {
   try {
+    const CloudStorageService = require('../services/cloudStorage.service');
     const schoolId = getSchoolId(req);
     const { id } = req.params;
-    const adminType = Number(req.user?.adminType ?? req.user?.admin_type);
-    const roleStr = String(req.user?.roleName || req.user?.role || '').toLowerCase();
-    const isSuperAdmin =
-      Boolean(req.user?.isSuperAdmin) ||
-      adminType === 1 ||
-      roleStr === 'super admin' ||
-      roleStr === 'superadmin' ||
-      Number(schoolId) === 0;
+    const isPlatformAdmin = Boolean(
+      req.user?.portalType === 'SaaSAdminPortal' || Number(schoolId) === 0
+    );
 
-    const border = await CertificateModel.getBorderById(id, schoolId, isSuperAdmin);
+    const border = await CertificateModel.getBorderById(id, schoolId, isPlatformAdmin);
     if (!border || !border.image) {
       return ApiResponse.error(res, 'Certificate border not found.', null, 404);
     }
 
-    const cleanPath = String(border.image).replace(/^[\\/]+/, '');
-    const filePath = path.resolve(__dirname, '../public', cleanPath);
-
-    if (!fs.existsSync(filePath)) {
-      return ApiResponse.error(res, 'Border image file not found on disk.', null, 404);
+    const cleanPath = String(border.image).trim().replace(/\\/g, '/').replace(/^\/+/, '');
+    if (!cleanPath || cleanPath.includes('..')) {
+      return ApiResponse.error(res, 'Invalid border image path.', null, 400);
     }
 
-    res.setHeader('Cache-Control', 'private, no-transform, max-age=86400');
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    return res.sendFile(filePath);
+    if (!isPlatformAdmin && Number(schoolId) > 0) {
+      const schoolMatch = cleanPath.match(/^upload\/schools\/(\d+)\//i);
+      if (schoolMatch && Number(schoolMatch[1]) !== Number(schoolId)) {
+        return ApiResponse.error(res, 'Access denied to this certificate border.', null, 403);
+      }
+    }
+
+    // 1. Stream directly from Backblaze B2 Cloud Storage
+    try {
+      const { stream, contentType, contentLength, etag, lastModified, ledgerRecord } =
+        await CloudStorageService.getObjectStream(cleanPath);
+
+      if (
+        !isPlatformAdmin &&
+        Number(schoolId) > 0 &&
+        ledgerRecord?.school_id &&
+        Number(ledgerRecord.school_id) !== Number(schoolId)
+      ) {
+        if (stream && typeof stream.destroy === 'function') stream.destroy();
+        return ApiResponse.error(res, 'Access denied to this certificate border.', null, 403);
+      }
+
+      res.setHeader('Content-Type', contentType || 'image/jpeg');
+      if (contentLength !== undefined && contentLength !== null) {
+        res.setHeader('Content-Length', String(contentLength));
+      }
+      if (etag) res.setHeader('ETag', etag);
+      if (lastModified instanceof Date) {
+        res.setHeader('Last-Modified', lastModified.toUTCString());
+      }
+      res.setHeader('Cache-Control', 'private, no-transform, max-age=86400');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+
+      stream.on('error', () => {
+        if (!res.headersSent) {
+          ApiResponse.error(res, 'Error streaming border preview.', null, 500);
+        } else {
+          res.end();
+        }
+      });
+
+      return stream.pipe(res);
+    } catch (_) {
+      // 2. Containment-checked local fallback strictly inside ../public for built-in default templates
+      const publicRoot = path.resolve(__dirname, '../public');
+      const filePath = path.resolve(publicRoot, cleanPath);
+      if (!filePath.startsWith(publicRoot + path.sep) || !fs.existsSync(filePath)) {
+        return ApiResponse.error(res, 'Border image file not found in cloud storage.', null, 404);
+      }
+
+      res.setHeader('Cache-Control', 'private, no-transform, max-age=86400');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      return res.sendFile(filePath);
+    }
   } catch (err) {
     console.error('Error in getBorderPreview:', err);
     return ApiResponse.error(res, err.message || 'Internal server error', null, err.statusCode || 500);
@@ -438,16 +490,11 @@ exports.getBorderById = async (req, res) => {
   try {
     const schoolId = getSchoolId(req);
     const { id } = req.params;
-    const adminType = Number(req.user?.adminType ?? req.user?.admin_type);
-    const roleStr = String(req.user?.roleName || req.user?.role || '').toLowerCase();
-    const isSuperAdmin =
-      Boolean(req.user?.isSuperAdmin) ||
-      adminType === 1 ||
-      roleStr === 'super admin' ||
-      roleStr === 'superadmin' ||
-      Number(schoolId) === 0;
+    const isPlatformAdmin = Boolean(
+      req.user?.portalType === 'SaaSAdminPortal' || Number(schoolId) === 0
+    );
 
-    const border = await CertificateModel.getBorderById(id, schoolId, isSuperAdmin);
+    const border = await CertificateModel.getBorderById(id, schoolId, isPlatformAdmin);
     if (!border) {
       return ApiResponse.error(res, 'Certificate border not found', null, 404);
     }
@@ -513,10 +560,10 @@ exports.createBorder = async (req, res) => {
         schoolId,
       });
       imagePath = uploaded.file_path;
-    } else if (req.body.image) {
-      imagePath = req.body.image.trim();
+    } else if (req.body.image && isSafeDefaultBorderPath(req.body.image)) {
+      imagePath = req.body.image.trim().replace(/\\/g, '/').replace(/^\/+/, '');
     } else {
-      return ApiResponse.error(res, 'Border image file (.jpg/.jpeg) is required.', null, 400);
+      return ApiResponse.error(res, 'Valid A4 Portrait border image file (.jpg/.jpeg) is required.', null, 400);
     }
 
     const insertId = await CertificateModel.createBorder({
@@ -596,10 +643,17 @@ exports.updateBorder = async (req, res) => {
 
       // Hard delete replaced old file from Backblaze B2 & ledger
       if (existing.image && existing.image !== imagePath) {
-        await CloudStorageService.deleteFile(existing.image);
+        await CloudStorageService.deleteFile(existing.image, { schoolId });
       }
     } else if (req.body.image) {
-      imagePath = req.body.image.trim();
+      const candidateImg = String(req.body.image).trim();
+      if (candidateImg === existing.image) {
+        imagePath = existing.image;
+      } else if (isSafeDefaultBorderPath(candidateImg)) {
+        imagePath = candidateImg.replace(/\\/g, '/').replace(/^\/+/, '');
+      } else {
+        return ApiResponse.error(res, 'Invalid border image reference. Please upload a valid JPEG border file.', null, 400);
+      }
     }
 
     const success = await CertificateModel.updateBorder(id, schoolId, { image: imagePath, status });
@@ -635,7 +689,7 @@ exports.deleteBorder = async (req, res) => {
 
     // 3. Delete image file from Backblaze B2 & ledger
     if (border.image) {
-      await CloudStorageService.deleteFile(border.image);
+      await CloudStorageService.deleteFile(border.image, { schoolId });
     }
 
     return ApiResponse.success(res, 'Certificate border deleted successfully');

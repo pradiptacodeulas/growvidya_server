@@ -56,6 +56,7 @@ class SubscriptionLifecycleJob {
       // 4. Dispatch deduplicated expiry reminders if Super Admin enabled reminders
       const settings = await SubscriptionAlertService.getSettings();
       const anyChannelEnabled =
+        settings &&
         Number(settings.notify_on_expiry_reminder) === 1 &&
         (Number(settings.email_alerts_enabled) === 1 || Number(settings.sms_alerts_enabled) === 1);
 
@@ -84,11 +85,11 @@ class SubscriptionLifecycleJob {
 
           const [existingLogs] = await pool.query(
             `SELECT channel FROM subscription_reminder_logs
-             WHERE subscription_id = ? AND milestone_days = ?`,
+             WHERE subscription_id = ? AND milestone_days = ? AND status = 'sent'`,
             [sub.subscription_id, milestone]
           );
-          const alreadyLogged = new Set(existingLogs.map((r) => r.channel));
-          const pendingChannels = channelsToCheck.filter((ch) => !alreadyLogged.has(ch));
+          const alreadySent = new Set(existingLogs.map((r) => r.channel));
+          const pendingChannels = channelsToCheck.filter((ch) => !alreadySent.has(ch));
           if (pendingChannels.length === 0) continue;
 
           const dispatchRes = await SubscriptionAlertService.sendExpiryReminderAlert({
@@ -105,9 +106,12 @@ class SubscriptionLifecycleJob {
                 ? 'sent'
                 : 'skipped';
             await pool.query(
-              `INSERT IGNORE INTO subscription_reminder_logs
+              `INSERT INTO subscription_reminder_logs
                  (school_id, subscription_id, milestone_days, channel, status, detail)
-               VALUES (?, ?, ?, ?, ?, ?)`,
+               VALUES (?, ?, ?, ?, ?, ?)
+               ON DUPLICATE KEY UPDATE
+                 status = VALUES(status),
+                 detail = VALUES(detail)`,
               [
                 sub.school_id,
                 sub.subscription_id,

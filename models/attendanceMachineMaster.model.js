@@ -1,4 +1,5 @@
 const { pool } = require('../config/db.config');
+const SubscriptionSchemaModel = require('./subscriptionSchema.model');
 const { parsePagination, buildPagination } = require('../utils/pagination.util');
 
 class AttendanceMachineMasterModel {
@@ -58,6 +59,7 @@ class AttendanceMachineMasterModel {
     `;
     const countQuery = `SELECT COUNT(*) AS total FROM attendance_machine_master ${where}`;
 
+    await SubscriptionSchemaModel.initTable();
     const [[rows], [[countRow]], counts] = await Promise.all([
       pool.query(query, [...params, pageSize, offset]),
       pool.query(countQuery, params),
@@ -320,6 +322,8 @@ class AttendanceMachineMasterModel {
       FROM school_attendance_machines sam
       JOIN attendance_machine_master amm ON sam.machine_master_id = amm.id
       JOIN school_master s ON sam.school_id = s.id
+      LEFT JOIN subscription_payment_orders spo ON sam.payment_order_id = spo.id
+      LEFT JOIN bank_account_master bam ON spo.bank_account_id = bam.id
       LEFT JOIN (
         SELECT um1.school_id,
                um1.id AS admin_user_id,
@@ -371,6 +375,19 @@ class AttendanceMachineMasterModel {
         sam.status,
         sam.order_status,
         sam.payment_transaction_id,
+        sam.payment_order_id,
+        spo.order_no AS payment_order_no,
+        spo.order_type AS payment_order_type,
+        spo.payment_method,
+        spo.status AS payment_order_status,
+        spo.utr_number,
+        spo.grand_total AS payment_order_total,
+        spo.bank_account_id,
+        bam.bank_name AS company_bank_name,
+        bam.account_title AS company_bank_title,
+        bam.beneficiary_name AS company_bank_beneficiary,
+        bam.account_number AS company_account_number,
+        bam.ifsc_code AS company_ifsc_code,
         COALESCE(sam.shipping_address, s.address) AS shipping_address,
         sam.remarks,
         sam.last_sync_at,
@@ -411,6 +428,7 @@ class AttendanceMachineMasterModel {
       ${where}
     `;
 
+    await SubscriptionSchemaModel.initTable();
     const [[rows], [[countRow]], counts] = await Promise.all([
       pool.query(selectQuery, [...params, pageSize, offset]),
       pool.query(countQuery, params),
@@ -512,27 +530,22 @@ class AttendanceMachineMasterModel {
 
     if (updates.length === 0) return false;
 
-    const isApprovingPending =
-      existing.payment_order_id &&
-      ['approved', 'dispatched', 'delivered'].includes(normalizedStatus) &&
-      existing.order_status === 'pending';
+    await SubscriptionSchemaModel.initTable();
 
-    if (isApprovingPending) {
-      try {
-        const [ordRows] = await pool.query(
-          'SELECT id, order_type, status FROM subscription_payment_orders WHERE id = ? LIMIT 1',
-          [existing.payment_order_id]
+    // Block marking hardware as approved/dispatched/delivered until Payment Order UTR is verified ('paid')
+    if (existing.payment_order_id && ['approved', 'dispatched', 'delivered'].includes(normalizedStatus)) {
+      const [ordRows] = await pool.query(
+        'SELECT id, order_no, order_type, status FROM subscription_payment_orders WHERE id = ? LIMIT 1',
+        [existing.payment_order_id]
+      );
+      const ord = ordRows[0];
+      if (ord && ord.status !== 'paid') {
+        const err = new Error(
+          `Cannot mark attendance machine order as "${normalizedStatus}" while Payment Order ${ord.order_no} is "${ord.status}". Please verify the UTR payment order first.`
         );
-        const ord = ordRows[0];
-        if (ord && ord.order_type === 'addon_only' && ord.status === 'pending_verification') {
-          const SubscriptionFulfillmentService = require('../services/subscriptionFulfillment.service');
-          await SubscriptionFulfillmentService.approveOfflineAddonOrder({
-            orderId: ord.id,
-            verificationNotes: data.remarks || 'Approved via Attendance Machine Buyers',
-          });
-        }
-      } catch (e) {
-        console.error('[AttendanceMachineMasterModel.updateBuyerOrder approval sync error]:', e.message);
+        err.statusCode = 400;
+        err.code = 'PAYMENT_UNVERIFIED';
+        throw err;
       }
     }
 

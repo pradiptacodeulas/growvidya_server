@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const puppeteer = require('puppeteer');
+const CloudStorageService = require('./cloudStorage.service');
 
 const TEMPLATE_PATH = path.join(__dirname, '../templates/receipts/default-receipt.html');
 
@@ -12,24 +13,37 @@ const getTemplateHtml = () => {
 };
 
 /**
- * Converts a local file path to base64 Data URI for fast and reliable Puppeteer rendering
+ * Converts a Backblaze B2 upload path (or local public asset) to a base64 Data URI
+ * for fast and reliable Puppeteer rendering.
  */
-const toBase64DataUri = (imgUrlOrPath) => {
+const toBase64DataUri = async (imgUrlOrPath) => {
   if (!imgUrlOrPath) return '';
   if (typeof imgUrlOrPath !== 'string') return '';
   if (imgUrlOrPath.startsWith('data:')) return imgUrlOrPath;
 
   try {
-    let cleanPath = imgUrlOrPath.replace(/^https?:\/\/[^\/]+/i, '');
-    if (cleanPath.startsWith('/')) cleanPath = cleanPath.substring(1);
+    const cleanPath = imgUrlOrPath
+      .replace(/^https?:\/\/[^/]+/i, '')
+      .split('?')[0]
+      .replace(/\\/g, '/')
+      .replace(/^\/+/, '');
 
-    const fullPath = path.isAbsolute(imgUrlOrPath)
-      ? imgUrlOrPath
-      : path.join(__dirname, '../public', cleanPath);
+    if (!cleanPath || cleanPath.includes('..')) return '';
 
-    if (fs.existsSync(fullPath)) {
+    try {
+      const { buffer, mimeType } = await CloudStorageService.getFileBuffer(cleanPath);
+      if (buffer && buffer.length > 0) {
+        return `data:${mimeType || 'image/jpeg'};base64,${buffer.toString('base64')}`;
+      }
+    } catch (_) {
+      // Fall through to local public/ static asset check
+    }
+
+    const publicRoot = path.resolve(__dirname, '../public');
+    const fullPath = path.resolve(publicRoot, cleanPath);
+    if (fullPath.startsWith(publicRoot + path.sep) && fs.existsSync(fullPath)) {
       const ext = path.extname(fullPath).toLowerCase().replace('.', '') || 'jpeg';
-      const mime = ext === 'png' ? 'image/png' : ext === 'svg' ? 'image/svg+xml' : 'image/jpeg';
+      const mime = ext === 'png' ? 'image/png' : ext === 'svg' ? 'image/svg+xml' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
       const data = fs.readFileSync(fullPath).toString('base64');
       return `data:${mime};base64,${data}`;
     }
@@ -37,7 +51,7 @@ const toBase64DataUri = (imgUrlOrPath) => {
     console.warn('[feeReceiptPdf.service] Failed to convert image to base64:', err.message);
   }
 
-  return imgUrlOrPath;
+  return '';
 };
 
 /**
@@ -146,8 +160,9 @@ const renderTemplate = (template, data) => {
 /**
  * Builds the HTML content for an individual receipt
  */
-const buildSingleReceiptBodyHtml = (payment, template) => {
+const buildSingleReceiptBodyHtml = async (payment, template) => {
   const schoolName = payment.school_name || '';
+  const schoolLogoUri = await toBase64DataUri(payment.school_logo);
   let branchName = payment.branch_name || '';
   let schoolAddress = payment.branch_address || payment.school_address || '';
 
@@ -200,6 +215,8 @@ const buildSingleReceiptBodyHtml = (payment, template) => {
 
   const data = {
     school_name: escapeHtml(schoolName),
+    school_logo: schoolLogoUri,
+    school_logo_src: schoolLogoUri,
     branch_name: escapeHtml(branchName),
     school_address: escapeHtml(schoolAddress),
     school_contact: schoolContact,
@@ -234,9 +251,9 @@ class FeeReceiptPdfService {
   /**
    * Generates the complete HTML for a single fee payment receipt
    */
-  static generateReceiptHtml(payment) {
+  static async generateReceiptHtml(payment) {
     const rawTemplate = getTemplateHtml();
-    return buildSingleReceiptBodyHtml(payment, rawTemplate);
+    return await buildSingleReceiptBodyHtml(payment, rawTemplate);
   }
 
   /**
@@ -249,9 +266,9 @@ class FeeReceiptPdfService {
     const rawTemplate = getTemplateHtml();
 
     // Build receipt HTML for each item in the batch
-    const receiptsHtml = paymentsList.map((payment) => {
-      return buildSingleReceiptBodyHtml(payment, rawTemplate);
-    });
+    const receiptsHtml = await Promise.all(
+      paymentsList.map((payment) => buildSingleReceiptBodyHtml(payment, rawTemplate))
+    );
 
     // Extract head content from template
     const headMatch = rawTemplate.match(/<head>([\s\S]*?)<\/head>/i);

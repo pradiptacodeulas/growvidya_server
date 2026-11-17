@@ -172,31 +172,19 @@ class EmailCredentialModel {
   static sanitizeRecord(row) {
     if (!row) return null;
     const isMailjet = row.provider === 'mailjet';
-    let decryptedApiSecret = '';
-    let decryptedSmtpPassword = '';
-    try {
-      if (isMailjet && row.api_secret) {
-        decryptedApiSecret = decryptSecret(row.api_secret) || '';
-      }
-      if (!isMailjet && row.smtp_password) {
-        decryptedSmtpPassword = decryptSecret(row.smtp_password) || '';
-      }
-    } catch (e) {
-      // fallback to empty string if decryption fails
-    }
     return {
       id: row.id,
       provider: row.provider,
       from_name: row.from_name || '',
       from_email: row.from_email || '',
       api_key: isMailjet ? (row.api_key || '') : null,
-      api_secret: isMailjet ? decryptedApiSecret : null,
+      api_secret: null,
       api_secret_masked: isMailjet && row.api_secret ? MASKED_SECRET : null,
       has_api_secret: Boolean(isMailjet && row.api_secret),
       smtp_host: !isMailjet ? (row.smtp_host || '') : null,
       smtp_port: !isMailjet ? (row.smtp_port ? Number(row.smtp_port) : 587) : null,
       smtp_username: !isMailjet ? (row.smtp_username || '') : null,
-      smtp_password: !isMailjet ? decryptedSmtpPassword : null,
+      smtp_password: null,
       smtp_password_masked: !isMailjet && row.smtp_password ? MASKED_SECRET : null,
       has_smtp_password: Boolean(!isMailjet && row.smtp_password),
       smtp_encryption: !isMailjet ? (row.smtp_encryption || 'tls') : null,

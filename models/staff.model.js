@@ -1,6 +1,6 @@
 const { pool } = require('../config/db.config');
 const { hashPassword } = require('../utils/password.util');
-const { saveBase64File } = require('../utils/file.util');
+const { saveBase64File, hardDeleteFile } = require('../utils/file.util');
 
 class StaffModel {
   static async getAll(schoolId, { search = '', role = '', status = '', branchId = null, isSuperAdmin = false, limit = 12, offset = 0 } = {}) {
@@ -499,6 +499,10 @@ class StaffModel {
 
     await pool.query(sql, params);
 
+    if (existing.picture && existing.picture !== picturePath) {
+      await hardDeleteFile(existing.picture, { schoolId });
+    }
+
     let staffBranchId = data.branch_id ? Number(data.branch_id) : (data.branchId ? Number(data.branchId) : null);
     if (!staffBranchId) {
       try {
@@ -606,30 +610,58 @@ class StaffModel {
       }
     }
 
-    // 4. Handle Deleted Documents
-    if (Array.isArray(data.deleted_documents) && data.deleted_documents.length > 0) {
-      for (const docId of data.deleted_documents) {
-        try {
-          await pool.query(`UPDATE user_document SET status = 4 WHERE id = ? AND user_id = ?`, [docId, id]);
-        } catch (err) {
-          console.error('Error deleting user_document:', err);
-        }
-      }
-    }
-
-    // 5. Handle New Documents
+    // 4. Upload & Insert New Documents FIRST (so 403 storage quota rejections never delete existing staff documents)
     if (Array.isArray(data.documents) && data.documents.length > 0) {
-      for (const doc of data.documents) {
-        if (!doc.id) {
-          try {
+      const newlyUploadedDocPaths = [];
+      try {
+        for (const doc of data.documents) {
+          if (!doc.id) {
+            const rawDoc = doc.file || doc.attachments || doc.file_url || '';
+            const isBase64Upload = typeof rawDoc === 'string' && rawDoc.startsWith('data:');
+            const savedDocPath = isBase64Upload
+              ? await saveBase64File(rawDoc, 'staff/documents', 'StaffDoc', {
+                  schoolId,
+                  branchId: staffBranchId,
+                })
+              : rawDoc || doc.file_name || '';
+            if (isBase64Upload && savedDocPath) {
+              newlyUploadedDocPaths.push(savedDocPath);
+            }
             await pool.query(
               `INSERT INTO user_document (school_id, branch_id, user_id, document_type, attachments, status, created_at)
                VALUES (?, ?, ?, ?, ?, 1, NOW())`,
-              [schoolId, staffBranchId, id, doc.document_type || null, doc.attachments || doc.file_name || '']
+              [schoolId, staffBranchId, id, doc.document_type || null, savedDocPath || '']
             );
-          } catch (err) {
-            console.error('Error inserting new user_document:', err);
           }
+        }
+      } catch (err) {
+        if (err.statusCode === 403 || err.quota) {
+          for (const p of newlyUploadedDocPaths) {
+            await hardDeleteFile(p, { schoolId }).catch(() => {});
+          }
+          throw err;
+        }
+        console.error('Error inserting new user_document:', err);
+      }
+    }
+
+    // 5. Handle Deleted Documents (only after new document uploads succeed)
+    if (Array.isArray(data.deleted_documents) && data.deleted_documents.length > 0) {
+      for (const docId of data.deleted_documents) {
+        try {
+          const [docRows] = await pool.query(
+            `SELECT attachments FROM user_document WHERE id = ? AND user_id = ? AND school_id = ? LIMIT 1`,
+            [docId, id, schoolId]
+          );
+          await pool.query(
+            `UPDATE user_document SET status = 4, attachments = '' WHERE id = ? AND user_id = ? AND school_id = ?`,
+            [docId, id, schoolId]
+          );
+          if (docRows && docRows[0]?.attachments) {
+            await hardDeleteFile(docRows[0].attachments, { schoolId });
+          }
+        } catch (err) {
+          console.error('Error deleting user_document:', err);
         }
       }
     }
@@ -640,7 +672,7 @@ class StaffModel {
   static async delete(id, schoolId, branchId = null, { isSuperAdmin = false } = {}) {
     // Prevent deletion of primary Super Admin or protected Branch Head accounts
     let userSql = `
-      SELECT u.id, u.admin_type, bm.head_user_id, r.is_system_role
+      SELECT u.id, u.picture, u.admin_type, bm.head_user_id, r.is_system_role
       FROM user_master u
       LEFT JOIN branch_master bm ON u.branch_id = bm.id
       LEFT JOIN role_master r ON u.role = r.id
@@ -665,7 +697,17 @@ class StaffModel {
       throw new Error('Branch Head accounts cannot be deleted by branch staff.');
     }
 
-    let delSql = `UPDATE user_master SET status = 4 WHERE id = ? AND school_id = ?`;
+    const oldPicture = userRows[0].picture || null;
+    let oldDocPaths = [];
+    try {
+      const [docRows] = await pool.query(
+        `SELECT attachments FROM user_document WHERE user_id = ? AND school_id = ? AND status != 4`,
+        [id, schoolId]
+      );
+      oldDocPaths = (docRows || []).map((r) => (r.attachments || '').trim()).filter(Boolean);
+    } catch (_) {}
+
+    let delSql = `UPDATE user_master SET status = 4, picture = NULL WHERE id = ? AND school_id = ?`;
     const delParams = [id, schoolId];
     if (branchId) {
       delSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
@@ -676,11 +718,20 @@ class StaffModel {
     // Also soft-delete user documents
     try {
       await pool.query(
-        `UPDATE user_document SET status = 4 WHERE user_id = ? AND school_id = ?`,
+        `UPDATE user_document SET status = 4, attachments = '' WHERE user_id = ? AND school_id = ?`,
         [id, schoolId]
       );
     } catch (e) {
       console.error('Error soft-deleting user_document:', e.message);
+    }
+
+    if (result.affectedRows > 0) {
+      if (oldPicture) {
+        await hardDeleteFile(oldPicture, { schoolId: Number(schoolId) }).catch(() => {});
+      }
+      for (const docPath of oldDocPaths) {
+        await hardDeleteFile(docPath, { schoolId: Number(schoolId) }).catch(() => {});
+      }
     }
 
     return result.affectedRows > 0;

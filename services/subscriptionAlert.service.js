@@ -7,15 +7,40 @@ const EmailService = require('./email.service');
  * Never throws or blocks any payment, activation, approval, or cron workflow when OFF or unconfigured.
  */
 class SubscriptionAlertService {
+  static _defaultSettings() {
+    return {
+      id: 1,
+      email_alerts_enabled: 0,
+      sms_alerts_enabled: 0,
+      notify_on_payment_success: 1,
+      notify_on_offline_decision: 1,
+      notify_on_expiry_reminder: 1,
+      sms_provider: null,
+      sms_sender_id: null,
+    };
+  }
+
   static async getSettings() {
     const [rows] = await pool.query(
       'SELECT * FROM saas_communication_settings WHERE id = 1 LIMIT 1'
     );
-    return rows[0] || null;
+    if (rows[0]) {
+      return rows[0];
+    }
+
+    await pool.query(
+      `INSERT IGNORE INTO saas_communication_settings
+         (id, email_alerts_enabled, sms_alerts_enabled, notify_on_payment_success, notify_on_offline_decision, notify_on_expiry_reminder)
+       VALUES (1, 0, 0, 1, 1, 1)`
+    );
+    const [recheck] = await pool.query(
+      'SELECT * FROM saas_communication_settings WHERE id = 1 LIMIT 1'
+    );
+    return recheck[0] || SubscriptionAlertService._defaultSettings();
   }
 
   static async updateSettings(payload = {}, actorId = null) {
-    const current = await SubscriptionAlertService.getSettings();
+    const current = (await SubscriptionAlertService.getSettings()) || SubscriptionAlertService._defaultSettings();
     const emailEnabled = payload.email_alerts_enabled !== undefined
       ? (Number(payload.email_alerts_enabled) ? 1 : 0)
       : Number(current.email_alerts_enabled) || 0;

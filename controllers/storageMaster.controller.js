@@ -39,8 +39,15 @@ class StorageMasterController {
 
       const targetId = id || plan_id || planId || req.body?.id || req.body?.plan_id || req.headers['x-storage-plan-id'];
       if (targetId && targetId !== ':id') {
-        req.params.id = targetId;
-        return StorageMasterController.getById(req, res, next);
+        const trimmedTarget = String(targetId).trim();
+        if (!/^\d+$/.test(trimmedTarget)) {
+          return ApiResponse.badRequest(res, 'Valid numeric storage plan ID is required.');
+        }
+        const plan = await StorageMasterModel.getById(Number(trimmedTarget));
+        if (!plan || Number(plan.status) !== 1) {
+          return ApiResponse.notFound(res, 'Active storage plan not found.');
+        }
+        return ApiResponse.success(res, 'Active storage plan fetched successfully.', plan);
       }
 
       const plans = await StorageMasterModel.getActivePlans();
@@ -132,6 +139,9 @@ class StorageMasterController {
       const updated = await StorageMasterModel.getBuyerOrderById(Number(id));
       return ApiResponse.success(res, 'Storage plan order updated successfully.', updated);
     } catch (error) {
+      if (error.statusCode) {
+        return ApiResponse.error(res, error.message, { code: error.code || null }, error.statusCode);
+      }
       next(error);
     }
   }
@@ -159,15 +169,11 @@ class StorageMasterController {
       }
 
       const trimmedId = String(id).trim();
-      let plan = null;
-      if (/^\d+$/.test(trimmedId)) {
-        plan = await StorageMasterModel.getById(Number(trimmedId));
-      } else {
-        plan = await StorageMasterModel.getByCode(trimmedId);
-        if (plan && plan.id) {
-          plan = await StorageMasterModel.getById(plan.id);
-        }
+      if (!/^\d+$/.test(trimmedId)) {
+        return ApiResponse.badRequest(res, 'Valid numeric storage plan ID is required.');
       }
+
+      const plan = await StorageMasterModel.getById(Number(trimmedId));
 
       if (!plan) {
         return ApiResponse.notFound(res, 'Storage plan not found.');
