@@ -162,6 +162,102 @@ class TransportModel {
     return route;
   }
 
+  static async validateRouteAssignment(schoolId, { bus_id, driver_id, helpers }, excludeRouteId = null) {
+    const selectedBusId = bus_id ? Number(bus_id) : null;
+    const selectedDriverId = driver_id ? Number(driver_id) : null;
+    const helperArr = (Array.isArray(helpers) ? helpers : [helpers])
+      .filter((h) => h !== null && h !== undefined && String(h).trim() !== '')
+      .map(Number);
+
+    // 1. Check if Bus is already assigned to another route
+    if (selectedBusId) {
+      let busSql = `
+        SELECT r.id, r.transport_route, b.name AS bus_name, b.number_plate
+        FROM trans_route_master r
+        LEFT JOIN bus_master b ON r.bus_id = b.id
+        WHERE r.school_id = ? AND r.bus_id = ? AND r.status != 0 AND r.status != 4
+      `;
+      const busParams = [schoolId, selectedBusId];
+      if (excludeRouteId) {
+        busSql += ` AND r.id != ?`;
+        busParams.push(Number(excludeRouteId));
+      }
+      busSql += ` LIMIT 1`;
+      const [busRows] = await pool.query(busSql, busParams);
+      if (busRows && busRows.length > 0) {
+        const row = busRows[0];
+        const busLabel = row.bus_name
+          ? `${row.bus_name}${row.number_plate ? ` (${row.number_plate})` : ''}`
+          : 'This bus';
+        return {
+          field: 'bus',
+          message: `${busLabel} is already assigned to route "${row.transport_route}". A bus cannot be assigned to multiple routes.`,
+        };
+      }
+    }
+
+    // 2. Check if Driver is already assigned to another route
+    if (selectedDriverId) {
+      let drvSql = `
+        SELECT r.id, r.transport_route, CONCAT(IFNULL(op.first_name, ''), ' ', IFNULL(op.last_name, '')) AS driver_name
+        FROM bus_to_operator bo
+        INNER JOIN trans_route_master r ON (bo.bus_id = r.bus_id AND r.school_id = bo.school_id)
+        LEFT JOIN operator_master op ON bo.operator_id = op.id
+        WHERE bo.school_id = ?
+          AND bo.operator_id = ?
+          AND bo.status != 0 AND bo.status != 4
+          AND r.status != 0 AND r.status != 4
+      `;
+      const drvParams = [schoolId, selectedDriverId];
+      if (excludeRouteId) {
+        drvSql += ` AND r.id != ?`;
+        drvParams.push(Number(excludeRouteId));
+      }
+      drvSql += ` LIMIT 1`;
+      const [drvRows] = await pool.query(drvSql, drvParams);
+      if (drvRows && drvRows.length > 0) {
+        const row = drvRows[0];
+        const drvName = (row.driver_name || '').trim() || 'This driver';
+        return {
+          field: 'driver',
+          message: `Driver "${drvName}" is already assigned to route "${row.transport_route}". A driver cannot be assigned to multiple routes.`,
+        };
+      }
+    }
+
+    // 3. Check if any Helper is already assigned to another route
+    if (helperArr.length > 0) {
+      const placeholders = helperArr.map(() => '?').join(', ');
+      let hlpSql = `
+        SELECT r.id, r.transport_route, CONCAT(IFNULL(op.first_name, ''), ' ', IFNULL(op.last_name, '')) AS helper_name
+        FROM bus_to_operator bo
+        INNER JOIN trans_route_master r ON (bo.bus_id = r.bus_id AND r.school_id = bo.school_id)
+        LEFT JOIN operator_master op ON bo.operator_id = op.id
+        WHERE bo.school_id = ?
+          AND bo.operator_id IN (${placeholders})
+          AND bo.status != 0 AND bo.status != 4
+          AND r.status != 0 AND r.status != 4
+      `;
+      const hlpParams = [schoolId, ...helperArr];
+      if (excludeRouteId) {
+        hlpSql += ` AND r.id != ?`;
+        hlpParams.push(Number(excludeRouteId));
+      }
+      hlpSql += ` LIMIT 1`;
+      const [hlpRows] = await pool.query(hlpSql, hlpParams);
+      if (hlpRows && hlpRows.length > 0) {
+        const row = hlpRows[0];
+        const hlpName = (row.helper_name || '').trim() || 'This helper';
+        return {
+          field: 'helper',
+          message: `Helper "${hlpName}" is already assigned to route "${row.transport_route}". A helper cannot be assigned to multiple routes.`,
+        };
+      }
+    }
+
+    return null;
+  }
+
   static async createRoute(schoolId, { branch_id = null, transport_route, bus_id, bus, driver_id, driver, helpers, helper, fare, sort_order, status }) {
     const selectedBusId = bus_id || bus;
     let resolvedBranchId = branch_id ? Number(branch_id) : null;
@@ -192,24 +288,22 @@ class TransportModel {
       const helperList = helpers || helper || [];
       const helperArr = Array.isArray(helperList) ? helperList : [helperList].filter(Boolean);
 
-      if (selectedDriverId || helperArr.length > 0) {
+      await pool.query(
+        `DELETE FROM bus_to_operator WHERE bus_id = ? AND school_id = ?`,
+        [Number(selectedBusId), schoolId]
+      );
+      if (selectedDriverId) {
         await pool.query(
-          `DELETE FROM bus_to_operator WHERE bus_id = ? AND school_id = ?`,
-          [Number(selectedBusId), schoolId]
+          `INSERT INTO bus_to_operator (school_id, branch_id, bus_id, operator_id, status) VALUES (?, ?, ?, ?, 1)`,
+          [schoolId, resolvedBranchId, Number(selectedBusId), Number(selectedDriverId)]
         );
-        if (selectedDriverId) {
+      }
+      for (const hid of helperArr) {
+        if (hid) {
           await pool.query(
             `INSERT INTO bus_to_operator (school_id, branch_id, bus_id, operator_id, status) VALUES (?, ?, ?, ?, 1)`,
-            [schoolId, resolvedBranchId, Number(selectedBusId), Number(selectedDriverId)]
+            [schoolId, resolvedBranchId, Number(selectedBusId), Number(hid)]
           );
-        }
-        for (const hid of helperArr) {
-          if (hid) {
-            await pool.query(
-              `INSERT INTO bus_to_operator (school_id, branch_id, bus_id, operator_id, status) VALUES (?, ?, ?, ?, 1)`,
-              [schoolId, resolvedBranchId, Number(selectedBusId), Number(hid)]
-            );
-          }
         }
       }
     }
@@ -219,6 +313,18 @@ class TransportModel {
   static async updateRoute(schoolId, id, { transport_route, bus_id, bus, driver_id, driver, helpers, helper, fare, sort_order, status, branch_id }, branchId = null) {
     const selectedBusId = bus_id || bus;
     const normalizedStatus = normalizeStatusForSave(status, 1);
+
+    let oldBusId = null;
+    try {
+      const [existingRoute] = await pool.query(
+        'SELECT bus_id FROM trans_route_master WHERE id = ? AND school_id = ? LIMIT 1',
+        [id, schoolId]
+      );
+      if (existingRoute && existingRoute.length > 0) {
+        oldBusId = existingRoute[0].bus_id;
+      }
+    } catch (e) {}
+
     let sql = `UPDATE trans_route_master 
        SET transport_route = ?, bus_id = ?, fare = ?, sort_order = ?, status = ?`;
     const params = [
@@ -243,6 +349,13 @@ class TransportModel {
 
     await pool.query(sql, params);
 
+    if (oldBusId && (!selectedBusId || Number(oldBusId) !== Number(selectedBusId))) {
+      await pool.query(
+        `DELETE FROM bus_to_operator WHERE bus_id = ? AND school_id = ?`,
+        [Number(oldBusId), schoolId]
+      );
+    }
+
     if (selectedBusId) {
       let routeBranchId = effectiveBranchId ? Number(effectiveBranchId) : null;
       if (!routeBranchId) {
@@ -261,24 +374,22 @@ class TransportModel {
       const helperList = helpers || helper || [];
       const helperArr = Array.isArray(helperList) ? helperList : [helperList].filter(Boolean);
 
-      if (selectedDriverId || helperArr.length > 0) {
+      await pool.query(
+        `DELETE FROM bus_to_operator WHERE bus_id = ? AND school_id = ?`,
+        [Number(selectedBusId), schoolId]
+      );
+      if (selectedDriverId) {
         await pool.query(
-          `DELETE FROM bus_to_operator WHERE bus_id = ? AND school_id = ?`,
-          [Number(selectedBusId), schoolId]
+          `INSERT INTO bus_to_operator (school_id, branch_id, bus_id, operator_id, status) VALUES (?, ?, ?, ?, 1)`,
+          [schoolId, routeBranchId, Number(selectedBusId), Number(selectedDriverId)]
         );
-        if (selectedDriverId) {
+      }
+      for (const hid of helperArr) {
+        if (hid) {
           await pool.query(
             `INSERT INTO bus_to_operator (school_id, branch_id, bus_id, operator_id, status) VALUES (?, ?, ?, ?, 1)`,
-            [schoolId, routeBranchId, Number(selectedBusId), Number(selectedDriverId)]
+            [schoolId, routeBranchId, Number(selectedBusId), Number(hid)]
           );
-        }
-        for (const hid of helperArr) {
-          if (hid) {
-            await pool.query(
-              `INSERT INTO bus_to_operator (school_id, branch_id, bus_id, operator_id, status) VALUES (?, ?, ?, ?, 1)`,
-              [schoolId, routeBranchId, Number(selectedBusId), Number(hid)]
-            );
-          }
         }
       }
     }
@@ -286,6 +397,17 @@ class TransportModel {
   }
 
   static async deleteRoute(schoolId, id, branchId = null) {
+    let oldBusId = null;
+    try {
+      const [existingRoute] = await pool.query(
+        'SELECT bus_id FROM trans_route_master WHERE id = ? AND school_id = ? LIMIT 1',
+        [id, schoolId]
+      );
+      if (existingRoute && existingRoute.length > 0) {
+        oldBusId = existingRoute[0].bus_id;
+      }
+    } catch (e) {}
+
     let sql = `UPDATE trans_route_master SET status = 4 WHERE id = ? AND school_id = ?`;
     const params = [id, schoolId];
     if (branchId) {
@@ -293,6 +415,19 @@ class TransportModel {
       params.push(Number(branchId));
     }
     await pool.query(sql, params);
+
+    if (oldBusId) {
+      const [otherRoutes] = await pool.query(
+        'SELECT id FROM trans_route_master WHERE school_id = ? AND bus_id = ? AND status != 0 AND status != 4 LIMIT 1',
+        [schoolId, Number(oldBusId)]
+      );
+      if (!otherRoutes || otherRoutes.length === 0) {
+        await pool.query(
+          `DELETE FROM bus_to_operator WHERE bus_id = ? AND school_id = ?`,
+          [Number(oldBusId), schoolId]
+        );
+      }
+    }
     return true;
   }
 
@@ -314,8 +449,11 @@ class TransportModel {
         b.status,
         MAX(IF(op.type = 1, op.id, NULL)) AS driver_id,
         NULLIF(TRIM(MAX(IF(op.type = 1, CONCAT(IFNULL(op.first_name, ''), ' ', IFNULL(op.last_name, '')), NULL))), '') AS driver_name,
-        MAX(IF(op.type = 1, op.phone, NULL)) AS driver_phone
+        MAX(IF(op.type = 1, op.phone, NULL)) AS driver_phone,
+        MAX(r.id) AS assigned_route_id,
+        MAX(r.transport_route) AS assigned_route
       FROM bus_master b
+      LEFT JOIN trans_route_master r ON (b.id = r.bus_id AND r.school_id = b.school_id AND r.status != 4 AND r.status != 0)
       LEFT JOIN bus_to_operator bo ON (b.id = bo.bus_id AND bo.school_id = ? AND bo.status != 4 AND bo.status != 0)
       LEFT JOIN operator_master op ON (bo.operator_id = op.id AND op.type = 1 AND op.status != 4 AND op.status != 0)
       WHERE b.school_id = ?
@@ -375,6 +513,26 @@ class TransportModel {
 
     const [rows] = await pool.query(sql, params);
     return rows && rows.length > 0 ? rows[0] : null;
+  }
+
+  static async checkVehicleNumberPlate(schoolId, numberPlate, excludeId = null) {
+    if (!numberPlate || !String(numberPlate).trim()) return false;
+    const cleanPlate = String(numberPlate).trim().replace(/[\s\-]/g, '');
+    let sql = `SELECT id FROM bus_master WHERE school_id = ? AND LOWER(REPLACE(REPLACE(TRIM(number_plate), ' ', ''), '-', '')) = LOWER(?) AND status != 0 AND status != 4`;
+    const params = [schoolId, cleanPlate];
+    if (excludeId) {
+      sql += ` AND id != ?`;
+      params.push(excludeId);
+    }
+    const [rows] = await pool.query(sql, params);
+    return Boolean(rows && rows.length > 0);
+  }
+
+  static async checkVehicleDuplicate(schoolId, { number_plate }, excludeId = null) {
+    const isNumberPlateDuplicate = number_plate
+      ? await TransportModel.checkVehicleNumberPlate(schoolId, number_plate, excludeId)
+      : false;
+    return { isNumberPlateDuplicate };
   }
 
   static async createVehicle(schoolId, { branch_id = null, name, number_plate, seat, color, driver_id, status, image = null }) {
@@ -522,11 +680,14 @@ class TransportModel {
         op.picture,
         op.status,
         MAX(b.name) AS assigned_bus,
-        MAX(b.number_plate) AS assigned_number_plate
+        MAX(b.number_plate) AS assigned_number_plate,
+        MAX(r.id) AS assigned_route_id,
+        MAX(r.transport_route) AS assigned_route
       FROM operator_master op
       LEFT JOIN branch_master bm ON op.branch_id = bm.id
       LEFT JOIN bus_to_operator bo ON (op.id = bo.operator_id AND bo.status != 4 AND bo.status != 0)
       LEFT JOIN bus_master b ON (bo.bus_id = b.id AND b.status != 4 AND b.status != 0)
+      LEFT JOIN trans_route_master r ON (b.id = r.bus_id AND r.school_id = op.school_id AND r.status != 4 AND r.status != 0)
       WHERE op.school_id = ? AND op.type = 1
     `;
     const params = [schoolId];
@@ -830,11 +991,14 @@ class TransportModel {
         op.picture,
         op.status,
         MAX(b.name) AS assigned_bus,
-        MAX(b.number_plate) AS assigned_number_plate
+        MAX(b.number_plate) AS assigned_number_plate,
+        MAX(r.id) AS assigned_route_id,
+        MAX(r.transport_route) AS assigned_route
       FROM operator_master op
       LEFT JOIN branch_master bm ON op.branch_id = bm.id
       LEFT JOIN bus_to_operator bo ON (op.id = bo.operator_id AND bo.status != 4 AND bo.status != 0)
       LEFT JOIN bus_master b ON (bo.bus_id = b.id AND b.status != 4 AND b.status != 0)
+      LEFT JOIN trans_route_master r ON (b.id = r.bus_id AND r.school_id = op.school_id AND r.status != 4 AND r.status != 0)
       WHERE op.school_id = ? AND op.type = 2
     `;
     const params = [schoolId];

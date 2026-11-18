@@ -61,6 +61,9 @@ router.delete('/routes/:id', AdminTransportController.deleteRoute);
 router.delete('/route/:id', AdminTransportController.deleteRoute);
 
 // 2. Buses / Vehicles (and alias /bus, /buses)
+router.get('/vehicles/check-duplicate', AdminTransportController.checkVehicleDuplicate);
+router.get('/buses/check-duplicate', AdminTransportController.checkVehicleDuplicate);
+router.get('/bus/check-duplicate', AdminTransportController.checkVehicleDuplicate);
 router.get('/vehicles', AdminTransportController.getAllVehicles);
 router.get('/buses', AdminTransportController.getAllVehicles);
 router.get('/bus', AdminTransportController.getAllVehicles);

@@ -51,16 +51,41 @@ class AdminTransportController {
       const branchId = req.branchId || req.body?.branch_id || null;
       const { transport_route, bus_id, bus, driver_id, driver, helpers, helper, fare, sort_order, status } = req.body;
 
-      if (!transport_route) {
-        return ApiResponse.error(res, 'Route name is required.', null, 400);
+      const selectedBusId = bus_id || bus;
+      const selectedDriverId = driver_id || driver;
+      const rawHelpers = helpers || helper || [];
+      const helperArr = (Array.isArray(rawHelpers) ? rawHelpers : [rawHelpers]).filter(
+        (h) => h !== null && h !== undefined && String(h).trim() !== ''
+      );
+
+      if (!transport_route || !String(transport_route).trim()) {
+        return ApiResponse.error(res, 'Route name is required.', { field: 'transport_route' }, 400);
+      }
+      if (!selectedBusId) {
+        return ApiResponse.error(res, 'Please select a Bus.', { field: 'bus' }, 400);
+      }
+      if (!selectedDriverId) {
+        return ApiResponse.error(res, 'Please select a Driver.', { field: 'driver' }, 400);
+      }
+      if (helperArr.length === 0) {
+        return ApiResponse.error(res, 'Please select at least one Helper.', { field: 'helper' }, 400);
+      }
+
+      const conflict = await TransportModel.validateRouteAssignment(schoolId, {
+        bus_id: selectedBusId,
+        driver_id: selectedDriverId,
+        helpers: helperArr,
+      });
+      if (conflict) {
+        return ApiResponse.error(res, conflict.message, { field: conflict.field }, 400);
       }
 
       const id = await TransportModel.createRoute(schoolId, {
         branch_id: branchId,
         transport_route,
-        bus_id: bus_id || bus,
-        driver_id: driver_id || driver,
-        helpers: helpers || helper,
+        bus_id: selectedBusId,
+        driver_id: selectedDriverId,
+        helpers: helperArr,
         fare,
         sort_order,
         status,
@@ -78,15 +103,44 @@ class AdminTransportController {
       const { id } = req.params;
       const { transport_route, bus_id, bus, driver_id, driver, helpers, helper, fare, sort_order, status, branch_id } = req.body;
 
-      if (!transport_route) {
-        return ApiResponse.error(res, 'Route name is required.', null, 400);
+      const selectedBusId = bus_id || bus;
+      const selectedDriverId = driver_id || driver;
+      const rawHelpers = helpers || helper || [];
+      const helperArr = (Array.isArray(rawHelpers) ? rawHelpers : [rawHelpers]).filter(
+        (h) => h !== null && h !== undefined && String(h).trim() !== ''
+      );
+
+      if (!transport_route || !String(transport_route).trim()) {
+        return ApiResponse.error(res, 'Route name is required.', { field: 'transport_route' }, 400);
+      }
+      if (!selectedBusId) {
+        return ApiResponse.error(res, 'Please select a Bus.', { field: 'bus' }, 400);
+      }
+      if (!selectedDriverId) {
+        return ApiResponse.error(res, 'Please select a Driver.', { field: 'driver' }, 400);
+      }
+      if (helperArr.length === 0) {
+        return ApiResponse.error(res, 'Please select at least one Helper.', { field: 'helper' }, 400);
+      }
+
+      const conflict = await TransportModel.validateRouteAssignment(
+        schoolId,
+        {
+          bus_id: selectedBusId,
+          driver_id: selectedDriverId,
+          helpers: helperArr,
+        },
+        id
+      );
+      if (conflict) {
+        return ApiResponse.error(res, conflict.message, { field: conflict.field }, 400);
       }
 
       await TransportModel.updateRoute(schoolId, id, {
         transport_route,
-        bus_id: bus_id || bus,
-        driver_id: driver_id || driver,
-        helpers: helpers || helper,
+        bus_id: selectedBusId,
+        driver_id: selectedDriverId,
+        helpers: helperArr,
         fare,
         sort_order,
         status,
@@ -144,14 +198,50 @@ class AdminTransportController {
     }
   }
 
+  static async checkVehicleDuplicate(req, res, next) {
+    try {
+      const schoolId = getSchoolId(req);
+      const { number_plate, exclude_id } = req.query;
+
+      const { isNumberPlateDuplicate } = await TransportModel.checkVehicleDuplicate(
+        schoolId,
+        { number_plate },
+        exclude_id || null
+      );
+
+      const message = isNumberPlateDuplicate
+        ? 'A bus with this number plate already exists.'
+        : '';
+
+      return ApiResponse.success(res, 'Duplicate check completed.', {
+        isNumberPlateDuplicate,
+        message,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   static async createVehicle(req, res, next) {
     try {
       const schoolId = getSchoolId(req);
       const branchId = req.branchId || req.body?.branch_id || null;
       const { name, number_plate, seat, color, driver_id, status } = req.body;
 
-      if (!name) {
+      if (!name || !String(name).trim()) {
         return ApiResponse.error(res, 'Vehicle name is required.', null, 400);
+      }
+      if (!number_plate || !String(number_plate).trim()) {
+        return ApiResponse.error(res, 'Bus number plate is required.', null, 400);
+      }
+
+      const isPlateDup = await TransportModel.checkVehicleNumberPlate(schoolId, number_plate);
+      if (isPlateDup) {
+        if (req.file?.filePath) {
+          const { hardDeleteFile } = require('../utils/file.util');
+          await hardDeleteFile(req.file.filePath, { schoolId }).catch(() => {});
+        }
+        return ApiResponse.error(res, 'A bus with this number plate already exists.', null, 400);
       }
 
       const imagePath = req.file ? req.file.filePath : (req.body.image || null);
@@ -179,8 +269,20 @@ class AdminTransportController {
       const { id } = req.params;
       const { name, number_plate, seat, color, driver_id, status, branch_id, remove_image } = req.body;
 
-      if (!name) {
+      if (!name || !String(name).trim()) {
         return ApiResponse.error(res, 'Vehicle name is required.', null, 400);
+      }
+      if (!number_plate || !String(number_plate).trim()) {
+        return ApiResponse.error(res, 'Bus number plate is required.', null, 400);
+      }
+
+      const isPlateDup = await TransportModel.checkVehicleNumberPlate(schoolId, number_plate, id);
+      if (isPlateDup) {
+        if (req.file?.filePath) {
+          const { hardDeleteFile } = require('../utils/file.util');
+          await hardDeleteFile(req.file.filePath, { schoolId }).catch(() => {});
+        }
+        return ApiResponse.error(res, 'A bus with this number plate already exists.', null, 400);
       }
 
       let imagePath = undefined;
