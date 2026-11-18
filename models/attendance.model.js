@@ -134,12 +134,17 @@ class AttendanceModel {
       whereParams.push(class_id);
     }
     if (section_id) {
-      whereConditions.push(`s.section = ?`);
+      whereConditions.push(`(s.section = ? OR s.section IS NULL)`);
       whereParams.push(section_id);
     }
     if (academic_year) {
-      whereConditions.push(`sa.academic_year = ?`);
-      whereParams.push(academic_year);
+      whereConditions.push(`(
+        sa.academic_year = ?
+        OR s.academic_year = ?
+        OR s.academic_year = (SELECT academic_year FROM academic_year_master WHERE id = ? LIMIT 1)
+        OR s.academic_year = (SELECT id FROM academic_year_master WHERE academic_year = ? AND school_id = ? LIMIT 1)
+      )`);
+      whereParams.push(academic_year, academic_year, academic_year, academic_year, schoolId);
     }
     if (search) {
       whereConditions.push(
@@ -225,13 +230,13 @@ class AttendanceModel {
     ];
     const joinParams = [formattedDate, formattedDate];
     if (academic_year) {
-      joinConditions.push(`sa.academic_year = ?`);
+      joinConditions.push(`(sa.academic_year = ? OR sa.academic_year IS NULL)`);
       joinParams.push(academic_year);
     }
 
     const whereConditions = [
       `s.school_id = ?`,
-      `s.status IN (1, 2)`,
+      academic_year ? `s.status IN (1, 2)` : `s.status = 1`,
     ];
     const whereParams = [schoolId];
 
@@ -241,12 +246,21 @@ class AttendanceModel {
       whereParams.push(cleanBranch);
     }
 
+    if (academic_year) {
+      whereConditions.push(`(
+        s.academic_year = ?
+        OR s.academic_year = (SELECT academic_year FROM academic_year_master WHERE id = ? LIMIT 1)
+        OR s.academic_year = (SELECT id FROM academic_year_master WHERE academic_year = ? AND school_id = ? LIMIT 1)
+      )`);
+      whereParams.push(academic_year, academic_year, academic_year, schoolId);
+    }
+
     if (class_id) {
       whereConditions.push(`s.class = ?`);
       whereParams.push(class_id);
     }
     if (section_id) {
-      whereConditions.push(`s.section = ?`);
+      whereConditions.push(`(s.section = ? OR s.section IS NULL)`);
       whereParams.push(section_id);
     }
     if (search) {

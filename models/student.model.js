@@ -2270,6 +2270,22 @@ class StudentModel {
         } else if (statusAction === 'graduated') {
           nextClassId = null;
           nextSectionId = null;
+        } else if (statusAction === 'promoted' && !nextSectionId && nextClassId && current.section) {
+          const [secMatch] = await connection.query(
+            `SELECT target_sec.id
+             FROM section_master cur_sec
+             JOIN section_master target_sec
+               ON LOWER(TRIM(target_sec.section_name)) = LOWER(TRIM(cur_sec.section_name))
+              AND target_sec.class_id = ?
+              AND target_sec.school_id = ?
+              AND target_sec.status = 1
+             WHERE cur_sec.id = ?
+             LIMIT 1`,
+            [nextClassId, schoolId, current.section]
+          );
+          if (secMatch && secMatch.length > 0) {
+            nextSectionId = Number(secMatch[0].id);
+          }
         }
 
         // 1. Mark the previous academic year student record as Inactive (status = 2)
