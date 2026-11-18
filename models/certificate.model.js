@@ -403,6 +403,7 @@ class CertificateModel {
       LEFT JOIN student_class scl ON s.id = scl.student_id AND scl.status = 1
       LEFT JOIN class_master cm ON COALESCE(scl.class_id, s.class) = cm.id
       LEFT JOIN section_master sec ON COALESCE(scl.section_id, s.section) = sec.id
+      LEFT JOIN academic_year_master aym ON COALESCE(scl.academic_year, s.academic_year) = aym.id
       LEFT JOIN gender_master g ON g.id = s.gender
       LEFT JOIN student_to_parent stp ON s.id = stp.student_id
       LEFT JOIN parent_master p ON (stp.father_id = p.id OR stp.guardian_id = p.id)
@@ -426,7 +427,11 @@ class CertificateModel {
                CONCAT(COALESCE(p.first_name, ''), ' ', COALESCE(p.last_name, '')) AS guardian_name,
                COALESCE(s.primary_contact_number, p.phone) AS primary_contact_number,
                s.email_address, s.picture,
-               COALESCE(scl.roll_number, s.roll_number) AS roll_number, scl.class_id, scl.section_id, scl.academic_year,
+               COALESCE(scl.roll_number, s.roll_number) AS roll_number,
+               COALESCE(scl.class_id, s.class) AS class_id,
+               COALESCE(scl.section_id, s.section) AS section_id,
+               COALESCE(aym.academic_year, scl.academic_year, s.academic_year) AS academic_year,
+               aym.academic_year AS academic_year_name,
                cm.class_name, sec.section_name,
                cat.category_name,
                ct.template_name, ct.certificate_heading, ct.certified_by, ct.border
@@ -455,7 +460,11 @@ class CertificateModel {
              CONCAT(COALESCE(p.first_name, ''), ' ', COALESCE(p.last_name, '')) AS guardian_name,
              COALESCE(s.primary_contact_number, p.phone) AS primary_contact_number,
              s.email_address, s.picture,
-             COALESCE(scl.roll_number, s.roll_number) AS roll_number, scl.class_id, scl.section_id, scl.academic_year,
+             COALESCE(scl.roll_number, s.roll_number) AS roll_number,
+             COALESCE(scl.class_id, s.class) AS class_id,
+             COALESCE(scl.section_id, s.section) AS section_id,
+             COALESCE(aym.academic_year, scl.academic_year, s.academic_year) AS academic_year,
+             aym.academic_year AS academic_year_name,
              cm.class_name, sec.section_name,
              cat.category_name,
              ct.template_name, ct.certificate_heading, ct.certified_by, ct.border
@@ -475,7 +484,11 @@ class CertificateModel {
              CONCAT(COALESCE(p.first_name, ''), ' ', COALESCE(p.last_name, '')) AS guardian_name,
              COALESCE(s.primary_contact_number, p.phone) AS primary_contact_number,
              s.email_address, s.picture,
-             COALESCE(scl.roll_number, s.roll_number) AS roll_number, scl.class_id, scl.section_id, scl.academic_year,
+             COALESCE(scl.roll_number, s.roll_number) AS roll_number,
+             COALESCE(scl.class_id, s.class) AS class_id,
+             COALESCE(scl.section_id, s.section) AS section_id,
+             COALESCE(aym.academic_year, scl.academic_year, s.academic_year) AS academic_year,
+             aym.academic_year AS academic_year_name,
              cm.class_name, sec.section_name,
              cat.category_name,
              ct.template_name, ct.certificate_heading, ct.certified_by, ct.border,
@@ -485,6 +498,7 @@ class CertificateModel {
       LEFT JOIN student_class scl ON s.id = scl.student_id AND scl.status = 1
       LEFT JOIN class_master cm ON COALESCE(scl.class_id, s.class) = cm.id
       LEFT JOIN section_master sec ON COALESCE(scl.section_id, s.section) = sec.id
+      LEFT JOIN academic_year_master aym ON COALESCE(scl.academic_year, s.academic_year) = aym.id
       LEFT JOIN gender_master g ON g.id = s.gender
       LEFT JOIN student_to_parent stp ON s.id = stp.student_id
       LEFT JOIN parent_master p ON (stp.father_id = p.id OR stp.guardian_id = p.id)

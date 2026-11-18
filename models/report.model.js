@@ -119,7 +119,7 @@ class ReportModel {
     schoolId,
     { academicYearId = '', shiftId = '', classId = '', sectionId = '', search = '', branchId = null, limit = 10, offset = 0 }
   ) {
-    let whereConditions = [`s.school_id = ?`, `s.status = 1`];
+    let whereConditions = [`s.school_id = ?`, academicYearId ? `s.status IN (1, 2)` : `s.status = 1`];
     let queryParams = [schoolId];
 
     if (branchId) {
@@ -279,7 +279,7 @@ class ReportModel {
     schoolId,
     { academicYearId = '', shiftId = '', classId = '', sectionId = '', search = '', branchId = null, limit = 10, offset = 0 }
   ) {
-    let whereConditions = [`s.school_id = ?`, `s.status = 1`];
+    let whereConditions = [`s.school_id = ?`, academicYearId ? `s.status IN (1, 2)` : `s.status = 1`];
     let queryParams = [schoolId];
 
     if (branchId) {
@@ -690,7 +690,7 @@ class ReportModel {
       }
     } else {
       // 3. Students (default)
-      let whereConditions = [`s.school_id = ?`, `s.status = 1`];
+      let whereConditions = [`s.school_id = ?`, academicYearId ? `s.status IN (1, 2)` : `s.status = 1`];
       let queryParams = [schoolId];
 
       if (branchId) {

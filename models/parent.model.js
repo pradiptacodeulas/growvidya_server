@@ -19,9 +19,9 @@ class ParentModel {
         p.picture,
         p.status,
         p.created_at,
-        COUNT(DISTINCT s.id) AS total_children
+        COUNT(DISTINCT COALESCE(NULLIF(LOWER(TRIM(s.admission_number)), ''), CAST(s.id AS CHAR))) AS total_children
       FROM parent_master p
-      LEFT JOIN student_to_parent stp ON (p.id = stp.father_id OR p.id = stp.mother_id OR p.id = stp.guardian_id) AND stp.status != 4
+      LEFT JOIN student_to_parent stp ON (p.id = stp.father_id OR p.id = stp.mother_id OR p.id = stp.guardian_id) AND stp.status = 1
       LEFT JOIN student_master s ON stp.student_id = s.id AND s.status != 4
       WHERE (p.school_id = ? OR ? IS NULL) AND p.status != 4
     `;
@@ -251,10 +251,22 @@ class ParentModel {
       childrenSql += ` AND (s.branch_id = ? OR s.branch_id IS NULL)`;
       childrenParams.push(Number(branchId));
     }
-    childrenSql += ` GROUP BY s.id ORDER BY s.id ASC`;
+    childrenSql += ` GROUP BY s.id ORDER BY (s.status = 1) DESC, s.id DESC`;
     const [children] = await pool.query(childrenSql, childrenParams);
 
-    parent.children = children || [];
+    const seenKeys = new Set();
+    const uniqueChildren = [];
+    for (const c of children || []) {
+      const key = c.admission_number && String(c.admission_number).trim()
+        ? `adm_${String(c.admission_number).trim().toLowerCase()}`
+        : `id_${c.id}`;
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key);
+        uniqueChildren.push(c);
+      }
+    }
+
+    parent.children = uniqueChildren;
     return parent;
   }
 
@@ -644,10 +656,46 @@ class ParentModel {
         AND (s.school_id = ? OR ? IS NULL)
         AND stp.status != 4 AND s.status != 4
       GROUP BY s.id
-      ORDER BY s.id ASC
+      ORDER BY (s.status = 1) DESC, s.id DESC
     `;
     const [children] = await pool.query(childrenSql, [parentId, parentId, parentId, schoolId, schoolId]);
-    return children || [];
+    const seenKeys = new Set();
+    const uniqueChildren = [];
+    for (const c of children || []) {
+      const key = c.admission_number && String(c.admission_number).trim()
+        ? `adm_${String(c.admission_number).trim().toLowerCase()}`
+        : `id_${c.id}`;
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key);
+        uniqueChildren.push(c);
+      }
+    }
+    return uniqueChildren;
+  }
+
+  static async _resolveStudentSessionIds(studentId, schoolId) {
+    if (!studentId) return [];
+    const ids = [Number(studentId)];
+    try {
+      const [stuRows] = await pool.query(
+        `SELECT admission_number, school_id FROM student_master WHERE id = ? LIMIT 1`,
+        [studentId]
+      );
+      const admNo = stuRows?.[0]?.admission_number ? String(stuRows[0].admission_number).trim() : '';
+      const effectiveSchoolId = schoolId || stuRows?.[0]?.school_id || null;
+      if (admNo && effectiveSchoolId) {
+        const [allRows] = await pool.query(
+          `SELECT id FROM student_master WHERE school_id = ? AND LOWER(TRIM(admission_number)) = LOWER(TRIM(?)) AND status != 4`,
+          [effectiveSchoolId, admNo]
+        );
+        for (const r of allRows || []) {
+          if (r.id && !ids.includes(Number(r.id))) {
+            ids.push(Number(r.id));
+          }
+        }
+      }
+    } catch (_) {}
+    return ids;
   }
 
   static async getChildFullProfile(studentId, schoolId, branchId = null) {
@@ -807,6 +855,10 @@ class ParentModel {
         console.error('Error fetching bank details for child fees:', err.message);
       }
 
+      // Resolve all session student IDs for this student so carried-forward dues & past receipts remain visible after promotion
+      const allStudentIds = await ParentModel._resolveStudentSessionIds(studentId, schoolId);
+      const stuPlaceholders = allStudentIds.map(() => '?').join(',');
+
       // 1. Fee Invoices (Only generated invoices from published structures are visible to students)
       const [dueRows] = await pool.query(
         `SELECT 
@@ -820,12 +872,12 @@ class ParentModel {
          LEFT JOIN class_master cm ON fi.class_id = cm.id
          LEFT JOIN section_master sec ON fi.section_id = sec.id
          LEFT JOIN academic_year_master aym ON fi.academic_year_id = aym.id
-         WHERE fi.student_id = ? 
+         WHERE fi.student_id IN (${stuPlaceholders}) 
            AND fi.school_id = ? 
            AND fi.status != '4'
            AND (fi.fee_structure_id IS NULL OR fs.status != 4 OR fs.status IS NULL)
          ORDER BY fi.due_date ASC, fi.id DESC`,
-        [studentId, schoolId]
+        [...allStudentIds, schoolId]
       );
 
       // Fetch invoice items for each invoice
@@ -851,12 +903,12 @@ class ParentModel {
          FROM fee_payments fp
          LEFT JOIN fee_invoices fi ON fp.invoice_id = fi.id
          LEFT JOIN fee_structures fs ON fi.fee_structure_id = fs.id
-         WHERE fp.student_id = ? 
+         WHERE fp.student_id IN (${stuPlaceholders}) 
            AND fp.school_id = ? 
            AND (fp.status IN ('success', 'Success', 'Pending Verification', 'pending', 'Verified', 'Rejected', 'rejected'))
            AND (fi.id IS NULL OR (fi.status != '4' AND (fi.fee_structure_id IS NULL OR fs.status != 4 OR fs.status IS NULL)))
          ORDER BY fp.payment_date DESC, fp.id DESC`,
-        [studentId, schoolId]
+        [...allStudentIds, schoolId]
       );
 
       const extractRejectionReason = (notes) => {
@@ -993,6 +1045,9 @@ class ParentModel {
         return '-';
       };
 
+      const allStudentIds = await ParentModel._resolveStudentSessionIds(studentId, schoolId);
+      const stuPlaceholders = allStudentIds.map(() => '?').join(',');
+
       const [results] = await pool.query(
         `SELECT 
           er.id AS exam_result_id,
@@ -1003,9 +1058,9 @@ class ParentModel {
          FROM exam_result er
          LEFT JOIN exam_master em ON er.exam_id = em.id
          LEFT JOIN academic_year_master ay ON er.academic_year_id = ay.id
-         WHERE er.student_id = ? AND (er.school_id = ? OR ? IS NULL) AND er.status != 4
+         WHERE er.student_id IN (${stuPlaceholders}) AND (er.school_id = ? OR ? IS NULL) AND er.status != 4
          ORDER BY er.id DESC`,
-        [studentId, schoolId, schoolId]
+        [...allStudentIds, schoolId, schoolId]
       );
 
       const examMarks = [];
@@ -1189,12 +1244,14 @@ class ParentModel {
 
   static async getChildActivities(studentId, schoolId) {
     try {
+      const allStudentIds = await ParentModel._resolveStudentSessionIds(studentId, schoolId);
+      const stuPlaceholders = allStudentIds.map(() => '?').join(',');
       const [rows] = await pool.query(
         `SELECT id, school_id, student_id, date, activity_description, status, created_at
          FROM student_activity
-         WHERE student_id = ? AND (school_id = ? OR ? IS NULL) AND status != 4 AND status != 0
+         WHERE student_id IN (${stuPlaceholders}) AND (school_id = ? OR ? IS NULL) AND status != 4 AND status != 0
          ORDER BY date DESC, id DESC`,
-        [studentId, schoolId, schoolId]
+        [...allStudentIds, schoolId, schoolId]
       );
       return rows || [];
     } catch (e) {

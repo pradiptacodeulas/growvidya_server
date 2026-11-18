@@ -119,7 +119,7 @@ class AttendanceModel {
 
     const whereConditions = [
       `s.school_id = ?`,
-      `s.status = 1`,
+      `s.status IN (1, 2)`,
     ];
     const whereParams = [schoolId];
 
@@ -231,7 +231,7 @@ class AttendanceModel {
 
     const whereConditions = [
       `s.school_id = ?`,
-      `s.status = 1`,
+      `s.status IN (1, 2)`,
     ];
     const whereParams = [schoolId];
 

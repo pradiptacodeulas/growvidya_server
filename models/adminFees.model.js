@@ -913,8 +913,22 @@ class AdminFeesModel {
       params.push(academicYearId);
     }
     if (studentId) {
-      whereClause += ` AND fi.student_id = ?`;
-      params.push(studentId);
+      whereClause += ` AND (
+        fi.student_id = ?
+        OR fi.student_id IN (
+          SELECT sm_hist.id FROM student_master sm_hist
+          WHERE sm_hist.school_id = ?
+            AND sm_hist.status != 4
+            AND sm_hist.admission_number IS NOT NULL
+            AND TRIM(sm_hist.admission_number) != ''
+            AND LOWER(TRIM(sm_hist.admission_number)) = (
+              SELECT LOWER(TRIM(sm_curr.admission_number))
+              FROM student_master sm_curr
+              WHERE sm_curr.id = ? LIMIT 1
+            )
+        )
+      )`;
+      params.push(studentId, schoolId, studentId);
     }
     if (status && status !== 'all') {
       whereClause += ` AND fi.status = ?`;

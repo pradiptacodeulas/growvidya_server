@@ -749,6 +749,7 @@ class AdminStudentController {
     try {
       const schoolId = req.user?.schoolId || req.user?.school_id;
       const promotedBy = req.user?.userId || req.user?.id || null;
+      const branchId = req.branchId || req.body?.branch_id || req.body?.branchId || null;
       const {
         from_academic_year,
         to_academic_year,
@@ -757,7 +758,15 @@ class AdminStudentController {
         students = [],
       } = req.body;
 
-      if (!to_academic_year || !to_class_id) {
+      if (!Array.isArray(students) || students.length === 0) {
+        return ApiResponse.error(res, 'Please select at least one student to promote.', null, 400);
+      }
+
+      const needsTargetClass = students.some(
+        (s) => String(s.promotion_status || 'promoted').toLowerCase() === 'promoted'
+      );
+
+      if (!to_academic_year || (needsTargetClass && !to_class_id)) {
         return ApiResponse.error(
           res,
           'Target Academic Year and Target Class are required for promotion.',
@@ -775,23 +784,39 @@ class AdminStudentController {
         );
       }
 
-      if (!Array.isArray(students) || students.length === 0) {
-        return ApiResponse.error(res, 'Please select at least one student to promote.', null, 400);
-      }
-
       const result = await StudentModel.promoteStudents(schoolId, {
         toAcademicYear: Number(to_academic_year),
-        toClassId: Number(to_class_id),
+        toClassId: to_class_id ? Number(to_class_id) : null,
         toSectionId: to_section_id ? Number(to_section_id) : null,
         students,
         promotedBy,
+        branchId,
       });
 
       return ApiResponse.success(
         res,
-        `${result.promotedCount} student(s) promoted successfully.`,
+        `${result.promotedCount} student(s) processed successfully.`,
         result
       );
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getPromotionHistory(req, res, next) {
+    try {
+      const schoolId = req.user?.schoolId || req.user?.school_id;
+      const branchId = req.branchId || req.query?.branch_id || req.query?.branchId || null;
+      const { fromAcademicYear = '', toAcademicYear = '', classId = '' } = req.query;
+
+      const history = await StudentModel.getPromotionHistory(schoolId, {
+        branchId,
+        fromAcademicYear,
+        toAcademicYear,
+        classId,
+      });
+
+      return ApiResponse.success(res, 'Promotion history fetched successfully.', { history });
     } catch (error) {
       next(error);
     }

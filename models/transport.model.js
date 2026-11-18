@@ -1106,7 +1106,7 @@ class TransportModel {
         b.name AS vehicle_name,
         b.number_plate
       FROM student_transport st
-      LEFT JOIN student_master s ON (st.student_id = s.id AND (s.status != 4 OR s.status IS NULL))
+      INNER JOIN student_master s ON (st.student_id = s.id AND s.status = 1)
       LEFT JOIN class_master c ON s.class = c.id
       LEFT JOIN section_master sec ON s.section = sec.id
       LEFT JOIN trans_route_master r ON (st.route = r.id AND (r.status != 4 OR r.status IS NULL))

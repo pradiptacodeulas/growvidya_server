@@ -145,7 +145,7 @@ const buildSingleCertificateHtml = async (cert, templateHtml) => {
   const [y, m, d] = issueDateStr.split('-');
   const formattedDate = d && m && y ? `${d}/${m}/${y}` : issueDateStr;
 
-  const serialNo = cert.id ? `CERT-${String(cert.id).padStart(5, '0')}` : 'CERT-00001';
+  const serialNo = cert.id ? `CERT-${String(cert.id).padStart(5, '0')}` : '-';
   const certSchoolId = cert.school_id || cert.schoolId || null;
   const borderUri = await toBase64DataUri(cert.borderImg || cert.border, certSchoolId);
   const logoUri = await toBase64DataUri(cert.school_logo, certSchoolId);
@@ -153,7 +153,7 @@ const buildSingleCertificateHtml = async (cert, templateHtml) => {
 
   let html = templateHtml
     .replace(/\{\{student_name\}\}/g, studentName)
-    .replace(/\{\{school_name\}\}/g, cert.school_name || 'Growvidya Academy')
+    .replace(/\{\{school_name\}\}/g, cert.school_name || '')
     .replace(/\{\{affiliation\}\}/g, cert.affiliation_board || cert.affiliation || '')
     .replace(/\{\{school_address\}\}/g, cert.school_address || '')
     .replace(/\{\{school_code\}\}/g, cert.school_code ? `Code: ${cert.school_code}` : '')

@@ -159,7 +159,7 @@ exports.createNotice = async (req, res) => {
             SELECT DISTINCT sp.father_id, sp.mother_id, sp.guardian_id 
             FROM student_to_parent sp
             JOIN student_master s ON sp.student_id = s.id
-            WHERE sp.school_id = ? AND sp.status = 1 AND s.class IN (${classIds.map(() => '?').join(',')})
+            WHERE sp.school_id = ? AND sp.status = 1 AND s.status = 1 AND s.class IN (${classIds.map(() => '?').join(',')})
           `;
           const parentParams = [schoolId, ...classIds];
           if (branchId) {

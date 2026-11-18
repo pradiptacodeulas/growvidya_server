@@ -789,8 +789,8 @@ class SaasAdminModel {
         sp.plan_name,
         COALESCE(latest_sub.snapshot_billing_cycle, sp.billing_cycle) AS billing_cycle,
         COALESCE(latest_sub.snapshot_tier_rank, sp.tier_rank) AS tier_rank,
-        (SELECT COUNT(*) FROM student_master sm WHERE sm.school_id = s.id AND sm.status != 4) AS student_count,
-        (SELECT COUNT(*) FROM student_master sm WHERE sm.school_id = s.id AND sm.status = 1) AS active_students,
+        (SELECT COUNT(DISTINCT COALESCE(NULLIF(LOWER(TRIM(sm.admission_number)), ''), CAST(sm.id AS CHAR))) FROM student_master sm WHERE sm.school_id = s.id AND sm.status != 4) AS student_count,
+        (SELECT COUNT(DISTINCT COALESCE(NULLIF(LOWER(TRIM(sm.admission_number)), ''), CAST(sm.id AS CHAR))) FROM student_master sm WHERE sm.school_id = s.id AND sm.status = 1) AS active_students,
         (SELECT COUNT(*) FROM teacher_master tm WHERE tm.school_id = s.id AND tm.status != 4) AS teacher_count,
         (SELECT COUNT(*) FROM teacher_master tm WHERE tm.school_id = s.id AND tm.status = 1) AS active_teachers,
         (SELECT COUNT(*) FROM user_master um WHERE um.school_id = s.id AND COALESCE(um.admin_type, 2) != 1 AND um.status != 4) AS staff_count,
@@ -1459,8 +1459,8 @@ class SaasAdminModel {
           WHEN latest_sub.status IN ('active', 'trial') AND DATE(latest_sub.end_date) < ? THEN 'expired'
           ELSE latest_sub.status
         END AS subscription_status,
-        (SELECT COUNT(*) FROM student_master sm WHERE sm.school_id = s.id AND sm.status != 4) AS student_count,
-        (SELECT COUNT(*) FROM student_master sm WHERE sm.school_id = s.id AND sm.status = 1) AS active_students,
+        (SELECT COUNT(DISTINCT COALESCE(NULLIF(LOWER(TRIM(sm.admission_number)), ''), CAST(sm.id AS CHAR))) FROM student_master sm WHERE sm.school_id = s.id AND sm.status != 4) AS student_count,
+        (SELECT COUNT(DISTINCT COALESCE(NULLIF(LOWER(TRIM(sm.admission_number)), ''), CAST(sm.id AS CHAR))) FROM student_master sm WHERE sm.school_id = s.id AND sm.status = 1) AS active_students,
         (SELECT COUNT(*) FROM teacher_master tm WHERE tm.school_id = s.id AND tm.status != 4) AS teacher_count,
         (SELECT COUNT(*) FROM teacher_master tm WHERE tm.school_id = s.id AND tm.status = 1) AS active_teachers,
         (SELECT COUNT(*) FROM user_master um WHERE um.school_id = s.id AND COALESCE(um.admin_type, 2) != 1 AND um.status != 4) AS staff_count,

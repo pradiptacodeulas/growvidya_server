@@ -602,10 +602,12 @@ class SubscriptionModel {
         sub.max_students !== null && sub.max_students !== undefined
           ? Number(sub.max_students)
           : 0;
-      // 0 indicates unlimited student quota; count both Active (1) and Inactive (2) students, excluding soft-deleted (4)
+      // 0 indicates unlimited student quota; count distinct students (avoiding double-counting promoted session records)
       if (maxStudents > 0) {
         const [rows] = await db.query(
-          'SELECT COUNT(id) AS count FROM student_master WHERE school_id = ? AND status IN (1, 2)',
+          `SELECT COUNT(DISTINCT COALESCE(NULLIF(LOWER(TRIM(admission_number)), ''), CAST(id AS CHAR))) AS count
+           FROM student_master
+           WHERE school_id = ? AND status IN (1, 2)`,
           [targetSchoolId]
         );
         const currentCount = rows[0]?.count || 0;

@@ -578,7 +578,7 @@ class StudentModel {
       student.previous_school = null;
     }
 
-    // Fetch activities
+    // Fetch activities across current and previous academic session records of this student
     const [actRows] = await pool.execute(`
       SELECT 
         sa.id,
@@ -588,11 +588,128 @@ class StudentModel {
         sa.activity_description,
         sa.created_at
       FROM student_activity sa
-      WHERE sa.student_id = ? AND (sa.school_id = ? OR ? IS NULL) AND sa.status = 1
+      WHERE (
+        sa.student_id = ?
+        OR (
+          ? != '' AND sa.student_id IN (
+            SELECT sm_hist.id FROM student_master sm_hist
+            WHERE sm_hist.school_id = ?
+              AND LOWER(TRIM(sm_hist.admission_number)) = LOWER(TRIM(?))
+              AND sm_hist.status != 4
+          )
+        )
+      )
+      AND (sa.school_id = ? OR ? IS NULL)
+      AND sa.status = 1
       ORDER BY sa.date DESC, sa.id DESC
-    `, [id, student.school_id, student.school_id]);
+    `, [
+      id,
+      student.admission_number ? String(student.admission_number).trim() : '',
+      student.school_id,
+      student.admission_number ? String(student.admission_number).trim() : '',
+      student.school_id,
+      student.school_id,
+    ]);
 
     student.activities = actRows || [];
+
+    // Fetch active siblings sharing the same father, mother, or guardian
+    student.siblings = [];
+    if (student.father_id || student.mother_id || student.guardian_id) {
+      try {
+        const [sibRows] = await pool.execute(
+          `SELECT DISTINCT
+             s.id,
+             s.admission_number,
+             s.roll_number,
+             s.first_name,
+             s.last_name,
+             CONCAT(TRIM(IFNULL(s.first_name, '')), ' ', TRIM(IFNULL(s.last_name, ''))) AS full_name,
+             s.gender,
+             g.gender AS gender_name,
+             s.picture,
+             s.class AS class_id,
+             cm.class_name,
+             s.section AS section_id,
+             sec.section_name
+           FROM student_to_parent stp
+           INNER JOIN student_master s ON stp.student_id = s.id
+           LEFT JOIN class_master cm ON s.class = cm.id
+           LEFT JOIN section_master sec ON s.section = sec.id
+           LEFT JOIN gender_master g ON g.id = s.gender
+           WHERE stp.school_id = ?
+             AND stp.status = 1
+             AND s.status = 1
+             AND s.id != ?
+             AND (s.admission_number IS NULL OR LOWER(TRIM(s.admission_number)) != LOWER(TRIM(?)))
+             AND (
+               (? IS NOT NULL AND stp.father_id = ?) OR
+               (? IS NOT NULL AND stp.mother_id = ?) OR
+               (? IS NOT NULL AND stp.guardian_id = ?)
+             )
+           ORDER BY s.first_name ASC`,
+          [
+            student.school_id,
+            id,
+            student.admission_number ? String(student.admission_number).trim() : '',
+            student.father_id || null,
+            student.father_id || null,
+            student.mother_id || null,
+            student.mother_id || null,
+            student.guardian_id || null,
+            student.guardian_id || null,
+          ]
+        );
+        student.siblings = sibRows || [];
+      } catch (_) {
+        student.siblings = [];
+      }
+    }
+
+    // Fetch promotion history for this student across academic years
+    student.promotion_history = [];
+    try {
+      const [promoRows] = await pool.execute(
+        `SELECT 
+           sph.*,
+           fay.academic_year AS from_academic_year_name,
+           tay.academic_year AS to_academic_year_name,
+           fcm.class_name AS from_class_name,
+           tcm.class_name AS to_class_name,
+           fsec.section_name AS from_section_name,
+           tsec.section_name AS to_section_name
+         FROM student_promotion_history sph
+         LEFT JOIN academic_year_master fay ON sph.from_academic_year = fay.id
+         LEFT JOIN academic_year_master tay ON sph.to_academic_year = tay.id
+         LEFT JOIN class_master fcm ON sph.from_class_id = fcm.id
+         LEFT JOIN class_master tcm ON sph.to_class_id = tcm.id
+         LEFT JOIN section_master fsec ON sph.from_section_id = fsec.id
+         LEFT JOIN section_master tsec ON sph.to_section_id = tsec.id
+         WHERE sph.school_id = ?
+           AND (
+             sph.student_id = ?
+             OR sph.new_student_id = ?
+             OR (
+               ? != '' AND sph.student_id IN (
+                 SELECT sm_p.id FROM student_master sm_p
+                 WHERE sm_p.school_id = ? AND LOWER(TRIM(sm_p.admission_number)) = LOWER(TRIM(?))
+               )
+             )
+           )
+         ORDER BY sph.id DESC`,
+        [
+          student.school_id,
+          id,
+          id,
+          student.admission_number ? String(student.admission_number).trim() : '',
+          student.school_id,
+          student.admission_number ? String(student.admission_number).trim() : '',
+        ]
+      );
+      student.promotion_history = promoRows || [];
+    } catch (_) {
+      student.promotion_history = [];
+    }
 
     try {
       const AcademicModel = require('./academic.model');
@@ -711,8 +828,22 @@ class StudentModel {
     }
 
     if (studentId) {
-      whereClauses.push('sa.student_id = ?');
-      params.push(Number(studentId));
+      whereClauses.push(`(
+        sa.student_id = ?
+        OR sa.student_id IN (
+          SELECT sm_act.id FROM student_master sm_act
+          WHERE sm_act.school_id = ?
+            AND sm_act.status != 4
+            AND sm_act.admission_number IS NOT NULL
+            AND TRIM(sm_act.admission_number) != ''
+            AND LOWER(TRIM(sm_act.admission_number)) = (
+              SELECT LOWER(TRIM(sm_curr.admission_number))
+              FROM student_master sm_curr
+              WHERE sm_curr.id = ? LIMIT 1
+            )
+        )
+      )`);
+      params.push(Number(studentId), schoolId, Number(studentId));
     }
 
     if (classId) {
@@ -893,8 +1024,8 @@ class StudentModel {
           if (/^\d+$/.test(decoded)) cleanExcludeId = decoded;
         } catch (e) {}
       }
-      query += ` AND id != ?`;
-      params.push(cleanExcludeId);
+      query += ` AND id != ? AND (admission_number IS NULL OR LOWER(TRIM(admission_number)) != COALESCE((SELECT LOWER(TRIM(sm_ex.admission_number)) FROM student_master sm_ex WHERE sm_ex.id = ? LIMIT 1), ''))`;
+      params.push(cleanExcludeId, cleanExcludeId);
     }
 
     query += ` LIMIT 1`;
@@ -924,8 +1055,8 @@ class StudentModel {
           if (/^\d+$/.test(decoded)) cleanExcludeId = decoded;
         } catch (e) {}
       }
-      query += ` AND id != ?`;
-      params.push(cleanExcludeId);
+      query += ` AND id != ? AND LOWER(TRIM(admission_number)) != COALESCE((SELECT LOWER(TRIM(sm_ex.admission_number)) FROM student_master sm_ex WHERE sm_ex.id = ? LIMIT 1), '')`;
+      params.push(cleanExcludeId, cleanExcludeId);
     }
 
     query += ` LIMIT 1`;
@@ -1990,10 +2121,22 @@ class StudentModel {
       } catch (_) {}
 
       if (oldStudentPic) {
-        await hardDeleteFile(oldStudentPic, { schoolId: Number(schoolId) }).catch(() => {});
+        const [picRefs] = await pool.execute(
+          `SELECT COUNT(*) AS cnt FROM student_master WHERE school_id = ? AND id != ? AND status != 4 AND picture = ?`,
+          [schoolId, id, oldStudentPic]
+        ).catch(() => [[{ cnt: 0 }]]);
+        if (Number(picRefs?.[0]?.cnt || 0) === 0) {
+          await hardDeleteFile(oldStudentPic, { schoolId: Number(schoolId) }).catch(() => {});
+        }
       }
       for (const docPath of oldDocPaths) {
-        await hardDeleteFile(docPath, { schoolId: Number(schoolId) }).catch(() => {});
+        const [docRefs] = await pool.execute(
+          `SELECT COUNT(*) AS cnt FROM student_document WHERE school_id = ? AND student_id != ? AND status != 4 AND attachments = ?`,
+          [schoolId, id, docPath]
+        ).catch(() => [[{ cnt: 0 }]]);
+        if (Number(docRefs?.[0]?.cnt || 0) === 0) {
+          await hardDeleteFile(docPath, { schoolId: Number(schoolId) }).catch(() => {});
+        }
       }
     }
 
@@ -2053,7 +2196,7 @@ class StudentModel {
 
   static async promoteStudents(
     schoolId,
-    { toAcademicYear, toClassId, toSectionId = null, students = [], promotedBy = null }
+    { toAcademicYear, toClassId = null, toSectionId = null, students = [], promotedBy = null, branchId = null }
   ) {
     const connection = await pool.getConnection();
     try {
@@ -2071,7 +2214,7 @@ class StudentModel {
           from_section_id INT DEFAULT NULL,
           from_roll_number VARCHAR(100) DEFAULT NULL,
           to_academic_year INT NOT NULL,
-          to_class_id INT NOT NULL,
+          to_class_id INT DEFAULT NULL,
           to_section_id INT DEFAULT NULL,
           to_roll_number VARCHAR(100) DEFAULT NULL,
           promotion_status VARCHAR(50) NOT NULL DEFAULT 'promoted',
@@ -2084,6 +2227,9 @@ class StudentModel {
       if (!sphCols || sphCols.length === 0) {
         await connection.query(`ALTER TABLE student_promotion_history ADD COLUMN new_student_id INT DEFAULT NULL AFTER student_id`);
       }
+      try {
+        await connection.query(`ALTER TABLE student_promotion_history MODIFY COLUMN to_class_id INT DEFAULT NULL`);
+      } catch (_) {}
 
       let promotedCount = 0;
 
@@ -2091,14 +2237,15 @@ class StudentModel {
         const studentId = Number(item.student_id);
         if (!studentId) continue;
 
-        const [rows] = await connection.query(
-          `SELECT *
-           FROM student_master
-           WHERE id = ? AND school_id = ? AND status = 1
-           LIMIT 1
-           FOR UPDATE`,
-          [studentId, schoolId]
-        );
+        let fetchSql = `SELECT * FROM student_master WHERE id = ? AND school_id = ? AND status = 1`;
+        const fetchParams = [studentId, schoolId];
+        if (branchId && branchId !== 'all') {
+          fetchSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+          fetchParams.push(Number(branchId));
+        }
+        fetchSql += ` LIMIT 1 FOR UPDATE`;
+
+        const [rows] = await connection.query(fetchSql, fetchParams);
         if (!rows || rows.length === 0) continue;
 
         const current = rows[0];
@@ -2113,12 +2260,16 @@ class StudentModel {
             ? String(item.roll_number).trim()
             : current.roll_number;
 
-        let nextClassId = Number(toClassId);
-        let nextSectionId = toSectionId ? Number(toSectionId) : null;
+        const itemSectionId = item.to_section_id ?? item.toSectionId ?? toSectionId;
+        let nextClassId = toClassId ? Number(toClassId) : null;
+        let nextSectionId = itemSectionId ? Number(itemSectionId) : null;
 
-        if (statusAction === 'detained' || statusAction === 'graduated') {
+        if (statusAction === 'detained') {
           nextClassId = Number(current.class);
-          nextSectionId = current.section ? Number(current.section) : null;
+          nextSectionId = itemSectionId ? Number(itemSectionId) : (current.section ? Number(current.section) : null);
+        } else if (statusAction === 'graduated') {
+          nextClassId = null;
+          nextSectionId = null;
         }
 
         // 1. Mark the previous academic year student record as Inactive (status = 2)
@@ -2131,7 +2282,21 @@ class StudentModel {
 
         let newStudentId = null;
 
-        if (statusAction !== 'graduated') {
+        if (statusAction === 'graduated') {
+          // Deactivate transport, hostel, and old fee allocations for graduated students
+          await connection.query(
+            `UPDATE student_transport SET status = 2 WHERE student_id = ? AND school_id = ? AND status = 1`,
+            [studentId, schoolId]
+          );
+          await connection.query(
+            `UPDATE student_hostel SET status = 2 WHERE student_id = ? AND school_id = ? AND status = 1`,
+            [studentId, schoolId]
+          );
+          await connection.query(
+            `UPDATE student_fee_allocations SET status = 2 WHERE student_id = ? AND school_id = ? AND status = 1`,
+            [studentId, schoolId]
+          ).catch(() => {});
+        } else {
           // Check if a record for this student in the target academic year already exists
           let existingTargetRows = [];
           if (current.admission_number) {
@@ -2195,16 +2360,28 @@ class StudentModel {
               ]
             );
             newStudentId = insertRes.insertId;
+          }
 
-            // Copy associated student links (parents, addresses, transport, hostel, medical, previous school, documents)
+          // Sync child tables if not already present for newStudentId
+          const [existingParentLink] = await connection.query(
+            `SELECT id FROM student_to_parent WHERE student_id = ? AND school_id = ? AND status != 4 LIMIT 1`,
+            [newStudentId, schoolId]
+          );
+          if (!existingParentLink || existingParentLink.length === 0) {
             await connection.query(
               `INSERT INTO student_to_parent (school_id, branch_id, student_id, father_id, mother_id, guardian_id, status)
-               SELECT school_id, branch_id, ?, father_id, mother_id, guardian_id, status
+               SELECT school_id, branch_id, ?, father_id, mother_id, guardian_id, 1
                FROM student_to_parent
                WHERE student_id = ? AND school_id = ? AND status != 4`,
               [newStudentId, studentId, schoolId]
             );
+          }
 
+          const [existingAddr] = await connection.query(
+            `SELECT id FROM student_address WHERE student_id = ? AND school_id = ? LIMIT 1`,
+            [newStudentId, schoolId]
+          );
+          if (!existingAddr || existingAddr.length === 0) {
             await connection.query(
               `INSERT INTO student_address (school_id, branch_id, student_id, address_type, same_permanent, country, state, city, postal_code, address1, address2, created_at)
                SELECT school_id, branch_id, ?, address_type, same_permanent, country, state, city, postal_code, address1, address2, NOW()
@@ -2212,23 +2389,41 @@ class StudentModel {
                WHERE student_id = ? AND school_id = ?`,
               [newStudentId, studentId, schoolId]
             );
+          }
 
+          const [existingTrans] = await connection.query(
+            `SELECT id FROM student_transport WHERE student_id = ? AND school_id = ? AND status = 1 LIMIT 1`,
+            [newStudentId, schoolId]
+          );
+          if (!existingTrans || existingTrans.length === 0) {
             await connection.query(
               `INSERT INTO student_transport (school_id, branch_id, student_id, route, vehicle_number, pickup_point, drop_point, status)
-               SELECT school_id, branch_id, ?, route, vehicle_number, pickup_point, drop_point, status
+               SELECT school_id, branch_id, ?, route, vehicle_number, pickup_point, drop_point, 1
                FROM student_transport
                WHERE student_id = ? AND school_id = ? AND status = 1`,
               [newStudentId, studentId, schoolId]
             );
+          }
 
+          const [existingHostel] = await connection.query(
+            `SELECT id FROM student_hostel WHERE student_id = ? AND school_id = ? AND status = 1 LIMIT 1`,
+            [newStudentId, schoolId]
+          );
+          if (!existingHostel || existingHostel.length === 0) {
             await connection.query(
               `INSERT INTO student_hostel (school_id, branch_id, student_id, hostel_name, room_number, academic_year, status)
-               SELECT school_id, branch_id, ?, hostel_name, room_number, ?, status
+               SELECT school_id, branch_id, ?, hostel_name, room_number, ?, 1
                FROM student_hostel
                WHERE student_id = ? AND school_id = ? AND status = 1`,
               [newStudentId, nextAcademicYear, studentId, schoolId]
             );
+          }
 
+          const [existingMed] = await connection.query(
+            `SELECT id FROM student_medical_history WHERE student_id = ? AND school_id = ? AND status = 1 LIMIT 1`,
+            [newStudentId, schoolId]
+          );
+          if (!existingMed || existingMed.length === 0) {
             await connection.query(
               `INSERT INTO student_medical_history (school_id, branch_id, student_id, medical_condition, description, medical_time, is_informed, status)
                SELECT school_id, branch_id, ?, medical_condition, description, medical_time, is_informed, status
@@ -2236,7 +2431,13 @@ class StudentModel {
                WHERE student_id = ? AND school_id = ? AND status = 1`,
               [newStudentId, studentId, schoolId]
             );
+          }
 
+          const [existingPrevSchool] = await connection.query(
+            `SELECT id FROM previous_school_address WHERE student_id = ? AND school_id = ? LIMIT 1`,
+            [newStudentId, schoolId]
+          );
+          if (!existingPrevSchool || existingPrevSchool.length === 0) {
             await connection.query(
               `INSERT INTO previous_school_address (school_id, branch_id, student_id, school_name, address1, address2, country, state, city, postal_code)
                SELECT school_id, branch_id, ?, school_name, address1, address2, country, state, city, postal_code
@@ -2244,7 +2445,13 @@ class StudentModel {
                WHERE student_id = ? AND school_id = ?`,
               [newStudentId, studentId, schoolId]
             );
+          }
 
+          const [existingDocs] = await connection.query(
+            `SELECT id FROM student_document WHERE student_id = ? AND school_id = ? AND status != 4 LIMIT 1`,
+            [newStudentId, schoolId]
+          );
+          if (!existingDocs || existingDocs.length === 0) {
             await connection.query(
               `INSERT INTO student_document (school_id, branch_id, student_id, document_type, file_name, attachments, status)
                SELECT school_id, branch_id, ?, document_type, file_name, attachments, status
@@ -2252,6 +2459,75 @@ class StudentModel {
                WHERE student_id = ? AND school_id = ? AND status != 4`,
               [newStudentId, studentId, schoolId]
             );
+          }
+
+          // Deactivate old relational rows on the previous academic year's studentId so they do not duplicate
+          await connection.query(
+            `UPDATE student_to_parent SET status = 2 WHERE student_id = ? AND school_id = ? AND status = 1`,
+            [studentId, schoolId]
+          );
+          await connection.query(
+            `UPDATE student_transport SET status = 2 WHERE student_id = ? AND school_id = ? AND status = 1`,
+            [studentId, schoolId]
+          );
+          await connection.query(
+            `UPDATE student_hostel SET status = 2 WHERE student_id = ? AND school_id = ? AND status = 1`,
+            [studentId, schoolId]
+          );
+          await connection.query(
+            `UPDATE student_fee_allocations SET status = 2 WHERE student_id = ? AND school_id = ? AND status = 1`,
+            [studentId, schoolId]
+          ).catch(() => {});
+
+          // Migrate student push tokens and chat messages to newStudentId
+          await connection.query(
+            `UPDATE user_device_tokens SET user_id = ? WHERE user_id = ? AND role = 'student' AND school_id = ?`,
+            [newStudentId, studentId, schoolId]
+          ).catch(() => {});
+          await connection.query(
+            `UPDATE message SET sender_id = ? WHERE sender_id = ? AND sender_role = 'student' AND school_id = ?`,
+            [newStudentId, studentId, schoolId]
+          ).catch(() => {});
+          await connection.query(
+            `UPDATE message SET receiver_id = ? WHERE receiver_id = ? AND receiver_role = 'student' AND school_id = ?`,
+            [newStudentId, studentId, schoolId]
+          ).catch(() => {});
+
+          // Auto-allocate active fee structures for the target class and academic year if any exist
+          if (nextClassId && nextAcademicYear) {
+            try {
+              const [structures] = await connection.query(
+                `SELECT id, total_amount, branch_id
+                 FROM fee_structures
+                 WHERE school_id = ? AND academic_year_id = ? AND class_id = ? AND status = 1`,
+                [schoolId, nextAcademicYear, nextClassId]
+              );
+              for (const fs of structures || []) {
+                const [existingAlloc] = await connection.query(
+                  `SELECT id FROM student_fee_allocations
+                   WHERE school_id = ? AND student_id = ? AND fee_structure_id = ? AND status != 4
+                   LIMIT 1`,
+                  [schoolId, newStudentId, fs.id]
+                );
+                if (!existingAlloc || existingAlloc.length === 0) {
+                  await connection.query(
+                    `INSERT INTO student_fee_allocations (
+                       school_id, branch_id, student_id, fee_structure_id, academic_year_id,
+                       total_amount, discount_amount, net_payable, status
+                     ) VALUES (?, ?, ?, ?, ?, ?, 0, ?, 1)`,
+                    [
+                      schoolId,
+                      current.branch_id || fs.branch_id || null,
+                      newStudentId,
+                      fs.id,
+                      nextAcademicYear,
+                      Number(fs.total_amount || 0),
+                      Number(fs.total_amount || 0),
+                    ]
+                  );
+                }
+              }
+            } catch (_) {}
           }
         }
 
@@ -2274,7 +2550,7 @@ class StudentModel {
             nextAcademicYear,
             nextClassId,
             nextSectionId,
-            newRollNumber,
+            statusAction === 'graduated' ? null : newRollNumber,
             statusAction,
             promotedBy ? Number(promotedBy) : null,
           ]
@@ -2290,6 +2566,59 @@ class StudentModel {
       throw error;
     } finally {
       connection.release();
+    }
+  }
+
+  static async getPromotionHistory(schoolId, { branchId = null, fromAcademicYear = '', toAcademicYear = '', classId = '' } = {}) {
+    try {
+      let sql = `
+        SELECT 
+          sph.*,
+          s.admission_number,
+          s.first_name,
+          s.last_name,
+          CONCAT(TRIM(IFNULL(s.first_name, '')), ' ', TRIM(IFNULL(s.last_name, ''))) AS full_name,
+          s.picture,
+          fay.academic_year AS from_academic_year_name,
+          tay.academic_year AS to_academic_year_name,
+          fcm.class_name AS from_class_name,
+          tcm.class_name AS to_class_name,
+          fsec.section_name AS from_section_name,
+          tsec.section_name AS to_section_name
+        FROM student_promotion_history sph
+        INNER JOIN student_master s ON sph.student_id = s.id
+        LEFT JOIN academic_year_master fay ON sph.from_academic_year = fay.id
+        LEFT JOIN academic_year_master tay ON sph.to_academic_year = tay.id
+        LEFT JOIN class_master fcm ON sph.from_class_id = fcm.id
+        LEFT JOIN class_master tcm ON sph.to_class_id = tcm.id
+        LEFT JOIN section_master fsec ON sph.from_section_id = fsec.id
+        LEFT JOIN section_master tsec ON sph.to_section_id = tsec.id
+        WHERE sph.school_id = ?
+      `;
+      const params = [schoolId];
+
+      if (branchId && branchId !== 'all') {
+        sql += ` AND (sph.branch_id = ? OR s.branch_id = ?)`;
+        params.push(Number(branchId), Number(branchId));
+      }
+      if (fromAcademicYear) {
+        sql += ` AND sph.from_academic_year = ?`;
+        params.push(Number(fromAcademicYear));
+      }
+      if (toAcademicYear) {
+        sql += ` AND sph.to_academic_year = ?`;
+        params.push(Number(toAcademicYear));
+      }
+      if (classId) {
+        sql += ` AND (sph.from_class_id = ? OR sph.to_class_id = ?)`;
+        params.push(Number(classId), Number(classId));
+      }
+
+      sql += ` ORDER BY sph.id DESC LIMIT 500`;
+      const [rows] = await pool.query(sql, params);
+      return rows || [];
+    } catch (_) {
+      return [];
     }
   }
 }

@@ -12,7 +12,7 @@ class ParentAuthController {
    */
   static async _issueSession(parent, res, message = 'Parent authentication successful.') {
     const children = await ParentModel.getChildrenByParentId(parent.id, parent.school_id);
-    const activeStudent = children.length > 0 ? children[0] : null;
+    const activeStudent = children.find((c) => Number(c.status) === 1) || (children.length > 0 ? children[0] : null);
 
     if (!parent.school_id) {
       return ApiResponse.error(res, 'Account configuration error: No school associated with this parent account.', null, 400);
@@ -387,7 +387,10 @@ class ParentAuthController {
 
       const requestedStudentId = req.query.student_id ? Number(req.query.student_id) : req.user.studentId;
       const children = parent.children || [];
-      const activeStudent = children.find((c) => Number(c.id) === requestedStudentId) || (children.length > 0 ? children[0] : null);
+      const activeStudent =
+        children.find((c) => Number(c.id) === requestedStudentId) ||
+        children.find((c) => Number(c.status) === 1) ||
+        (children.length > 0 ? children[0] : null);
 
       const { password: _, passcode: __, otp: ___, ...safeParent } = parent;
 

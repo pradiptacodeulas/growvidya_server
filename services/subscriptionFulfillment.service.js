@@ -151,9 +151,11 @@ class SubscriptionFulfillmentService {
       }
     }
 
-    // Student quota counts both Active (status = 1) and Inactive (status = 2) students, excluding soft-deleted (status = 4)
+    // Student quota counts distinct students across sessions, excluding soft-deleted (status = 4)
     const [[stuRow]] = await db.query(
-      'SELECT COUNT(id) AS cnt FROM student_master WHERE school_id = ? AND status IN (1, 2)',
+      `SELECT COUNT(DISTINCT COALESCE(NULLIF(LOWER(TRIM(admission_number)), ''), CAST(id AS CHAR))) AS cnt
+       FROM student_master
+       WHERE school_id = ? AND status IN (1, 2)`,
       [parsedSchoolId]
     );
 

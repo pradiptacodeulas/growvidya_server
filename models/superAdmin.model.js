@@ -67,28 +67,30 @@ class SuperAdminModel {
       selectedBranchInfo = selBranchRows[0] || null;
     }
 
-    // 3. Students Count
-    let stuSql = `SELECT status, COUNT(*) as count FROM student_master WHERE school_id = ? AND status != 4`;
+    // 3. Students Count (deduplicated across promoted sessions)
+    let stuSql = `
+      SELECT 
+        COUNT(DISTINCT COALESCE(NULLIF(LOWER(TRIM(admission_number)), ''), CAST(id AS CHAR))) AS total,
+        COUNT(DISTINCT CASE WHEN status = 1 THEN COALESCE(NULLIF(LOWER(TRIM(admission_number)), ''), CAST(id AS CHAR)) END) AS active
+      FROM student_master
+      WHERE school_id = ? AND status != 4
+    `;
     const stuParams = [parsedSchoolId];
     if (parsedBranchId) {
       stuSql += ` AND branch_id = ?`;
       stuParams.push(parsedBranchId);
     }
-    stuSql += ` GROUP BY status`;
     const [stuRows] = await pool.query(stuSql, stuParams);
 
-    let activeStudents = 0, inactiveStudents = 0, totalStudents = 0;
-    stuRows.forEach((r) => {
-      const c = Number(r.count);
-      if (r.status === 1) activeStudents += c;
-      else inactiveStudents += c;
-      totalStudents += c;
-    });
+    const totalStudents = Number(stuRows?.[0]?.total || 0);
+    const activeStudents = Number(stuRows?.[0]?.active || 0);
+    const inactiveStudents = Math.max(0, totalStudents - activeStudents);
 
     let schoolWideStudents = totalStudents;
     if (parsedBranchId) {
       const [allStuRows] = await pool.query(
-        `SELECT COUNT(*) AS count FROM student_master WHERE school_id = ? AND status IN (1, 2)`,
+        `SELECT COUNT(DISTINCT COALESCE(NULLIF(LOWER(TRIM(admission_number)), ''), CAST(id AS CHAR))) AS count
+         FROM student_master WHERE school_id = ? AND status IN (1, 2)`,
         [parsedSchoolId]
       );
       schoolWideStudents = Number(allStuRows[0]?.count || 0);
@@ -570,9 +572,9 @@ class SuperAdminModel {
     // 2. Academic Stats
     const [stuStats] = await pool.query(
       `SELECT 
-         COUNT(*) as total,
-         SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END) as active,
-         SUM(CASE WHEN status != 1 THEN 1 ELSE 0 END) as inactive
+         COUNT(DISTINCT COALESCE(NULLIF(LOWER(TRIM(admission_number)), ''), CAST(id AS CHAR))) as total,
+         COUNT(DISTINCT CASE WHEN status = 1 THEN COALESCE(NULLIF(LOWER(TRIM(admission_number)), ''), CAST(id AS CHAR)) END) as active,
+         GREATEST(0, COUNT(DISTINCT COALESCE(NULLIF(LOWER(TRIM(admission_number)), ''), CAST(id AS CHAR))) - COUNT(DISTINCT CASE WHEN status = 1 THEN COALESCE(NULLIF(LOWER(TRIM(admission_number)), ''), CAST(id AS CHAR)) END)) as inactive
        FROM student_master 
        WHERE school_id = ? AND branch_id = ? AND status != 4`,
       [parsedSchoolId, parsedBranchId]

@@ -487,7 +487,18 @@ class StudentAuthController {
       }
 
       const StudentModel = require('../models/student.model');
-      const student = await StudentModel.getById(studentId, schoolId);
+      let student = await StudentModel.getById(studentId, schoolId);
+
+      // If the student was promoted to a new session record, seamlessly resolve their active record
+      if (student && Number(student.status) !== 1 && student.admission_number) {
+        const [activeRows] = await pool.query(
+          `SELECT id FROM student_master WHERE school_id = ? AND LOWER(TRIM(admission_number)) = LOWER(TRIM(?)) AND status = 1 ORDER BY id DESC LIMIT 1`,
+          [schoolId, student.admission_number]
+        );
+        if (activeRows && activeRows.length > 0) {
+          student = await StudentModel.getById(activeRows[0].id, schoolId);
+        }
+      }
 
       if (!student || Number(student.status) !== 1) {
         return ApiResponse.error(res, 'Student account not found or is inactive.', null, 401);

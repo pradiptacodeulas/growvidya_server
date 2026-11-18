@@ -6,22 +6,24 @@ class DashboardModel {
       throw new Error('schoolId is required for DashboardModel.getDashboardStats');
     }
     try {
-      // 1. Students Count (1 = Active, 2 = Inactive, 4 = Soft Delete)
+      // 1. Students Count (1 = Active, 2 = Inactive, 4 = Soft Delete; deduplicated across promoted sessions)
       const stuParams = [schoolId];
-      let stuSql = `SELECT status, COUNT(*) as count FROM student_master WHERE school_id = ? AND status != 4`;
+      let stuSql = `
+        SELECT 
+          COUNT(DISTINCT COALESCE(NULLIF(LOWER(TRIM(admission_number)), ''), CAST(id AS CHAR))) AS total_students,
+          COUNT(DISTINCT CASE WHEN status = 1 THEN COALESCE(NULLIF(LOWER(TRIM(admission_number)), ''), CAST(id AS CHAR)) END) AS active_students
+        FROM student_master
+        WHERE school_id = ? AND status IN (1, 2)
+      `;
       if (branchId) {
         stuSql += ` AND branch_id = ?`;
         stuParams.push(Number(branchId));
       }
-      stuSql += ` GROUP BY status`;
       const [stuRows] = await pool.query(stuSql, stuParams);
 
-      let activeStudents = 0, inactiveStudents = 0, totalStudents = 0;
-      stuRows.forEach((r) => {
-        if (r.status === 1) activeStudents += Number(r.count);
-        else if (r.status === 2) inactiveStudents += Number(r.count);
-        if (r.status === 1 || r.status === 2) totalStudents += Number(r.count);
-      });
+      const totalStudents = Number(stuRows?.[0]?.total_students || 0);
+      const activeStudents = Number(stuRows?.[0]?.active_students || 0);
+      const inactiveStudents = Math.max(0, totalStudents - activeStudents);
 
       // 2. Teachers Count (1 = Active, 2 = Inactive, 4 = Soft Delete)
       const tchParams = [schoolId];

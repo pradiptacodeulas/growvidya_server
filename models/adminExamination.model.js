@@ -1293,9 +1293,15 @@ class AdminExaminationModel {
         LEFT JOIN section_master sec ON sec.id = s.section
         WHERE s.school_id = ?
           AND s.class = ?
-          AND s.status = 1
+          AND s.status IN (1, 2)
       `;
       const studentParams = [schoolId, classId];
+      if (academicYearId) {
+        studentQuery += ` AND (s.academic_year = ? OR s.academic_year IS NULL)`;
+        studentParams.push(academicYearId);
+      } else {
+        studentQuery += ` AND s.status = 1`;
+      }
       if (sectionId) {
         studentQuery += ` AND s.section = ?`;
         studentParams.push(sectionId);
@@ -2014,12 +2020,14 @@ class AdminExaminationModel {
     const l = parseInt(limit, 10) || 10;
     const offset = (p - 1) * l;
 
-    let whereClause = `WHERE s.school_id = ? AND s.status = 1`;
+    let whereClause = `WHERE s.school_id = ?`;
     const params = [schoolId];
 
     if (academicYearId) {
-      whereClause += ` AND (s.academic_year = ? OR s.academic_year IS NULL)`;
+      whereClause += ` AND s.status IN (1, 2) AND (s.academic_year = ? OR s.academic_year IS NULL)`;
       params.push(academicYearId);
+    } else {
+      whereClause += ` AND s.status = 1`;
     }
     if (classId) {
       whereClause += ` AND s.class = ?`;
@@ -2276,8 +2284,14 @@ class AdminExaminationModel {
          LEFT JOIN section_master sec ON sec.id = s.section
          LEFT JOIN student_to_parent stp ON stp.student_id = s.id
          LEFT JOIN parent_master pf ON pf.id = stp.father_id
-         WHERE s.class = ? AND s.school_id = ? AND s.status = 1`;
+         WHERE s.class = ? AND s.school_id = ?`;
       const p = [classId, schoolId];
+      if (academicYearId) {
+        q += ` AND s.status IN (1, 2) AND (s.academic_year = ? OR s.academic_year IS NULL)`;
+        p.push(academicYearId);
+      } else {
+        q += ` AND s.status = 1`;
+      }
       if (sectionId) {
         q += ` AND s.section = ?`;
         p.push(sectionId);
