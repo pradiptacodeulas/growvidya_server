@@ -398,7 +398,7 @@ class TeacherDashboardController {
            FROM leaves l
            LEFT JOIN leave_master lm ON l.leave_id = lm.id
            WHERE (l.staff_id = ? OR l.staff_id = ?) 
-             AND l.role = 1 
+             AND l.role = 2 
              AND (l.status != 4 OR l.status IS NULL)`;
         const leaveParams = [teacherId, teacher.teacher_id || ''];
         if (branchId) {

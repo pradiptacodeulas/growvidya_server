@@ -76,7 +76,7 @@ class TeacherLeaveController {
         FROM leaves l
         LEFT JOIN leave_master lm ON (l.leave_id = lm.id AND lm.school_id = l.school_id)
         WHERE l.school_id = ?
-          AND l.role = 1 
+          AND l.role = 2 
           AND l.staff_id = ?
           AND l.status != 4 AND l.status != 0
       `;
@@ -155,9 +155,9 @@ class TeacherLeaveController {
            ) AS leave_date
          FROM leaves l
          LEFT JOIN leave_master lm ON (l.leave_id = lm.id AND lm.school_id = l.school_id)
-         LEFT JOIN teacher_master t ON (l.role = 1 AND l.staff_id = t.id AND t.school_id = l.school_id)
+         LEFT JOIN teacher_master t ON (l.role = 2 AND l.staff_id = t.id AND t.school_id = l.school_id)
          WHERE l.id = ? 
-           AND l.role = 1 
+           AND l.role = 2 
            AND l.staff_id = ?
            AND l.school_id = ?
            AND l.status != 4 AND l.status != 0`;
@@ -190,7 +190,7 @@ class TeacherLeaveController {
       try {
         const quotaInfo = await LeaveModel.getStaffLeaveQuota(
           leave.school_id || schoolId,
-          1,
+          2,
           teacherId,
           leave.leave_id
         );
@@ -218,7 +218,7 @@ class TeacherLeaveController {
       const rawBranch = req.branchId || req.user?.branch_id || req.user?.branchId || null;
       const branchId = (rawBranch && rawBranch !== 'all') ? Number(rawBranch) : null;
 
-      const typesWithQuota = await LeaveModel.getLeaveTypes(schoolId, 1, branchId, {
+      const typesWithQuota = await LeaveModel.getLeaveTypes(schoolId, 2, branchId, {
         staffId: teacherId,
         activeOnly: true,
       });
@@ -273,7 +273,7 @@ class TeacherLeaveController {
 
       // Check duplicate leave applications
       const duplicateCheck = await LeaveModel.checkDuplicateLeave(schoolId, {
-        role: 1,
+        role: 2,
         staff_id: teacherId,
         dates,
       });
@@ -290,7 +290,7 @@ class TeacherLeaveController {
       }
 
       // Check quota restriction (includes both approved and pending active leave requests)
-      const quota = await LeaveModel.getStaffLeaveQuota(schoolId, 1, teacherId, Number(leave_id));
+      const quota = await LeaveModel.getStaffLeaveQuota(schoolId, 2, teacherId, Number(leave_id));
       if (!quota || !quota.leave_exists || quota.leave_status !== 1) {
         return ApiResponse.error(res, 'Selected leave type is invalid or inactive.', null, 400);
       }
@@ -324,7 +324,7 @@ class TeacherLeaveController {
       }
 
       const leaveId = await LeaveModel.createLeave(schoolId, {
-        role: 1,
+        role: 2,
         staff_id: teacherId,
         leave_id,
         duration,

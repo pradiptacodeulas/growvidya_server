@@ -577,8 +577,8 @@ class PayrollModel {
     const empId = Number(employee_id);
     const baseSalary = Number(basic_salary) || 0;
 
-    // Map payroll user_type (1=Staff, 2=Teacher, 3=Driver) to leaves.role (1=Teacher, 2=Staff, 3=Driver)
-    const leaveRole = uType === 2 ? 1 : uType === 1 ? 2 : 3;
+    // Both payroll user_type and leaves.role use (1=Staff, 2=Teacher, 3=Driver)
+    const leaveRole = uType;
 
     // Parse target year & month from salary_month (YYYY-MM or YYYY-MM-DD)
     const now = new Date();

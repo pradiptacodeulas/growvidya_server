@@ -138,11 +138,11 @@ class DashboardModel {
       // 6. Leave Requests (Real data)
       const leaveParams = [schoolId];
       let leaveSql = `SELECT l.*, lm.leave_name,
-           COALESCE(tm.first_name, um.first_name, 'Staff') AS first_name,
-           COALESCE(tm.last_name, um.last_name, '') AS last_name,
-           COALESCE(tm.picture, um.picture, NULL) AS picture,
-           COALESCE(tm.gender, um.gender, 1) AS gender,
-           IF(l.role = 1, 'Teacher', 'Staff') AS role_title,
+           COALESCE(um.first_name, tm.first_name, op.first_name, 'Staff') AS first_name,
+           COALESCE(um.last_name, tm.last_name, op.last_name, '') AS last_name,
+           COALESCE(um.picture, tm.picture, op.picture, NULL) AS picture,
+           COALESCE(um.gender, tm.gender, 1) AS gender,
+           CASE WHEN l.role = 2 THEN 'Teacher' WHEN l.role = 3 THEN 'Driver' ELSE 'Staff' END AS role_title,
            (SELECT 
               IF(MIN(ld.date) = MAX(ld.date), 
                  DATE_FORMAT(MIN(ld.date), '%d %b'), 
@@ -152,12 +152,13 @@ class DashboardModel {
             WHERE ld.staff_leave_id = l.id) AS leave_dates
          FROM leaves l
          LEFT JOIN leave_master lm ON (l.leave_id = lm.id AND (lm.school_id = l.school_id OR lm.school_id IS NULL))
-         LEFT JOIN teacher_master tm ON (l.role = 1 AND l.staff_id = tm.id AND tm.school_id = l.school_id)
-         LEFT JOIN user_master um ON (l.role = 2 AND l.staff_id = um.id AND um.school_id = l.school_id)
+         LEFT JOIN user_master um ON (l.role = 1 AND l.staff_id = um.id AND um.school_id = l.school_id)
+         LEFT JOIN teacher_master tm ON (l.role = 2 AND l.staff_id = tm.id AND tm.school_id = l.school_id)
+         LEFT JOIN operator_master op ON (l.role = 3 AND l.staff_id = op.id AND op.school_id = l.school_id)
          WHERE l.school_id = ? AND l.status != 4 AND l.status != 0`;
       if (branchId) {
-        leaveSql += ` AND (l.branch_id = ? OR tm.branch_id = ? OR um.branch_id = ?)`;
-        leaveParams.push(Number(branchId), Number(branchId), Number(branchId));
+        leaveSql += ` AND (l.branch_id = ? OR um.branch_id = ? OR tm.branch_id = ? OR op.branch_id = ?)`;
+        leaveParams.push(Number(branchId), Number(branchId), Number(branchId), Number(branchId));
       }
       leaveSql += ` ORDER BY l.id DESC LIMIT 10`;
       const [leaveRows] = await pool.query(leaveSql, leaveParams);

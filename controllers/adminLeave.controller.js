@@ -46,7 +46,7 @@ class AdminLeaveController {
       const isApproved = statusNum === 2;
       const decisionWord = isApproved ? 'Approved' : 'Rejected';
       const leaveName = decisionInfo.leave_name ? String(decisionInfo.leave_name).trim() : '';
-      const recipientRole = Number(decisionInfo.role) === 1 ? 'teacher' : 'staff';
+      const recipientRole = Number(decisionInfo.role) === 2 ? 'teacher' : Number(decisionInfo.role) === 3 ? 'driver' : 'staff';
       const staffId = Number(decisionInfo.staff_id);
       const branchId = decisionInfo.branch_id || null;
 
@@ -439,7 +439,7 @@ class AdminLeaveController {
       const schoolId = req.user.schoolId;
       const rawBranch = req.branchId || req.query.branch_id || null;
       const branchId = (rawBranch && rawBranch !== 'all') ? Number(rawBranch) : null;
-      const { role } = req.params;
+      const role = Number(req.params.role);
 
       const staff = await LeaveModel.getStaffByRole(schoolId, role, branchId);
       return ApiResponse.success(res, 'Staff fetched successfully.', { staff });

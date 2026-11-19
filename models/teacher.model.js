@@ -498,9 +498,9 @@ class TeacherModel {
       teacher.hostel_info = null;
     }
 
-    // Fetch Leave Types & Quotas (Role 1 = Teacher)
+    // Fetch Leave Types & Quotas (Role 2 = Teacher)
     try {
-      let leaveMasterSql = `SELECT * FROM leave_master WHERE (school_id = ? OR ? IS NULL) AND role = 1 AND status = 1`;
+      let leaveMasterSql = `SELECT * FROM leave_master WHERE (school_id = ? OR ? IS NULL) AND role = 2 AND status = 1`;
       const leaveMasterParams = [teacher.school_id, teacher.school_id];
       if (teacher.branch_id) {
         leaveMasterSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
@@ -515,7 +515,7 @@ class TeacherModel {
                 COALESCE(SUM(CASE WHEN ld.status = 1 AND l.status IN (1, 2) THEN (CASE WHEN l.duration = 2 THEN 0.5 ELSE 1 END) ELSE 0 END), 0) AS pending_days
          FROM leaves_date ld
          JOIN leaves l ON ld.staff_leave_id = l.id
-         WHERE l.staff_id = ? AND (l.school_id = ? OR ? IS NULL) AND l.role = 1 AND l.status != 4 AND l.status != 0
+         WHERE l.staff_id = ? AND (l.school_id = ? OR ? IS NULL) AND l.role = 2 AND l.status != 4 AND l.status != 0
          GROUP BY l.leave_id`,
         [id, teacher.school_id, teacher.school_id]
       );
@@ -525,7 +525,7 @@ class TeacherModel {
                 COALESCE(SUM(CASE WHEN l.status = 2 THEN (CASE WHEN l.duration = 2 THEN 0.5 ELSE 1 END) ELSE 0 END), 0) AS standalone_approved,
                 COALESCE(SUM(CASE WHEN l.status = 1 THEN (CASE WHEN l.duration = 2 THEN 0.5 ELSE 1 END) ELSE 0 END), 0) AS standalone_pending
          FROM leaves l
-         WHERE l.staff_id = ? AND (l.school_id = ? OR ? IS NULL) AND l.role = 1 AND l.status IN (1, 2)
+         WHERE l.staff_id = ? AND (l.school_id = ? OR ? IS NULL) AND l.role = 2 AND l.status IN (1, 2)
            AND NOT EXISTS (SELECT 1 FROM leaves_date ld WHERE ld.staff_leave_id = l.id)
          GROUP BY l.leave_id`,
         [id, teacher.school_id, teacher.school_id]

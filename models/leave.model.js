@@ -13,7 +13,8 @@ class LeaveModel {
         l.branch_id,
         l.role,
         CASE 
-          WHEN l.role = 1 THEN 'Teacher'
+          WHEN l.role = 2 THEN 'Teacher'
+          WHEN l.role = 3 THEN 'Driver'
           ELSE COALESCE(NULLIF(TRIM(r.role_name), ''), 'Staff')
         END AS role_label,
         r.role_name AS staff_role_name,
@@ -58,22 +59,26 @@ class LeaveModel {
         (SELECT GROUP_CONCAT(DATE_FORMAT(ld.date, '%Y-%m-%d') ORDER BY ld.date ASC SEPARATOR ',') 
          FROM leaves_date ld WHERE ld.staff_leave_id = l.id AND ld.status != 4 AND ld.status != 0) AS leave_dates_str,
         CASE
-          WHEN l.role = 1 THEN TRIM(CONCAT(IFNULL(t.first_name, ''), ' ', IFNULL(t.last_name, '')))
+          WHEN l.role = 2 THEN TRIM(CONCAT(IFNULL(t.first_name, ''), ' ', IFNULL(t.last_name, '')))
+          WHEN l.role = 3 THEN TRIM(CONCAT(IFNULL(op.first_name, ''), ' ', IFNULL(op.last_name, '')))
           ELSE TRIM(CONCAT(IFNULL(u.first_name, ''), ' ', IFNULL(u.last_name, '')))
         END AS person_name,
         CASE
-          WHEN l.role = 1 THEN t.gender
+          WHEN l.role = 2 THEN t.gender
+          WHEN l.role = 3 THEN NULL
           ELSE u.gender
         END AS gender,
         CASE
-          WHEN l.role = 1 THEN t.picture
+          WHEN l.role = 2 THEN t.picture
+          WHEN l.role = 3 THEN op.picture
           ELSE u.picture
         END AS person_picture
       FROM leaves l
       LEFT JOIN leave_master lm ON (l.leave_id = lm.id AND lm.school_id = l.school_id)
-      LEFT JOIN teacher_master t ON (l.role = 1 AND l.staff_id = t.id AND t.school_id = l.school_id)
-      LEFT JOIN user_master u ON (l.role = 2 AND l.staff_id = u.id AND u.school_id = l.school_id)
-      LEFT JOIN role_master r ON (l.role = 2 AND u.role = r.id)
+      LEFT JOIN user_master u ON (l.role = 1 AND l.staff_id = u.id AND u.school_id = l.school_id)
+      LEFT JOIN role_master r ON (l.role = 1 AND u.role = r.id)
+      LEFT JOIN teacher_master t ON (l.role = 2 AND l.staff_id = t.id AND t.school_id = l.school_id)
+      LEFT JOIN operator_master op ON (l.role = 3 AND l.staff_id = op.id AND op.school_id = l.school_id)
       WHERE l.school_id = ? AND l.status != 4 AND l.status != 0
     `;
 
@@ -83,11 +88,12 @@ class LeaveModel {
       sql += ` AND (
         (l.branch_id = ?) OR
         (l.branch_id IS NULL AND (
-          (l.role = 1 AND (t.branch_id = ? OR t.branch_id IS NULL)) OR
-          (l.role = 2 AND (u.branch_id = ? OR u.branch_id IS NULL))
+          (l.role = 1 AND (u.branch_id = ? OR u.branch_id IS NULL)) OR
+          (l.role = 2 AND (t.branch_id = ? OR t.branch_id IS NULL)) OR
+          (l.role = 3 AND (op.branch_id = ? OR op.branch_id IS NULL))
         ))
       )`;
-      params.push(Number(branchId), Number(branchId), Number(branchId));
+      params.push(Number(branchId), Number(branchId), Number(branchId), Number(branchId));
     }
 
     if (role) {
@@ -118,10 +124,11 @@ class LeaveModel {
     }
     if (name) {
       sql += ` AND (
-        (l.role = 1 AND CONCAT(IFNULL(t.first_name, ''), ' ', IFNULL(t.last_name, '')) LIKE ?) OR
-        (l.role = 2 AND CONCAT(IFNULL(u.first_name, ''), ' ', IFNULL(u.last_name, '')) LIKE ?)
+        (l.role = 1 AND CONCAT(IFNULL(u.first_name, ''), ' ', IFNULL(u.last_name, '')) LIKE ?) OR
+        (l.role = 2 AND CONCAT(IFNULL(t.first_name, ''), ' ', IFNULL(t.last_name, '')) LIKE ?) OR
+        (l.role = 3 AND CONCAT(IFNULL(op.first_name, ''), ' ', IFNULL(op.last_name, '')) LIKE ?)
       )`;
-      params.push(`%${name}%`, `%${name}%`);
+      params.push(`%${name}%`, `%${name}%`, `%${name}%`);
     }
     if (date) {
       sql += ` AND (
@@ -148,7 +155,8 @@ class LeaveModel {
         l.branch_id,
         l.role,
         CASE 
-          WHEN l.role = 1 THEN 'Teacher'
+          WHEN l.role = 2 THEN 'Teacher'
+          WHEN l.role = 3 THEN 'Driver'
           ELSE COALESCE(NULLIF(TRIM(r.role_name), ''), 'Staff')
         END AS role_label,
         r.role_name AS staff_role_name,
@@ -184,22 +192,26 @@ class LeaveModel {
         l.created_at,
         DATE_FORMAT(l.created_at, '%Y-%m-%d') AS created_date,
         CASE
-          WHEN l.role = 1 THEN TRIM(CONCAT(IFNULL(t.first_name, ''), ' ', IFNULL(t.last_name, '')))
+          WHEN l.role = 2 THEN TRIM(CONCAT(IFNULL(t.first_name, ''), ' ', IFNULL(t.last_name, '')))
+          WHEN l.role = 3 THEN TRIM(CONCAT(IFNULL(op.first_name, ''), ' ', IFNULL(op.last_name, '')))
           ELSE TRIM(CONCAT(IFNULL(u.first_name, ''), ' ', IFNULL(u.last_name, '')))
         END AS person_name,
         CASE
-          WHEN l.role = 1 THEN t.gender
+          WHEN l.role = 2 THEN t.gender
+          WHEN l.role = 3 THEN NULL
           ELSE u.gender
         END AS gender,
         CASE
-          WHEN l.role = 1 THEN t.picture
+          WHEN l.role = 2 THEN t.picture
+          WHEN l.role = 3 THEN op.picture
           ELSE u.picture
         END AS person_picture
       FROM leaves l
       LEFT JOIN leave_master lm ON (l.leave_id = lm.id AND lm.school_id = l.school_id)
-      LEFT JOIN teacher_master t ON (l.role = 1 AND l.staff_id = t.id AND t.school_id = l.school_id)
-      LEFT JOIN user_master u ON (l.role = 2 AND l.staff_id = u.id AND u.school_id = l.school_id)
-      LEFT JOIN role_master r ON (l.role = 2 AND u.role = r.id)
+      LEFT JOIN user_master u ON (l.role = 1 AND l.staff_id = u.id AND u.school_id = l.school_id)
+      LEFT JOIN role_master r ON (l.role = 1 AND u.role = r.id)
+      LEFT JOIN teacher_master t ON (l.role = 2 AND l.staff_id = t.id AND t.school_id = l.school_id)
+      LEFT JOIN operator_master op ON (l.role = 3 AND l.staff_id = op.id AND op.school_id = l.school_id)
       WHERE l.id = ? AND l.school_id = ? AND l.status != 4 AND l.status != 0
     `;
 
@@ -208,11 +220,12 @@ class LeaveModel {
       sql += ` AND (
         (l.branch_id = ?) OR
         (l.branch_id IS NULL AND (
-          (l.role = 1 AND (t.branch_id = ? OR t.branch_id IS NULL)) OR
-          (l.role = 2 AND (u.branch_id = ? OR u.branch_id IS NULL))
+          (l.role = 1 AND (u.branch_id = ? OR u.branch_id IS NULL)) OR
+          (l.role = 2 AND (t.branch_id = ? OR t.branch_id IS NULL)) OR
+          (l.role = 3 AND (op.branch_id = ? OR op.branch_id IS NULL))
         ))
       )`;
-      params.push(Number(branchId), Number(branchId), Number(branchId));
+      params.push(Number(branchId), Number(branchId), Number(branchId), Number(branchId));
     }
 
     const [rows] = await pool.query(sql, params);
@@ -450,9 +463,12 @@ class LeaveModel {
     let resolvedBranchId = branch_id ? Number(branch_id) : null;
     if (!resolvedBranchId) {
       try {
-        if (Number(role) === 1) {
+        if (Number(role) === 2) {
           const [t] = await pool.query('SELECT branch_id FROM teacher_master WHERE id = ? LIMIT 1', [staff_id]);
           if (t && t[0]?.branch_id) resolvedBranchId = t[0].branch_id;
+        } else if (Number(role) === 3) {
+          const [op] = await pool.query('SELECT branch_id FROM operator_master WHERE id = ? LIMIT 1', [staff_id]);
+          if (op && op[0]?.branch_id) resolvedBranchId = op[0].branch_id;
         } else {
           const [u] = await pool.query('SELECT branch_id FROM user_master WHERE id = ? LIMIT 1', [staff_id]);
           if (u && u[0]?.branch_id) resolvedBranchId = u[0].branch_id;
@@ -513,13 +529,15 @@ class LeaveModel {
         l.branch_id,
         DATE_FORMAT(l.created_at, '%Y-%m-%d') AS created_date,
         CASE
-          WHEN l.role = 1 THEN TRIM(CONCAT(IFNULL(t.first_name, ''), ' ', IFNULL(t.last_name, '')))
+          WHEN l.role = 2 THEN TRIM(CONCAT(IFNULL(t.first_name, ''), ' ', IFNULL(t.last_name, '')))
+          WHEN l.role = 3 THEN TRIM(CONCAT(IFNULL(op.first_name, ''), ' ', IFNULL(op.last_name, '')))
           ELSE TRIM(CONCAT(IFNULL(u.first_name, ''), ' ', IFNULL(u.last_name, '')))
         END AS person_name
       FROM leaves l
       LEFT JOIN leave_master lm ON (l.leave_id = lm.id AND lm.school_id = l.school_id)
-      LEFT JOIN teacher_master t ON (l.role = 1 AND l.staff_id = t.id AND t.school_id = l.school_id)
-      LEFT JOIN user_master u ON (l.role = 2 AND l.staff_id = u.id AND u.school_id = l.school_id)
+      LEFT JOIN user_master u ON (l.role = 1 AND l.staff_id = u.id AND u.school_id = l.school_id)
+      LEFT JOIN teacher_master t ON (l.role = 2 AND l.staff_id = t.id AND t.school_id = l.school_id)
+      LEFT JOIN operator_master op ON (l.role = 3 AND l.staff_id = op.id AND op.school_id = l.school_id)
       WHERE l.id = ? AND (l.school_id = ? OR ? IS NULL) AND l.status != 4 AND l.status != 0
     `;
     const checkParams = [leaveId, schoolId, schoolId];
@@ -628,14 +646,16 @@ class LeaveModel {
         l.duration,
         l.branch_id,
         CASE
-          WHEN l.role = 1 THEN TRIM(CONCAT(IFNULL(t.first_name, ''), ' ', IFNULL(t.last_name, '')))
+          WHEN l.role = 2 THEN TRIM(CONCAT(IFNULL(t.first_name, ''), ' ', IFNULL(t.last_name, '')))
+          WHEN l.role = 3 THEN TRIM(CONCAT(IFNULL(op.first_name, ''), ' ', IFNULL(op.last_name, '')))
           ELSE TRIM(CONCAT(IFNULL(u.first_name, ''), ' ', IFNULL(u.last_name, '')))
         END AS person_name
       FROM leaves_date ld
       JOIN leaves l ON ld.staff_leave_id = l.id
       LEFT JOIN leave_master lm ON (l.leave_id = lm.id AND lm.school_id = l.school_id)
-      LEFT JOIN teacher_master t ON (l.role = 1 AND l.staff_id = t.id AND t.school_id = l.school_id)
-      LEFT JOIN user_master u ON (l.role = 2 AND l.staff_id = u.id AND u.school_id = l.school_id)
+      LEFT JOIN user_master u ON (l.role = 1 AND l.staff_id = u.id AND u.school_id = l.school_id)
+      LEFT JOIN teacher_master t ON (l.role = 2 AND l.staff_id = t.id AND t.school_id = l.school_id)
+      LEFT JOIN operator_master op ON (l.role = 3 AND l.staff_id = op.id AND op.school_id = l.school_id)
       WHERE ld.id = ? AND (ld.school_id = ? OR ? IS NULL) AND ld.status != 4 AND ld.status != 0
     `;
     const dateParams = [leaveDateId, schoolId, schoolId];
@@ -746,7 +766,7 @@ class LeaveModel {
 
     if (staffId) {
       try {
-        if (Number(role) === 1) {
+        if (Number(role) === 2) {
           const [tRows] = await pool.query(
             'SELECT branch_id FROM teacher_master WHERE id = ? AND (school_id = ? OR ? IS NULL) LIMIT 1',
             [Number(staffId), schoolId, schoolId]
@@ -754,7 +774,15 @@ class LeaveModel {
           if (tRows && tRows[0]?.branch_id) {
             effectiveBranchId = Number(tRows[0].branch_id);
           }
-        } else if (Number(role) === 2) {
+        } else if (Number(role) === 3) {
+          const [opRows] = await pool.query(
+            'SELECT branch_id FROM operator_master WHERE id = ? AND (school_id = ? OR ? IS NULL) LIMIT 1',
+            [Number(staffId), schoolId, schoolId]
+          );
+          if (opRows && opRows[0]?.branch_id) {
+            effectiveBranchId = Number(opRows[0].branch_id);
+          }
+        } else if (Number(role) === 1) {
           const [uRows] = await pool.query(
             'SELECT branch_id FROM user_master WHERE id = ? AND (school_id = ? OR ? IS NULL) LIMIT 1',
             [Number(staffId), schoolId, schoolId]
@@ -774,7 +802,11 @@ class LeaveModel {
         bm.branch_name,
         bm.branch_code,
         lm.role, 
-        CASE WHEN lm.role = 1 THEN 'Teacher' ELSE 'Staff' END AS role_label,
+        CASE
+          WHEN lm.role = 2 THEN 'Teacher'
+          WHEN lm.role = 3 THEN 'Driver'
+          ELSE 'Staff'
+        END AS role_label,
         lm.leave_name, 
         lm.need_document, 
         COALESCE(lm.is_paid, 1) AS is_paid,
@@ -833,11 +865,12 @@ class LeaveModel {
   }
 
   /**
-   * Get Staff/Teachers options based on role
+   * Get Staff/Teachers/Drivers options based on role (Type: 1 = Staff, 2 = Teacher, 3 = Driver)
    */
   static async getStaffByRole(schoolId, role, branchId = null) {
-    if (Number(role) === 1) {
-      // Teachers: show only active (status = 1)
+    const uType = Number(role);
+    if (uType === 2) {
+      // Type 2 = Teacher (teacher_master): show only active (status = 1)
       let sql = `
         SELECT 
           id,
@@ -849,18 +882,41 @@ class LeaveModel {
           gender,
           status
         FROM teacher_master
-        WHERE school_id = ? AND status = 1
+        WHERE school_id = ? AND status = 1 AND status != 4 AND status != 2 AND status != 0
       `;
       const params = [schoolId];
       if (branchId) {
         sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
         params.push(Number(branchId));
       }
-      sql += ` ORDER BY first_name ASC`;
+      sql += ` ORDER BY first_name ASC, id ASC`;
       const [rows] = await pool.query(sql, params);
       return rows || [];
-    } else {
-      // Staff (user_master joined with role_master): show only active (status = 1)
+    } else if (uType === 3) {
+      // Type 3 = Driver (operator_master where type = 1): show only active (status = 1)
+      let sql = `
+        SELECT 
+          id,
+          branch_id,
+          CAST(id AS CHAR) AS code,
+          TRIM(CONCAT(IFNULL(first_name, ''), ' ', IFNULL(last_name, ''))) AS name,
+          'Driver' AS role_name,
+          picture,
+          NULL AS gender,
+          status
+        FROM operator_master
+        WHERE school_id = ? AND type = 1 AND status = 1 AND status != 4 AND status != 2 AND status != 0
+      `;
+      const params = [schoolId];
+      if (branchId) {
+        sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+        params.push(Number(branchId));
+      }
+      sql += ` ORDER BY first_name ASC, id ASC`;
+      const [rows] = await pool.query(sql, params);
+      return rows || [];
+    } else if (uType === 1) {
+      // Type 1 = Staff (user_master joined with role_master): show only active (status = 1)
       let sql = `
         SELECT 
           u.id,
@@ -872,17 +928,19 @@ class LeaveModel {
           u.status
         FROM user_master u
         LEFT JOIN role_master r ON u.role = r.id
-        WHERE u.school_id = ? AND u.status = 1
+        WHERE u.school_id = ? AND u.status = 1 AND u.status != 4 AND u.status != 2 AND u.status != 0
       `;
       const params = [schoolId];
       if (branchId) {
         sql += ` AND (u.branch_id = ? OR u.branch_id IS NULL)`;
         params.push(Number(branchId));
       }
-      sql += ` ORDER BY u.first_name ASC`;
+      sql += ` ORDER BY u.first_name ASC, u.id ASC`;
       const [rows] = await pool.query(sql, params);
       return rows || [];
     }
+
+    return [];
   }
 
   /**
@@ -897,7 +955,11 @@ class LeaveModel {
         bm.branch_name,
         bm.branch_code,
         lm.role, 
-        CASE WHEN lm.role = 1 THEN 'Teacher' ELSE 'Staff' END AS role_label,
+        CASE
+          WHEN lm.role = 2 THEN 'Teacher'
+          WHEN lm.role = 3 THEN 'Driver'
+          ELSE 'Staff'
+        END AS role_label,
         lm.leave_name, 
         lm.need_document, 
         COALESCE(lm.is_paid, 1) AS is_paid,
