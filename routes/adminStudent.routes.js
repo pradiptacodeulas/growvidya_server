@@ -12,9 +12,10 @@ router.get('/', rbacMiddleware(['Super Admin', 'Admin', 'Teacher'], 'ward/studen
 router.post('/filter', rbacMiddleware(['Super Admin', 'Admin', 'Teacher'], 'ward/students', 'view'), AdminStudentController.getAllStudents);
 router.post('/search', rbacMiddleware(['Super Admin', 'Admin', 'Teacher'], 'ward/students', 'view'), AdminStudentController.getAllStudents);
 
-// Check email and admission number duplicate availability
-router.get('/check-email', rbacMiddleware(['Super Admin', 'Admin'], 'ward/students', 'add'), AdminStudentController.checkEmail);
-router.get('/check-admission-number', rbacMiddleware(['Super Admin', 'Admin'], 'ward/students', 'add'), AdminStudentController.checkAdmissionNumber);
+// Check email, admission number, and roll number duplicate availability
+router.get('/check-email', rbacMiddleware(['Super Admin', 'Admin'], 'ward/students', 'view'), AdminStudentController.checkEmail);
+router.get('/check-admission-number', rbacMiddleware(['Super Admin', 'Admin'], 'ward/students', 'view'), AdminStudentController.checkAdmissionNumber);
+router.get('/check-roll-number', rbacMiddleware(['Super Admin', 'Admin'], 'ward/students', 'view'), AdminStudentController.checkRollNumber);
 
 // Student activities management (Accessible by Super Admin, Admin, Teacher)
 router.get('/activities/list', rbacMiddleware(['Super Admin', 'Admin', 'Teacher'], 'ward/students', 'view'), AdminStudentController.getActivitiesList);

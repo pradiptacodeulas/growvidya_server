@@ -192,6 +192,16 @@ class StudentModel {
     try {
       const AcademicModel = require('./academic.model');
       (rows || []).forEach((st) => {
+        if (st.admission_date && /^0{4}-0{2}-0{2}/.test(String(st.admission_date))) {
+          st.admission_date = null;
+        } else if (st.admission_date) {
+          st.admission_date = String(st.admission_date).slice(0, 10);
+        }
+        if (st.date_of_birth && /^0{4}-0{2}-0{2}/.test(String(st.date_of_birth))) {
+          st.date_of_birth = null;
+        } else if (st.date_of_birth) {
+          st.date_of_birth = String(st.date_of_birth).slice(0, 10);
+        }
         const formatted = AcademicModel.formatYearRange({
           id: st.academic_year_id,
           academic_year: st.academic_year_name || st.academic_year,
@@ -712,6 +722,16 @@ class StudentModel {
     }
 
     try {
+      if (student.admission_date && /^0{4}-0{2}-0{2}/.test(String(student.admission_date))) {
+        student.admission_date = null;
+      } else if (student.admission_date) {
+        student.admission_date = String(student.admission_date).slice(0, 10);
+      }
+      if (student.date_of_birth && /^0{4}-0{2}-0{2}/.test(String(student.date_of_birth))) {
+        student.date_of_birth = null;
+      } else if (student.date_of_birth) {
+        student.date_of_birth = String(student.date_of_birth).slice(0, 10);
+      }
       const AcademicModel = require('./academic.model');
       const formatted = AcademicModel.formatYearRange({
         id: student.academic_year_id,
@@ -1034,6 +1054,229 @@ class StudentModel {
     return rows.length > 0 ? rows[0] : null;
   }
 
+  static getLocalTodayDate() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  static decodeIdParam(val) {
+    if (val === null || val === undefined || val === '') return null;
+    if (typeof val === 'number') return val;
+    const str = String(val).trim();
+    if (!str) return null;
+    if (/^\d+$/.test(str)) return Number(str);
+    try {
+      const unescaped = decodeURIComponent(str);
+      const decoded = Buffer.from(unescaped, 'base64').toString('utf-8');
+      if (/^\d+$/.test(decoded)) {
+        const reEncoded = Buffer.from(decoded, 'utf-8').toString('base64');
+        if (reEncoded === unescaped || reEncoded.replace(/=+$/, '') === unescaped.replace(/=+$/, '')) {
+          return Number(decoded);
+        }
+      }
+    } catch (_) {}
+    return val;
+  }
+
+  static parseAndValidateDate(rawVal, { fieldLabel = 'Date', allowFuture = true, minYear = 1900, maxDateYMD = null } = {}) {
+    if (rawVal === undefined || rawVal === null || String(rawVal).trim() === '') {
+      return { valid: true, value: null, isEmpty: true };
+    }
+
+    let year = null;
+    let month = null;
+    let day = null;
+
+    if (rawVal instanceof Date) {
+      if (isNaN(rawVal.getTime())) {
+        return { valid: false, isEmpty: false, error: `Invalid ${fieldLabel}. Please enter a valid calendar date.` };
+      }
+      year = rawVal.getFullYear();
+      month = rawVal.getMonth() + 1;
+      day = rawVal.getDate();
+    } else {
+      const str = String(rawVal).trim();
+      if (/^0{4}[-/]0{1,2}[-/]0{1,2}/.test(str)) {
+        return { valid: false, isEmpty: false, error: `Invalid ${fieldLabel}. Please enter a valid calendar date.` };
+      }
+
+      // Check ISO timestamp with explicit timezone (e.g. 2026-11-18T18:30:00.000Z)
+      if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})$/i.test(str)) {
+        const parsedDate = new Date(str);
+        if (isNaN(parsedDate.getTime())) {
+          return { valid: false, isEmpty: false, error: `Invalid ${fieldLabel}. Please enter a valid calendar date.` };
+        }
+        year = parsedDate.getFullYear();
+        month = parsedDate.getMonth() + 1;
+        day = parsedDate.getDate();
+      } else {
+        // Match YYYY-MM-DD (or YYYY/MM/DD) with optional time
+        const ymdMatch = str.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[T\s]\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)?$/);
+        // Match DD-MM-YYYY or DD/MM/YYYY with optional time
+        const dmyMatch = !ymdMatch
+          ? str.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})(?:[T\s]\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)?$/)
+          : null;
+
+        if (ymdMatch) {
+          year = Number(ymdMatch[1]);
+          month = Number(ymdMatch[2]);
+          day = Number(ymdMatch[3]);
+        } else if (dmyMatch) {
+          day = Number(dmyMatch[1]);
+          month = Number(dmyMatch[2]);
+          year = Number(dmyMatch[3]);
+        } else {
+          return {
+            valid: false,
+            isEmpty: false,
+            error: `Invalid ${fieldLabel} "${str}". Please enter a valid calendar date.`,
+          };
+        }
+      }
+    }
+
+    if (
+      !Number.isInteger(year) ||
+      !Number.isInteger(month) ||
+      !Number.isInteger(day) ||
+      year < minYear ||
+      year > 9999 ||
+      month < 1 ||
+      month > 12 ||
+      day < 1
+    ) {
+      return {
+        valid: false,
+        isEmpty: false,
+        error: `Invalid ${fieldLabel} "${rawVal}". Please enter a valid calendar date.`,
+      };
+    }
+
+    const isLeapYear = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+    const daysInMonths = [31, isLeapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    const maxDays = daysInMonths[month - 1];
+
+    if (day > maxDays) {
+      return {
+        valid: false,
+        isEmpty: false,
+        error: `Invalid ${fieldLabel} "${rawVal}". Day ${day} does not exist in month ${month} of ${year}.`,
+      };
+    }
+
+    const utcCheck = new Date(Date.UTC(year, month - 1, day));
+    if (
+      isNaN(utcCheck.getTime()) ||
+      utcCheck.getUTCFullYear() !== year ||
+      utcCheck.getUTCMonth() !== month - 1 ||
+      utcCheck.getUTCDate() !== day
+    ) {
+      return {
+        valid: false,
+        isEmpty: false,
+        error: `Invalid ${fieldLabel} "${rawVal}". Please enter a valid calendar date.`,
+      };
+    }
+
+    const normalizedYMD = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+    if (!allowFuture) {
+      const todayYMD = StudentModel.getLocalTodayDate();
+      if (normalizedYMD > todayYMD) {
+        return {
+          valid: false,
+          isEmpty: false,
+          error: `${fieldLabel} cannot be in the future.`,
+        };
+      }
+    }
+
+    if (maxDateYMD && normalizedYMD > maxDateYMD) {
+      return {
+        valid: false,
+        isEmpty: false,
+        error: `${fieldLabel} cannot be after Admission Date.`,
+      };
+    }
+
+    return { valid: true, isEmpty: false, value: normalizedYMD };
+  }
+
+  static validateRollNumberFormat(rollVal) {
+    if (rollVal === undefined || rollVal === null || String(rollVal).trim() === '') {
+      return { valid: false, isEmpty: true, error: 'Roll number is required.' };
+    }
+    const trimmed = String(rollVal).trim();
+    if (!/^[1-9]\d{0,19}$/.test(trimmed)) {
+      return {
+        valid: false,
+        isEmpty: false,
+        error: 'Roll number must be a positive whole number (e.g. 1, 2, 101).',
+      };
+    }
+    return { valid: true, isEmpty: false, value: trimmed };
+  }
+
+  static async checkDuplicateRollNumber(
+    schoolId,
+    { rollNumber, classId, sectionId = null, academicYear = null, excludeStudentId = null, branchId = null } = {}
+  ) {
+    if (!rollNumber || !String(rollNumber).trim()) return null;
+    const cleanClassId = StudentModel.decodeIdParam(classId);
+    if (!cleanClassId) return null;
+
+    const cleanSectionId = StudentModel.decodeIdParam(sectionId);
+    const cleanAcademicYear = StudentModel.decodeIdParam(academicYear);
+    const cleanRoll = String(rollNumber).trim().replace(/^0+/, '') || String(rollNumber).trim();
+    const targetBranchId = await StudentModel.resolveBranchId(schoolId, branchId);
+
+    let query = `
+      SELECT id, first_name, last_name, admission_number, roll_number, class, section, academic_year, branch_id
+      FROM student_master
+      WHERE school_id = ?
+        AND class = ?
+        AND TRIM(LEADING '0' FROM LOWER(TRIM(roll_number))) = LOWER(?)
+        AND status = 1
+    `;
+    const params = [schoolId, cleanClassId, cleanRoll];
+
+    if (cleanSectionId) {
+      query += ` AND section = ?`;
+      params.push(cleanSectionId);
+    }
+
+    if (cleanAcademicYear) {
+      query += ` AND academic_year = ?`;
+      params.push(cleanAcademicYear);
+    }
+
+    if (targetBranchId) {
+      const isMain = await StudentModel.isMainBranch(schoolId, targetBranchId);
+      if (isMain) {
+        query += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      } else {
+        query += ` AND branch_id = ?`;
+      }
+      params.push(Number(targetBranchId));
+    }
+
+    if (excludeStudentId) {
+      const cleanExcludeId = StudentModel.decodeIdParam(excludeStudentId);
+      if (cleanExcludeId) {
+        query += ` AND id != ?`;
+        params.push(cleanExcludeId);
+      }
+    }
+
+    query += ` LIMIT 1`;
+
+    const [rows] = await pool.execute(query, params);
+    return rows.length > 0 ? rows[0] : null;
+  }
+
   static async checkDuplicateAdmissionNumber(schoolId, admissionNumber, excludeStudentId = null, branchId = null) {
     if (!admissionNumber || !String(admissionNumber).trim()) return null;
     const cleanNum = String(admissionNumber).trim().toLowerCase();
@@ -1067,6 +1310,60 @@ class StudentModel {
 
   static async create(data) {
     const branchId = await StudentModel.resolveBranchId(data.school_id, data.branch_id || data.branchId);
+
+    // 1. Validate & Normalize Admission Date
+    const admDateCheck = StudentModel.parseAndValidateDate(data.admission_date, {
+      fieldLabel: 'Admission Date',
+      allowFuture: true,
+      minYear: 1900,
+    });
+    if (!admDateCheck.valid) {
+      const err = new Error(admDateCheck.error);
+      err.statusCode = 400;
+      throw err;
+    }
+    const normalizedAdmissionDate = admDateCheck.value || StudentModel.getLocalTodayDate();
+
+    // 2. Validate & Normalize Date of Birth
+    const dobCheck = StudentModel.parseAndValidateDate(data.date_of_birth, {
+      fieldLabel: 'Date of Birth',
+      allowFuture: false,
+      minYear: 1900,
+      maxDateYMD: normalizedAdmissionDate,
+    });
+    if (!dobCheck.valid) {
+      const err = new Error(dobCheck.error);
+      err.statusCode = 400;
+      throw err;
+    }
+    const normalizedDob = dobCheck.value || null;
+
+    // 3. Validate Roll Number format & uniqueness if provided
+    let normalizedRollNumber = null;
+    if (data.roll_number !== undefined && data.roll_number !== null && String(data.roll_number).trim() !== '') {
+      const rollCheck = StudentModel.validateRollNumberFormat(data.roll_number);
+      if (!rollCheck.valid) {
+        const err = new Error(rollCheck.error);
+        err.statusCode = 400;
+        throw err;
+      }
+      normalizedRollNumber = rollCheck.value;
+
+      const existingRoll = await StudentModel.checkDuplicateRollNumber(data.school_id, {
+        rollNumber: normalizedRollNumber,
+        classId: data.class_id || data.class_student || data.class,
+        sectionId: data.section_id || data.section_student || data.section,
+        academicYear: data.academic_year,
+        excludeStudentId: null,
+        branchId,
+      });
+      if (existingRoll) {
+        const err = new Error('A student with this roll number already exists in the selected class and section.');
+        err.statusCode = 400;
+        throw err;
+      }
+    }
+
     if (data.email_address && String(data.email_address).trim()) {
       const existing = await StudentModel.checkDuplicateEmail(data.school_id, data.email_address, null, branchId);
       if (existing) {
@@ -1088,8 +1385,8 @@ class StudentModel {
     let defaultPlainPassword = null;
     if (data.password && String(data.password).trim()) {
       defaultPlainPassword = String(data.password).trim();
-    } else if (data.date_of_birth && String(data.date_of_birth).trim()) {
-      defaultPlainPassword = String(data.date_of_birth).trim();
+    } else if (normalizedDob) {
+      defaultPlainPassword = normalizedDob;
     } else if (data.primary_contact_number && String(data.primary_contact_number).trim()) {
       defaultPlainPassword = String(data.primary_contact_number).trim();
     }
@@ -1143,14 +1440,14 @@ class StudentModel {
         branchId,
         data.academic_year || null,
         data.admission_number || null,
-        data.admission_date || new Date().toISOString().slice(0, 10),
-        data.roll_number || null,
+        normalizedAdmissionDate,
+        normalizedRollNumber,
         data.first_name,
         data.last_name || '',
         data.class_id,
         data.section_id || null,
         data.gender || null,
-        data.date_of_birth || null,
+        normalizedDob,
         studentHashedPassword,
         data.primary_contact_number || null,
         data.email_address || null,
@@ -1325,9 +1622,12 @@ class StudentModel {
     let resolvedBranchId = branchId || data.branch_id || data.branchId || null;
     let oldStudentPic = null;
     let oldStudentStatus = null;
+    let existingAdmissionDate = null;
+    let existingAcademicYear = null;
+    let existingSectionId = null;
     try {
       const [stRow] = await pool.query(
-        'SELECT branch_id, picture, status FROM student_master WHERE id = ? AND school_id = ? LIMIT 1',
+        'SELECT branch_id, picture, status, admission_date, academic_year, section FROM student_master WHERE id = ? AND school_id = ? LIMIT 1',
         [id, schoolId]
       );
       if (stRow && stRow.length > 0) {
@@ -1336,9 +1636,71 @@ class StudentModel {
         }
         oldStudentPic = stRow[0].picture || null;
         oldStudentStatus = Number(stRow[0].status);
+        existingAdmissionDate = stRow[0].admission_date ? String(stRow[0].admission_date).slice(0, 10) : null;
+        existingAcademicYear = stRow[0].academic_year || null;
+        existingSectionId = stRow[0].section || null;
       }
     } catch (e) {}
     resolvedBranchId = await StudentModel.resolveBranchId(schoolId, resolvedBranchId);
+
+    // 1. Validate & Normalize Admission Date
+    let normalizedAdmissionDate = existingAdmissionDate;
+    if (data.admission_date !== undefined && data.admission_date !== null && String(data.admission_date).trim() !== '') {
+      const admDateCheck = StudentModel.parseAndValidateDate(data.admission_date, {
+        fieldLabel: 'Admission Date',
+        allowFuture: true,
+        minYear: 1900,
+      });
+      if (!admDateCheck.valid) {
+        const err = new Error(admDateCheck.error);
+        err.statusCode = 400;
+        throw err;
+      }
+      normalizedAdmissionDate = admDateCheck.value;
+    }
+
+    // 2. Validate & Normalize Date of Birth
+    let normalizedDob = null;
+    if (data.date_of_birth !== undefined && data.date_of_birth !== null && String(data.date_of_birth).trim() !== '') {
+      const dobCheck = StudentModel.parseAndValidateDate(data.date_of_birth, {
+        fieldLabel: 'Date of Birth',
+        allowFuture: false,
+        minYear: 1900,
+        maxDateYMD: normalizedAdmissionDate,
+      });
+      if (!dobCheck.valid) {
+        const err = new Error(dobCheck.error);
+        err.statusCode = 400;
+        throw err;
+      }
+      normalizedDob = dobCheck.value;
+    }
+
+    // 3. Validate Roll Number format & uniqueness if provided
+    let normalizedRollNumber = null;
+    if (data.roll_number !== undefined && data.roll_number !== null && String(data.roll_number).trim() !== '') {
+      const rollCheck = StudentModel.validateRollNumberFormat(data.roll_number);
+      if (!rollCheck.valid) {
+        const err = new Error(rollCheck.error);
+        err.statusCode = 400;
+        throw err;
+      }
+      normalizedRollNumber = rollCheck.value;
+
+      const existingRoll = await StudentModel.checkDuplicateRollNumber(schoolId, {
+        rollNumber: normalizedRollNumber,
+        classId: data.class_id || data.class_student || data.class,
+        sectionId: data.section_id || data.section_student || data.section || existingSectionId,
+        academicYear: data.academic_year || existingAcademicYear,
+        excludeStudentId: id,
+        branchId: resolvedBranchId,
+      });
+      if (existingRoll) {
+        const err = new Error('A student with this roll number already exists in the selected class and section.');
+        err.statusCode = 400;
+        throw err;
+      }
+    }
 
     if (data.email_address && String(data.email_address).trim()) {
       const existing = await StudentModel.checkDuplicateEmail(schoolId, data.email_address, id, resolvedBranchId);
@@ -1370,9 +1732,9 @@ class StudentModel {
     let sql = `
       UPDATE student_master SET
         branch_id = COALESCE(?, branch_id),
-        academic_year = ?,
+        academic_year = COALESCE(?, academic_year),
         admission_number = ?,
-        admission_date = ?,
+        admission_date = COALESCE(?, admission_date),
         roll_number = ?,
         first_name = ?,
         last_name = ?,
@@ -1397,14 +1759,14 @@ class StudentModel {
       data.branch_id || null,
       data.academic_year || null,
       data.admission_number || null,
-      data.admission_date || null,
-      data.roll_number || null,
+      normalizedAdmissionDate || null,
+      normalizedRollNumber,
       data.first_name,
       data.last_name || '',
       data.class_id,
       data.section_id || null,
       data.gender || null,
-      data.date_of_birth || null,
+      normalizedDob,
       data.primary_contact_number || null,
       data.email_address || null,
       data.blood_group || null,

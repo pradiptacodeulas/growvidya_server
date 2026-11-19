@@ -158,14 +158,124 @@ class AdminStudentController {
     }
   }
 
+  static async checkRollNumber(req, res, next) {
+    try {
+      const schoolId = req.user?.schoolId || req.user?.school_id;
+      if (!schoolId) {
+        return ApiResponse.error(res, 'School context required. Please log in again.', null, 401);
+      }
+      const branchId = req.query.branch_id || req.query.branchId || req.body?.branch_id || req.branchId || null;
+      const rollNumber = req.query.roll_number || req.query.rollNumber || req.body?.roll_number;
+      const classId = req.query.class_id || req.query.classId || req.body?.class_id || req.body?.class_student;
+      const sectionId = req.query.section_id || req.query.sectionId || req.body?.section_id || req.body?.section_student;
+      const academicYear = req.query.academic_year || req.query.academicYear || req.body?.academic_year || null;
+      const studentId = req.query.studentId || req.query.id || null;
+
+      if (!rollNumber || !String(rollNumber).trim()) {
+        return ApiResponse.success(res, 'Roll number query is empty.', { isDuplicate: false, isValid: false });
+      }
+
+      const formatCheck = StudentModel.validateRollNumberFormat(rollNumber);
+      if (!formatCheck.valid) {
+        return ApiResponse.success(res, formatCheck.error, {
+          isDuplicate: false,
+          isValid: false,
+          message: formatCheck.error,
+        });
+      }
+
+      if (!classId) {
+        return ApiResponse.success(res, 'Roll number format is valid.', { isDuplicate: false, isValid: true });
+      }
+
+      const existing = await StudentModel.checkDuplicateRollNumber(schoolId, {
+        rollNumber: formatCheck.value,
+        classId,
+        sectionId,
+        academicYear,
+        excludeStudentId: studentId,
+        branchId,
+      });
+
+      if (existing) {
+        return ApiResponse.success(res, 'Roll number is already assigned in this class/section.', {
+          isDuplicate: true,
+          isValid: true,
+          student: {
+            id: existing.id,
+            name: `${existing.first_name || ''} ${existing.last_name || ''}`.trim(),
+            admission_number: existing.admission_number,
+            roll_number: existing.roll_number,
+          },
+        });
+      }
+
+      return ApiResponse.success(res, 'Roll number is available.', { isDuplicate: false, isValid: true });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   static async createStudent(req, res, next) {
     try {
       const schoolId = req.user.schoolId;
       const branchId = req.body.branch_id || req.body.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null;
-      const { first_name, class_id, email_address, admission_number } = req.body || {};
+      const { first_name, class_id, section_id, roll_number, admission_date, date_of_birth, academic_year, email_address, admission_number } = req.body || {};
 
       if (!first_name || !class_id) {
         return ApiResponse.error(res, 'First name and Class selection are required.', null, 400);
+      }
+
+      // Validate Admission Date
+      const admDateCheck = StudentModel.parseAndValidateDate(admission_date, {
+        fieldLabel: 'Admission Date',
+        allowFuture: true,
+        minYear: 1900,
+      });
+      if (!admDateCheck.valid) {
+        return ApiResponse.error(res, admDateCheck.error, null, 400);
+      }
+      const effectiveAdmissionDate = admDateCheck.value || StudentModel.getLocalTodayDate();
+      req.body.admission_date = effectiveAdmissionDate;
+
+      // Validate Date of Birth
+      if (date_of_birth !== undefined && date_of_birth !== null && String(date_of_birth).trim() !== '') {
+        const dobCheck = StudentModel.parseAndValidateDate(date_of_birth, {
+          fieldLabel: 'Date of Birth',
+          allowFuture: false,
+          minYear: 1900,
+          maxDateYMD: effectiveAdmissionDate,
+        });
+        if (!dobCheck.valid) {
+          return ApiResponse.error(res, dobCheck.error, null, 400);
+        }
+        req.body.date_of_birth = dobCheck.value;
+      }
+
+      // Validate Roll Number format and duplicate check
+      if (roll_number !== undefined && roll_number !== null && String(roll_number).trim() !== '') {
+        const rollCheck = StudentModel.validateRollNumberFormat(roll_number);
+        if (!rollCheck.valid) {
+          return ApiResponse.error(res, rollCheck.error, null, 400);
+        }
+        req.body.roll_number = rollCheck.value;
+
+        const existingRoll = await StudentModel.checkDuplicateRollNumber(schoolId, {
+          rollNumber: rollCheck.value,
+          classId: class_id,
+          sectionId: section_id || req.body.section_student,
+          academicYear: academic_year,
+          excludeStudentId: null,
+          branchId,
+        });
+        if (existingRoll) {
+          return ApiResponse.error(
+            res,
+            'A student with this roll number already exists in the selected class and section.',
+            null,
+            400
+          );
+        }
       }
 
       // Enforce subscription plan student quota
@@ -249,10 +359,65 @@ class AdminStudentController {
       }
 
       const branchId = req.body.branch_id || req.body.branchId || req.branchId || req.user?.branch_id || req.user?.branchId || null;
-      const { first_name, class_id, email_address, admission_number } = req.body || {};
+      const { first_name, class_id, section_id, roll_number, admission_date, date_of_birth, academic_year, email_address, admission_number } = req.body || {};
 
       if (!first_name || !class_id) {
         return ApiResponse.error(res, 'First name and Class selection are required.', null, 400);
+      }
+
+      // Validate Admission Date if provided
+      let effectiveAdmissionDate = null;
+      if (admission_date !== undefined && admission_date !== null && String(admission_date).trim() !== '') {
+        const admDateCheck = StudentModel.parseAndValidateDate(admission_date, {
+          fieldLabel: 'Admission Date',
+          allowFuture: true,
+          minYear: 1900,
+        });
+        if (!admDateCheck.valid) {
+          return ApiResponse.error(res, admDateCheck.error, null, 400);
+        }
+        effectiveAdmissionDate = admDateCheck.value;
+        req.body.admission_date = effectiveAdmissionDate;
+      }
+
+      // Validate Date of Birth if provided
+      if (date_of_birth !== undefined && date_of_birth !== null && String(date_of_birth).trim() !== '') {
+        const dobCheck = StudentModel.parseAndValidateDate(date_of_birth, {
+          fieldLabel: 'Date of Birth',
+          allowFuture: false,
+          minYear: 1900,
+          maxDateYMD: effectiveAdmissionDate,
+        });
+        if (!dobCheck.valid) {
+          return ApiResponse.error(res, dobCheck.error, null, 400);
+        }
+        req.body.date_of_birth = dobCheck.value;
+      }
+
+      // Validate Roll Number format and duplicate check if provided
+      if (roll_number !== undefined && roll_number !== null && String(roll_number).trim() !== '') {
+        const rollCheck = StudentModel.validateRollNumberFormat(roll_number);
+        if (!rollCheck.valid) {
+          return ApiResponse.error(res, rollCheck.error, null, 400);
+        }
+        req.body.roll_number = rollCheck.value;
+
+        const existingRoll = await StudentModel.checkDuplicateRollNumber(schoolId, {
+          rollNumber: rollCheck.value,
+          classId: class_id,
+          sectionId: section_id || req.body.section_student,
+          academicYear: academic_year,
+          excludeStudentId: studentId,
+          branchId,
+        });
+        if (existingRoll) {
+          return ApiResponse.error(
+            res,
+            'A student with this roll number already exists in the selected class and section.',
+            null,
+            400
+          );
+        }
       }
 
       // Prevent student quota bypass via restoring a soft-deleted student (status: 4 -> 1 or 2)

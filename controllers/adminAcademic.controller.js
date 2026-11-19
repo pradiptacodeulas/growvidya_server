@@ -197,7 +197,8 @@ class AdminAcademicController {
       const classId = req.params.classId || req.query.classId || req.query.class_id || req.body?.class_id || req.body?.classId || null;
       const status = req.query.status !== undefined && req.query.status !== '' ? Number(req.query.status) : null;
       const activeOnly = req.query.activeOnly === 'true' || status === 1 || req.user?.roleName === 'Teacher';
-      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const rawBranch = req.query.branch_id || req.query.branchId || req.branchId || null;
+      const branchId = rawBranch && rawBranch !== 'all' ? rawBranch : null;
       const data = await AcademicModel.getSections(schoolId, classId, activeOnly, status, branchId);
       return ApiResponse.success(res, 'Sections fetched successfully.', data);
     } catch (error) {
@@ -651,7 +652,8 @@ class AdminAcademicController {
   static async getStudentMasters(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const rawBranch = req.query.branch_id || req.query.branchId || req.branchId || null;
+      const branchId = rawBranch && rawBranch !== 'all' ? rawBranch : null;
       const data = await AcademicModel.getStudentMasters(schoolId, branchId);
       return ApiResponse.success(res, 'Student masters fetched', data);
     } catch (error) {
@@ -662,10 +664,11 @@ class AdminAcademicController {
   static async getNextRollNumber(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);
-      const branchId = req.branchId || req.query.branch_id || req.query.branchId || null;
+      const branchId = req.query.branch_id || req.query.branchId || req.branchId || null;
       const classId = req.query.class_id || req.query.classId;
       const sectionId = req.query.section_id || req.query.sectionId;
-      const rollNumber = await AcademicModel.getNextRollNumber(schoolId, classId, sectionId, branchId);
+      const academicYear = req.query.academic_year || req.query.academicYear || null;
+      const rollNumber = await AcademicModel.getNextRollNumber(schoolId, classId, sectionId, branchId, academicYear);
       return ApiResponse.success(res, 'Next roll number generated', { roll_number: rollNumber });
     } catch (error) {
       next(error);

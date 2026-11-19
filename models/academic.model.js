@@ -461,8 +461,28 @@ class AcademicModel {
   }
 
   // ==================== SECTIONS ====================
+  static decodeIdValue(val) {
+    if (val === null || val === undefined || val === '') return null;
+    if (typeof val === 'number') return val;
+    const str = String(val).trim();
+    if (!str) return null;
+    if (/^\d+$/.test(str)) return Number(str);
+    try {
+      const unescaped = decodeURIComponent(str);
+      const decoded = Buffer.from(unescaped, 'base64').toString('utf8');
+      if (/^\d+$/.test(decoded)) {
+        const reEncoded = Buffer.from(decoded, 'utf8').toString('base64');
+        if (reEncoded === unescaped || reEncoded.replace(/=+$/, '') === unescaped.replace(/=+$/, '')) {
+          return Number(decoded);
+        }
+      }
+    } catch (_) {}
+    return val;
+  }
+
   static async getSections(schoolId, classId = null, activeOnly = false, status = null, branchId = null, teacherId = null) {
     const cleanBranchId = AcademicModel.parseBranchId(branchId);
+    const cleanClassId = AcademicModel.decodeIdValue(classId);
     let sql = `SELECT sec.*, bm.branch_name, bm.branch_code, c.class_name FROM section_master sec
        LEFT JOIN branch_master bm ON sec.branch_id = bm.id
        LEFT JOIN class_master c ON sec.class_id = c.id
@@ -476,13 +496,12 @@ class AcademicModel {
     } else {
       sql += ` AND (sec.status != 4 OR sec.status IS NULL)`;
     }
-    if (cleanBranchId) {
-      sql += ` AND COALESCE(sec.branch_id, c.branch_id) = ?`;
-      params.push(cleanBranchId);
-    }
-    if (classId) {
+    if (cleanClassId) {
       sql += ` AND sec.class_id = ?`;
-      params.push(classId);
+      params.push(cleanClassId);
+    } else if (cleanBranchId) {
+      sql += ` AND (COALESCE(sec.branch_id, c.branch_id) = ? OR (sec.branch_id IS NULL AND c.branch_id IS NULL))`;
+      params.push(cleanBranchId);
     }
     if (teacherId) {
       sql += ` AND (
@@ -1513,6 +1532,7 @@ class AcademicModel {
     const [
       academicYears,
       classes,
+      sections,
       genders,
       bloodGroups,
       houses,
@@ -1526,6 +1546,7 @@ class AcademicModel {
     ] = await Promise.all([
       AcademicModel.getAcademicYears(schoolId, branchId),
       AcademicModel.getClasses(schoolId, false, null, branchId),
+      AcademicModel.getSections(schoolId, null, false, null, branchId),
       AcademicModel.getGenders(),
       AcademicModel.getBloodGroups(),
       AcademicModel.getHouses(schoolId, branchId),
@@ -1541,6 +1562,7 @@ class AcademicModel {
     return {
       academicYears,
       classes,
+      sections,
       genders,
       bloodGroups,
       houses,
@@ -1554,11 +1576,20 @@ class AcademicModel {
     };
   }
 
-  static async getNextRollNumber(schoolId, classId, sectionId, branchId = null) {
+  static async getNextRollNumber(schoolId, classId, sectionId, branchId = null, academicYear = null) {
     try {
-      let sql = `SELECT MAX(CAST(roll_number AS UNSIGNED)) AS max_roll FROM student_master WHERE school_id = ? AND class = ? AND section = ? AND status != 0`;
-      const params = [schoolId, classId, sectionId];
-      if (branchId) {
+      const cleanClassId = AcademicModel.decodeIdValue(classId);
+      const cleanSectionId = AcademicModel.decodeIdValue(sectionId);
+      const cleanYearId = AcademicModel.decodeIdValue(academicYear);
+      let sql = `SELECT MAX(CAST(roll_number AS UNSIGNED)) AS max_roll FROM student_master WHERE school_id = ? AND class = ? AND section = ? AND status NOT IN (0, 4)`;
+      const params = [schoolId, cleanClassId, cleanSectionId];
+      if (cleanYearId) {
+        sql += ` AND academic_year = ?`;
+        params.push(cleanYearId);
+      } else {
+        sql += ` AND status = 1`;
+      }
+      if (branchId && branchId !== 'all' && branchId !== '0') {
         sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
         params.push(Number(branchId));
       }
