@@ -19,7 +19,6 @@ exports.getAllHostels = async (req, res) => {
     return res.status(200).json({
       success: true,
       data: hostels,
-      hostels,
     });
   } catch (err) {
     console.error('Error in getAllHostels:', err);
@@ -127,7 +126,6 @@ exports.getAllHostelRooms = async (req, res) => {
     return res.status(200).json({
       success: true,
       data: rooms,
-      rooms,
     });
   } catch (err) {
     console.error('Error in getAllHostelRooms:', err);
