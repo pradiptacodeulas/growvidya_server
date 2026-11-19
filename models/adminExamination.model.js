@@ -2,6 +2,126 @@ const { pool } = require('../config/db.config');
 
 class AdminExaminationModel {
   // =========================================================
+  // 0. SCHEMA MIGRATION & BACKFILL FOR exam_result
+  // =========================================================
+  static async initTable() {
+    try {
+      const [cols] = await pool.query(`SHOW COLUMNS FROM exam_result`);
+      const existingCols = new Set(cols.map((c) => c.Field));
+
+      const alterations = [];
+      if (!existingCols.has('total_marks')) {
+        alterations.push(`ADD COLUMN total_marks DECIMAL(8,2) DEFAULT 0`);
+      }
+      if (!existingCols.has('max_marks')) {
+        alterations.push(`ADD COLUMN max_marks DECIMAL(8,2) DEFAULT 0`);
+      }
+      if (!existingCols.has('percentage')) {
+        alterations.push(`ADD COLUMN percentage DECIMAL(5,2) DEFAULT 0`);
+      }
+      if (!existingCols.has('grade_name')) {
+        alterations.push(`ADD COLUMN grade_name VARCHAR(20) DEFAULT NULL`);
+      }
+      if (!existingCols.has('result_status')) {
+        alterations.push(`ADD COLUMN result_status VARCHAR(20) DEFAULT NULL COMMENT 'Pass or Fail'`);
+      }
+
+      if (alterations.length > 0) {
+        await pool.query(`ALTER TABLE exam_result ${alterations.join(', ')}`);
+      }
+
+      await AdminExaminationModel.backfillExamResultSummaries({ onlyUnpopulated: true });
+    } catch (err) {
+      console.error('[AdminExaminationModel.initTable] Error:', err.message);
+    }
+  }
+
+  static async backfillExamResultSummaries({ onlyUnpopulated = false } = {}) {
+    let whereSql = `WHERE er.status != 4`;
+    if (onlyUnpopulated) {
+      whereSql += ` AND (er.result_status IS NULL OR er.max_marks IS NULL OR er.max_marks = 0)`;
+    }
+
+    const [erRows] = await pool.query(
+      `SELECT er.id, er.school_id, er.branch_id, er.exam_id, er.class_id
+       FROM exam_result er
+       ${whereSql}`
+    );
+
+    if (!erRows || erRows.length === 0) {
+      return { updatedCount: 0 };
+    }
+
+    // Cache grade settings per school
+    const [allGrades] = await pool.query(
+      `SELECT id, school_id, branch_id, grade_name, min_percentage, max_percentage
+       FROM grade_settings
+       WHERE status != 4 AND status != 0
+       ORDER BY min_percentage DESC`
+    );
+
+    let updatedCount = 0;
+    for (const er of erRows) {
+      // 1. Sum marks from exam_result_subject
+      const [subRows] = await pool.query(
+        `SELECT COALESCE(SUM(ers.marks), 0) AS total_marks,
+                COUNT(DISTINCT ers.subject_id) AS subject_count
+         FROM exam_result_subject ers
+         WHERE ers.exam_result_id = ? AND ers.status != 4`,
+        [er.id]
+      );
+      const totalMarks = Number((parseFloat(subRows[0]?.total_marks) || 0).toFixed(2));
+      const subjectCount = parseInt(subRows[0]?.subject_count, 10) || 0;
+
+      // 2. Sum configured max_marks from exam_subject_master + exam_subject_marks
+      let configuredMax = 0;
+      if (er.school_id && er.exam_id && er.class_id) {
+        let cfgSql = `
+          SELECT COALESCE(SUM(esm_marks.mark), 0) AS configured_max
+          FROM exam_subject_master esm
+          JOIN exam_subject_marks esm_marks
+            ON esm_marks.exam_subject_id = esm.id
+           AND esm_marks.is_check = 1
+           AND esm_marks.status != 4
+          WHERE esm.school_id = ?
+            AND esm.exam_id = ?
+            AND esm.class_id = ?
+            AND esm.status != 4
+        `;
+        const cfgParams = [er.school_id, er.exam_id, er.class_id];
+        if (er.branch_id) {
+          cfgSql += ` AND (esm.branch_id = ? OR esm.branch_id IS NULL)`;
+          cfgParams.push(er.branch_id);
+        }
+        const [cfgRows] = await pool.query(cfgSql, cfgParams);
+        configuredMax = parseFloat(cfgRows[0]?.configured_max) || 0;
+      }
+
+      const maxMarks = configuredMax > 0 ? Number(configuredMax.toFixed(2)) : Number(((subjectCount || 1) * 100).toFixed(2));
+      const percentage = maxMarks > 0 ? Number(((totalMarks / maxMarks) * 100).toFixed(1)) : 0;
+
+      // 3. Match grade_name from grade_settings for er.school_id
+      const schoolGrades = allGrades.filter(
+        (g) =>
+          (Number(g.school_id) === Number(er.school_id) || g.school_id === null) &&
+          (!er.branch_id || !g.branch_id || Number(g.branch_id) === Number(er.branch_id))
+      );
+      const gradeName = AdminExaminationModel.computeGrade(percentage, schoolGrades) || null;
+      const resultStatus = percentage >= 33 ? 'Pass' : 'Fail';
+
+      await pool.query(
+        `UPDATE exam_result
+         SET total_marks = ?, max_marks = ?, percentage = ?, grade_name = ?, result_status = ?
+         WHERE id = ?`,
+        [totalMarks, maxMarks, percentage, gradeName, resultStatus, er.id]
+      );
+      updatedCount++;
+    }
+
+    return { updatedCount };
+  }
+
+  // =========================================================
   // HELPER: GET CURRENT ACADEMIC YEAR ID
   // =========================================================
   static async getCurrentAcademicYearId(schoolId, examId) {
@@ -1635,6 +1755,11 @@ class AdminExaminationModel {
         er.student_id,
         er.exam_id,
         er.class_id,
+        er.total_marks,
+        er.max_marks,
+        er.percentage,
+        er.grade_name,
+        er.result_status,
         er.status,
         er.created_on,
         s.first_name,
@@ -1773,19 +1898,34 @@ class AdminExaminationModel {
         overallTotal += parseFloat(m.marks) || 0;
       });
 
-      const maxMarks = totalPossibleMaxMarks > 0 ? totalPossibleMaxMarks : (subjectsList.length * 100 || 100);
-      const percentage = maxMarks > 0 ? Number(((overallTotal / maxMarks) * 100).toFixed(1)) : 0;
-      const isPass = percentage >= 33;
+      const storedMax = parseFloat(r.max_marks) || 0;
+      const storedTotal = parseFloat(r.total_marks) || 0;
+      const finalObtained = overallTotal > 0 ? overallTotal : storedTotal;
+      const maxMarks =
+        storedMax > 0
+          ? storedMax
+          : totalPossibleMaxMarks > 0
+          ? totalPossibleMaxMarks
+          : subjectsList.length * 100 || 100;
+      const calculatedPercentage = maxMarks > 0 ? Number(((finalObtained / maxMarks) * 100).toFixed(1)) : 0;
+      const percentage =
+        r.percentage !== null && r.percentage !== undefined && storedMax > 0
+          ? Number(parseFloat(r.percentage).toFixed(1))
+          : calculatedPercentage;
+      const resultStatus = r.result_status || (percentage >= 33 ? 'Pass' : 'Fail');
 
       return {
         ...r,
         subjectMarks: studentMarks,
         subjectTotals,
-        total_marks_obtained: overallTotal,
-        grandTotal: overallTotal,
+        total_marks: finalObtained,
+        total_marks_obtained: finalObtained,
+        grandTotal: finalObtained,
+        max_marks: maxMarks,
         maxMarks: maxMarks,
         percentage: percentage,
-        result_status: isPass ? 'Pass' : 'Fail',
+        grade_name: r.grade_name || null,
+        result_status: resultStatus,
         subjects_evaluated: Object.keys(subjectTotals).length,
       };
     });
@@ -1990,6 +2130,52 @@ class AdminExaminationModel {
             );
           }
         }
+
+        // 4. Calculate and persist summary columns on exam_result
+        const [totRows] = await connection.query(
+          `SELECT COALESCE(SUM(marks), 0) AS total_marks,
+                  COUNT(DISTINCT subject_id) AS subject_count
+           FROM exam_result_subject
+           WHERE exam_result_id = ? AND status != 4`,
+          [examResultId]
+        );
+        const totalMarks = Number((parseFloat(totRows[0]?.total_marks) || 0).toFixed(2));
+        const evaluatedSubjectsCount = parseInt(totRows[0]?.subject_count, 10) || 0;
+
+        let cfgMaxSql = `
+          SELECT COALESCE(SUM(esm_marks.mark), 0) AS configured_max
+          FROM exam_subject_master esm
+          JOIN exam_subject_marks esm_marks
+            ON esm_marks.exam_subject_id = esm.id
+           AND esm_marks.is_check = 1
+           AND esm_marks.status != 4
+          WHERE esm.school_id = ?
+            AND esm.exam_id = ?
+            AND esm.class_id = ?
+            AND esm.status != 4
+        `;
+        const cfgMaxParams = [schoolId, examId, classId];
+        if (resolvedBranchId) {
+          cfgMaxSql += ` AND (esm.branch_id = ? OR esm.branch_id IS NULL)`;
+          cfgMaxParams.push(resolvedBranchId);
+        }
+        const [cfgMaxRows] = await connection.query(cfgMaxSql, cfgMaxParams);
+        const configuredMaxMarks = parseFloat(cfgMaxRows[0]?.configured_max) || 0;
+
+        const maxMarks =
+          configuredMaxMarks > 0
+            ? Number(configuredMaxMarks.toFixed(2))
+            : Number(((evaluatedSubjectsCount || 1) * 100).toFixed(2));
+        const percentage = maxMarks > 0 ? Number(((totalMarks / maxMarks) * 100).toFixed(1)) : 0;
+        const overallGrade = AdminExaminationModel.computeGrade(percentage, grades) || null;
+        const resultStatus = percentage >= 33 ? 'Pass' : 'Fail';
+
+        await connection.query(
+          `UPDATE exam_result
+           SET total_marks = ?, max_marks = ?, percentage = ?, grade_name = ?, result_status = ?
+           WHERE id = ?`,
+          [totalMarks, maxMarks, percentage, overallGrade, resultStatus, examResultId]
+        );
       }
 
       await connection.commit();
@@ -2053,7 +2239,7 @@ class AdminExaminationModel {
     );
     const total = countRows[0]?.total || 0;
 
-    const dataParams = [academicYearId, academicYearId, ...params, l, offset];
+    const dataParams = [schoolId, academicYearId, academicYearId, ...params, l, offset];
     const [rows] = await pool.query(
       `SELECT 
         s.id,
@@ -2071,13 +2257,48 @@ class AdminExaminationModel {
         c.class_name,
         sec.section_name,
         CONCAT(COALESCE(pf.first_name, ''), ' ', COALESCE(pf.last_name, '')) AS father_name,
-        IF(COUNT(DISTINCT er.id) > 0, 1, 0) AS has_marksheet
+        IF(COALESCE(er_agg.er_count, 0) > 0, 1, 0) AS has_marksheet,
+        COALESCE(er_agg.agg_total_marks, 0) AS total_marks,
+        COALESCE(er_agg.agg_max_marks, 0) AS max_marks,
+        COALESCE(er_agg.agg_percentage, 0) AS percentage,
+        er_agg.agg_result_status AS result_status
        FROM student_master s
        LEFT JOIN class_master c ON c.id = s.class
        LEFT JOIN section_master sec ON sec.id = s.section
        LEFT JOIN student_to_parent stp ON stp.student_id = s.id
        LEFT JOIN parent_master pf ON pf.id = stp.father_id
-       LEFT JOIN exam_result er ON er.student_id = s.id AND (er.academic_year_id = ? OR ? IS NULL) AND er.status = 1
+       LEFT JOIN (
+         SELECT
+           er.student_id,
+           COUNT(DISTINCT er.id) AS er_count,
+           COALESCE(SUM(er.total_marks), 0) AS agg_total_marks,
+           COALESCE(SUM(er.max_marks), 0) AS agg_max_marks,
+           ROUND(
+             IF(
+               SUM(er.max_marks) > 0,
+               (SUM(er.total_marks) / SUM(er.max_marks)) * 100,
+               AVG(er.percentage)
+             ),
+             1
+           ) AS agg_percentage,
+           CASE
+             WHEN COUNT(DISTINCT er.id) = 0 THEN NULL
+             WHEN ROUND(
+               IF(
+                 SUM(er.max_marks) > 0,
+                 (SUM(er.total_marks) / SUM(er.max_marks)) * 100,
+                 AVG(er.percentage)
+               ),
+               1
+             ) >= 33 THEN 'Pass'
+             ELSE 'Fail'
+           END AS agg_result_status
+         FROM exam_result er
+         WHERE er.school_id = ?
+           AND (er.academic_year_id = ? OR ? IS NULL)
+           AND er.status = 1
+         GROUP BY er.student_id
+       ) er_agg ON er_agg.student_id = s.id
        ${whereClause}
        GROUP BY s.id
        ORDER BY s.roll_number ASC, s.first_name ASC
