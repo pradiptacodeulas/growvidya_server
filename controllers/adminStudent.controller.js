@@ -36,6 +36,7 @@ class AdminStudentController {
       const sectionId = paramsSrc.sectionId || paramsSrc.section || paramsSrc.section_id || '';
       const status = paramsSrc.status !== undefined ? paramsSrc.status : '';
       const admissionDate = paramsSrc.admissionDate || paramsSrc.date || paramsSrc.admission_date || '';
+      const sortBy = paramsSrc.sortBy || paramsSrc.sort_by || '';
       const branchId = req.branchId || paramsSrc.branch_id || paramsSrc.branchId || null;
       const page = paramsSrc.page || 1;
       const limit = paramsSrc.limit || 12;
@@ -48,6 +49,7 @@ class AdminStudentController {
         sectionId,
         status,
         admissionDate,
+        sortBy,
         branchId,
         limit: Number(limit),
         offset,
@@ -924,7 +926,7 @@ class AdminStudentController {
       } = req.body;
 
       if (!Array.isArray(students) || students.length === 0) {
-        return ApiResponse.error(res, 'Please select at least one student to promote.', null, 400);
+        return ApiResponse.error(res, 'Please select at least one student to process.', null, 400);
       }
 
       const needsTargetClass = students.some(
@@ -934,22 +936,29 @@ class AdminStudentController {
       if (!to_academic_year || (needsTargetClass && !to_class_id)) {
         return ApiResponse.error(
           res,
-          'Target Academic Year and Target Class are required for promotion.',
+          'Target academic year and target class are required.',
           null,
           400
         );
       }
 
-      if (from_academic_year && String(from_academic_year) === String(to_academic_year)) {
+      const isSameYear =
+        from_academic_year && String(from_academic_year) === String(to_academic_year);
+      const allowsSameYearHoldUpdate = students.every((s) =>
+        ['assign_hold', 'hold'].includes(String(s.promotion_status || '').toLowerCase())
+      );
+
+      if (isSameYear && !allowsSameYearHoldUpdate) {
         return ApiResponse.error(
           res,
-          'Target Academic Year must be different from Current Academic Year.',
+          'Target academic year must be different from the current academic year.',
           null,
           400
         );
       }
 
       const result = await StudentModel.promoteStudents(schoolId, {
+        fromAcademicYear: from_academic_year ? Number(from_academic_year) : null,
         toAcademicYear: Number(to_academic_year),
         toClassId: to_class_id ? Number(to_class_id) : null,
         toSectionId: to_section_id ? Number(to_section_id) : null,
@@ -960,9 +969,42 @@ class AdminStudentController {
 
       return ApiResponse.success(
         res,
-        `${result.promotedCount} student(s) processed successfully.`,
+        `${result.promotedCount} student record(s) processed successfully.`,
         result
       );
+    } catch (error) {
+      if (error && error.statusCode === 400) {
+        return ApiResponse.error(res, error.message, null, 400);
+      }
+      next(error);
+    }
+  }
+
+  static async getPromotionTargetStatus(req, res, next) {
+    try {
+      const schoolId = req.user?.schoolId || req.user?.school_id;
+      const branchId = req.branchId || req.query?.branch_id || req.query?.branchId || null;
+      const toAcademicYear =
+        req.query?.toAcademicYear || req.query?.to_academic_year || req.query?.academicYear || '';
+      const toClassId = req.query?.toClassId || req.query?.to_class_id || req.query?.classId || '';
+
+      if (!toAcademicYear || !toClassId) {
+        return ApiResponse.success(res, 'Target promotion status fetched.', {
+          sections: [],
+          totalCapacity: 0,
+          totalEnrolled: 0,
+          totalRemaining: 0,
+          heldCount: 0,
+        });
+      }
+
+      const statusData = await StudentModel.getPromotionTargetStatus(schoolId, {
+        toAcademicYear: Number(toAcademicYear),
+        toClassId: Number(toClassId),
+        branchId,
+      });
+
+      return ApiResponse.success(res, 'Target promotion status fetched successfully.', statusData);
     } catch (error) {
       next(error);
     }
