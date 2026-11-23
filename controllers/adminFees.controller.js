@@ -948,6 +948,9 @@ class AdminFeesController {
 
       return ApiResponse.success(res, `Payment recorded successfully. Receipt No: ${result.receiptNo}`, result, 201);
     } catch (error) {
+      if (error && (error.statusCode === 400 || error.statusCode === 404)) {
+        return ApiResponse.error(res, error.message, null, error.statusCode);
+      }
       next(error);
     }
   }
@@ -992,6 +995,9 @@ class AdminFeesController {
 
       return ApiResponse.success(res, message, result);
     } catch (error) {
+      if (error && (error.statusCode === 400 || error.statusCode === 404)) {
+        return ApiResponse.error(res, error.message, null, error.statusCode);
+      }
       next(error);
     }
   }

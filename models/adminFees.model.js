@@ -1,6 +1,10 @@
 const { pool } = require('../config/db.config');
 
 class AdminFeesModel {
+  static isPartialPaymentAllowed(val) {
+    return Number(val) === 1 ? 1 : 0;
+  }
+
   // =========================================================
   // 1. FEE COMPONENTS
   // =========================================================
@@ -345,6 +349,7 @@ class AdminFeesModel {
       await connection.beginTransaction();
 
       const classIdStr = Array.isArray(classIds) ? classIds.join(',') : (classIds || '');
+      const effectiveAllowPartial = this.isPartialPaymentAllowed(allowPartialPayment);
 
       let structureId = id;
       let effectivePublished = isPublished ? 1 : 0;
@@ -390,7 +395,7 @@ class AdminFeesModel {
           parseInt(gracePeriodDays, 10) || 5,
           lateFeeType || '0',
           parseFloat(lateFeeAmount) || 0.0,
-          allowPartialPayment ? 1 : 0,
+          effectiveAllowPartial,
           effectivePublished,
           parseInt(generateOnDay, 10) || 1,
           description || null,
@@ -398,6 +403,15 @@ class AdminFeesModel {
           id,
           schoolId,
         ]);
+
+        await connection.query(
+          `UPDATE student_fee_allocations SET allow_partial_payment = ? WHERE fee_structure_id = ? AND school_id = ?`,
+          [effectiveAllowPartial, id, schoolId]
+        );
+        await connection.query(
+          `UPDATE fee_invoices SET allow_partial_payment = ? WHERE fee_structure_id = ? AND school_id = ? AND status != 'Paid'`,
+          [effectiveAllowPartial, id, schoolId]
+        );
 
         // Delete existing components to re-insert
         await connection.query(`DELETE FROM fee_structure_components WHERE fee_structure_id = ?`, [id]);
@@ -423,7 +437,7 @@ class AdminFeesModel {
           parseInt(gracePeriodDays, 10) || 5,
           lateFeeType || '0',
           parseFloat(lateFeeAmount) || 0.0,
-          allowPartialPayment ? 1 : 0,
+          effectiveAllowPartial,
           isPublished !== undefined ? isPublished : 1,
           parseInt(generateOnDay, 10) || 1,
           description || null,
@@ -517,7 +531,7 @@ class AdminFeesModel {
                 effectiveAcademicYearId,
                 todayStr,
                 1,
-                allowPartialPayment ? 1 : 0,
+                effectiveAllowPartial,
                 now,
               ]);
 
@@ -653,7 +667,7 @@ class AdminFeesModel {
                 effectiveAcademicYearId,
                 todayStr,
                 1,
-                current.allow_partial_payment ? 1 : 0,
+                this.isPartialPaymentAllowed(current.allow_partial_payment),
                 now,
               ]);
 
@@ -807,7 +821,7 @@ class AdminFeesModel {
 
       // Check if structure is published
       const [structRows] = await connection.query(
-        `SELECT id, name, is_published, status, academic_year_id, branch_id FROM fee_structures WHERE id = ? AND school_id = ? AND status != 4`,
+        `SELECT id, name, is_published, status, academic_year_id, branch_id, allow_partial_payment FROM fee_structures WHERE id = ? AND school_id = ? AND status != 4`,
         [feeStructureId, schoolId]
       );
       if (structRows.length === 0) {
@@ -816,6 +830,11 @@ class AdminFeesModel {
       if (Number(structRows[0].is_published) !== 1) {
         throw new Error(`Cannot assign fee structure: "${structRows[0].name}" is in Draft mode. Fee structures must be published before students can be allocated.`);
       }
+
+      const effectiveAllowPartial =
+        allowPartialPayment !== undefined && allowPartialPayment !== null && allowPartialPayment !== ''
+          ? this.isPartialPaymentAllowed(allowPartialPayment)
+          : this.isPartialPaymentAllowed(structRows[0].allow_partial_payment);
 
       let resolvedBranchId = branchId ? Number(branchId) : (structRows[0].branch_id ? Number(structRows[0].branch_id) : null);
 
@@ -843,7 +862,7 @@ class AdminFeesModel {
                school_id, branch_id, student_id, fee_structure_id, academic_year_id,
                assigned_date, status, allow_partial_payment, created_at
              ) VALUES (?, ?, ?, ?, ?, CURDATE(), 1, ?, NOW())`,
-            [schoolId, resolvedBranchId, studentId, feeStructureId, resolvedYearId, allowPartialPayment ? 1 : 0]
+            [schoolId, resolvedBranchId, studentId, feeStructureId, resolvedYearId, effectiveAllowPartial]
           );
           count++;
         }
@@ -972,7 +991,10 @@ class AdminFeesModel {
         fi.due_date,
         fi.status,
         fi.notes,
-        fi.allow_partial_payment,
+        CASE
+          WHEN fs.id IS NOT NULL THEN fs.allow_partial_payment
+          ELSE fi.allow_partial_payment
+        END AS allow_partial_payment,
         fi.created_at,
         sm.first_name,
         sm.last_name,
@@ -1017,6 +1039,10 @@ class AdminFeesModel {
     let query = `
       SELECT 
         fi.*,
+        CASE
+          WHEN fs.id IS NOT NULL THEN fs.allow_partial_payment
+          ELSE fi.allow_partial_payment
+        END AS allow_partial_payment,
         COALESCE(fi.branch_id, sm.branch_id) AS branch_id,
         brm.branch_name,
         brm.branch_code,
@@ -1462,7 +1488,7 @@ class AdminFeesModel {
             totalAmount,
             effectiveIssueDate,
             finalDueDate,
-            structure.allow_partial_payment ? 1 : 0,
+            this.isPartialPaymentAllowed(structure.allow_partial_payment),
           ]
         );
 
@@ -1877,18 +1903,62 @@ class AdminFeesModel {
     try {
       await connection.beginTransaction();
 
-      // 1. Fetch invoice
+      // 1. Fetch invoice and linked fee structure partial-payment setting
       const [invRows] = await connection.query(
-        `SELECT * FROM fee_invoices WHERE id = ? AND school_id = ?`,
+        `SELECT 
+           fi.*,
+           CASE
+             WHEN fs.id IS NOT NULL THEN fs.allow_partial_payment
+             ELSE fi.allow_partial_payment
+           END AS effective_allow_partial_payment
+         FROM fee_invoices fi
+         LEFT JOIN fee_structures fs ON fs.id = fi.fee_structure_id
+         WHERE fi.id = ? AND fi.school_id = ?
+         FOR UPDATE`,
         [invoiceId, schoolId]
       );
       if (invRows.length === 0) {
-        throw new Error('Invoice not found.');
+        const err = new Error('Invoice not found.');
+        err.statusCode = 404;
+        throw err;
       }
       const invoice = invRows[0];
 
       const paidAmountNum = parseFloat(amountPaid) || 0;
       const lateFeeNum = parseFloat(lateFeePaid) || 0;
+      const currentDueNum = parseFloat(invoice.due_amount);
+      const roundedPaid = Math.round(paidAmountNum * 100) / 100;
+      const roundedDue = Math.round(currentDueNum * 100) / 100;
+
+      if (roundedDue <= 0 || String(invoice.status || '').toLowerCase() === 'paid') {
+        const err = new Error('This invoice has already been paid in full.');
+        err.statusCode = 400;
+        throw err;
+      }
+
+      if (roundedPaid <= 0) {
+        const err = new Error('Please provide a valid payment amount greater than zero.');
+        err.statusCode = 400;
+        throw err;
+      }
+
+      if (roundedPaid > roundedDue + 0.001) {
+        const err = new Error(
+          `Payment amount (₹${roundedPaid.toFixed(2)}) cannot exceed the outstanding balance due (₹${roundedDue.toFixed(2)}).`
+        );
+        err.statusCode = 400;
+        throw err;
+      }
+
+      const isPartialAllowed = this.isPartialPaymentAllowed(invoice.effective_allow_partial_payment) === 1;
+
+      if (!isPartialAllowed && Math.abs(roundedPaid - roundedDue) > 0.001) {
+        const err = new Error(
+          `Partial payment is not allowed for this fee structure. You must pay the full outstanding amount of ₹${roundedDue.toFixed(2)}.`
+        );
+        err.statusCode = 400;
+        throw err;
+      }
 
       // 2. Generate Receipt & Txn No
       const datePrefix = new Date().toISOString().slice(0, 10).replace(/-/g, '');
@@ -1995,6 +2065,33 @@ class AdminFeesModel {
       let updateNote = payment.notes || '';
 
       if (action === 'approve') {
+        if (invoiceId) {
+          const [invCheckRows] = await connection.query(
+            `SELECT 
+               fi.*,
+               CASE
+                 WHEN fs.id IS NOT NULL THEN fs.allow_partial_payment
+                 ELSE fi.allow_partial_payment
+               END AS effective_allow_partial_payment
+             FROM fee_invoices fi
+             LEFT JOIN fee_structures fs ON fs.id = fi.fee_structure_id
+             WHERE fi.id = ? AND fi.school_id = ?`,
+            [invoiceId, schoolId]
+          );
+          if (invCheckRows.length > 0) {
+            const invCheck = invCheckRows[0];
+            const isPartialAllowed = this.isPartialPaymentAllowed(invCheck.effective_allow_partial_payment) === 1;
+            const currentDue = Math.round(parseFloat(invCheck.due_amount) * 100) / 100;
+            const payAmt = Math.round(parseFloat(payment.amount_paid) * 100) / 100;
+            if (!isPartialAllowed && Math.abs(payAmt - currentDue) > 0.001) {
+              const err = new Error(
+                `Cannot approve partial payment (₹${payAmt.toFixed(2)}): This fee structure allows Full Payment Only (₹${currentDue.toFixed(2)}).`
+              );
+              err.statusCode = 400;
+              throw err;
+            }
+          }
+        }
         newPaymentStatus = 'Success';
         updateNote = updateNote ? `${updateNote} [Verified by Admin]` : 'Verified by Admin';
       } else if (action === 'reject') {

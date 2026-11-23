@@ -867,6 +867,10 @@ class ParentModel {
       const [dueRows] = await pool.query(
         `SELECT 
           fi.*,
+          CASE
+            WHEN fs.id IS NOT NULL THEN fs.allow_partial_payment
+            ELSE fi.allow_partial_payment
+          END AS allow_partial_payment,
           fs.name AS fee_structure_name,
           cm.class_name,
           sec.section_name,

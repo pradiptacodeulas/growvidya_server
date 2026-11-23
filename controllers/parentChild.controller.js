@@ -152,6 +152,33 @@ class ParentChildController {
         return ApiResponse.error(res, 'Invoice not found or does not belong to this student.', null, 404);
       }
 
+      const dueAmount = Math.round(parseFloat(invoice.due_amount) * 100) / 100;
+      const roundedPaid = Math.round(parsedAmount * 100) / 100;
+
+      if (dueAmount <= 0 || String(invoice.status || '').toLowerCase() === 'paid') {
+        return ApiResponse.error(res, 'This invoice has already been paid in full.', null, 400);
+      }
+
+      if (roundedPaid > dueAmount + 0.001) {
+        return ApiResponse.error(
+          res,
+          `Payment amount (₹${roundedPaid.toFixed(2)}) cannot exceed the outstanding balance due (₹${dueAmount.toFixed(2)}).`,
+          null,
+          400
+        );
+      }
+
+      const isPartialAllowed = AdminFeesModel.isPartialPaymentAllowed(invoice.allow_partial_payment) === 1;
+
+      if (!isPartialAllowed && Math.abs(roundedPaid - dueAmount) > 0.001) {
+        return ApiResponse.error(
+          res,
+          `Partial payment is not allowed for this fee structure. You must pay the full outstanding amount of ₹${dueAmount.toFixed(2)}.`,
+          null,
+          400
+        );
+      }
+
       // Verify Razorpay payment signature if online gateway transaction
       if (req.body.razorpay_signature || req.body.razorpaySignature) {
         const orderId = req.body.razorpay_order_id || req.body.razorpayOrderId;
@@ -200,6 +227,9 @@ class ParentChildController {
         : 'Fee payment completed successfully.';
       return ApiResponse.success(res, message, result);
     } catch (error) {
+      if (error && (error.statusCode === 400 || error.statusCode === 404)) {
+        return ApiResponse.error(res, error.message, null, error.statusCode);
+      }
       next(error);
     }
   }
