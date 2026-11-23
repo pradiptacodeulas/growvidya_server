@@ -1437,8 +1437,10 @@ class StudentModel {
       }
     }
 
-    if (data.email_address && String(data.email_address).trim()) {
-      const existing = await StudentModel.checkDuplicateEmail(data.school_id, data.email_address, null, branchId);
+    const cleanEmail =
+      data.email_address && String(data.email_address).trim() ? String(data.email_address).trim() : null;
+    if (cleanEmail) {
+      const existing = await StudentModel.checkDuplicateEmail(data.school_id, cleanEmail, null, branchId);
       if (existing) {
         const err = new Error('A student with this email address already exists.');
         err.statusCode = 400;
@@ -1523,7 +1525,7 @@ class StudentModel {
         normalizedDob,
         studentHashedPassword,
         data.primary_contact_number || null,
-        data.email_address || null,
+        cleanEmail,
         data.blood_group || null,
         data.house || null,
         data.religion || null,
@@ -1775,8 +1777,10 @@ class StudentModel {
       }
     }
 
-    if (data.email_address && String(data.email_address).trim()) {
-      const existing = await StudentModel.checkDuplicateEmail(schoolId, data.email_address, id, resolvedBranchId);
+    const cleanEmail =
+      data.email_address && String(data.email_address).trim() ? String(data.email_address).trim() : null;
+    if (cleanEmail) {
+      const existing = await StudentModel.checkDuplicateEmail(schoolId, cleanEmail, id, resolvedBranchId);
       if (existing) {
         const err = new Error('A student with this email address already exists.');
         err.statusCode = 400;
@@ -1841,7 +1845,7 @@ class StudentModel {
       data.gender || null,
       normalizedDob,
       data.primary_contact_number || null,
-      data.email_address || null,
+      cleanEmail,
       data.blood_group || null,
       data.house || null,
       data.religion || null,

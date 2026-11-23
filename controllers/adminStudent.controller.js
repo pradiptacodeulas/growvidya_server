@@ -302,9 +302,11 @@ class AdminStudentController {
         }
       }
 
-      // Check duplicate email within branch scope
-      if (email_address && String(email_address).trim()) {
-        const existingStudent = await StudentModel.checkDuplicateEmail(schoolId, email_address, null, branchId);
+      // Normalize and check duplicate email within branch scope (only if email is provided)
+      const cleanStudentEmail = email_address && String(email_address).trim() ? String(email_address).trim() : null;
+      req.body.email_address = cleanStudentEmail;
+      if (cleanStudentEmail) {
+        const existingStudent = await StudentModel.checkDuplicateEmail(schoolId, cleanStudentEmail, null, branchId);
         if (existingStudent) {
           return ApiResponse.error(res, 'A student with this email address already exists.', null, 400);
         }
@@ -452,9 +454,11 @@ class AdminStudentController {
         }
       }
 
-      // Check duplicate email within branch scope (excluding current student)
-      if (email_address && String(email_address).trim()) {
-        const existingStudent = await StudentModel.checkDuplicateEmail(schoolId, email_address, studentId, branchId);
+      // Normalize and check duplicate email within branch scope (excluding current student, only if email is provided)
+      const cleanStudentEmail = email_address && String(email_address).trim() ? String(email_address).trim() : null;
+      req.body.email_address = cleanStudentEmail;
+      if (cleanStudentEmail) {
+        const existingStudent = await StudentModel.checkDuplicateEmail(schoolId, cleanStudentEmail, studentId, branchId);
         if (existingStudent) {
           return ApiResponse.error(res, 'A student with this email address already exists.', null, 400);
         }
