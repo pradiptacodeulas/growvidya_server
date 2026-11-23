@@ -17,6 +17,7 @@ const SubscriptionSchemaModel = require('./models/subscriptionSchema.model');
 const FileStorageLedgerModel = require('./models/fileStorageLedger.model');
 const EmailCredentialModel = require('./models/emailCredential.model');
 const AdminExaminationModel = require('./models/adminExamination.model');
+const AcademicModel = require('./models/academic.model');
 const SubscriptionLifecycleJob = require('./jobs/subscriptionLifecycle.job');
 
 // Middleware & Router Imports
@@ -132,6 +133,7 @@ async function startServer() {
     await SupportTicketModel.initTable();
     await DeviceTokenModel.initTable();
     await AdminExaminationModel.initTable();
+    await AcademicModel.ensureAssignmentSchema();
   }
 
   server.listen(config.port, () => {

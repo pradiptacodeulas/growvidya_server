@@ -1,8 +1,14 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
 const AdminAcademicController = require('../controllers/adminAcademic.controller');
 const authenticateToken = require('../middlewares/auth.middleware');
 const authorizeRoles = require('../middlewares/rbac.middleware');
+
+const excelUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+});
 
 // Authenticate user
 router.use(authenticateToken);
@@ -199,6 +205,12 @@ router.post('/assignment-types/update_assignment/:id', AdminAcademicController.u
 router.post('/assignment-types/update_assignment_type/:id', AdminAcademicController.updateAssignmentType);
 router.post('/assignment-types/updateAssignmentType/:id', AdminAcademicController.updateAssignmentType);
 router.get('/assignments', AdminAcademicController.getAssignments);
+router.get('/assignments/questions/template', AdminAcademicController.downloadAssignmentQuestionsTemplate);
+router.post(
+  '/assignments/questions/parse-excel',
+  excelUpload.single('file'),
+  AdminAcademicController.parseAssignmentQuestionsExcel
+);
 router.get('/assignments/:id', AdminAcademicController.getAssignmentById);
 router.get('/assignments/:id/questions', AdminAcademicController.getAssignmentQuestions);
 router.get('/assignments/:id/submissions', AdminAcademicController.getAssignmentSubmissions);

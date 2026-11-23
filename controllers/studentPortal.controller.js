@@ -208,34 +208,16 @@ class StudentPortalController {
       let attemptedAssignments = 0;
       let pendingAssignments = 0;
       try {
-        const assignSql = `
-          SELECT 
-            a.id,
-            att.id AS attempt_id
-          FROM assignments a
-          LEFT JOIN student_assignment_attempts att ON (a.id = att.assignment_id AND att.student_id = ?)
-          WHERE (a.school_id = ? OR ? IS NULL)
-            AND (a.branch_id = ? OR a.branch_id IS NULL OR ? IS NULL)
-            AND (a.class_id = ? OR ? IS NULL)
-            AND (a.section_id = ? OR a.section_id IS NULL OR a.section_id = 0 OR ? IS NULL)
-            AND a.status != 4
-            AND a.is_published = 1;
-        `;
-        const [assignRows] = await pool.query(assignSql, [
+        const stats = await AcademicModel.getStudentDashboardAssignmentStats(
           studentId,
           schoolId,
-          schoolId,
-          branchId,
           branchId,
           classId,
-          classId,
-          sectionId,
-          sectionId,
-        ]);
-        const assignmentsList = assignRows || [];
-        totalAssignments = assignmentsList.length;
-        attemptedAssignments = assignmentsList.filter((a) => a.attempt_id != null).length;
-        pendingAssignments = totalAssignments - attemptedAssignments;
+          sectionId
+        );
+        totalAssignments = stats.totalAssignments;
+        attemptedAssignments = stats.attemptedAssignments;
+        pendingAssignments = stats.pendingAssignments;
       } catch (e) {
         console.error('Error fetching assignments stats:', e.message);
       }
@@ -528,80 +510,13 @@ class StudentPortalController {
       const classId = student ? student.class : null;
       const sectionId = student ? student.section : null;
 
-      const sql = `
-        SELECT 
-          a.id,
-          a.school_id,
-          a.title,
-          a.assignment_type_id,
-          at.type_name AS assignment_type,
-          a.class_id,
-          cm.class_name,
-          a.section_id,
-          sec.section_name,
-          a.subject_id,
-          COALESCE(sub.subject_name, 'General') AS subject_name,
-          a.assigned_date,
-          a.due_date,
-          a.status AS assignment_status,
-          a.is_published,
-          a.created_on,
-          COALESCE(q.total_questions, 0) AS total_questions,
-          att.id AS attempt_id,
-          att.correct_answers,
-          att.score_percentage,
-          att.attempted_at,
-          CASE 
-            WHEN att.id IS NOT NULL THEN 'Attempted'
-            WHEN (
-              CASE 
-                WHEN a.due_date LIKE '%:%' THEN a.due_date < NOW()
-                ELSE a.due_date < CURDATE()
-              END
-            ) THEN 'Expired'
-            ELSE 'Pending'
-          END AS status
-        FROM assignments a
-        LEFT JOIN assignment_types at ON a.assignment_type_id = at.id
-        LEFT JOIN class_master cm ON a.class_id = cm.id
-        LEFT JOIN section_master sec ON a.section_id = sec.id
-        LEFT JOIN subject_master sub ON a.subject_id = sub.id
-        LEFT JOIN (
-          SELECT assignment_id, COUNT(*) AS total_questions
-          FROM assignment_questions
-          GROUP BY assignment_id
-        ) q ON a.id = q.assignment_id
-        LEFT JOIN student_assignment_attempts att ON (a.id = att.assignment_id AND att.student_id = ?)
-        WHERE (a.school_id = ? OR ? IS NULL)
-          AND (a.branch_id = ? OR a.branch_id IS NULL OR ? IS NULL)
-          AND (a.class_id = ? OR ? IS NULL)
-          AND (a.section_id = ? OR a.section_id IS NULL OR a.section_id = 0 OR ? IS NULL)
-          AND a.status != 4
-          AND a.is_published = 1
-        ORDER BY a.id DESC;
-      `;
-
-      const [rows] = await pool.query(sql, [
+      const evaluatedRows = await AcademicModel.getStudentAssignments(
         studentId,
         schoolId,
-        schoolId,
-        branchId,
         branchId,
         classId,
-        classId,
-        sectionId,
-        sectionId,
-      ]);
-
-      const evaluatedRows = (rows || []).map((row) => {
-        const isAttempted = row.attempt_id != null || row.status === 'Attempted';
-        const expired = !isAttempted && isAssignmentExpired(row.due_date);
-        return {
-          ...row,
-          status: isAttempted ? 'Attempted' : expired ? 'Expired' : 'Pending',
-          is_expired: expired,
-        };
-      });
+        sectionId
+      );
 
       return ApiResponse.success(res, 'Student assignments fetched successfully.', evaluatedRows);
     } catch (error) {
@@ -619,73 +534,12 @@ class StudentPortalController {
       const schoolId = StudentPortalController.getSchoolId(req);
       const assignmentId = req.params.id;
 
-      // 1. Fetch assignment info
-      const [asgRows] = await pool.query(
-        `SELECT 
-           a.*,
-           COALESCE(sub.subject_name, 'General') AS subject_name,
-           at.type_name AS assignment_type
-         FROM assignments a
-         LEFT JOIN subject_master sub ON a.subject_id = sub.id
-         LEFT JOIN assignment_types at ON a.assignment_type_id = at.id
-         WHERE a.id = ? AND (a.school_id = ? OR ? IS NULL) AND a.status != 4`,
-        [assignmentId, schoolId, schoolId]
-      );
-
-      if (asgRows.length === 0) {
-        return ApiResponse.error(res, 'Assignment not found', 404);
-      }
-      const assignment = asgRows[0];
-
-      // 2. Check if student already attempted
-      const [attRows] = await pool.query(
-        `SELECT * FROM student_assignment_attempts WHERE assignment_id = ? AND student_id = ?`,
-        [assignmentId, studentId]
-      );
-      const alreadyAttempted = attRows.length > 0 ? attRows[0] : null;
-
-      // 3. Strict Check: If assignment deadline has passed and student hasn't attempted yet
-      const isExpired = isAssignmentExpired(assignment.due_date);
-      if (isExpired && !alreadyAttempted) {
-        return ApiResponse.error(
-          res,
-          'The deadline for this assignment has expired. You can no longer answer questions or submit this assignment.',
-          {
-            isExpired: true,
-            due_date: assignment.due_date,
-            assignment: {
-              id: assignment.id,
-              title: assignment.title,
-              due_date: assignment.due_date,
-              subject_name: assignment.subject_name,
-            },
-          },
-          403
-        );
-      }
-
-      // 4. Fetch questions
-      const [questions] = await pool.query(
-        `SELECT id, question, status FROM assignment_questions WHERE assignment_id = ? AND status = 1 ORDER BY id ASC`,
-        [assignmentId]
-      );
-
-      // 5. Fetch options for each question (without revealing is_correct to the student during attempt)
-      for (const q of questions) {
-        const [options] = await pool.query(
-          `SELECT id, answer, status FROM assignment_answers WHERE question_id = ? AND status = 1 ORDER BY id ASC`,
-          [q.id]
-        );
-        q.options = options;
-      }
-
-      return ApiResponse.success(res, 'Assignment details fetched successfully.', {
-        assignment,
-        alreadyAttempted,
-        isExpired,
-        questions,
-      });
+      const data = await AcademicModel.getStudentAssignmentForAttempt(assignmentId, studentId, schoolId);
+      return ApiResponse.success(res, 'Assignment details fetched successfully.', data);
     } catch (error) {
+      if (error.statusCode === 403 || error.statusCode === 404) {
+        return ApiResponse.error(res, error.message, error.data || null, error.statusCode);
+      }
       console.error('Error in getAssignmentForAttempt:', error);
       next(error);
     }
@@ -695,135 +549,31 @@ class StudentPortalController {
    * Submit Assignment Attempt & Calculate Score
    */
   static async submitAssignmentAttempt(req, res, next) {
-    const connection = await pool.getConnection();
     try {
-      await connection.beginTransaction();
-
       const studentId = StudentPortalController.getStudentId(req);
       const schoolId = StudentPortalController.getSchoolId(req);
       const assignmentId = req.params.id;
-      const { answers } = req.body; // { [question_id]: selected_answer_id }
+      const { answers, isAutoSubmit, is_auto_submit } = req.body || {};
+      const userBranchId = req.user?.branch_id || req.user?.branchId || null;
 
-      if (!answers || typeof answers !== 'object') {
-        await connection.rollback();
-        return ApiResponse.error(res, 'Please provide answers to submit.', 400);
-      }
-
-      // 0. Verify assignment existence and check if deadline has passed
-      const [asgRows] = await connection.query(
-        `SELECT id, branch_id, title, due_date, status, is_published FROM assignments WHERE id = ? AND (school_id = ? OR ? IS NULL) AND status != 4`,
-        [assignmentId, schoolId, schoolId]
+      const result = await AcademicModel.submitStudentAssignmentAttempt(
+        assignmentId,
+        studentId,
+        schoolId,
+        {
+          answers,
+          isAutoSubmit: Boolean(isAutoSubmit || is_auto_submit),
+        },
+        userBranchId
       );
 
-      if (asgRows.length === 0) {
-        await connection.rollback();
-        return ApiResponse.error(res, 'Assignment not found.', 404);
-      }
-
-      const assignment = asgRows[0];
-
-      let branchId = req.user?.branch_id || req.user?.branchId || null;
-      if (!branchId) {
-        try {
-          const [stRow] = await connection.query('SELECT branch_id FROM student_master WHERE id = ? LIMIT 1', [studentId]);
-          if (stRow.length && stRow[0].branch_id) branchId = stRow[0].branch_id;
-        } catch (e) {}
-      }
-      if (!branchId && assignment.branch_id) {
-        branchId = assignment.branch_id;
-      }
-
-      // STRICT DEADLINE ENFORCEMENT: Reject any submission attempt after due date and time
-      if (isAssignmentExpired(assignment.due_date)) {
-        await connection.rollback();
-        return ApiResponse.error(
-          res,
-          'The deadline for this assignment has expired. Submissions are no longer accepted.',
-          {
-            isExpired: true,
-            due_date: assignment.due_date,
-          },
-          403
-        );
-      }
-
-      // 1. Fetch questions and correct answers for this assignment
-      const [questions] = await connection.query(
-        `SELECT q.id AS question_id, a.id AS correct_answer_id
-         FROM assignment_questions q
-         LEFT JOIN assignment_answers a ON (q.id = a.question_id AND a.is_correct = 1)
-         WHERE q.assignment_id = ? AND q.status = 1`,
-        [assignmentId]
-      );
-
-      if (questions.length === 0) {
-        await connection.rollback();
-        return ApiResponse.error(res, 'No questions found for this assignment.', 400);
-      }
-
-      const totalQuestions = questions.length;
-      let correctAnswersCount = 0;
-
-      // 2. Evaluate answers
-      const submissionRecords = [];
-      for (const q of questions) {
-        const selectedAnswerId = answers[q.question_id] ? Number(answers[q.question_id]) : null;
-        const isCorrect =
-          selectedAnswerId && q.correct_answer_id && selectedAnswerId === q.correct_answer_id ? 1 : 0;
-        if (isCorrect) correctAnswersCount++;
-        submissionRecords.push({
-          question_id: q.question_id,
-          selected_answer_id: selectedAnswerId,
-          is_correct: isCorrect,
-        });
-      }
-
-      const scorePercentage =
-        totalQuestions > 0 ? ((correctAnswersCount / totalQuestions) * 100).toFixed(2) : '0.00';
-
-      // 3. Insert or update student_assignment_attempts
-      await connection.query(
-        `DELETE FROM student_assignment_attempts WHERE assignment_id = ? AND student_id = ?`,
-        [assignmentId, studentId]
-      );
-
-      const [attRes] = await connection.query(
-        `INSERT INTO student_assignment_attempts 
-         (school_id, branch_id, assignment_id, student_id, total_questions, correct_answers, score_percentage, attempted_at, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), 1)`,
-        [schoolId, branchId, assignmentId, studentId, totalQuestions, correctAnswersCount, scorePercentage]
-      );
-      const attemptId = attRes.insertId;
-
-      // 4. Delete previous submissions if any, then insert submissions
-      await connection.query(
-        `DELETE FROM student_assignment_submissions WHERE assignment_id = ? AND student_id = ?`,
-        [assignmentId, studentId]
-      );
-
-      for (const sub of submissionRecords) {
-        await connection.query(
-          `INSERT INTO student_assignment_submissions 
-           (school_id, branch_id, attempt_id, assignment_id, student_id, question_id, selected_answer_id, is_correct, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
-          [schoolId, branchId, attemptId, assignmentId, studentId, sub.question_id, sub.selected_answer_id, sub.is_correct]
-        );
-      }
-
-      await connection.commit();
-
-      return ApiResponse.success(res, 'Assignment submitted successfully!', {
-        attemptId,
-        totalQuestions,
-        correctAnswersCount,
-        scorePercentage,
-      });
+      return ApiResponse.success(res, 'Assignment submitted successfully!', result);
     } catch (error) {
-      await connection.rollback();
+      if (error.statusCode === 400 || error.statusCode === 403 || error.statusCode === 404) {
+        return ApiResponse.error(res, error.message, error.data || null, error.statusCode);
+      }
       console.error('Error submitting assignment attempt:', error);
       next(error);
-    } finally {
-      connection.release();
     }
   }
 
@@ -836,59 +586,12 @@ class StudentPortalController {
       const schoolId = StudentPortalController.getSchoolId(req);
       const assignmentId = req.params.id;
 
-      // 1. Fetch assignment info
-      const [asgRows] = await pool.query(
-        `SELECT 
-           a.*,
-           COALESCE(sub.subject_name, 'General') AS subject_name,
-           at.type_name AS assignment_type
-         FROM assignments a
-         LEFT JOIN subject_master sub ON a.subject_id = sub.id
-         LEFT JOIN assignment_types at ON a.assignment_type_id = at.id
-         WHERE a.id = ? AND (a.school_id = ? OR ? IS NULL)`,
-        [assignmentId, schoolId, schoolId]
-      );
-      if (asgRows.length === 0) {
-        return ApiResponse.error(res, 'Assignment not found', 404);
-      }
-      const assignment = asgRows[0];
-
-      // 2. Fetch attempt info
-      const [attRows] = await pool.query(
-        `SELECT * FROM student_assignment_attempts WHERE assignment_id = ? AND student_id = ?`,
-        [assignmentId, studentId]
-      );
-      const attempt = attRows[0] || null;
-
-      // 3. Fetch questions with options and student selected answer
-      const [questions] = await pool.query(
-        `SELECT id, question FROM assignment_questions WHERE assignment_id = ? AND status = 1 ORDER BY id ASC`,
-        [assignmentId]
-      );
-
-      const [submissions] = await pool.query(
-        `SELECT question_id, selected_answer_id, is_correct FROM student_assignment_submissions WHERE assignment_id = ? AND student_id = ?`,
-        [assignmentId, studentId]
-      );
-      const subMap = {};
-      submissions.forEach((s) => {
-        subMap[s.question_id] = s;
-      });
-
-      for (const q of questions) {
-        const [options] = await pool.query(
-          `SELECT id, answer, is_correct FROM assignment_answers WHERE question_id = ? AND status = 1 ORDER BY id ASC`,
-          [q.id]
-        );
-        q.options = options;
-        q.studentSubmission = subMap[q.id] || null;
+      const result = await AcademicModel.getStudentAssignmentResult(assignmentId, studentId, schoolId);
+      if (!result) {
+        return ApiResponse.error(res, 'Assignment not found', null, 404);
       }
 
-      return ApiResponse.success(res, 'Assignment result fetched successfully.', {
-        assignment,
-        attempt,
-        questions,
-      });
+      return ApiResponse.success(res, 'Assignment result fetched successfully.', result);
     } catch (error) {
       console.error('Error fetching assignment result:', error);
       next(error);

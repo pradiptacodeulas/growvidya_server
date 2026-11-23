@@ -1,6 +1,497 @@
 const { pool } = require('../config/db.config');
 
+let xlsxLib = null;
+function getXlsx() {
+  if (xlsxLib) return xlsxLib;
+  try {
+    xlsxLib = require('xlsx');
+  } catch {
+    xlsxLib = require('../../growvidya_csv_server/node_modules/xlsx');
+  }
+  return xlsxLib;
+}
+
 class AcademicModel {
+  static _assignmentSchemaPromise = null;
+
+  static async ensureAssignmentSchema() {
+    if (AcademicModel._assignmentSchemaPromise) {
+      return AcademicModel._assignmentSchemaPromise;
+    }
+    AcademicModel._assignmentSchemaPromise = (async () => {
+      try {
+        const addMissingColumns = async (tableName, columnDefinitions) => {
+          const [cols] = await pool.query(`SHOW COLUMNS FROM ${tableName}`);
+          const existing = new Set((cols || []).map((c) => c.Field));
+          const toAdd = [];
+          for (const [colName, colDef] of columnDefinitions) {
+            if (!existing.has(colName)) {
+              toAdd.push(`ADD COLUMN ${colName} ${colDef}`);
+            }
+          }
+          if (toAdd.length > 0) {
+            await pool.query(`ALTER TABLE ${tableName} ${toAdd.join(', ')}`);
+          }
+        };
+
+        await addMissingColumns('assignments', [
+          ['start_time', 'VARCHAR(20) DEFAULT NULL'],
+          ['end_time', 'VARCHAR(20) DEFAULT NULL'],
+          ['duration_minutes', 'INT(11) DEFAULT NULL'],
+          ['total_marks', 'DECIMAL(10,2) DEFAULT NULL'],
+          ['passing_marks', 'DECIMAL(10,2) DEFAULT NULL'],
+          ['max_attempts', 'INT(11) NOT NULL DEFAULT 1'],
+          ['instructions', 'TEXT DEFAULT NULL'],
+        ]);
+
+        await pool.query(`ALTER TABLE assignment_questions MODIFY COLUMN question TEXT NULL`).catch(() => {});
+        await addMissingColumns('assignment_questions', [
+          ['question_type', "VARCHAR(50) NOT NULL DEFAULT 'MCQ'"],
+          ['marks', 'DECIMAL(8,2) NOT NULL DEFAULT 1.00'],
+          ['instructions', 'TEXT DEFAULT NULL'],
+          ['correct_answer_text', 'TEXT DEFAULT NULL'],
+        ]);
+
+        await pool.query(`ALTER TABLE assignment_answers MODIFY COLUMN answer TEXT NULL`).catch(() => {});
+
+        await addMissingColumns('student_assignment_attempts', [
+          ['attempt_number', 'INT(11) NOT NULL DEFAULT 1'],
+          ['started_at', 'DATETIME DEFAULT NULL'],
+          ['submitted_at', 'DATETIME DEFAULT NULL'],
+          ['obtained_marks', 'DECIMAL(10,2) NOT NULL DEFAULT 0.00'],
+          ['total_marks', 'DECIMAL(10,2) NOT NULL DEFAULT 0.00'],
+          ['is_passed', 'TINYINT(1) DEFAULT NULL'],
+          ['is_auto_submitted', 'TINYINT(1) NOT NULL DEFAULT 0'],
+        ]);
+
+        await addMissingColumns('student_assignment_submissions', [
+          ['answer_text', 'TEXT DEFAULT NULL'],
+          ['marks_awarded', 'DECIMAL(8,2) NOT NULL DEFAULT 0.00'],
+        ]);
+      } catch (err) {
+        console.error('[AcademicModel.ensureAssignmentSchema] Error:', err.message);
+      }
+    })();
+    return AcademicModel._assignmentSchemaPromise;
+  }
+
+  static normalizeQuestionType(rawType) {
+    if (!rawType && rawType !== 0) return null;
+    const s = String(rawType)
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+    if (
+      [
+        'mcq',
+        'multiple_choice',
+        'multiple_choice_question',
+        'multiple_choice_questions',
+        'multiplechoice',
+        'single_choice',
+        'objective',
+      ].includes(s)
+    ) {
+      return 'MCQ';
+    }
+    if (['true_false', 'true_or_false', 'tf', 't_f', 'boolean'].includes(s)) {
+      return 'TRUE_FALSE';
+    }
+    if (['short_answer', 'short', 'short_answers', 'short_question', 'sa'].includes(s)) {
+      return 'SHORT_ANSWER';
+    }
+    if (['long_answer', 'long', 'long_answers', 'long_question', 'descriptive', 'essay', 'la'].includes(s)) {
+      return 'LONG_ANSWER';
+    }
+    return null;
+  }
+
+  static getQuestionTypeLabel(qType) {
+    const norm = AcademicModel.normalizeQuestionType(qType) || 'MCQ';
+    if (norm === 'TRUE_FALSE') return 'True / False';
+    if (norm === 'SHORT_ANSWER') return 'Short Answer';
+    if (norm === 'LONG_ANSWER') return 'Long Answer';
+    return 'Multiple Choice (MCQ)';
+  }
+
+  static combineDateAndTime(dateVal, timeVal, isEnd = false) {
+    if (!dateVal) return null;
+    const rawDateStr =
+      dateVal instanceof Date
+        ? `${dateVal.getFullYear()}-${String(dateVal.getMonth() + 1).padStart(2, '0')}-${String(dateVal.getDate()).padStart(2, '0')}`
+        : String(dateVal).trim();
+    if (!rawDateStr) return null;
+
+    const datePartMatch = rawDateStr.match(/^(\d{4}-\d{2}-\d{2})/);
+    const datePart = datePartMatch ? datePartMatch[1] : null;
+    const embeddedTimeMatch = rawDateStr.match(/[T\s](\d{1,2}:\d{2}(?::\d{2})?)/);
+
+    let cleanTime = timeVal ? String(timeVal).trim() : '';
+    if (!cleanTime && embeddedTimeMatch) {
+      cleanTime = embeddedTimeMatch[1];
+    }
+
+    if (datePart) {
+      if (cleanTime) {
+        const parts = cleanTime.split(':');
+        const hh = String(Number(parts[0]) || 0).padStart(2, '0');
+        const mm = String(Number(parts[1]) || 0).padStart(2, '0');
+        const ss = parts[2] !== undefined ? String(Number(parts[2]) || 0).padStart(2, '0') : isEnd ? '59' : '00';
+        const dt = new Date(`${datePart}T${hh}:${mm}:${ss}${isEnd ? '.999' : '.000'}`);
+        return isNaN(dt.getTime()) ? null : dt;
+      }
+      const dt = new Date(`${datePart}T${isEnd ? '23:59:59.999' : '00:00:00.000'}`);
+      return isNaN(dt.getTime()) ? null : dt;
+    }
+
+    const parsed = new Date(rawDateStr);
+    return isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  static getAssignmentScheduleState(assignment, now = new Date()) {
+    if (!assignment) {
+      return {
+        startDateTime: null,
+        endDateTime: null,
+        isNotStarted: false,
+        isExpired: false,
+        isAvailable: true,
+      };
+    }
+    const startDt = AcademicModel.combineDateAndTime(assignment.assigned_date, assignment.start_time, false);
+    const endDt = AcademicModel.combineDateAndTime(assignment.due_date, assignment.end_time, true);
+    const nowMs = now instanceof Date ? now.getTime() : Date.now();
+
+    const isNotStarted = startDt ? nowMs < startDt.getTime() : false;
+    const isExpired = endDt ? nowMs > endDt.getTime() : false;
+    const isAvailable = !isNotStarted && !isExpired;
+
+    return {
+      startDateTime: startDt ? startDt.toISOString() : null,
+      endDateTime: endDt ? endDt.toISOString() : null,
+      isNotStarted,
+      isExpired,
+      isAvailable,
+    };
+  }
+
+  static generateAssignmentQuestionsTemplateBuffer() {
+    const xlsx = getXlsx();
+    const headers = [
+      'question_type',
+      'question',
+      'option_a',
+      'option_b',
+      'option_c',
+      'option_d',
+      'correct_answer',
+      'marks',
+      'instructions',
+    ];
+    const worksheet = xlsx.utils.aoa_to_sheet([headers]);
+    worksheet['!cols'] = headers.map((h) => ({
+      wch: h === 'question' || h === 'instructions' ? 38 : 20,
+    }));
+    const workbook = xlsx.utils.book_new();
+    xlsx.utils.book_append_sheet(workbook, worksheet, 'Assignment_Questions');
+    return xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+  }
+
+  static parseAndValidateQuestionsExcel(buffer, existingQuestions = []) {
+    if (!buffer || !Buffer.isBuffer(buffer) || buffer.length === 0) {
+      const err = new Error('Please upload a valid Excel (.xlsx, .xls) or CSV file.');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const xlsx = getXlsx();
+    let workbook;
+    try {
+      workbook = xlsx.read(buffer, { type: 'buffer', cellDates: false, raw: true });
+    } catch (e) {
+      const err = new Error('Invalid or corrupted Excel file. Please use the provided Excel template.');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const firstSheetName = workbook?.SheetNames?.[0];
+    if (!firstSheetName) {
+      const err = new Error('The uploaded Excel file contains no worksheets.');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const worksheet = workbook.Sheets[firstSheetName];
+    const rawMatrix = xlsx.utils.sheet_to_json(worksheet, {
+      header: 1,
+      defval: '',
+      blankrows: false,
+      raw: true,
+    });
+
+    if (!Array.isArray(rawMatrix) || rawMatrix.length === 0) {
+      const err = new Error('The uploaded Excel file is empty.');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const normHeader = (h) =>
+      String(h || '')
+        .replace(/^\uFEFF/, '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+
+    const rawHeaders = (rawMatrix[0] || []).map(normHeader);
+    const hasQuestionCol = rawHeaders.some((h) =>
+      ['question', 'question_statement', 'question_text', 'statement', 'title'].includes(h)
+    );
+    const hasTypeCol = rawHeaders.some((h) => ['question_type', 'type', 'q_type'].includes(h));
+    const hasMarksCol = rawHeaders.some((h) => ['marks', 'mark', 'points', 'score'].includes(h));
+
+    if (!hasQuestionCol || !hasTypeCol || !hasMarksCol) {
+      const err = new Error(
+        'Invalid Excel template format. Required columns: question_type, question, option_a, option_b, option_c, option_d, correct_answer, marks, instructions.'
+      );
+      err.statusCode = 400;
+      throw err;
+    }
+
+    if (rawMatrix.length < 2) {
+      const err = new Error('The uploaded Excel file has column headers but contains no question rows.');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const existingNormalizedMap = new Map();
+    if (Array.isArray(existingQuestions)) {
+      existingQuestions.forEach((eq, idx) => {
+        const text = String(eq?.question || eq?.title || '')
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, ' ');
+        if (text) {
+          existingNormalizedMap.set(text, idx + 1);
+        }
+      });
+    }
+
+    const fileQuestionsNormalizedMap = new Map();
+    const parsedRows = [];
+    const validQuestions = [];
+    const allErrors = [];
+    let totalValidMarks = 0;
+
+    const cellToStr = (val) => (val === undefined || val === null ? '' : String(val).trim());
+
+    for (let i = 1; i < rawMatrix.length; i++) {
+      const rowCells = rawMatrix[i];
+      if (!Array.isArray(rowCells) || rowCells.every((c) => cellToStr(c) === '')) {
+        continue;
+      }
+
+      const rowNumber = i + 1;
+      const rawObj = {};
+      rawHeaders.forEach((h, colIdx) => {
+        if (h) rawObj[h] = cellToStr(rowCells[colIdx]);
+      });
+
+      if (Object.values(rawObj).every((v) => v === '')) {
+        continue;
+      }
+
+      const rowErrors = [];
+      const rawTypeStr = rawObj.question_type ?? rawObj.type ?? rawObj.q_type ?? '';
+      const normalizedType = AcademicModel.normalizeQuestionType(rawTypeStr);
+
+      if (!rawTypeStr) {
+        rowErrors.push('Question type is required (MCQ, True / False, Short Answer, or Long Answer).');
+      } else if (!normalizedType) {
+        rowErrors.push(
+          `Invalid question type "${rawTypeStr}". Supported types: MCQ, True / False, Short Answer, Long Answer.`
+        );
+      }
+
+      const questionText =
+        rawObj.question ||
+        rawObj.question_statement ||
+        rawObj.question_text ||
+        rawObj.statement ||
+        rawObj.title ||
+        '';
+
+      if (!questionText) {
+        rowErrors.push('Question statement is required.');
+      } else {
+        const normQ = questionText.toLowerCase().replace(/\s+/g, ' ');
+        if (fileQuestionsNormalizedMap.has(normQ)) {
+          rowErrors.push(`Duplicate question in Excel file (already appears on row #${fileQuestionsNormalizedMap.get(normQ)}).`);
+        } else if (existingNormalizedMap.has(normQ)) {
+          rowErrors.push(
+            `Duplicate question (already exists in the assignment at Question #${existingNormalizedMap.get(normQ)}).`
+          );
+        } else {
+          fileQuestionsNormalizedMap.set(normQ, rowNumber);
+        }
+      }
+
+      const rawMarksStr = rawObj.marks ?? rawObj.mark ?? rawObj.points ?? rawObj.score ?? '';
+      const marksNum = Number(rawMarksStr);
+      if (rawMarksStr === '' || isNaN(marksNum) || marksNum <= 0) {
+        rowErrors.push('Marks is required and must be a positive number greater than 0.');
+      }
+
+      const instructionsText = rawObj.instructions || rawObj.instruction || rawObj.notes || '';
+      const optA = rawObj.option_a ?? rawObj.optiona ?? rawObj.a ?? '';
+      const optB = rawObj.option_b ?? rawObj.optionb ?? rawObj.b ?? '';
+      const optC = rawObj.option_c ?? rawObj.optionc ?? rawObj.c ?? '';
+      const optD = rawObj.option_d ?? rawObj.optiond ?? rawObj.d ?? '';
+      const rawCorrect = rawObj.correct_answer ?? rawObj.correct ?? rawObj.answer ?? '';
+
+      let options = [];
+      let correctAnswerIndex = 0;
+      let correctAnswerLabel = '';
+      let correctAnswerText = '';
+
+      if (normalizedType === 'MCQ') {
+        const missingOpts = [];
+        if (!optA) missingOpts.push('Option A');
+        if (!optB) missingOpts.push('Option B');
+        if (!optC) missingOpts.push('Option C');
+        if (!optD) missingOpts.push('Option D');
+        if (missingOpts.length > 0) {
+          rowErrors.push(`MCQ requires all 4 options (${missingOpts.join(', ')} missing).`);
+        }
+
+        options = [{ text: optA }, { text: optB }, { text: optC }, { text: optD }];
+
+        const nonEmptyOptTexts = [optA, optB, optC, optD]
+          .filter(Boolean)
+          .map((o) => o.toLowerCase().replace(/\s+/g, ' '));
+        if (new Set(nonEmptyOptTexts).size !== nonEmptyOptTexts.length) {
+          rowErrors.push('MCQ options A, B, C, and D must be distinct.');
+        }
+
+        if (!rawCorrect) {
+          rowErrors.push('Correct answer is required for MCQ (specify A, B, C, or D).');
+        } else {
+          const cleanCorr = rawCorrect.trim();
+          const upperCorr = cleanCorr.toUpperCase().replace(/^OPTION\s+/i, '').trim();
+          const letterMap = { A: 0, B: 1, C: 2, D: 3, '1': 0, '2': 1, '3': 2, '4': 3 };
+          if (Object.prototype.hasOwnProperty.call(letterMap, upperCorr)) {
+            correctAnswerIndex = letterMap[upperCorr];
+            correctAnswerLabel = `Option ${String.fromCharCode(65 + correctAnswerIndex)} (${options[correctAnswerIndex]?.text || ''})`;
+            correctAnswerText = options[correctAnswerIndex]?.text || '';
+          } else {
+            const matchIdx = options.findIndex(
+              (o) => o.text && o.text.trim().toLowerCase() === cleanCorr.toLowerCase()
+            );
+            if (matchIdx !== -1) {
+              correctAnswerIndex = matchIdx;
+              correctAnswerLabel = `Option ${String.fromCharCode(65 + matchIdx)} (${options[matchIdx].text})`;
+              correctAnswerText = options[matchIdx].text;
+            } else {
+              rowErrors.push(
+                `Invalid correct_answer "${rawCorrect}" for MCQ. Must be A, B, C, D or match one of the options.`
+              );
+            }
+          }
+        }
+      } else if (normalizedType === 'TRUE_FALSE') {
+        const tfA = optA || 'True';
+        const tfB = optB || 'False';
+        options = [{ text: tfA }, { text: tfB }];
+
+        if (!rawCorrect) {
+          rowErrors.push('Correct answer is required for True / False question (specify True or False).');
+        } else {
+          const upperCorr = rawCorrect.trim().toUpperCase().replace(/^OPTION\s+/i, '').trim();
+          if (['TRUE', 'T', 'A', '1', 'YES'].includes(upperCorr) || rawCorrect.trim().toLowerCase() === tfA.toLowerCase()) {
+            correctAnswerIndex = 0;
+            correctAnswerLabel = tfA;
+            correctAnswerText = tfA;
+          } else if (
+            ['FALSE', 'F', 'B', '2', 'NO'].includes(upperCorr) ||
+            rawCorrect.trim().toLowerCase() === tfB.toLowerCase()
+          ) {
+            correctAnswerIndex = 1;
+            correctAnswerLabel = tfB;
+            correctAnswerText = tfB;
+          } else {
+            rowErrors.push(`Invalid correct_answer "${rawCorrect}" for True / False question. Must be True or False.`);
+          }
+        }
+      } else if (normalizedType === 'SHORT_ANSWER' || normalizedType === 'LONG_ANSWER') {
+        options = [];
+        correctAnswerIndex = 0;
+        correctAnswerText = rawCorrect || '';
+        correctAnswerLabel = rawCorrect || 'Descriptive / Open Answer';
+      }
+
+      const isValid = rowErrors.length === 0;
+      const cleanMarks = !isNaN(marksNum) && marksNum > 0 ? Number(marksNum.toFixed(2)) : 0;
+
+      if (isValid) {
+        totalValidMarks = Number((totalValidMarks + cleanMarks).toFixed(2));
+        validQuestions.push({
+          question: questionText,
+          question_type: normalizedType,
+          marks: cleanMarks,
+          instructions: instructionsText,
+          correct_answer: correctAnswerIndex,
+          correct_answer_text: correctAnswerText,
+          options,
+        });
+      } else {
+        rowErrors.forEach((errMsg) => {
+          allErrors.push({
+            rowNumber,
+            question: questionText || '(Empty Question)',
+            error: errMsg,
+          });
+        });
+      }
+
+      parsedRows.push({
+        rowNumber,
+        isValid,
+        errors: rowErrors,
+        question_type: normalizedType || rawTypeStr || 'Unknown',
+        question_type_label: normalizedType ? AcademicModel.getQuestionTypeLabel(normalizedType) : rawTypeStr || 'Invalid',
+        question: questionText,
+        option_a: optA,
+        option_b: optB,
+        option_c: optC,
+        option_d: optD,
+        options,
+        correct_answer: correctAnswerIndex,
+        correct_answer_raw: rawCorrect,
+        correct_answer_label: correctAnswerLabel || rawCorrect,
+        correct_answer_text: correctAnswerText,
+        marks: cleanMarks,
+        marks_raw: rawMarksStr,
+        instructions: instructionsText,
+      });
+    }
+
+    if (parsedRows.length === 0) {
+      const err = new Error('No question rows found in the uploaded Excel file.');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    return {
+      totalRows: parsedRows.length,
+      validCount: validQuestions.length,
+      errorCount: parsedRows.length - validQuestions.length,
+      totalValidMarks,
+      rows: parsedRows,
+      validQuestions,
+      errors: allErrors,
+    };
+  }
   /**
    * Helper to format academic year into standard year range (e.g. '2025 - 2026')
    */
@@ -2712,8 +3203,159 @@ class AcademicModel {
     return effectiveBranchId;
   }
 
+  static validateAndPrepareQuestions(questions, configuredTotalMarks = null) {
+    if (!Array.isArray(questions) || questions.length === 0) {
+      const err = new Error('Assignment must include at least one question.');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const seenNormalized = new Map();
+    const preparedQuestions = [];
+    let calculatedTotalMarks = 0;
+
+    for (let idx = 0; idx < questions.length; idx++) {
+      const q = questions[idx] || {};
+      const qNum = idx + 1;
+      const qText = String(q.question || q.title || '').trim();
+      if (!qText) {
+        const err = new Error(`Question #${qNum} statement cannot be empty.`);
+        err.statusCode = 400;
+        throw err;
+      }
+
+      const normQ = qText.toLowerCase().replace(/\s+/g, ' ');
+      if (seenNormalized.has(normQ)) {
+        const err = new Error(
+          `Duplicate question detected: Question #${qNum} is identical to Question #${seenNormalized.get(normQ)}.`
+        );
+        err.statusCode = 400;
+        throw err;
+      }
+      seenNormalized.set(normQ, qNum);
+
+      const rawType = q.question_type || 'MCQ';
+      const qType = AcademicModel.normalizeQuestionType(rawType);
+      if (!qType) {
+        const err = new Error(
+          `Question #${qNum} has an invalid question type "${rawType}". Allowed: MCQ, True / False, Short Answer, Long Answer.`
+        );
+        err.statusCode = 400;
+        throw err;
+      }
+
+      const rawMarks = q.marks !== undefined && q.marks !== null && String(q.marks).trim() !== '' ? Number(q.marks) : 1;
+      if (isNaN(rawMarks) || rawMarks <= 0) {
+        const err = new Error(`Question #${qNum} marks must be a positive number greater than 0.`);
+        err.statusCode = 400;
+        throw err;
+      }
+      const cleanMarks = Number(rawMarks.toFixed(2));
+      calculatedTotalMarks = Number((calculatedTotalMarks + cleanMarks).toFixed(2));
+
+      const instructions = q.instructions ? String(q.instructions).trim() : null;
+      let preparedAnswers = [];
+      let correctAnswerText = q.correct_answer_text ? String(q.correct_answer_text).trim() : null;
+
+      if (qType === 'MCQ') {
+        const rawAnswers = Array.isArray(q.answers)
+          ? q.answers
+          : Array.isArray(q.options)
+          ? q.options
+          : [];
+        const nonEmptyAnswers = rawAnswers
+          .map((ans, oIdx) => {
+            const ansText = typeof ans === 'string' ? ans.trim() : String(ans?.answer ?? ans?.text ?? '').trim();
+            const isCorr =
+              (typeof ans === 'object' && Number(ans?.is_correct) === 1) || Number(q.correct_answer) === oIdx ? 1 : 0;
+            return { answer: ansText, is_correct: isCorr };
+          })
+          .filter((a) => a.answer !== '');
+
+        if (nonEmptyAnswers.length < 2) {
+          const err = new Error(`Question #${qNum} (MCQ) must have at least 2 valid options.`);
+          err.statusCode = 400;
+          throw err;
+        }
+
+        if (!nonEmptyAnswers.some((a) => a.is_correct === 1)) {
+          nonEmptyAnswers[0].is_correct = 1;
+        }
+        const corrOpt = nonEmptyAnswers.find((a) => a.is_correct === 1);
+        correctAnswerText = corrOpt ? corrOpt.answer : null;
+        preparedAnswers = nonEmptyAnswers;
+      } else if (qType === 'TRUE_FALSE') {
+        const rawAnswers = Array.isArray(q.answers)
+          ? q.answers
+          : Array.isArray(q.options)
+          ? q.options
+          : [];
+        const opt0Text =
+          rawAnswers[0] && String(rawAnswers[0]?.answer ?? rawAnswers[0]?.text ?? rawAnswers[0] ?? '').trim()
+            ? String(rawAnswers[0]?.answer ?? rawAnswers[0]?.text ?? rawAnswers[0]).trim()
+            : 'True';
+        const opt1Text =
+          rawAnswers[1] && String(rawAnswers[1]?.answer ?? rawAnswers[1]?.text ?? rawAnswers[1] ?? '').trim()
+            ? String(rawAnswers[1]?.answer ?? rawAnswers[1]?.text ?? rawAnswers[1]).trim()
+            : 'False';
+
+        let corrIdx = 0;
+        if (
+          (typeof rawAnswers[1] === 'object' && Number(rawAnswers[1]?.is_correct) === 1) ||
+          Number(q.correct_answer) === 1 ||
+          String(q.correct_answer_text || '').trim().toLowerCase() === 'false'
+        ) {
+          corrIdx = 1;
+        }
+        preparedAnswers = [
+          { answer: opt0Text, is_correct: corrIdx === 0 ? 1 : 0 },
+          { answer: opt1Text, is_correct: corrIdx === 1 ? 1 : 0 },
+        ];
+        correctAnswerText = corrIdx === 0 ? opt0Text : opt1Text;
+      } else {
+        // SHORT_ANSWER or LONG_ANSWER
+        preparedAnswers = [];
+      }
+
+      preparedQuestions.push({
+        question: qText,
+        question_type: qType,
+        marks: cleanMarks,
+        instructions,
+        correct_answer_text: correctAnswerText,
+        answers: preparedAnswers,
+      });
+    }
+
+    if (
+      configuredTotalMarks !== undefined &&
+      configuredTotalMarks !== null &&
+      String(configuredTotalMarks).trim() !== ''
+    ) {
+      const targetTotal = Number(Number(configuredTotalMarks).toFixed(2));
+      if (isNaN(targetTotal) || targetTotal <= 0) {
+        const err = new Error('Configured Total Marks must be a positive number.');
+        err.statusCode = 400;
+        throw err;
+      }
+      if (Math.abs(targetTotal - calculatedTotalMarks) > 0.01) {
+        const err = new Error(
+          `Total question marks (${calculatedTotalMarks}) do not match the assignment's configured total marks (${targetTotal}).`
+        );
+        err.statusCode = 400;
+        throw err;
+      }
+    }
+
+    return {
+      preparedQuestions,
+      calculatedTotalMarks,
+    };
+  }
+
   static async getAssignments(schoolId, { classId, class_id, sectionId, section_id, subjectId, subject_id, assignmentTypeId, assignment_type_id, search, status, page, limit, branchId = null, branch_id = null, teacherId = null } = {}) {
     try {
+      await AcademicModel.ensureAssignmentSchema();
       const cId = classId || class_id;
       const sId = sectionId || section_id;
       const subId = subjectId || subject_id;
@@ -2775,6 +3417,15 @@ class AcademicModel {
         params.push(`%${String(search).trim()}%`, `%${String(search).trim()}%`);
       }
 
+      const selectFields = `
+        a.*, at.type_name, cm.class_name, sec.section_name, sm.subject_name,
+        (SELECT COUNT(*) FROM assignment_questions aq WHERE aq.assignment_id = a.id AND aq.school_id = a.school_id AND (aq.status != 4 OR aq.status IS NULL)) AS question_count,
+        COALESCE(a.total_marks, (SELECT ROUND(SUM(COALESCE(aq.marks, 1)), 2) FROM assignment_questions aq WHERE aq.assignment_id = a.id AND aq.school_id = a.school_id AND (aq.status != 4 OR aq.status IS NULL))) AS total_marks,
+        (SELECT COUNT(DISTINCT saa.student_id) FROM student_assignment_attempts saa WHERE saa.assignment_id = a.id AND saa.status = 1) AS submitted_count,
+        (SELECT COUNT(*) FROM student_master st WHERE st.school_id = a.school_id AND st.class = a.class_id AND (a.section_id IS NULL OR a.section_id = 0 OR st.section = a.section_id) AND (a.branch_id IS NULL OR st.branch_id = a.branch_id OR st.branch_id IS NULL) AND st.status != 4) AS total_students,
+        (SELECT ROUND(AVG(saa.score_percentage), 2) FROM student_assignment_attempts saa WHERE saa.assignment_id = a.id AND saa.status = 1) AS avg_score_percentage
+      `;
+
       // If pagination requested
       if (page && limit) {
         const countSql = `SELECT COUNT(*) AS total ${baseSql}`;
@@ -2786,8 +3437,7 @@ class AcademicModel {
         const offset = (numPage - 1) * numLimit;
 
         const dataSql = `
-          SELECT a.*, at.type_name, cm.class_name, sec.section_name, sm.subject_name,
-                 (SELECT COUNT(*) FROM assignment_questions aq WHERE aq.assignment_id = a.id AND aq.school_id = a.school_id AND (aq.status != 4 OR aq.status IS NULL)) AS question_count, (SELECT COUNT(*) FROM student_assignment_attempts saa WHERE saa.assignment_id = a.id AND (saa.status != 4 OR saa.status IS NULL)) AS submitted_count, (SELECT COUNT(*) FROM student_master st WHERE st.school_id = a.school_id AND st.class = a.class_id AND (a.section_id IS NULL OR a.section_id = 0 OR st.section = a.section_id) AND (a.branch_id IS NULL OR st.branch_id = a.branch_id OR st.branch_id IS NULL) AND st.status != 4) AS total_students, (SELECT ROUND(AVG(saa.score_percentage), 2) FROM student_assignment_attempts saa WHERE saa.assignment_id = a.id AND (saa.status != 4 OR saa.status IS NULL)) AS avg_score_percentage
+          SELECT ${selectFields}
           ${baseSql}
           ORDER BY a.id DESC
           LIMIT ? OFFSET ?
@@ -2806,8 +3456,7 @@ class AcademicModel {
       }
 
       const sql = `
-        SELECT a.*, at.type_name, cm.class_name, sec.section_name, sm.subject_name,
-               (SELECT COUNT(*) FROM assignment_questions aq WHERE aq.assignment_id = a.id AND aq.school_id = a.school_id AND (aq.status != 4 OR aq.status IS NULL)) AS question_count, (SELECT COUNT(*) FROM student_assignment_attempts saa WHERE saa.assignment_id = a.id AND (saa.status != 4 OR saa.status IS NULL)) AS submitted_count, (SELECT COUNT(*) FROM student_master st WHERE st.school_id = a.school_id AND st.class = a.class_id AND (a.section_id IS NULL OR a.section_id = 0 OR st.section = a.section_id) AND (a.branch_id IS NULL OR st.branch_id = a.branch_id OR st.branch_id IS NULL) AND st.status != 4) AS total_students, (SELECT ROUND(AVG(saa.score_percentage), 2) FROM student_assignment_attempts saa WHERE saa.assignment_id = a.id AND (saa.status != 4 OR saa.status IS NULL)) AS avg_score_percentage
+        SELECT ${selectFields}
         ${baseSql}
         ORDER BY a.id DESC
       `;
@@ -2821,9 +3470,14 @@ class AcademicModel {
 
   static async getAssignmentById(id, schoolId, branchId = null, teacherId = null) {
     try {
+      await AcademicModel.ensureAssignmentSchema();
       const cleanBranchId = AcademicModel.parseBranchId(branchId);
       let sql = `SELECT a.*, at.type_name, cm.class_name, sec.section_name, sm.subject_name,
-                (SELECT COUNT(*) FROM assignment_questions aq WHERE aq.assignment_id = a.id AND aq.school_id = a.school_id AND (aq.status != 4 OR aq.status IS NULL)) AS question_count, (SELECT COUNT(*) FROM student_assignment_attempts saa WHERE saa.assignment_id = a.id AND (saa.status != 4 OR saa.status IS NULL)) AS submitted_count, (SELECT COUNT(*) FROM student_master st WHERE st.school_id = a.school_id AND st.class = a.class_id AND (a.section_id IS NULL OR a.section_id = 0 OR st.section = a.section_id) AND (a.branch_id IS NULL OR st.branch_id = a.branch_id OR st.branch_id IS NULL) AND st.status != 4) AS total_students, (SELECT ROUND(AVG(saa.score_percentage), 2) FROM student_assignment_attempts saa WHERE saa.assignment_id = a.id AND (saa.status != 4 OR saa.status IS NULL)) AS avg_score_percentage
+                (SELECT COUNT(*) FROM assignment_questions aq WHERE aq.assignment_id = a.id AND aq.school_id = a.school_id AND (aq.status != 4 OR aq.status IS NULL)) AS question_count,
+                COALESCE(a.total_marks, (SELECT ROUND(SUM(COALESCE(aq.marks, 1)), 2) FROM assignment_questions aq WHERE aq.assignment_id = a.id AND aq.school_id = a.school_id AND (aq.status != 4 OR aq.status IS NULL))) AS total_marks,
+                (SELECT COUNT(DISTINCT saa.student_id) FROM student_assignment_attempts saa WHERE saa.assignment_id = a.id AND saa.status = 1) AS submitted_count,
+                (SELECT COUNT(*) FROM student_master st WHERE st.school_id = a.school_id AND st.class = a.class_id AND (a.section_id IS NULL OR a.section_id = 0 OR st.section = a.section_id) AND (a.branch_id IS NULL OR st.branch_id = a.branch_id OR st.branch_id IS NULL) AND st.status != 4) AS total_students,
+                (SELECT ROUND(AVG(saa.score_percentage), 2) FROM student_assignment_attempts saa WHERE saa.assignment_id = a.id AND saa.status = 1) AS avg_score_percentage
          FROM assignments a
          LEFT JOIN assignment_types at ON at.id = a.assignment_type_id
          LEFT JOIN class_master cm ON cm.id = a.class_id
@@ -2859,6 +3513,7 @@ class AcademicModel {
 
   static async getAssignmentQuestions(assignmentId, schoolId, branchId = null) {
     try {
+      await AcademicModel.ensureAssignmentSchema();
       const cleanBranchId = AcademicModel.parseBranchId(branchId);
 
       // Verify parent assignment belongs to school and branch
@@ -2902,6 +3557,9 @@ class AcademicModel {
 
       return questions.map((q) => ({
         ...q,
+        question_type: AcademicModel.normalizeQuestionType(q.question_type) || 'MCQ',
+        question_type_label: AcademicModel.getQuestionTypeLabel(q.question_type),
+        marks: q.marks != null ? Number(q.marks) : 1,
         answers: answers.filter((ans) => ans.question_id === q.id),
       }));
     } catch (e) {
@@ -2911,9 +3569,32 @@ class AcademicModel {
   }
 
   static async publishAssignment(id, schoolId, branchId = null) {
+    await AcademicModel.ensureAssignmentSchema();
     const cleanBranchId = AcademicModel.parseBranchId(branchId);
-    let sql = `UPDATE assignments SET is_published = 1 WHERE id = ? AND school_id = ? AND (status != 4 OR status IS NULL)`;
-    const params = [id, schoolId];
+
+    const existing = await AcademicModel.getAssignmentById(id, schoolId, cleanBranchId);
+    if (!existing) return false;
+
+    const questions = await AcademicModel.getAssignmentQuestions(id, schoolId, cleanBranchId);
+    if (!questions || questions.length === 0) {
+      const err = new Error('Cannot publish assignment without any questions.');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const sumMarks = Number(questions.reduce((acc, q) => acc + (Number(q.marks) || 1), 0).toFixed(2));
+    if (existing.total_marks != null && Number(existing.total_marks) > 0) {
+      if (Math.abs(Number(existing.total_marks) - sumMarks) > 0.01) {
+        const err = new Error(
+          `Cannot publish: Total question marks (${sumMarks}) must match the assignment's configured total marks (${Number(existing.total_marks)}).`
+        );
+        err.statusCode = 400;
+        throw err;
+      }
+    }
+
+    let sql = `UPDATE assignments SET is_published = 1, total_marks = COALESCE(total_marks, ?) WHERE id = ? AND school_id = ? AND (status != 4 OR status IS NULL)`;
+    const params = [sumMarks, id, schoolId];
     if (cleanBranchId) {
       sql += ` AND branch_id = ?`;
       params.push(cleanBranchId);
@@ -2923,6 +3604,7 @@ class AcademicModel {
   }
 
   static async createAssignment(schoolId, data, branchId = null, teacherId = null) {
+    await AcademicModel.ensureAssignmentSchema();
     const {
       branch_id = null,
       assignment_type_id,
@@ -2931,10 +3613,82 @@ class AcademicModel {
       section_id,
       subject_id,
       assigned_date,
+      start_date,
+      start_time = null,
       due_date,
+      end_date,
+      end_time = null,
+      duration_minutes = null,
+      total_marks = null,
+      passing_marks = null,
+      max_attempts = 1,
+      instructions = null,
       is_published = 0,
       questions = [],
     } = data || {};
+
+    const effectiveStartDate = assigned_date || start_date || new Date().toISOString().split('T')[0];
+    const effectiveEndDate = due_date || end_date;
+    if (!effectiveEndDate) {
+      const err = new Error('End Date (Due Date) is required.');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const startDt = AcademicModel.combineDateAndTime(effectiveStartDate, start_time, false);
+    const endDt = AcademicModel.combineDateAndTime(effectiveEndDate, end_time, true);
+    if (startDt && endDt && endDt.getTime() <= startDt.getTime()) {
+      const err = new Error('End Date & Time must be after Start Date & Time.');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    let cleanDuration = null;
+    if (duration_minutes !== undefined && duration_minutes !== null && String(duration_minutes).trim() !== '') {
+      cleanDuration = parseInt(duration_minutes, 10);
+      if (isNaN(cleanDuration) || cleanDuration <= 0) {
+        const err = new Error('Total Duration (in minutes) must be a positive whole number.');
+        err.statusCode = 400;
+        throw err;
+      }
+    }
+
+    let cleanMaxAttempts = 1;
+    if (max_attempts !== undefined && max_attempts !== null && String(max_attempts).trim() !== '') {
+      cleanMaxAttempts = parseInt(max_attempts, 10);
+      if (isNaN(cleanMaxAttempts) || cleanMaxAttempts < 1) {
+        const err = new Error('Number of Attempts Allowed must be at least 1.');
+        err.statusCode = 400;
+        throw err;
+      }
+    }
+
+    const { preparedQuestions, calculatedTotalMarks } = AcademicModel.validateAndPrepareQuestions(
+      questions,
+      total_marks
+    );
+
+    const effectiveTotalMarks =
+      total_marks !== undefined && total_marks !== null && String(total_marks).trim() !== ''
+        ? Number(Number(total_marks).toFixed(2))
+        : calculatedTotalMarks;
+
+    let cleanPassingMarks = null;
+    if (passing_marks !== undefined && passing_marks !== null && String(passing_marks).trim() !== '') {
+      cleanPassingMarks = Number(Number(passing_marks).toFixed(2));
+      if (isNaN(cleanPassingMarks) || cleanPassingMarks < 0) {
+        const err = new Error('Passing Marks cannot be negative.');
+        err.statusCode = 400;
+        throw err;
+      }
+      if (cleanPassingMarks > effectiveTotalMarks) {
+        const err = new Error(
+          `Passing Marks (${cleanPassingMarks}) cannot exceed Total Marks (${effectiveTotalMarks}).`
+        );
+        err.statusCode = 400;
+        throw err;
+      }
+    }
 
     const requestedBranchId = AcademicModel.parseBranchId(branch_id ?? branchId);
     const validatedBranchId = await AcademicModel.validateAssignmentRelations(
@@ -2951,8 +3705,13 @@ class AcademicModel {
       await connection.beginTransaction();
 
       const [result] = await connection.query(
-        `INSERT INTO assignments (school_id, branch_id, assignment_type_id, title, class_id, section_id, subject_id, assigned_date, due_date, status, is_published, created_on)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, NOW())`,
+        `INSERT INTO assignments (
+           school_id, branch_id, assignment_type_id, title, class_id, section_id, subject_id,
+           assigned_date, start_time, due_date, end_time, duration_minutes,
+           total_marks, passing_marks, max_attempts, instructions,
+           status, is_published, created_on
+         )
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, NOW())`,
         [
           schoolId,
           resolvedBranchId,
@@ -2961,38 +3720,45 @@ class AcademicModel {
           class_id,
           section_id || null,
           subject_id,
-          assigned_date || new Date().toISOString().split('T')[0],
-          due_date,
-          is_published,
+          effectiveStartDate,
+          start_time ? String(start_time).trim() : null,
+          effectiveEndDate,
+          end_time ? String(end_time).trim() : null,
+          cleanDuration,
+          effectiveTotalMarks,
+          cleanPassingMarks,
+          cleanMaxAttempts,
+          instructions ? String(instructions).trim() : null,
+          Number(is_published) === 1 ? 1 : 0,
         ]
       );
       const assignmentId = result.insertId;
 
-      if (Array.isArray(questions) && questions.length > 0) {
-        for (const q of questions) {
-          const qText = q.question || q.title || '';
-          if (!qText.trim()) continue;
+      for (const q of preparedQuestions) {
+        const [qResult] = await connection.query(
+          `INSERT INTO assignment_questions (
+             school_id, branch_id, assignment_id, question, question_type, marks, instructions, correct_answer_text, status, created_at
+           )
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())`,
+          [
+            schoolId,
+            resolvedBranchId,
+            assignmentId,
+            q.question,
+            q.question_type,
+            q.marks,
+            q.instructions,
+            q.correct_answer_text,
+          ]
+        );
+        const questionId = qResult.insertId;
 
-          const [qResult] = await connection.query(
-            `INSERT INTO assignment_questions (school_id, branch_id, assignment_id, question, status, created_at)
-             VALUES (?, ?, ?, ?, 1, NOW())`,
-            [schoolId, resolvedBranchId, assignmentId, qText.trim()]
+        for (const ans of q.answers) {
+          await connection.query(
+            `INSERT INTO assignment_answers (school_id, branch_id, question_id, answer, is_correct, status, created_at)
+             VALUES (?, ?, ?, ?, ?, 1, NOW())`,
+            [schoolId, resolvedBranchId, questionId, ans.answer, ans.is_correct]
           );
-          const questionId = qResult.insertId;
-
-          const answers = Array.isArray(q.answers) ? q.answers : Array.isArray(q.options) ? q.options : [];
-          for (let i = 0; i < answers.length; i++) {
-            const ans = answers[i];
-            const ansText = typeof ans === 'string' ? ans : (ans.answer || ans.text || '');
-            if (!ansText.trim()) continue;
-
-            const isCorrect = (typeof ans === 'object' && Number(ans.is_correct) === 1) || (Number(q.correct_answer) === i) ? 1 : 0;
-            await connection.query(
-              `INSERT INTO assignment_answers (school_id, branch_id, question_id, answer, is_correct, status, created_at)
-               VALUES (?, ?, ?, ?, ?, 1, NOW())`,
-              [schoolId, resolvedBranchId, questionId, ansText.trim(), isCorrect]
-            );
-          }
         }
       }
 
@@ -3007,6 +3773,7 @@ class AcademicModel {
   }
 
   static async updateAssignment(id, schoolId, data, branchId = null, teacherId = null) {
+    await AcademicModel.ensureAssignmentSchema();
     const {
       assignment_type_id,
       title,
@@ -3014,7 +3781,16 @@ class AcademicModel {
       section_id,
       subject_id,
       assigned_date,
+      start_date,
+      start_time,
       due_date,
+      end_date,
+      end_time,
+      duration_minutes,
+      total_marks,
+      passing_marks,
+      max_attempts,
+      instructions,
       is_published,
       questions,
     } = data || {};
@@ -3036,7 +3812,88 @@ class AcademicModel {
       return false;
     }
     const existing = existingRows[0];
+    if (Number(existing.is_published) === 1) {
+      const err = new Error('Published assignments are locked and cannot be edited.');
+      err.statusCode = 400;
+      throw err;
+    }
+
     const targetBranchId = filterBranch || AcademicModel.parseBranchId(existing.resolved_branch_id);
+
+    const effectiveStartDate = assigned_date || start_date || existing.assigned_date;
+    const effectiveEndDate = due_date || end_date || existing.due_date;
+    const effectiveStartTime = start_time !== undefined ? (start_time ? String(start_time).trim() : null) : existing.start_time;
+    const effectiveEndTime = end_time !== undefined ? (end_time ? String(end_time).trim() : null) : existing.end_time;
+
+    const startDt = AcademicModel.combineDateAndTime(effectiveStartDate, effectiveStartTime, false);
+    const endDt = AcademicModel.combineDateAndTime(effectiveEndDate, effectiveEndTime, true);
+    if (startDt && endDt && endDt.getTime() <= startDt.getTime()) {
+      const err = new Error('End Date & Time must be after Start Date & Time.');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    let cleanDuration = existing.duration_minutes;
+    if (duration_minutes !== undefined) {
+      if (duration_minutes === null || String(duration_minutes).trim() === '') {
+        cleanDuration = null;
+      } else {
+        cleanDuration = parseInt(duration_minutes, 10);
+        if (isNaN(cleanDuration) || cleanDuration <= 0) {
+          const err = new Error('Total Duration (in minutes) must be a positive whole number.');
+          err.statusCode = 400;
+          throw err;
+        }
+      }
+    }
+
+    let cleanMaxAttempts = existing.max_attempts || 1;
+    if (max_attempts !== undefined && max_attempts !== null && String(max_attempts).trim() !== '') {
+      cleanMaxAttempts = parseInt(max_attempts, 10);
+      if (isNaN(cleanMaxAttempts) || cleanMaxAttempts < 1) {
+        const err = new Error('Number of Attempts Allowed must be at least 1.');
+        err.statusCode = 400;
+        throw err;
+      }
+    }
+
+    let preparedQuestions = null;
+    let effectiveTotalMarks =
+      total_marks !== undefined && total_marks !== null && String(total_marks).trim() !== ''
+        ? Number(Number(total_marks).toFixed(2))
+        : existing.total_marks != null
+        ? Number(existing.total_marks)
+        : null;
+
+    if (Array.isArray(questions)) {
+      const validated = AcademicModel.validateAndPrepareQuestions(questions, total_marks);
+      preparedQuestions = validated.preparedQuestions;
+      effectiveTotalMarks =
+        total_marks !== undefined && total_marks !== null && String(total_marks).trim() !== ''
+          ? Number(Number(total_marks).toFixed(2))
+          : validated.calculatedTotalMarks;
+    }
+
+    let cleanPassingMarks = existing.passing_marks;
+    if (passing_marks !== undefined) {
+      if (passing_marks === null || String(passing_marks).trim() === '') {
+        cleanPassingMarks = null;
+      } else {
+        cleanPassingMarks = Number(Number(passing_marks).toFixed(2));
+        if (isNaN(cleanPassingMarks) || cleanPassingMarks < 0) {
+          const err = new Error('Passing Marks cannot be negative.');
+          err.statusCode = 400;
+          throw err;
+        }
+        if (effectiveTotalMarks != null && cleanPassingMarks > effectiveTotalMarks) {
+          const err = new Error(
+            `Passing Marks (${cleanPassingMarks}) cannot exceed Total Marks (${effectiveTotalMarks}).`
+          );
+          err.statusCode = 400;
+          throw err;
+        }
+      }
+    }
 
     // 2. Validate relations and branch-scoped duplicate check
     const mergedData = {
@@ -3066,7 +3923,14 @@ class AcademicModel {
              section_id = COALESCE(?, section_id),
              subject_id = COALESCE(?, subject_id),
              assigned_date = COALESCE(?, assigned_date),
+             start_time = ?,
              due_date = COALESCE(?, due_date),
+             end_time = ?,
+             duration_minutes = ?,
+             total_marks = ?,
+             passing_marks = ?,
+             max_attempts = ?,
+             instructions = ?,
              is_published = COALESCE(?, is_published),
              branch_id = COALESCE(?, branch_id)
          WHERE id = ? AND school_id = ?`;
@@ -3076,8 +3940,15 @@ class AcademicModel {
         class_id || null,
         section_id || null,
         subject_id || null,
-        assigned_date || null,
-        due_date || null,
+        effectiveStartDate || null,
+        effectiveStartTime,
+        effectiveEndDate || null,
+        effectiveEndTime,
+        cleanDuration,
+        effectiveTotalMarks,
+        cleanPassingMarks,
+        cleanMaxAttempts,
+        instructions !== undefined ? (instructions ? String(instructions).trim() : null) : existing.instructions,
         is_published !== undefined ? is_published : null,
         resolvedBranchId || null,
         id,
@@ -3093,7 +3964,7 @@ class AcademicModel {
         return false;
       }
 
-      if (Array.isArray(questions)) {
+      if (Array.isArray(preparedQuestions)) {
         // Soft delete old questions and answers scoped to school and branch
         let oldQSql = `SELECT id FROM assignment_questions WHERE assignment_id = ? AND school_id = ?`;
         const oldQParams = [id, schoolId];
@@ -3114,29 +3985,30 @@ class AcademicModel {
           );
         }
 
-        // Insert updated questions and answers
-        for (const q of questions) {
-          const qText = q.question || q.title || '';
-          if (!qText.trim()) continue;
-
+        for (const q of preparedQuestions) {
           const [qResult] = await connection.query(
-            `INSERT INTO assignment_questions (school_id, branch_id, assignment_id, question, status, created_at)
-             VALUES (?, ?, ?, ?, 1, NOW())`,
-            [schoolId, resolvedBranchId, id, qText.trim()]
+            `INSERT INTO assignment_questions (
+               school_id, branch_id, assignment_id, question, question_type, marks, instructions, correct_answer_text, status, created_at
+             )
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())`,
+            [
+              schoolId,
+              resolvedBranchId,
+              id,
+              q.question,
+              q.question_type,
+              q.marks,
+              q.instructions,
+              q.correct_answer_text,
+            ]
           );
           const questionId = qResult.insertId;
 
-          const answers = Array.isArray(q.answers) ? q.answers : Array.isArray(q.options) ? q.options : [];
-          for (let i = 0; i < answers.length; i++) {
-            const ans = answers[i];
-            const ansText = typeof ans === 'string' ? ans : (ans.answer || ans.text || '');
-            if (!ansText.trim()) continue;
-
-            const isCorrect = (typeof ans === 'object' && Number(ans.is_correct) === 1) || (Number(q.correct_answer) === i) ? 1 : 0;
+          for (const ans of q.answers) {
             await connection.query(
               `INSERT INTO assignment_answers (school_id, branch_id, question_id, answer, is_correct, status, created_at)
                VALUES (?, ?, ?, ?, ?, 1, NOW())`,
-              [schoolId, resolvedBranchId, questionId, ansText.trim(), isCorrect]
+              [schoolId, resolvedBranchId, questionId, ans.answer, ans.is_correct]
             );
           }
         }
@@ -3176,28 +4048,16 @@ class AcademicModel {
     return result.affectedRows > 0;
   }
 
-  static isAssignmentDeadlineExpired(dueDate) {
+  static isAssignmentDeadlineExpired(dueDate, endTime = null) {
     if (!dueDate) return false;
-    const now = new Date();
-    const dueStr =
-      dueDate instanceof Date
-        ? dueDate.toISOString().split('T')[0]
-        : String(dueDate).trim();
-    let deadline;
-    if (dueStr.includes(':') || dueDate instanceof Date) {
-      deadline = new Date(dueDate);
-      if (!dueStr.includes(':')) {
-        deadline.setHours(23, 59, 59, 999);
-      }
-    } else {
-      deadline = new Date(`${dueStr}T23:59:59.999`);
-    }
-    if (isNaN(deadline.getTime())) return false;
-    return now > deadline;
+    const endDt = AcademicModel.combineDateAndTime(dueDate, endTime, true);
+    if (!endDt) return false;
+    return Date.now() > endDt.getTime();
   }
 
   static async getAssignmentSubmissions(assignmentId, schoolId, { branchId = null, teacherId = null } = {}) {
     try {
+      await AcademicModel.ensureAssignmentSchema();
       const cleanBranchId = AcademicModel.parseBranchId(branchId);
       const assignment = await AcademicModel.getAssignmentById(assignmentId, schoolId, cleanBranchId, teacherId);
       if (!assignment) return null;
@@ -3250,15 +4110,23 @@ class AcademicModel {
            s.section AS section_id,
            sec.section_name,
            att.id AS attempt_id,
+           att.attempt_number,
            att.total_questions AS attempt_total_questions,
            att.correct_answers,
+           att.obtained_marks,
+           att.total_marks AS attempt_total_marks,
+           att.is_passed,
            att.score_percentage,
            att.attempted_at
          FROM student_master s
          LEFT JOIN class_master cm ON cm.id = s.class
          LEFT JOIN section_master sec ON sec.id = s.section
          LEFT JOIN student_assignment_attempts att
-           ON att.assignment_id = ? AND att.student_id = s.id AND (att.status != 4 OR att.status IS NULL)
+           ON att.id = (
+             SELECT saa.id FROM student_assignment_attempts saa
+             WHERE saa.assignment_id = ? AND saa.student_id = s.id AND saa.status = 1
+             ORDER BY saa.id DESC LIMIT 1
+           )
          WHERE s.school_id = ?
            AND s.status != 4
            AND (
@@ -3285,7 +4153,7 @@ class AcademicModel {
         ]
       );
 
-      const isExpired = AcademicModel.isAssignmentDeadlineExpired(assignment.due_date);
+      const isExpired = AcademicModel.isAssignmentDeadlineExpired(assignment.due_date, assignment.end_time);
       const totalQuestionsCount = Number(assignment.question_count) || 0;
 
       let submittedCount = 0;
@@ -3325,11 +4193,20 @@ class AcademicModel {
           section_id: row.section_id,
           section_name: row.section_name,
           attempt_id: row.attempt_id || null,
+          attempt_number: row.attempt_number ? Number(row.attempt_number) : null,
           is_submitted: isSubmitted,
           submission_status: submissionStatus,
           status: isSubmitted ? 'Attempted' : isExpired ? 'Expired' : 'Pending',
           total_questions: isSubmitted ? Number(row.attempt_total_questions || totalQuestionsCount) : totalQuestionsCount,
           correct_answers: isSubmitted ? Number(row.correct_answers || 0) : null,
+          obtained_marks: isSubmitted && row.obtained_marks != null ? Number(row.obtained_marks) : null,
+          total_marks:
+            isSubmitted && row.attempt_total_marks != null
+              ? Number(row.attempt_total_marks)
+              : assignment.total_marks != null
+              ? Number(assignment.total_marks)
+              : null,
+          is_passed: isSubmitted && row.is_passed != null ? Number(row.is_passed) === 1 : null,
           score_percentage: isSubmitted && row.score_percentage != null ? Number(row.score_percentage) : null,
           attempted_at: row.attempted_at || null,
         };
@@ -3369,6 +4246,7 @@ class AcademicModel {
 
   static async getStudentAssignmentSubmissionDetail(assignmentId, studentId, schoolId, { branchId = null, teacherId = null } = {}) {
     try {
+      await AcademicModel.ensureAssignmentSchema();
       const cleanBranchId = AcademicModel.parseBranchId(branchId);
       const assignment = await AcademicModel.getAssignmentById(assignmentId, schoolId, cleanBranchId, teacherId);
       if (!assignment) return null;
@@ -3398,14 +4276,15 @@ class AcademicModel {
 
       const [attRows] = await pool.query(
         `SELECT * FROM student_assignment_attempts
-         WHERE assignment_id = ? AND student_id = ? AND (status != 4 OR status IS NULL)
+         WHERE assignment_id = ? AND student_id = ? AND status = 1
          ORDER BY id DESC LIMIT 1`,
         [assignmentId, studentId]
       );
       const attempt = attRows?.[0] || null;
 
       const [questions] = await pool.query(
-        `SELECT id, question, status FROM assignment_questions
+        `SELECT id, question, question_type, marks, instructions, correct_answer_text, status
+         FROM assignment_questions
          WHERE assignment_id = ? AND school_id = ? AND (status != 4 OR status IS NULL)
          ORDER BY id ASC`,
         [assignmentId, schoolId]
@@ -3421,12 +4300,15 @@ class AcademicModel {
           [questionIds, schoolId]
         );
 
-        const [submissions] = await pool.query(
-          `SELECT question_id, selected_answer_id, is_correct, created_at
+        let subSql = `SELECT question_id, selected_answer_id, answer_text, is_correct, marks_awarded, created_at
            FROM student_assignment_submissions
-           WHERE assignment_id = ? AND student_id = ?`,
-          [assignmentId, studentId]
-        );
+           WHERE assignment_id = ? AND student_id = ?`;
+        const subParams = [assignmentId, studentId];
+        if (attempt?.id) {
+          subSql += ` AND attempt_id = ?`;
+          subParams.push(attempt.id);
+        }
+        const [submissions] = await pool.query(subSql, subParams);
 
         const subMap = {};
         (submissions || []).forEach((s) => {
@@ -3434,6 +4316,9 @@ class AcademicModel {
         });
 
         questions.forEach((q) => {
+          q.question_type = AcademicModel.normalizeQuestionType(q.question_type) || 'MCQ';
+          q.question_type_label = AcademicModel.getQuestionTypeLabel(q.question_type);
+          q.marks = q.marks != null ? Number(q.marks) : 1;
           const qOpts = (options || []).filter((o) => Number(o.question_id) === Number(q.id));
           q.options = qOpts;
           q.answers = qOpts;
@@ -3451,6 +4336,825 @@ class AcademicModel {
       console.error('Error in getStudentAssignmentSubmissionDetail:', e.message);
       throw e;
     }
+  }
+
+  // ==================== STUDENT PORTAL ASSIGNMENTS ====================
+  static async getStudentDashboardAssignmentStats(studentId, schoolId, branchId, classId, sectionId) {
+    await AcademicModel.ensureAssignmentSchema();
+    const sql = `
+      SELECT 
+        a.id,
+        (
+          SELECT saa.id FROM student_assignment_attempts saa
+          WHERE saa.assignment_id = a.id AND saa.student_id = ? AND saa.status = 1
+          ORDER BY saa.id DESC LIMIT 1
+        ) AS attempt_id
+      FROM assignments a
+      WHERE (a.school_id = ? OR ? IS NULL)
+        AND (a.branch_id = ? OR a.branch_id IS NULL OR ? IS NULL)
+        AND (a.class_id = ? OR ? IS NULL)
+        AND (a.section_id = ? OR a.section_id IS NULL OR a.section_id = 0 OR ? IS NULL)
+        AND (a.status != 4 OR a.status IS NULL)
+        AND a.is_published = 1
+    `;
+    const [assignRows] = await pool.query(sql, [
+      studentId,
+      schoolId,
+      schoolId,
+      branchId,
+      branchId,
+      classId,
+      classId,
+      sectionId,
+      sectionId,
+    ]);
+    const list = assignRows || [];
+    const totalAssignments = list.length;
+    const attemptedAssignments = list.filter((a) => a.attempt_id != null).length;
+    const pendingAssignments = Math.max(0, totalAssignments - attemptedAssignments);
+    return {
+      totalAssignments,
+      attemptedAssignments,
+      pendingAssignments,
+    };
+  }
+
+  static async getStudentAssignments(studentId, schoolId, branchId, classId, sectionId) {
+    await AcademicModel.ensureAssignmentSchema();
+    const sql = `
+      SELECT 
+        a.id,
+        a.school_id,
+        a.branch_id,
+        a.title,
+        a.assignment_type_id,
+        at.type_name AS assignment_type,
+        a.class_id,
+        cm.class_name,
+        a.section_id,
+        sec.section_name,
+        a.subject_id,
+        COALESCE(sub.subject_name, 'General') AS subject_name,
+        a.assigned_date,
+        a.start_time,
+        a.due_date,
+        a.end_time,
+        a.duration_minutes,
+        COALESCE(a.total_marks, q.sum_marks, 0) AS total_marks,
+        a.passing_marks,
+        COALESCE(a.max_attempts, 1) AS max_attempts,
+        a.instructions,
+        a.status AS assignment_status,
+        a.is_published,
+        a.created_on,
+        COALESCE(q.total_questions, 0) AS total_questions,
+        COALESCE(att_stats.attempts_used, 0) AS attempts_used,
+        in_prog.id AS in_progress_attempt_id,
+        in_prog.started_at AS in_progress_started_at,
+        att.id AS attempt_id,
+        att.attempt_number,
+        att.correct_answers,
+        att.obtained_marks,
+        att.total_marks AS attempt_total_marks,
+        att.is_passed,
+        att.score_percentage,
+        att.attempted_at
+      FROM assignments a
+      LEFT JOIN assignment_types at ON a.assignment_type_id = at.id
+      LEFT JOIN class_master cm ON a.class_id = cm.id
+      LEFT JOIN section_master sec ON a.section_id = sec.id
+      LEFT JOIN subject_master sub ON a.subject_id = sub.id
+      LEFT JOIN (
+        SELECT assignment_id, COUNT(*) AS total_questions, ROUND(SUM(COALESCE(marks, 1)), 2) AS sum_marks
+        FROM assignment_questions
+        WHERE status != 4 OR status IS NULL
+        GROUP BY assignment_id
+      ) q ON a.id = q.assignment_id
+      LEFT JOIN (
+        SELECT assignment_id, COUNT(*) AS attempts_used
+        FROM student_assignment_attempts
+        WHERE student_id = ? AND status = 1
+        GROUP BY assignment_id
+      ) att_stats ON a.id = att_stats.assignment_id
+      LEFT JOIN student_assignment_attempts in_prog
+        ON in_prog.id = (
+          SELECT saa_ip.id FROM student_assignment_attempts saa_ip
+          WHERE saa_ip.assignment_id = a.id AND saa_ip.student_id = ? AND saa_ip.status = 2
+          ORDER BY saa_ip.id DESC LIMIT 1
+        )
+      LEFT JOIN student_assignment_attempts att
+        ON att.id = (
+          SELECT saa_last.id FROM student_assignment_attempts saa_last
+          WHERE saa_last.assignment_id = a.id AND saa_last.student_id = ? AND saa_last.status = 1
+          ORDER BY saa_last.id DESC LIMIT 1
+        )
+      WHERE (a.school_id = ? OR ? IS NULL)
+        AND (a.branch_id = ? OR a.branch_id IS NULL OR ? IS NULL)
+        AND (a.class_id = ? OR ? IS NULL)
+        AND (a.section_id = ? OR a.section_id IS NULL OR a.section_id = 0 OR ? IS NULL)
+        AND (a.status != 4 OR a.status IS NULL)
+        AND a.is_published = 1
+      ORDER BY a.id DESC
+    `;
+
+    const [rows] = await pool.query(sql, [
+      studentId,
+      studentId,
+      studentId,
+      schoolId,
+      schoolId,
+      branchId,
+      branchId,
+      classId,
+      classId,
+      sectionId,
+      sectionId,
+    ]);
+
+    const now = new Date();
+    const serverNowIso = now.toISOString();
+
+    return (rows || []).map((row) => {
+      const schedule = AcademicModel.getAssignmentScheduleState(row, now);
+      const maxAttempts = Math.max(1, Number(row.max_attempts) || 1);
+      const attemptsUsed = Number(row.attempts_used) || 0;
+      const attemptsRemaining = Math.max(0, maxAttempts - attemptsUsed);
+      const isAttempted = row.attempt_id != null && attemptsUsed > 0;
+      const hasInProgress = row.in_progress_attempt_id != null && !schedule.isExpired;
+      const canReattempt = isAttempted && attemptsRemaining > 0 && schedule.isAvailable;
+      const canStart = (!isAttempted || canReattempt || hasInProgress) && schedule.isAvailable;
+
+      let status = 'Pending';
+      if (isAttempted && !hasInProgress) {
+        status = 'Attempted';
+      } else if (schedule.isExpired) {
+        status = 'Expired';
+      } else if (schedule.isNotStarted) {
+        status = 'Scheduled';
+      } else if (hasInProgress) {
+        status = 'In Progress';
+      }
+
+      return {
+        ...row,
+        max_attempts: maxAttempts,
+        attempts_used: attemptsUsed,
+        attempts_remaining: attemptsRemaining,
+        start_datetime: schedule.startDateTime,
+        end_datetime: schedule.endDateTime,
+        is_not_started: schedule.isNotStarted,
+        is_expired: schedule.isExpired,
+        is_available: schedule.isAvailable,
+        has_in_progress: hasInProgress,
+        can_attempt: canStart,
+        can_reattempt: canReattempt,
+        server_now: serverNowIso,
+        status,
+      };
+    });
+  }
+
+  static async getStudentAssignmentForAttempt(assignmentId, studentId, schoolId) {
+    await AcademicModel.ensureAssignmentSchema();
+
+    // 1. Verify student and assignment
+    const [stuRows] = await pool.query(
+      `SELECT id, class, section, branch_id FROM student_master WHERE id = ? AND school_id = ? AND status != 4 LIMIT 1`,
+      [studentId, schoolId]
+    );
+    const student = stuRows?.[0] || null;
+
+    const [asgRows] = await pool.query(
+      `SELECT 
+         a.*,
+         cm.class_name,
+         sec.section_name,
+         COALESCE(sub.subject_name, 'General') AS subject_name,
+         at.type_name AS assignment_type
+       FROM assignments a
+       LEFT JOIN class_master cm ON a.class_id = cm.id
+       LEFT JOIN section_master sec ON a.section_id = sec.id
+       LEFT JOIN subject_master sub ON a.subject_id = sub.id
+       LEFT JOIN assignment_types at ON a.assignment_type_id = at.id
+       WHERE a.id = ? AND (a.school_id = ? OR ? IS NULL) AND (a.status != 4 OR a.status IS NULL) AND a.is_published = 1`,
+      [assignmentId, schoolId, schoolId]
+    );
+
+    if (!asgRows || asgRows.length === 0) {
+      const err = new Error('Assignment not found or not published.');
+      err.statusCode = 404;
+      throw err;
+    }
+    const assignment = asgRows[0];
+
+    if (student && assignment.class_id && Number(student.class) !== Number(assignment.class_id)) {
+      const err = new Error('This assignment is not assigned to your class.');
+      err.statusCode = 403;
+      throw err;
+    }
+    if (
+      student &&
+      assignment.section_id &&
+      Number(assignment.section_id) > 0 &&
+      student.section &&
+      Number(student.section) !== Number(assignment.section_id)
+    ) {
+      const err = new Error('This assignment is not assigned to your section.');
+      err.statusCode = 403;
+      throw err;
+    }
+
+    const now = new Date();
+    const nowMs = now.getTime();
+    const schedule = AcademicModel.getAssignmentScheduleState(assignment, now);
+
+    // Prevent access before scheduled start date & time
+    if (schedule.isNotStarted) {
+      const startDisplay = `${assignment.assigned_date || ''}${assignment.start_time ? ` at ${assignment.start_time}` : ''}`.trim();
+      const err = new Error(
+        `This assignment is scheduled to become available on ${startDisplay}. You cannot access it before the start time.`
+      );
+      err.statusCode = 403;
+      err.data = {
+        isNotStarted: true,
+        assigned_date: assignment.assigned_date,
+        start_time: assignment.start_time,
+        start_datetime: schedule.startDateTime,
+        server_now: now.toISOString(),
+      };
+      throw err;
+    }
+
+    const maxAttempts = Math.max(1, Number(assignment.max_attempts) || 1);
+
+    // Check completed attempts and any active in-progress attempt
+    const [completedAttRows] = await pool.query(
+      `SELECT * FROM student_assignment_attempts
+       WHERE assignment_id = ? AND student_id = ? AND status = 1
+       ORDER BY id DESC`,
+      [assignmentId, studentId]
+    );
+    const attemptsUsed = completedAttRows.length;
+    const latestCompletedAttempt = completedAttRows[0] || null;
+
+    const [inProgRows] = await pool.query(
+      `SELECT * FROM student_assignment_attempts
+       WHERE assignment_id = ? AND student_id = ? AND status = 2
+       ORDER BY id DESC LIMIT 1`,
+      [assignmentId, studentId]
+    );
+    let activeAttempt = inProgRows[0] || null;
+
+    // Check if assignment end date/time has passed
+    if (schedule.isExpired) {
+      if (attemptsUsed === 0) {
+        const err = new Error(
+          'The deadline for this assignment has expired. You can no longer answer questions or submit this assignment.'
+        );
+        err.statusCode = 403;
+        err.data = {
+          isExpired: true,
+          due_date: assignment.due_date,
+          end_time: assignment.end_time,
+          end_datetime: schedule.endDateTime,
+          server_now: now.toISOString(),
+          assignment: {
+            id: assignment.id,
+            title: assignment.title,
+            due_date: assignment.due_date,
+            end_time: assignment.end_time,
+            subject_name: assignment.subject_name,
+          },
+        };
+        throw err;
+      }
+      return {
+        assignment: {
+          ...assignment,
+          start_datetime: schedule.startDateTime,
+          end_datetime: schedule.endDateTime,
+        },
+        alreadyAttempted: latestCompletedAttempt,
+        attemptsUsed,
+        maxAttempts,
+        attemptsRemaining: 0,
+        isExpired: true,
+        serverNow: now.toISOString(),
+        questions: [],
+      };
+    }
+
+    // If student has already used all allowed attempts and has no active in-progress attempt
+    if (!activeAttempt && attemptsUsed >= maxAttempts) {
+      return {
+        assignment: {
+          ...assignment,
+          start_datetime: schedule.startDateTime,
+          end_datetime: schedule.endDateTime,
+        },
+        alreadyAttempted: latestCompletedAttempt,
+        attemptsUsed,
+        maxAttempts,
+        attemptsRemaining: 0,
+        isExpired: false,
+        serverNow: now.toISOString(),
+        questions: [],
+      };
+    }
+
+    // Fetch questions (strictly excluding correct_answer_text and is_correct)
+    const [questions] = await pool.query(
+      `SELECT id, question, question_type, marks, instructions, status
+       FROM assignment_questions
+       WHERE assignment_id = ? AND (status = 1 OR status IS NULL) AND status != 4
+       ORDER BY id ASC`,
+      [assignmentId]
+    );
+
+    let calculatedTotalMarks = 0;
+    if (questions.length > 0) {
+      const qIds = questions.map((q) => q.id);
+      const [allOptions] = await pool.query(
+        `SELECT id, question_id, answer, status
+         FROM assignment_answers
+         WHERE question_id IN (?) AND (status = 1 OR status IS NULL) AND status != 4
+         ORDER BY id ASC`,
+        [qIds]
+      );
+
+      for (const q of questions) {
+        q.question_type = AcademicModel.normalizeQuestionType(q.question_type) || 'MCQ';
+        q.question_type_label = AcademicModel.getQuestionTypeLabel(q.question_type);
+        q.marks = q.marks != null ? Number(q.marks) : 1;
+        calculatedTotalMarks = Number((calculatedTotalMarks + q.marks).toFixed(2));
+        if (q.question_type === 'MCQ' || q.question_type === 'TRUE_FALSE') {
+          q.options = (allOptions || []).filter((o) => Number(o.question_id) === Number(q.id));
+        } else {
+          q.options = [];
+        }
+      }
+    }
+
+    const effectiveTotalMarks =
+      assignment.total_marks != null && Number(assignment.total_marks) > 0
+        ? Number(assignment.total_marks)
+        : calculatedTotalMarks;
+
+    const branchId = student?.branch_id || assignment.branch_id || null;
+
+    // Start an in-progress attempt on the server if none is active
+    if (!activeAttempt) {
+      const nextAttemptNumber = attemptsUsed + 1;
+      const [insRes] = await pool.query(
+        `INSERT INTO student_assignment_attempts (
+           school_id, branch_id, assignment_id, student_id, attempt_number,
+           total_questions, correct_answers, obtained_marks, total_marks,
+           score_percentage, started_at, attempted_at, status
+         ) VALUES (?, ?, ?, ?, ?, ?, 0, 0.00, ?, 0.00, NOW(), NOW(), 2)`,
+        [schoolId, branchId, assignmentId, studentId, nextAttemptNumber, questions.length, effectiveTotalMarks]
+      );
+      const [newAttRows] = await pool.query(`SELECT * FROM student_assignment_attempts WHERE id = ? LIMIT 1`, [
+        insRes.insertId,
+      ]);
+      activeAttempt = newAttRows[0] || {
+        id: insRes.insertId,
+        attempt_number: nextAttemptNumber,
+        started_at: now,
+      };
+    }
+
+    const startedAtDt = activeAttempt.started_at ? new Date(activeAttempt.started_at) : now;
+    const startedAtMs = !isNaN(startedAtDt.getTime()) ? startedAtDt.getTime() : nowMs;
+    const durationMinutes =
+      assignment.duration_minutes != null && Number(assignment.duration_minutes) > 0
+        ? Number(assignment.duration_minutes)
+        : null;
+    const endDt = AcademicModel.combineDateAndTime(assignment.due_date, assignment.end_time, true);
+    const endDtMs = endDt ? endDt.getTime() : null;
+
+    let effectiveDeadlineMs = endDtMs;
+    if (durationMinutes) {
+      const durationDeadlineMs = startedAtMs + durationMinutes * 60 * 1000;
+      effectiveDeadlineMs = endDtMs ? Math.min(durationDeadlineMs, endDtMs) : durationDeadlineMs;
+    }
+
+    const remainingSeconds =
+      effectiveDeadlineMs != null ? Math.max(0, Math.floor((effectiveDeadlineMs - nowMs) / 1000)) : null;
+
+    return {
+      assignment: {
+        ...assignment,
+        total_marks: effectiveTotalMarks,
+        max_attempts: maxAttempts,
+        start_datetime: schedule.startDateTime,
+        end_datetime: schedule.endDateTime,
+      },
+      activeAttempt: {
+        id: activeAttempt.id,
+        attempt_number: Number(activeAttempt.attempt_number) || attemptsUsed + 1,
+        started_at: startedAtDt.toISOString(),
+      },
+      alreadyAttempted: null,
+      attemptsUsed,
+      maxAttempts,
+      attemptsRemaining: Math.max(0, maxAttempts - attemptsUsed),
+      remainingSeconds,
+      serverNow: now.toISOString(),
+      isExpired: false,
+      questions,
+    };
+  }
+
+  static async submitStudentAssignmentAttempt(
+    assignmentId,
+    studentId,
+    schoolId,
+    { answers = {}, isAutoSubmit = false } = {},
+    userBranchId = null
+  ) {
+    await AcademicModel.ensureAssignmentSchema();
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
+
+      if (!answers || typeof answers !== 'object') {
+        const err = new Error('Please provide answers to submit.');
+        err.statusCode = 400;
+        throw err;
+      }
+
+      const [asgRows] = await connection.query(
+        `SELECT * FROM assignments WHERE id = ? AND (school_id = ? OR ? IS NULL) AND (status != 4 OR status IS NULL) AND is_published = 1`,
+        [assignmentId, schoolId, schoolId]
+      );
+
+      if (asgRows.length === 0) {
+        const err = new Error('Assignment not found.');
+        err.statusCode = 404;
+        throw err;
+      }
+      const assignment = asgRows[0];
+
+      let branchId = userBranchId || null;
+      if (!branchId) {
+        const [stRow] = await connection.query(`SELECT branch_id FROM student_master WHERE id = ? LIMIT 1`, [studentId]);
+        if (stRow.length && stRow[0].branch_id) branchId = stRow[0].branch_id;
+      }
+      if (!branchId && assignment.branch_id) {
+        branchId = assignment.branch_id;
+      }
+
+      const now = new Date();
+      const nowMs = now.getTime();
+      const schedule = AcademicModel.getAssignmentScheduleState(assignment, now);
+
+      if (schedule.isNotStarted) {
+        const err = new Error('This assignment has not started yet. Submissions are not allowed before the start time.');
+        err.statusCode = 403;
+        throw err;
+      }
+
+      // Allow a 60-second grace buffer for auto-submit network transit when the countdown hits zero
+      const AUTO_SUBMIT_GRACE_MS = 60 * 1000;
+      const endDt = AcademicModel.combineDateAndTime(assignment.due_date, assignment.end_time, true);
+      if (endDt && nowMs > endDt.getTime() + AUTO_SUBMIT_GRACE_MS) {
+        const err = new Error('The deadline for this assignment has expired. Submissions are no longer accepted.');
+        err.statusCode = 403;
+        err.data = { isExpired: true, due_date: assignment.due_date, end_time: assignment.end_time };
+        throw err;
+      }
+
+      const maxAttempts = Math.max(1, Number(assignment.max_attempts) || 1);
+      const [completedAttRows] = await connection.query(
+        `SELECT id FROM student_assignment_attempts WHERE assignment_id = ? AND student_id = ? AND status = 1`,
+        [assignmentId, studentId]
+      );
+      const attemptsUsed = completedAttRows.length;
+
+      const [inProgRows] = await connection.query(
+        `SELECT * FROM student_assignment_attempts
+         WHERE assignment_id = ? AND student_id = ? AND status = 2
+         ORDER BY id DESC LIMIT 1 FOR UPDATE`,
+        [assignmentId, studentId]
+      );
+      const activeAttempt = inProgRows[0] || null;
+
+      if (!activeAttempt && attemptsUsed >= maxAttempts) {
+        const err = new Error(`You have already used all ${maxAttempts} allowed attempt(s) for this assignment.`);
+        err.statusCode = 403;
+        throw err;
+      }
+
+      if (
+        activeAttempt &&
+        activeAttempt.started_at &&
+        assignment.duration_minutes &&
+        Number(assignment.duration_minutes) > 0
+      ) {
+        const startedAtMs = new Date(activeAttempt.started_at).getTime();
+        const durationLimitMs = startedAtMs + Number(assignment.duration_minutes) * 60 * 1000;
+        if (!isNaN(startedAtMs) && nowMs > durationLimitMs + AUTO_SUBMIT_GRACE_MS && !isAutoSubmit) {
+          const err = new Error('Your allocated time duration for this assignment attempt has expired.');
+          err.statusCode = 403;
+          err.data = { isExpired: true };
+          throw err;
+        }
+      }
+
+      const [questions] = await connection.query(
+        `SELECT q.id AS question_id, q.question_type, q.marks, q.correct_answer_text,
+                a.id AS correct_answer_id, a.answer AS correct_option_text
+         FROM assignment_questions q
+         LEFT JOIN assignment_answers a ON (q.id = a.question_id AND a.is_correct = 1 AND (a.status = 1 OR a.status IS NULL) AND a.status != 4)
+         WHERE q.assignment_id = ? AND (q.status = 1 OR q.status IS NULL) AND q.status != 4
+         ORDER BY q.id ASC`,
+        [assignmentId]
+      );
+
+      if (questions.length === 0) {
+        const err = new Error('No questions found for this assignment.');
+        err.statusCode = 400;
+        throw err;
+      }
+
+      // Deduplicate questions in case a question has multiple rows joined
+      const questionMap = new Map();
+      for (const row of questions) {
+        if (!questionMap.has(row.question_id)) {
+          questionMap.set(row.question_id, {
+            question_id: row.question_id,
+            question_type: AcademicModel.normalizeQuestionType(row.question_type) || 'MCQ',
+            marks: row.marks != null && Number(row.marks) > 0 ? Number(row.marks) : 1,
+            correct_answer_text: row.correct_answer_text,
+            correct_answer_ids: row.correct_answer_id ? [Number(row.correct_answer_id)] : [],
+          });
+        } else if (row.correct_answer_id) {
+          questionMap.get(row.question_id).correct_answer_ids.push(Number(row.correct_answer_id));
+        }
+      }
+
+      const uniqueQuestions = Array.from(questionMap.values());
+      const totalQuestions = uniqueQuestions.length;
+      let correctAnswersCount = 0;
+      let obtainedMarks = 0;
+      let calculatedTotalMarks = 0;
+
+      const submissionRecords = [];
+      for (const q of uniqueQuestions) {
+        calculatedTotalMarks = Number((calculatedTotalMarks + q.marks).toFixed(2));
+        const rawAns = answers[q.question_id];
+        let selectedAnswerId = null;
+        let answerText = null;
+        let isCorrect = 0;
+        let marksAwarded = 0;
+
+        if (q.question_type === 'MCQ' || q.question_type === 'TRUE_FALSE') {
+          if (rawAns !== undefined && rawAns !== null && String(rawAns).trim() !== '') {
+            if (typeof rawAns === 'object') {
+              selectedAnswerId = rawAns.selected_answer_id ? Number(rawAns.selected_answer_id) : null;
+              answerText = rawAns.answer_text ? String(rawAns.answer_text).trim() : null;
+            } else if (/^\d+$/.test(String(rawAns).trim())) {
+              selectedAnswerId = Number(rawAns);
+            } else {
+              answerText = String(rawAns).trim();
+            }
+          }
+          if (selectedAnswerId && q.correct_answer_ids.includes(selectedAnswerId)) {
+            isCorrect = 1;
+            marksAwarded = q.marks;
+          }
+        } else {
+          // SHORT_ANSWER or LONG_ANSWER
+          if (rawAns !== undefined && rawAns !== null) {
+            answerText =
+              typeof rawAns === 'object' ? String(rawAns.answer_text ?? rawAns.text ?? '').trim() : String(rawAns).trim();
+          }
+          if (answerText) {
+            if (q.correct_answer_text && String(q.correct_answer_text).trim() !== '') {
+              const expectedNorm = String(q.correct_answer_text).trim().toLowerCase().replace(/\s+/g, ' ');
+              const givenNorm = answerText.toLowerCase().replace(/\s+/g, ' ');
+              if (givenNorm === expectedNorm || (q.question_type === 'LONG_ANSWER' && givenNorm.includes(expectedNorm))) {
+                isCorrect = 1;
+                marksAwarded = q.marks;
+              }
+            } else {
+              // No strict reference key configured: mark answered descriptive submission as completed
+              isCorrect = 1;
+              marksAwarded = q.marks;
+            }
+          }
+        }
+
+        if (isCorrect === 1) {
+          correctAnswersCount++;
+          obtainedMarks = Number((obtainedMarks + marksAwarded).toFixed(2));
+        }
+
+        submissionRecords.push({
+          question_id: q.question_id,
+          selected_answer_id: selectedAnswerId,
+          answer_text: answerText,
+          is_correct: isCorrect,
+          marks_awarded: marksAwarded,
+        });
+      }
+
+      const effectiveTotalMarks =
+        assignment.total_marks != null && Number(assignment.total_marks) > 0
+          ? Number(assignment.total_marks)
+          : calculatedTotalMarks;
+
+      const scorePercentage =
+        effectiveTotalMarks > 0
+          ? Number(((obtainedMarks / effectiveTotalMarks) * 100).toFixed(2))
+          : totalQuestions > 0
+          ? Number(((correctAnswersCount / totalQuestions) * 100).toFixed(2))
+          : 0;
+
+      const isPassed =
+        assignment.passing_marks != null && Number(assignment.passing_marks) > 0
+          ? obtainedMarks >= Number(assignment.passing_marks)
+            ? 1
+            : 0
+          : scorePercentage >= 40
+          ? 1
+          : 0;
+
+      let attemptId;
+      const attemptNumber = activeAttempt ? Number(activeAttempt.attempt_number) || attemptsUsed + 1 : attemptsUsed + 1;
+
+      if (activeAttempt) {
+        attemptId = activeAttempt.id;
+        await connection.query(
+          `UPDATE student_assignment_attempts
+           SET total_questions = ?,
+               correct_answers = ?,
+               obtained_marks = ?,
+               total_marks = ?,
+               score_percentage = ?,
+               is_passed = ?,
+               is_auto_submitted = ?,
+               submitted_at = NOW(),
+               attempted_at = NOW(),
+               status = 1
+           WHERE id = ?`,
+          [
+            totalQuestions,
+            correctAnswersCount,
+            obtainedMarks,
+            effectiveTotalMarks,
+            scorePercentage,
+            isPassed,
+            isAutoSubmit ? 1 : 0,
+            attemptId,
+          ]
+        );
+      } else {
+        const [attRes] = await connection.query(
+          `INSERT INTO student_assignment_attempts (
+             school_id, branch_id, assignment_id, student_id, attempt_number,
+             total_questions, correct_answers, obtained_marks, total_marks,
+             score_percentage, is_passed, is_auto_submitted,
+             started_at, submitted_at, attempted_at, status
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW(), 1)`,
+          [
+            schoolId,
+            branchId,
+            assignmentId,
+            studentId,
+            attemptNumber,
+            totalQuestions,
+            correctAnswersCount,
+            obtainedMarks,
+            effectiveTotalMarks,
+            scorePercentage,
+            isPassed,
+            isAutoSubmit ? 1 : 0,
+          ]
+        );
+        attemptId = attRes.insertId;
+      }
+
+      await connection.query(`DELETE FROM student_assignment_submissions WHERE attempt_id = ?`, [attemptId]);
+
+      for (const sub of submissionRecords) {
+        await connection.query(
+          `INSERT INTO student_assignment_submissions (
+             school_id, branch_id, attempt_id, assignment_id, student_id,
+             question_id, selected_answer_id, answer_text, is_correct, marks_awarded, created_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+          [
+            schoolId,
+            branchId,
+            attemptId,
+            assignmentId,
+            studentId,
+            sub.question_id,
+            sub.selected_answer_id,
+            sub.answer_text,
+            sub.is_correct,
+            sub.marks_awarded,
+          ]
+        );
+      }
+
+      await connection.commit();
+
+      return {
+        attemptId,
+        attemptNumber,
+        totalQuestions,
+        correctAnswersCount,
+        obtainedMarks,
+        totalMarks: effectiveTotalMarks,
+        passingMarks: assignment.passing_marks != null ? Number(assignment.passing_marks) : null,
+        isPassed: isPassed === 1,
+        scorePercentage: scorePercentage.toFixed(2),
+      };
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+
+  static async getStudentAssignmentResult(assignmentId, studentId, schoolId) {
+    await AcademicModel.ensureAssignmentSchema();
+
+    const [asgRows] = await pool.query(
+      `SELECT 
+         a.*,
+         cm.class_name,
+         sec.section_name,
+         COALESCE(sub.subject_name, 'General') AS subject_name,
+         at.type_name AS assignment_type
+       FROM assignments a
+       LEFT JOIN class_master cm ON a.class_id = cm.id
+       LEFT JOIN section_master sec ON a.section_id = sec.id
+       LEFT JOIN subject_master sub ON a.subject_id = sub.id
+       LEFT JOIN assignment_types at ON a.assignment_type_id = at.id
+       WHERE a.id = ? AND (a.school_id = ? OR ? IS NULL)`,
+      [assignmentId, schoolId, schoolId]
+    );
+    if (asgRows.length === 0) {
+      return null;
+    }
+    const assignment = asgRows[0];
+
+    const [attRows] = await pool.query(
+      `SELECT * FROM student_assignment_attempts
+       WHERE assignment_id = ? AND student_id = ? AND status = 1
+       ORDER BY id DESC`,
+      [assignmentId, studentId]
+    );
+    const attempt = attRows[0] || null;
+
+    const [questions] = await pool.query(
+      `SELECT id, question, question_type, marks, instructions, correct_answer_text
+       FROM assignment_questions
+       WHERE assignment_id = ? AND (status = 1 OR status IS NULL) AND status != 4
+       ORDER BY id ASC`,
+      [assignmentId]
+    );
+
+    let subSql = `SELECT question_id, selected_answer_id, answer_text, is_correct, marks_awarded
+       FROM student_assignment_submissions
+       WHERE assignment_id = ? AND student_id = ?`;
+    const subParams = [assignmentId, studentId];
+    if (attempt?.id) {
+      subSql += ` AND attempt_id = ?`;
+      subParams.push(attempt.id);
+    }
+    const [submissions] = await pool.query(subSql, subParams);
+    const subMap = {};
+    (submissions || []).forEach((s) => {
+      subMap[s.question_id] = s;
+    });
+
+    for (const q of questions) {
+      q.question_type = AcademicModel.normalizeQuestionType(q.question_type) || 'MCQ';
+      q.question_type_label = AcademicModel.getQuestionTypeLabel(q.question_type);
+      q.marks = q.marks != null ? Number(q.marks) : 1;
+      const [options] = await pool.query(
+        `SELECT id, answer, is_correct
+         FROM assignment_answers
+         WHERE question_id = ? AND (status = 1 OR status IS NULL) AND status != 4
+         ORDER BY id ASC`,
+        [q.id]
+      );
+      q.options = options;
+      q.studentSubmission = subMap[q.id] || null;
+    }
+
+    return {
+      assignment,
+      attempt,
+      attemptsHistory: attRows,
+      attemptsUsed: attRows.length,
+      maxAttempts: Math.max(1, Number(assignment.max_attempts) || 1),
+      questions,
+    };
   }
 
   static async getStudentPerformance(studentId, schoolId, { branchId = null, teacherId = null } = {}) {

@@ -390,6 +390,50 @@ class TeacherAcademicController {
     }
   }
 
+  static async downloadAssignmentQuestionsTemplate(req, res, next) {
+    try {
+      const buffer = Buffer.from(AcademicModel.generateAssignmentQuestionsTemplateBuffer());
+      const fileName = 'assignment_questions_template.xlsx';
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+      res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+      res.setHeader('Content-Length', String(buffer.length));
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      return res.status(200).end(buffer);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async parseAssignmentQuestionsExcel(req, res, next) {
+    try {
+      if (!req.file || !req.file.buffer) {
+        return ApiResponse.error(res, 'Please upload a valid Excel (.xlsx, .xls) or CSV file.', null, 400);
+      }
+      let existingQuestions = [];
+      if (req.body?.existing_questions) {
+        try {
+          existingQuestions =
+            typeof req.body.existing_questions === 'string'
+              ? JSON.parse(req.body.existing_questions)
+              : req.body.existing_questions;
+        } catch (_) {
+          existingQuestions = [];
+        }
+      }
+      const result = AcademicModel.parseAndValidateQuestionsExcel(req.file.buffer, existingQuestions);
+      return ApiResponse.success(
+        res,
+        result.errorCount === 0
+          ? `Validated ${result.validCount} question(s) successfully.`
+          : `Processed ${result.totalRows} row(s): ${result.validCount} valid, ${result.errorCount} with validation errors.`,
+        result
+      );
+    } catch (error) {
+      next(error);
+    }
+  }
+
   static async getAssignmentTypes(req, res, next) {
     try {
       const schoolId = TeacherAcademicController.getSchoolId(req);

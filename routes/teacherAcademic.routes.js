@@ -1,8 +1,14 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
 const TeacherAcademicController = require('../controllers/teacherAcademic.controller');
 const authenticateToken = require('../middlewares/auth.middleware');
 const authorizeRoles = require('../middlewares/rbac.middleware');
+
+const excelUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+});
 
 // Protect all routes for Teacher role (and Admin for testing/management)
 router.use(authenticateToken);
@@ -42,6 +48,12 @@ router.delete('/syllabus/:id', TeacherAcademicController.deleteSyllabus);
 
 // Assignments
 router.get('/assignments', TeacherAcademicController.getAssignments);
+router.get('/assignments/questions/template', TeacherAcademicController.downloadAssignmentQuestionsTemplate);
+router.post(
+  '/assignments/questions/parse-excel',
+  excelUpload.single('file'),
+  TeacherAcademicController.parseAssignmentQuestionsExcel
+);
 router.get('/assignments/types', TeacherAcademicController.getAssignmentTypes);
 router.get('/assignments/:id', TeacherAcademicController.getAssignmentById);
 router.post('/assignments', TeacherAcademicController.createAssignment);
