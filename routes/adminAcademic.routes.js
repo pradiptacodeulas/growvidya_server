@@ -215,6 +215,7 @@ router.get('/assignments/:id', AdminAcademicController.getAssignmentById);
 router.get('/assignments/:id/questions', AdminAcademicController.getAssignmentQuestions);
 router.get('/assignments/:id/submissions', AdminAcademicController.getAssignmentSubmissions);
 router.get('/assignments/:id/submissions/:studentId', AdminAcademicController.getStudentAssignmentSubmissionDetail);
+router.put('/assignments/:id/submissions/:studentId/evaluate', AdminAcademicController.evaluateStudentAssignmentSubmission);
 router.get('/assignments/student-performance/:studentId', AdminAcademicController.getStudentPerformance);
 router.get('/students/:studentId/performance', AdminAcademicController.getStudentPerformance);
 router.post('/assignments', AdminAcademicController.createAssignment);

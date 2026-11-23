@@ -62,10 +62,14 @@ class AcademicModel {
           ['total_marks', 'DECIMAL(10,2) NOT NULL DEFAULT 0.00'],
           ['is_passed', 'TINYINT(1) DEFAULT NULL'],
           ['is_auto_submitted', 'TINYINT(1) NOT NULL DEFAULT 0'],
+          ['evaluation_status', 'TINYINT(1) NOT NULL DEFAULT 1'],
         ]);
 
         await addMissingColumns('student_assignment_submissions', [
           ['answer_text', 'TEXT DEFAULT NULL'],
+          ['answer_mode', "VARCHAR(20) NOT NULL DEFAULT 'ONLINE'"],
+          ['attachment_urls', 'TEXT DEFAULT NULL'],
+          ['teacher_remarks', 'TEXT DEFAULT NULL'],
           ['marks_awarded', 'DECIMAL(8,2) NOT NULL DEFAULT 0.00'],
         ]);
       } catch (err) {
@@ -73,6 +77,26 @@ class AcademicModel {
       }
     })();
     return AcademicModel._assignmentSchemaPromise;
+  }
+
+  static parseAttachmentUrls(rawVal) {
+    if (!rawVal) return [];
+    if (Array.isArray(rawVal)) {
+      return rawVal.map((u) => String(u || '').trim()).filter(Boolean);
+    }
+    if (typeof rawVal === 'string') {
+      const trimmed = rawVal.trim();
+      if (!trimmed) return [];
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) {
+          return parsed.map((u) => String(u || '').trim()).filter(Boolean);
+        }
+      } catch (_) {
+        return [trimmed];
+      }
+    }
+    return [];
   }
 
   static normalizeQuestionType(rawType) {
@@ -4300,7 +4324,7 @@ class AcademicModel {
           [questionIds, schoolId]
         );
 
-        let subSql = `SELECT question_id, selected_answer_id, answer_text, is_correct, marks_awarded, created_at
+        let subSql = `SELECT id, question_id, selected_answer_id, answer_text, answer_mode, attachment_urls, teacher_remarks, is_correct, marks_awarded, created_at
            FROM student_assignment_submissions
            WHERE assignment_id = ? AND student_id = ?`;
         const subParams = [assignmentId, studentId];
@@ -4312,6 +4336,8 @@ class AcademicModel {
 
         const subMap = {};
         (submissions || []).forEach((s) => {
+          s.attachments = AcademicModel.parseAttachmentUrls(s.attachment_urls);
+          s.answer_mode = s.answer_mode || (s.attachments.length > 0 ? 'HANDWRITTEN' : 'ONLINE');
           subMap[s.question_id] = s;
         });
 
@@ -4336,6 +4362,178 @@ class AcademicModel {
       console.error('Error in getStudentAssignmentSubmissionDetail:', e.message);
       throw e;
     }
+  }
+
+  static async evaluateStudentAssignmentSubmission(
+    assignmentId,
+    studentId,
+    schoolId,
+    { evaluations = [], branchId = null, teacherId = null } = {}
+  ) {
+    await AcademicModel.ensureAssignmentSchema();
+    const cleanBranchId = AcademicModel.parseBranchId(branchId);
+    const assignment = await AcademicModel.getAssignmentById(assignmentId, schoolId, cleanBranchId, teacherId);
+    if (!assignment) {
+      const err = new Error('Assignment not found or access denied.');
+      err.statusCode = 404;
+      throw err;
+    }
+
+    const [attRows] = await pool.query(
+      `SELECT * FROM student_assignment_attempts
+       WHERE assignment_id = ? AND student_id = ? AND status = 1
+       ORDER BY id DESC LIMIT 1`,
+      [assignmentId, studentId]
+    );
+    const attempt = attRows?.[0] || null;
+    if (!attempt) {
+      const err = new Error('Student submission attempt not found.');
+      err.statusCode = 404;
+      throw err;
+    }
+
+    const [questions] = await pool.query(
+      `SELECT id, marks FROM assignment_questions
+       WHERE assignment_id = ? AND school_id = ? AND (status != 4 OR status IS NULL)
+       ORDER BY id ASC`,
+      [assignmentId, schoolId]
+    );
+    const questionMaxMarksMap = new Map();
+    let calculatedTotalMarks = 0;
+    for (const q of questions) {
+      const m = q.marks != null && Number(q.marks) > 0 ? Number(q.marks) : 1;
+      questionMaxMarksMap.set(Number(q.id), m);
+      calculatedTotalMarks = Number((calculatedTotalMarks + m).toFixed(2));
+    }
+
+    const evalMap = new Map();
+    if (Array.isArray(evaluations)) {
+      for (const item of evaluations) {
+        const qId = Number(item?.question_id);
+        if (!qId || !questionMaxMarksMap.has(qId)) continue;
+        const maxM = questionMaxMarksMap.get(qId);
+        const awarded = Number(item?.marks_awarded);
+        if (Number.isNaN(awarded) || awarded < 0 || awarded > maxM) {
+          const err = new Error(`Marks awarded for question #${qId} must be between 0 and ${maxM}.`);
+          err.statusCode = 400;
+          throw err;
+        }
+        evalMap.set(qId, {
+          marks_awarded: Number(awarded.toFixed(2)),
+          teacher_remarks: item?.teacher_remarks != null ? String(item.teacher_remarks).trim() || null : null,
+        });
+      }
+    }
+
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
+
+      for (const [qId, evalItem] of evalMap.entries()) {
+        const isCorr = evalItem.marks_awarded > 0 ? 1 : 0;
+        const [existingSub] = await connection.query(
+          `SELECT id FROM student_assignment_submissions
+           WHERE attempt_id = ? AND question_id = ? LIMIT 1`,
+          [attempt.id, qId]
+        );
+        if (existingSub.length > 0) {
+          await connection.query(
+            `UPDATE student_assignment_submissions
+             SET marks_awarded = ?, is_correct = ?, teacher_remarks = ?
+             WHERE id = ?`,
+            [evalItem.marks_awarded, isCorr, evalItem.teacher_remarks, existingSub[0].id]
+          );
+        } else {
+          await connection.query(
+            `INSERT INTO student_assignment_submissions (
+               school_id, branch_id, attempt_id, assignment_id, student_id,
+               question_id, marks_awarded, is_correct, teacher_remarks, created_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+            [
+              schoolId,
+              attempt.branch_id || assignment.branch_id || null,
+              attempt.id,
+              assignmentId,
+              studentId,
+              qId,
+              evalItem.marks_awarded,
+              isCorr,
+              evalItem.teacher_remarks,
+            ]
+          );
+        }
+      }
+
+      const [allSubs] = await connection.query(
+        `SELECT question_id, marks_awarded, is_correct
+         FROM student_assignment_submissions
+         WHERE attempt_id = ?`,
+        [attempt.id]
+      );
+
+      let obtainedMarks = 0;
+      let correctAnswersCount = 0;
+      for (const s of allSubs) {
+        const m = Number(s.marks_awarded) || 0;
+        obtainedMarks = Number((obtainedMarks + m).toFixed(2));
+        if (Number(s.is_correct) === 1 || m > 0) {
+          correctAnswersCount++;
+        }
+      }
+
+      const effectiveTotalMarks =
+        assignment.total_marks != null && Number(assignment.total_marks) > 0
+          ? Number(assignment.total_marks)
+          : calculatedTotalMarks;
+      const totalQuestions = questions.length;
+      const scorePercentage =
+        effectiveTotalMarks > 0
+          ? Number(((obtainedMarks / effectiveTotalMarks) * 100).toFixed(2))
+          : totalQuestions > 0
+          ? Number(((correctAnswersCount / totalQuestions) * 100).toFixed(2))
+          : 0;
+      const isPassed =
+        assignment.passing_marks != null && Number(assignment.passing_marks) > 0
+          ? obtainedMarks >= Number(assignment.passing_marks)
+            ? 1
+            : 0
+          : scorePercentage >= 40
+          ? 1
+          : 0;
+
+      await connection.query(
+        `UPDATE student_assignment_attempts
+         SET obtained_marks = ?,
+             total_marks = ?,
+             correct_answers = ?,
+             total_questions = ?,
+             score_percentage = ?,
+             is_passed = ?,
+             evaluation_status = 1
+         WHERE id = ?`,
+        [
+          obtainedMarks,
+          effectiveTotalMarks,
+          correctAnswersCount,
+          totalQuestions,
+          scorePercentage,
+          isPassed,
+          attempt.id,
+        ]
+      );
+
+      await connection.commit();
+    } catch (err) {
+      await connection.rollback();
+      throw err;
+    } finally {
+      connection.release();
+    }
+
+    return await AcademicModel.getStudentAssignmentSubmissionDetail(assignmentId, studentId, schoolId, {
+      branchId: cleanBranchId,
+      teacherId,
+    });
   }
 
   // ==================== STUDENT PORTAL ASSIGNMENTS ====================
@@ -4898,6 +5096,7 @@ class AcademicModel {
       let correctAnswersCount = 0;
       let obtainedMarks = 0;
       let calculatedTotalMarks = 0;
+      let hasHandwrittenAnswers = false;
 
       const submissionRecords = [];
       for (const q of uniqueQuestions) {
@@ -4905,13 +5104,35 @@ class AcademicModel {
         const rawAns = answers[q.question_id];
         let selectedAnswerId = null;
         let answerText = null;
+        let answerMode = 'ONLINE';
+        let attachments = [];
         let isCorrect = 0;
         let marksAwarded = 0;
+
+        if (rawAns && typeof rawAns === 'object' && !Array.isArray(rawAns)) {
+          if (Array.isArray(rawAns.attachments)) {
+            attachments = rawAns.attachments
+              .map((u) => String(u || '').trim())
+              .filter(Boolean)
+              .slice(0, 10);
+          }
+          if (rawAns.answer_mode === 'HANDWRITTEN' || attachments.length > 0) {
+            answerMode = 'HANDWRITTEN';
+          }
+        }
+
+        if (attachments.length > 0) {
+          hasHandwrittenAnswers = true;
+        }
 
         if (q.question_type === 'MCQ' || q.question_type === 'TRUE_FALSE') {
           if (rawAns !== undefined && rawAns !== null && String(rawAns).trim() !== '') {
             if (typeof rawAns === 'object') {
-              selectedAnswerId = rawAns.selected_answer_id ? Number(rawAns.selected_answer_id) : null;
+              selectedAnswerId = rawAns.selected_answer_id
+                ? Number(rawAns.selected_answer_id)
+                : rawAns.value && /^\d+$/.test(String(rawAns.value).trim())
+                ? Number(rawAns.value)
+                : null;
               answerText = rawAns.answer_text ? String(rawAns.answer_text).trim() : null;
             } else if (/^\d+$/.test(String(rawAns).trim())) {
               selectedAnswerId = Number(rawAns);
@@ -4927,9 +5148,15 @@ class AcademicModel {
           // SHORT_ANSWER or LONG_ANSWER
           if (rawAns !== undefined && rawAns !== null) {
             answerText =
-              typeof rawAns === 'object' ? String(rawAns.answer_text ?? rawAns.text ?? '').trim() : String(rawAns).trim();
+              typeof rawAns === 'object'
+                ? String(rawAns.answer_text ?? rawAns.text ?? '').trim() || null
+                : String(rawAns).trim() || null;
           }
-          if (answerText) {
+          if (attachments.length > 0) {
+            // Handwritten image submission: awaits teacher verification or awards marks when evaluated
+            isCorrect = 0;
+            marksAwarded = 0;
+          } else if (answerText) {
             if (q.correct_answer_text && String(q.correct_answer_text).trim() !== '') {
               const expectedNorm = String(q.correct_answer_text).trim().toLowerCase().replace(/\s+/g, ' ');
               const givenNorm = answerText.toLowerCase().replace(/\s+/g, ' ');
@@ -4938,7 +5165,6 @@ class AcademicModel {
                 marksAwarded = q.marks;
               }
             } else {
-              // No strict reference key configured: mark answered descriptive submission as completed
               isCorrect = 1;
               marksAwarded = q.marks;
             }
@@ -4954,6 +5180,8 @@ class AcademicModel {
           question_id: q.question_id,
           selected_answer_id: selectedAnswerId,
           answer_text: answerText,
+          answer_mode: answerMode,
+          attachment_urls: attachments.length > 0 ? JSON.stringify(attachments) : null,
           is_correct: isCorrect,
           marks_awarded: marksAwarded,
         });
@@ -4980,6 +5208,7 @@ class AcademicModel {
           ? 1
           : 0;
 
+      const evaluationStatus = hasHandwrittenAnswers ? 2 : 1;
       let attemptId;
       const attemptNumber = activeAttempt ? Number(activeAttempt.attempt_number) || attemptsUsed + 1 : attemptsUsed + 1;
 
@@ -4994,6 +5223,7 @@ class AcademicModel {
                score_percentage = ?,
                is_passed = ?,
                is_auto_submitted = ?,
+               evaluation_status = ?,
                submitted_at = NOW(),
                attempted_at = NOW(),
                status = 1
@@ -5006,6 +5236,7 @@ class AcademicModel {
             scorePercentage,
             isPassed,
             isAutoSubmit ? 1 : 0,
+            evaluationStatus,
             attemptId,
           ]
         );
@@ -5014,9 +5245,9 @@ class AcademicModel {
           `INSERT INTO student_assignment_attempts (
              school_id, branch_id, assignment_id, student_id, attempt_number,
              total_questions, correct_answers, obtained_marks, total_marks,
-             score_percentage, is_passed, is_auto_submitted,
+             score_percentage, is_passed, is_auto_submitted, evaluation_status,
              started_at, submitted_at, attempted_at, status
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW(), 1)`,
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW(), 1)`,
           [
             schoolId,
             branchId,
@@ -5030,6 +5261,7 @@ class AcademicModel {
             scorePercentage,
             isPassed,
             isAutoSubmit ? 1 : 0,
+            evaluationStatus,
           ]
         );
         attemptId = attRes.insertId;
@@ -5041,8 +5273,9 @@ class AcademicModel {
         await connection.query(
           `INSERT INTO student_assignment_submissions (
              school_id, branch_id, attempt_id, assignment_id, student_id,
-             question_id, selected_answer_id, answer_text, is_correct, marks_awarded, created_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+             question_id, selected_answer_id, answer_text, answer_mode, attachment_urls,
+             is_correct, marks_awarded, created_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
           [
             schoolId,
             branchId,
@@ -5052,6 +5285,8 @@ class AcademicModel {
             sub.question_id,
             sub.selected_answer_id,
             sub.answer_text,
+            sub.answer_mode,
+            sub.attachment_urls,
             sub.is_correct,
             sub.marks_awarded,
           ]
@@ -5069,6 +5304,7 @@ class AcademicModel {
         totalMarks: effectiveTotalMarks,
         passingMarks: assignment.passing_marks != null ? Number(assignment.passing_marks) : null,
         isPassed: isPassed === 1,
+        evaluationStatus,
         scorePercentage: scorePercentage.toFixed(2),
       };
     } catch (error) {
@@ -5118,7 +5354,7 @@ class AcademicModel {
       [assignmentId]
     );
 
-    let subSql = `SELECT question_id, selected_answer_id, answer_text, is_correct, marks_awarded
+    let subSql = `SELECT question_id, selected_answer_id, answer_text, answer_mode, attachment_urls, teacher_remarks, is_correct, marks_awarded
        FROM student_assignment_submissions
        WHERE assignment_id = ? AND student_id = ?`;
     const subParams = [assignmentId, studentId];
@@ -5129,6 +5365,8 @@ class AcademicModel {
     const [submissions] = await pool.query(subSql, subParams);
     const subMap = {};
     (submissions || []).forEach((s) => {
+      s.attachments = AcademicModel.parseAttachmentUrls(s.attachment_urls);
+      s.answer_mode = s.answer_mode || (s.attachments.length > 0 ? 'HANDWRITTEN' : 'ONLINE');
       subMap[s.question_id] = s;
     });
 

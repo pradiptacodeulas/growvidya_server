@@ -1263,6 +1263,22 @@ class AdminAcademicController {
     }
   }
 
+  static async evaluateStudentAssignmentSubmission(req, res, next) {
+    try {
+      const schoolId = AdminAcademicController.getSchoolId(req);
+      const branchId = req.branchId || req.body?.branch_id || req.query?.branch_id || null;
+      const { id, studentId } = req.params;
+      const evaluations = Array.isArray(req.body?.evaluations) ? req.body.evaluations : [];
+      const data = await AcademicModel.evaluateStudentAssignmentSubmission(id, studentId, schoolId, {
+        evaluations,
+        branchId,
+      });
+      return ApiResponse.success(res, 'Student assignment submission evaluated successfully.', data);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   static async getStudentPerformance(req, res, next) {
     try {
       const schoolId = AdminAcademicController.getSchoolId(req);

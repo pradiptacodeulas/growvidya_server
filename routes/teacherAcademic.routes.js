@@ -63,6 +63,7 @@ router.post('/assignments/:id/publish', TeacherAcademicController.publishAssignm
 router.get('/assignments/:id/questions', TeacherAcademicController.getAssignmentQuestions);
 router.get('/assignments/:id/submissions', TeacherAcademicController.getAssignmentSubmissions);
 router.get('/assignments/:id/submissions/:studentId', TeacherAcademicController.getStudentAssignmentSubmissionDetail);
+router.put('/assignments/:id/submissions/:studentId/evaluate', TeacherAcademicController.evaluateStudentAssignmentSubmission);
 router.get('/assignments/student-performance/:studentId', TeacherAcademicController.getStudentPerformance);
 router.get('/students/:studentId/performance', TeacherAcademicController.getStudentPerformance);
 router.get('/assignment-types', TeacherAcademicController.getAssignmentTypes);

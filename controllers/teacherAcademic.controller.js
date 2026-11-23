@@ -480,6 +480,24 @@ class TeacherAcademicController {
     }
   }
 
+  static async evaluateStudentAssignmentSubmission(req, res, next) {
+    try {
+      const schoolId = TeacherAcademicController.getSchoolId(req);
+      const teacherId = TeacherAcademicController.getTeacherId(req);
+      const branchId = await TeacherAcademicController.resolveTeacherBranchId(req, schoolId);
+      const { id, studentId } = req.params;
+      const evaluations = Array.isArray(req.body?.evaluations) ? req.body.evaluations : [];
+      const data = await AcademicModel.evaluateStudentAssignmentSubmission(id, studentId, schoolId, {
+        evaluations,
+        branchId,
+        teacherId,
+      });
+      return ApiResponse.success(res, 'Student assignment submission evaluated successfully.', data);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   static async getStudentPerformance(req, res, next) {
     try {
       const schoolId = TeacherAcademicController.getSchoolId(req);
