@@ -439,6 +439,10 @@ class ParentModel {
       const hashedPassword = await hashPassword(String(data.password).trim());
       sql += `, password = ?`;
       params.push(hashedPassword);
+    } else if (phone && String(phone).trim()) {
+      const hashedDefaultPassword = await hashPassword(String(phone).trim());
+      sql += `, password = COALESCE(NULLIF(TRIM(password), ''), ?)`;
+      params.push(hashedDefaultPassword);
     }
 
     let oldParentPic = null;

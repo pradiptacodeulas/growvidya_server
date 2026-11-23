@@ -2174,6 +2174,9 @@ class StudentModel {
         : null;
 
       if (fFirst || fPhone || fEmail) {
+        const fPlainPass = fPhone && String(fPhone).trim() ? String(fPhone).trim() : null;
+        const hashedFatherPass = fPlainPass ? await hashPassword(fPlainPass) : null;
+
         if (existingStp && existingStp.father_id) {
           fatherId = existingStp.father_id;
           let oldFatherPic = null;
@@ -2181,8 +2184,8 @@ class StudentModel {
             const [fpRows] = await pool.query('SELECT picture FROM parent_master WHERE id = ? AND school_id = ? LIMIT 1', [fatherId, schoolId]);
             oldFatherPic = fpRows?.[0]?.picture || null;
           }
-          let updateSql = `UPDATE parent_master SET first_name = ?, last_name = ?, phone = ?, email = ?, occupation = ?`;
-          const params = [fFirst, fLast, fPhone, fEmail, fOcc];
+          let updateSql = `UPDATE parent_master SET first_name = ?, last_name = ?, phone = ?, email = ?, occupation = ?, password = COALESCE(NULLIF(TRIM(password), ''), ?)`;
+          const params = [fFirst, fLast, fPhone, fEmail, fOcc, hashedFatherPass];
           if (fatherPic) {
             updateSql += `, picture = ?`;
             params.push(fatherPic);
@@ -2230,8 +2233,8 @@ class StudentModel {
 
           if (existingParentId) {
             fatherId = existingParentId;
-            let updateSql = `UPDATE parent_master SET first_name = ?, last_name = ?, occupation = ?`;
-            const params = [fFirst, fLast, fOcc];
+            let updateSql = `UPDATE parent_master SET first_name = COALESCE(NULLIF(?, ''), first_name), last_name = COALESCE(NULLIF(?, ''), last_name), phone = COALESCE(NULLIF(?, ''), phone), email = COALESCE(NULLIF(?, ''), email), occupation = COALESCE(NULLIF(?, ''), occupation), password = COALESCE(NULLIF(TRIM(password), ''), ?)`;
+            const params = [fFirst, fLast, fPhone, fEmail, fOcc, hashedFatherPass];
             if (fatherPic) {
               updateSql += `, picture = ?`;
               params.push(fatherPic);
@@ -2240,8 +2243,6 @@ class StudentModel {
             params.push(fatherId, schoolId);
             await pool.execute(updateSql, params);
           } else {
-            const fPlainPass = (fPhone && String(fPhone).trim()) ? String(fPhone).trim() : null;
-            const hashedFatherPass = fPlainPass ? await hashPassword(fPlainPass) : null;
             const [fRes] = await pool.execute(
               `INSERT INTO parent_master (school_id, branch_id, first_name, last_name, phone, email, occupation, relation, parent_type, picture, password, status, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, 'Father', 1, ?, ?, 1, NOW())`,
@@ -2281,6 +2282,9 @@ class StudentModel {
         : null;
 
       if (mFirst || mPhone || mEmail) {
+        const mPlainPass = mPhone && String(mPhone).trim() ? String(mPhone).trim() : null;
+        const hashedMotherPass = mPlainPass ? await hashPassword(mPlainPass) : null;
+
         if (existingStp && existingStp.mother_id) {
           motherId = existingStp.mother_id;
           let oldMotherPic = null;
@@ -2288,8 +2292,8 @@ class StudentModel {
             const [mpRows] = await pool.query('SELECT picture FROM parent_master WHERE id = ? AND school_id = ? LIMIT 1', [motherId, schoolId]);
             oldMotherPic = mpRows?.[0]?.picture || null;
           }
-          let updateSql = `UPDATE parent_master SET first_name = ?, last_name = ?, phone = ?, email = ?, occupation = ?`;
-          const params = [mFirst, mLast, mPhone, mEmail, mOcc];
+          let updateSql = `UPDATE parent_master SET first_name = ?, last_name = ?, phone = ?, email = ?, occupation = ?, password = COALESCE(NULLIF(TRIM(password), ''), ?)`;
+          const params = [mFirst, mLast, mPhone, mEmail, mOcc, hashedMotherPass];
           if (motherPic) {
             updateSql += `, picture = ?`;
             params.push(motherPic);
@@ -2337,8 +2341,8 @@ class StudentModel {
 
           if (existingMotherId) {
             motherId = existingMotherId;
-            let updateSql = `UPDATE parent_master SET first_name = ?, last_name = ?, occupation = ?`;
-            const params = [mFirst, mLast, mOcc];
+            let updateSql = `UPDATE parent_master SET first_name = COALESCE(NULLIF(?, ''), first_name), last_name = COALESCE(NULLIF(?, ''), last_name), phone = COALESCE(NULLIF(?, ''), phone), email = COALESCE(NULLIF(?, ''), email), occupation = COALESCE(NULLIF(?, ''), occupation), password = COALESCE(NULLIF(TRIM(password), ''), ?)`;
+            const params = [mFirst, mLast, mPhone, mEmail, mOcc, hashedMotherPass];
             if (motherPic) {
               updateSql += `, picture = ?`;
               params.push(motherPic);
@@ -2347,8 +2351,6 @@ class StudentModel {
             params.push(motherId, schoolId);
             await pool.execute(updateSql, params);
           } else {
-            const mPlainPass = (mPhone && String(mPhone).trim()) ? String(mPhone).trim() : null;
-            const hashedMotherPass = mPlainPass ? await hashPassword(mPlainPass) : null;
             const [mRes] = await pool.execute(
               `INSERT INTO parent_master (school_id, branch_id, first_name, last_name, phone, email, occupation, relation, parent_type, picture, password, status, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, 'Mother', 2, ?, ?, 1, NOW())`,
@@ -2380,13 +2382,16 @@ class StudentModel {
         guardianId = motherId;
       } else if (gRel === '3') {
         const ogInfo = data.other_guardian_info || {};
+        const gPlainPass = ogInfo.phone && String(ogInfo.phone).trim() ? String(ogInfo.phone).trim() : null;
+        const hashedGuardianPass = gPlainPass ? await hashPassword(gPlainPass) : null;
+
         if (existingStp && existingStp.guardian_id && existingStp.guardian_id !== existingStp.father_id && existingStp.guardian_id !== existingStp.mother_id) {
           guardianId = existingStp.guardian_id;
           await pool.execute(
-            `UPDATE parent_master SET first_name = ?, last_name = ?, phone = ?, email = ?, occupation = ?, relation = ? WHERE id = ? AND school_id = ?`,
-            [ogInfo.first_name || '', ogInfo.last_name || '', ogInfo.phone || null, ogInfo.email || null, ogInfo.occupation || null, ogInfo.relation || 'Guardian', guardianId, schoolId]
+            `UPDATE parent_master SET first_name = ?, last_name = ?, phone = ?, email = ?, occupation = ?, relation = ?, password = COALESCE(NULLIF(TRIM(password), ''), ?) WHERE id = ? AND school_id = ?`,
+            [ogInfo.first_name || '', ogInfo.last_name || '', ogInfo.phone || null, ogInfo.email || null, ogInfo.occupation || null, ogInfo.relation || 'Guardian', hashedGuardianPass, guardianId, schoolId]
           );
-        } else if (ogInfo.first_name || ogInfo.phone) {
+        } else if (ogInfo.first_name || ogInfo.phone || ogInfo.email) {
           let existingGuardianId = null;
           if (ogInfo.phone || ogInfo.email) {
             const [match] = await pool.execute(
@@ -2400,9 +2405,11 @@ class StudentModel {
 
           if (existingGuardianId) {
             guardianId = existingGuardianId;
+            await pool.execute(
+              `UPDATE parent_master SET first_name = COALESCE(NULLIF(?, ''), first_name), last_name = COALESCE(NULLIF(?, ''), last_name), phone = COALESCE(NULLIF(?, ''), phone), email = COALESCE(NULLIF(?, ''), email), occupation = COALESCE(NULLIF(?, ''), occupation), relation = COALESCE(NULLIF(?, ''), relation), password = COALESCE(NULLIF(TRIM(password), ''), ?) WHERE id = ? AND school_id = ?`,
+              [ogInfo.first_name || '', ogInfo.last_name || '', ogInfo.phone || null, ogInfo.email || null, ogInfo.occupation || null, ogInfo.relation || null, hashedGuardianPass, guardianId, schoolId]
+            );
           } else {
-            const gPlainPass = (ogInfo.phone && String(ogInfo.phone).trim()) ? String(ogInfo.phone).trim() : null;
-            const hashedGuardianPass = gPlainPass ? await hashPassword(gPlainPass) : null;
             const [gRes] = await pool.execute(
               `INSERT INTO parent_master (school_id, branch_id, first_name, last_name, phone, email, occupation, relation, parent_type, password, status, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 3, ?, 1, NOW())`,
