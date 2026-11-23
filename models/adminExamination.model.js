@@ -8,6 +8,7 @@ class AdminExaminationModel {
     try {
       const [cols] = await pool.query(`SHOW COLUMNS FROM exam_result`);
       const existingCols = new Set(cols.map((c) => c.Field));
+      const resultStatusCol = cols.find((c) => c.Field === 'result_status');
 
       const alterations = [];
       if (!existingCols.has('total_marks')) {
@@ -23,11 +24,32 @@ class AdminExaminationModel {
         alterations.push(`ADD COLUMN grade_name VARCHAR(20) DEFAULT NULL`);
       }
       if (!existingCols.has('result_status')) {
-        alterations.push(`ADD COLUMN result_status VARCHAR(20) DEFAULT NULL COMMENT 'Pass or Fail'`);
+        alterations.push(
+          `ADD COLUMN result_status TINYINT(1) NOT NULL DEFAULT 0 COMMENT '0 = Pending, 1 = Pass, 2 = Fail'`
+        );
+      }
+      if (!existingCols.has('is_marksheet_generated')) {
+        alterations.push(
+          `ADD COLUMN is_marksheet_generated TINYINT(1) NOT NULL DEFAULT 0 COMMENT '0 = Not Generated, 1 = Generated'`
+        );
       }
 
       if (alterations.length > 0) {
         await pool.query(`ALTER TABLE exam_result ${alterations.join(', ')}`);
+      }
+
+      if (resultStatusCol && /char|text/i.test(String(resultStatusCol.Type || ''))) {
+        await pool.query(
+          `UPDATE exam_result
+           SET result_status = CASE
+             WHEN LOWER(TRIM(IFNULL(result_status, ''))) IN ('pass', '1') THEN '1'
+             WHEN LOWER(TRIM(IFNULL(result_status, ''))) IN ('fail', '2') THEN '2'
+             ELSE '0'
+           END`
+        );
+        await pool.query(
+          `ALTER TABLE exam_result MODIFY COLUMN result_status TINYINT(1) NOT NULL DEFAULT 0 COMMENT '0 = Pending, 1 = Pass, 2 = Fail'`
+        );
       }
 
       await AdminExaminationModel.backfillExamResultSummaries({ onlyUnpopulated: true });
@@ -39,7 +61,7 @@ class AdminExaminationModel {
   static async backfillExamResultSummaries({ onlyUnpopulated = false } = {}) {
     let whereSql = `WHERE er.status != 4`;
     if (onlyUnpopulated) {
-      whereSql += ` AND (er.result_status IS NULL OR er.max_marks IS NULL OR er.max_marks = 0)`;
+      whereSql += ` AND (er.max_marks IS NULL OR er.max_marks = 0)`;
     }
 
     const [erRows] = await pool.query(
@@ -107,18 +129,59 @@ class AdminExaminationModel {
           (!er.branch_id || !g.branch_id || Number(g.branch_id) === Number(er.branch_id))
       );
       const gradeName = AdminExaminationModel.computeGrade(percentage, schoolGrades) || null;
-      const resultStatus = percentage >= 33 ? 'Pass' : 'Fail';
 
       await pool.query(
         `UPDATE exam_result
-         SET total_marks = ?, max_marks = ?, percentage = ?, grade_name = ?, result_status = ?
+         SET total_marks = ?, max_marks = ?, percentage = ?, grade_name = ?
          WHERE id = ?`,
-        [totalMarks, maxMarks, percentage, gradeName, resultStatus, er.id]
+        [totalMarks, maxMarks, percentage, gradeName, er.id]
       );
       updatedCount++;
     }
 
     return { updatedCount };
+  }
+
+  // =========================================================
+  // HELPER: VALIDATE & RESOLVE BRANCH ID AGAINST branch_master
+  // =========================================================
+  static async resolveAndValidateBranchId(dbConnOrPool, schoolId, candidateBranchId = null, { allowDefaultFallback = true } = {}) {
+    const db = dbConnOrPool || pool;
+    if (
+      candidateBranchId !== null &&
+      candidateBranchId !== undefined &&
+      candidateBranchId !== '' &&
+      candidateBranchId !== 'all' &&
+      candidateBranchId !== 0 &&
+      candidateBranchId !== '0'
+    ) {
+      const parsedId = Number(candidateBranchId);
+      if (Number.isNaN(parsedId) || parsedId <= 0) {
+        const err = new Error('Invalid branch ID provided.');
+        err.statusCode = 400;
+        throw err;
+      }
+      const [bRows] = await db.query(
+        `SELECT id FROM branch_master WHERE id = ? AND school_id = ? AND (status != 4 OR status IS NULL) LIMIT 1`,
+        [parsedId, schoolId]
+      );
+      if (!bRows || bRows.length === 0) {
+        const err = new Error('Invalid or unauthorized branch selected.');
+        err.statusCode = 400;
+        throw err;
+      }
+      return Number(bRows[0].id);
+    }
+
+    if (!allowDefaultFallback) {
+      return null;
+    }
+
+    const [defaultRows] = await db.query(
+      `SELECT id FROM branch_master WHERE school_id = ? AND (status != 4 OR status IS NULL) ORDER BY is_main_branch DESC, id ASC LIMIT 1`,
+      [schoolId]
+    );
+    return defaultRows && defaultRows.length > 0 ? Number(defaultRows[0].id) : null;
   }
 
   // =========================================================
@@ -1747,6 +1810,7 @@ class AdminExaminationModel {
   // =========================================================
 
   static async getExamResultsList({ schoolId, examId, classId, sectionId, academicYearId, branchId = null }) {
+    await AdminExaminationModel.initTable();
     let query = `
       SELECT 
         er.id,
@@ -1760,6 +1824,7 @@ class AdminExaminationModel {
         er.percentage,
         er.grade_name,
         er.result_status,
+        er.is_marksheet_generated,
         er.status,
         er.created_on,
         s.first_name,
@@ -1817,15 +1882,31 @@ class AdminExaminationModel {
          ers.marks,
          ers.grade_id,
          sub.subject_name,
+         et.exam_type,
          g.grade_name
        FROM exam_result_subject ers
        LEFT JOIN subject_master sub ON sub.id = ers.subject_id
+       LEFT JOIN exam_type_master et ON et.id = ers.exam_type_id
        LEFT JOIN grade_settings g ON g.id = ers.grade_id
        WHERE ers.exam_result_id IN (?) AND ers.status != 4`,
       [resultIds]
     );
 
+    let gradeSql = `
+      SELECT id, grade_name, min_percentage, max_percentage
+      FROM grade_settings
+      WHERE (school_id = ? OR ? IS NULL) AND status != 4 AND status != 0
+    `;
+    const gradeParams = [schoolId, schoolId];
+    if (branchId) {
+      gradeSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      gradeParams.push(Number(branchId));
+    }
+    gradeSql += ` ORDER BY min_percentage DESC`;
+    const [schoolGrades] = await pool.query(gradeSql, gradeParams);
+
     const subjectsMap = {};
+    const componentMaxMap = {};
 
     if (classId) {
       const [classSubs] = await pool.query(
@@ -1844,7 +1925,7 @@ class AdminExaminationModel {
     // Check configured subject marks
     if (examId && classId) {
       try {
-        let configMarksQuery = `SELECT esm_marks.subject_id, COALESCE(SUM(esm_marks.mark), 100) AS subject_max_mark
+        let configMarksQuery = `SELECT esm_marks.subject_id, esm_marks.exam_type_id, esm_marks.mark
            FROM exam_subject_master esm
            JOIN exam_subject_marks esm_marks ON esm_marks.exam_subject_id = esm.id AND esm_marks.status != 4 AND esm_marks.is_check = 1
            WHERE esm.school_id = ?
@@ -1854,11 +1935,16 @@ class AdminExaminationModel {
           configMarksQuery += ` AND esm.branch_id = ?`;
           configMarksParams.push(Number(branchId));
         }
-        configMarksQuery += ` GROUP BY esm_marks.subject_id`;
         const [configMarks] = await pool.query(configMarksQuery, configMarksParams);
+        const subjectMaxSum = {};
         configMarks.forEach((cm) => {
-          if (subjectsMap[cm.subject_id]) {
-            subjectsMap[cm.subject_id].max_marks = parseFloat(cm.subject_max_mark) || 100;
+          const mVal = parseFloat(cm.mark) || 0;
+          subjectMaxSum[cm.subject_id] = (subjectMaxSum[cm.subject_id] || 0) + mVal;
+          componentMaxMap[`${cm.subject_id}_${cm.exam_type_id || 'null'}`] = mVal;
+        });
+        Object.entries(subjectMaxSum).forEach(([subId, sumVal]) => {
+          if (subjectsMap[subId]) {
+            subjectsMap[subId].max_marks = sumVal || 100;
           }
         });
       } catch (err) {
@@ -1885,17 +1971,42 @@ class AdminExaminationModel {
       let overallTotal = 0;
 
       studentMarks.forEach((m) => {
+        const subMax = parseFloat(subjectsMap[m.subject_id]?.max_marks) || 100;
+        const compMax =
+          componentMaxMap[`${m.subject_id}_${m.exam_type_id || 'null'}`] || subMax;
+        const mVal = parseFloat(m.marks) || 0;
+        const compPct = compMax > 0 ? Number(((mVal / compMax) * 100).toFixed(1)) : 0;
+        const compGrade =
+          m.grade_name || AdminExaminationModel.computeGrade(compPct, schoolGrades) || '';
+
         if (!subjectTotals[m.subject_id]) {
           subjectTotals[m.subject_id] = {
+            subject_id: m.subject_id,
+            subject_name: subjectsMap[m.subject_id]?.subject_name || m.subject_name || '',
             total_marks: 0,
-            grade_name: m.grade_name || '',
+            max_marks: subMax,
+            percentage: 0,
+            grade_name: '',
+            components: [],
           };
         }
-        subjectTotals[m.subject_id].total_marks += parseFloat(m.marks) || 0;
-        if (m.grade_name) {
-          subjectTotals[m.subject_id].grade_name = m.grade_name;
-        }
-        overallTotal += parseFloat(m.marks) || 0;
+        subjectTotals[m.subject_id].total_marks += mVal;
+        subjectTotals[m.subject_id].components.push({
+          id: m.id,
+          exam_type_id: m.exam_type_id,
+          exam_type: m.exam_type || 'General',
+          marks: mVal,
+          max_marks: compMax,
+          percentage: compPct,
+          grade_name: compGrade,
+        });
+        overallTotal += mVal;
+      });
+
+      Object.values(subjectTotals).forEach((st) => {
+        const pct = st.max_marks > 0 ? Number(((st.total_marks / st.max_marks) * 100).toFixed(1)) : 0;
+        st.percentage = pct;
+        st.grade_name = AdminExaminationModel.computeGrade(pct, schoolGrades) || '';
       });
 
       const storedMax = parseFloat(r.max_marks) || 0;
@@ -1912,7 +2023,10 @@ class AdminExaminationModel {
         r.percentage !== null && r.percentage !== undefined && storedMax > 0
           ? Number(parseFloat(r.percentage).toFixed(1))
           : calculatedPercentage;
-      const resultStatus = r.result_status || (percentage >= 33 ? 'Pass' : 'Fail');
+      const overallGrade =
+        r.grade_name || AdminExaminationModel.computeGrade(percentage, schoolGrades) || null;
+      const numStatus = Number(r.result_status);
+      const resultStatus = numStatus === 1 ? 1 : numStatus === 2 ? 2 : 0;
 
       return {
         ...r,
@@ -1924,8 +2038,9 @@ class AdminExaminationModel {
         max_marks: maxMarks,
         maxMarks: maxMarks,
         percentage: percentage,
-        grade_name: r.grade_name || null,
+        grade_name: overallGrade,
         result_status: resultStatus,
+        is_marksheet_generated: Number(r.is_marksheet_generated) === 1 ? 1 : 0,
         subjects_evaluated: Object.keys(subjectTotals).length,
       };
     });
@@ -1933,6 +2048,7 @@ class AdminExaminationModel {
     return {
       subjects: subjectsList,
       results: resultsWithMarks,
+      grades: schoolGrades,
     };
   }
 
@@ -2030,14 +2146,30 @@ class AdminExaminationModel {
     try {
       await connection.beginTransaction();
 
-      let resolvedBranchId = branchId ? Number(branchId) : null;
-      if (!resolvedBranchId) {
+      let candidateBranchId =
+        branchId && branchId !== 'all' ? Number(branchId) : null;
+      if (!candidateBranchId && examId) {
         const [eRows] = await connection.query(
-          `SELECT branch_id FROM exam_master WHERE id = ?`,
-          [examId]
+          `SELECT branch_id FROM exam_master WHERE id = ? AND school_id = ? LIMIT 1`,
+          [examId, schoolId]
         );
-        resolvedBranchId = eRows[0]?.branch_id || null;
+        candidateBranchId = eRows[0]?.branch_id || null;
       }
+      if (!candidateBranchId && classId) {
+        const [cRows] = await connection.query(
+          `SELECT branch_id FROM class_master WHERE id = ? AND school_id = ? LIMIT 1`,
+          [classId, schoolId]
+        );
+        candidateBranchId = cRows[0]?.branch_id || null;
+      }
+
+      // Strictly verify resolvedBranchId exists in branch_master for this school
+      const resolvedBranchId = await AdminExaminationModel.resolveAndValidateBranchId(
+        connection,
+        schoolId,
+        candidateBranchId,
+        { allowDefaultFallback: true }
+      );
 
       let resolvedYearId = academicYearId ? parseInt(academicYearId, 10) : null;
       if (!resolvedYearId) {
@@ -2052,7 +2184,7 @@ class AdminExaminationModel {
       `;
       const gradeQueryParams = [schoolId, schoolId];
       if (resolvedBranchId) {
-        gradeSql += ` AND branch_id = ?`;
+        gradeSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
         gradeQueryParams.push(resolvedBranchId);
       }
       gradeSql += ` ORDER BY min_percentage DESC`;
@@ -2061,23 +2193,51 @@ class AdminExaminationModel {
       for (const item of studentMarksList) {
         const { studentId, marksPerSubject } = item;
 
+        // Verify student belongs to school and validate student branch_id against branch_master
+        const [stuRows] = await connection.query(
+          `SELECT id, branch_id FROM student_master WHERE id = ? AND school_id = ? AND status != 4 LIMIT 1`,
+          [studentId, schoolId]
+        );
+        if (!stuRows || stuRows.length === 0) {
+          const err = new Error('Student record not found in this school.');
+          err.statusCode = 400;
+          throw err;
+        }
+        const stuBranchId = stuRows[0].branch_id ? Number(stuRows[0].branch_id) : null;
+        if (stuBranchId && resolvedBranchId && stuBranchId !== resolvedBranchId) {
+          const err = new Error('Student does not belong to the selected branch.');
+          err.statusCode = 400;
+          throw err;
+        }
+        const validatedStudentBranchId = stuBranchId
+          ? await AdminExaminationModel.resolveAndValidateBranchId(
+              connection,
+              schoolId,
+              stuBranchId,
+              { allowDefaultFallback: true }
+            )
+          : resolvedBranchId;
+
         // 1. Get or create exam_result record
         let examResultId;
         const [existingResult] = await connection.query(
-          `SELECT id FROM exam_result WHERE exam_id = ? AND student_id = ?`,
-          [examId, studentId]
+          `SELECT id FROM exam_result WHERE exam_id = ? AND student_id = ? AND school_id = ?`,
+          [examId, studentId, schoolId]
         );
 
         if (existingResult.length > 0) {
           examResultId = existingResult[0].id;
-          if (resolvedBranchId) {
-            await connection.query(`UPDATE exam_result SET branch_id = COALESCE(branch_id, ?) WHERE id = ?`, [resolvedBranchId, examResultId]);
+          if (validatedStudentBranchId) {
+            await connection.query(
+              `UPDATE exam_result SET branch_id = COALESCE(branch_id, ?) WHERE id = ? AND school_id = ?`,
+              [validatedStudentBranchId, examResultId, schoolId]
+            );
           }
         } else {
           const [insResult] = await connection.query(
             `INSERT INTO exam_result (school_id, branch_id, academic_year_id, student_id, exam_id, class_id, status, created_on)
              VALUES (?, ?, ?, ?, ?, ?, 1, NOW())`,
-            [schoolId, resolvedBranchId, resolvedYearId, studentId, examId, classId]
+            [schoolId, validatedStudentBranchId, resolvedYearId, studentId, examId, classId]
           );
           examResultId = insResult.insertId;
         }
@@ -2091,7 +2251,7 @@ class AdminExaminationModel {
           existingMarksRows.map((r) => `${r.subject_id}_${r.exam_type_id || 'null'}`)
         );
 
-        // 3. Insert ONLY new subject marks
+        // 3. Insert ONLY new subject marks with validated branch_id
         if (Array.isArray(marksPerSubject) && marksPerSubject.length > 0) {
           for (const sm of marksPerSubject) {
             const key = `${sm.subjectId}_${sm.examTypeId || 'null'}`;
@@ -2120,7 +2280,7 @@ class AdminExaminationModel {
                VALUES (?, ?, ?, ?, ?, ?, ?, 1, NOW())`,
               [
                 schoolId,
-                resolvedBranchId,
+                validatedStudentBranchId,
                 examResultId,
                 sm.subjectId,
                 sm.examTypeId || null,
@@ -2168,13 +2328,12 @@ class AdminExaminationModel {
             : Number(((evaluatedSubjectsCount || 1) * 100).toFixed(2));
         const percentage = maxMarks > 0 ? Number(((totalMarks / maxMarks) * 100).toFixed(1)) : 0;
         const overallGrade = AdminExaminationModel.computeGrade(percentage, grades) || null;
-        const resultStatus = percentage >= 33 ? 'Pass' : 'Fail';
 
         await connection.query(
           `UPDATE exam_result
-           SET total_marks = ?, max_marks = ?, percentage = ?, grade_name = ?, result_status = ?
+           SET total_marks = ?, max_marks = ?, percentage = ?, grade_name = ?
            WHERE id = ?`,
-          [totalMarks, maxMarks, percentage, overallGrade, resultStatus, examResultId]
+          [totalMarks, maxMarks, percentage, overallGrade, examResultId]
         );
       }
 
@@ -2186,6 +2345,162 @@ class AdminExaminationModel {
     } finally {
       connection.release();
     }
+  }
+
+  static async updateExamResultStatus({ resultId, resultStatus, schoolId, branchId = null }) {
+    await AdminExaminationModel.initTable();
+    const validatedBranchId = await AdminExaminationModel.resolveAndValidateBranchId(
+      pool,
+      schoolId,
+      branchId,
+      { allowDefaultFallback: false }
+    );
+    const numericStatus = [1, 2].includes(Number(resultStatus)) ? Number(resultStatus) : 0;
+    let sql = `
+      UPDATE exam_result
+      SET result_status = ?,
+          is_marksheet_generated = CASE WHEN ? = 1 THEN is_marksheet_generated ELSE 0 END
+          ${validatedBranchId ? ', branch_id = COALESCE(branch_id, ?)' : ''}
+      WHERE id = ? AND school_id = ? AND status != 4
+    `;
+    const params = [numericStatus, numericStatus];
+    if (validatedBranchId) {
+      params.push(validatedBranchId);
+    }
+    params.push(Number(resultId), schoolId);
+    if (validatedBranchId) {
+      sql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      params.push(validatedBranchId);
+    }
+    const [res] = await pool.query(sql, params);
+    return res.affectedRows > 0;
+  }
+
+  static async generateMarksheetsForStudents({
+    schoolId,
+    branchId = null,
+    academicYearId = null,
+    classId,
+    studentIds = [],
+  }) {
+    await AdminExaminationModel.initTable();
+    const validatedBranchId = await AdminExaminationModel.resolveAndValidateBranchId(
+      pool,
+      schoolId,
+      branchId,
+      { allowDefaultFallback: false }
+    );
+
+    const cleanIds = [
+      ...new Set((studentIds || []).map((id) => parseInt(id, 10)).filter((id) => id > 0)),
+    ];
+    if (!classId || cleanIds.length === 0) {
+      const err = new Error('Please select a class and at least one passed student.');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    // Verify class exists in class_master and belongs to the validated branch scope
+    let clsSql = `SELECT id, branch_id FROM class_master WHERE id = ? AND school_id = ? AND status = 1`;
+    const clsParams = [Number(classId), schoolId];
+    if (validatedBranchId) {
+      clsSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      clsParams.push(validatedBranchId);
+    }
+    const [clsRows] = await pool.query(clsSql + ' LIMIT 1', clsParams);
+    if (!clsRows || clsRows.length === 0) {
+      const err = new Error('Selected class is invalid or does not belong to the active branch.');
+      err.statusCode = 400;
+      throw err;
+    }
+    const effectiveBranchId =
+      validatedBranchId || (clsRows[0].branch_id ? Number(clsRows[0].branch_id) : null);
+
+    const placeholders = cleanIds.map(() => '?').join(',');
+    let checkSql = `
+      SELECT student_id, result_status, is_marksheet_generated
+      FROM exam_result
+      WHERE school_id = ?
+        AND class_id = ?
+        AND student_id IN (${placeholders})
+        AND status = 1
+    `;
+    const checkParams = [schoolId, Number(classId), ...cleanIds];
+    if (academicYearId) {
+      checkSql += ` AND (academic_year_id = ? OR academic_year_id IS NULL)`;
+      checkParams.push(Number(academicYearId));
+    }
+    if (effectiveBranchId) {
+      checkSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      checkParams.push(effectiveBranchId);
+    }
+
+    const [rows] = await pool.query(checkSql, checkParams);
+    const byStudent = new Map();
+    for (const r of rows || []) {
+      const sid = Number(r.student_id);
+      if (!byStudent.has(sid)) {
+        byStudent.set(sid, { statuses: [], generatedFlags: [] });
+      }
+      const entry = byStudent.get(sid);
+      entry.statuses.push(Number(r.result_status) || 0);
+      entry.generatedFlags.push(Number(r.is_marksheet_generated) === 1 ? 1 : 0);
+    }
+
+    for (const sid of cleanIds) {
+      const entry = byStudent.get(sid) || { statuses: [], generatedFlags: [] };
+      const { statuses, generatedFlags } = entry;
+      const isEligiblePass =
+        statuses.length > 0 &&
+        statuses.includes(1) &&
+        !statuses.includes(2) &&
+        !statuses.includes(0);
+      if (!isEligiblePass) {
+        const err = new Error(
+          'Only students with a Pass status are eligible for marksheet generation.'
+        );
+        err.statusCode = 400;
+        throw err;
+      }
+
+      const isAlreadyGenerated =
+        generatedFlags.length > 0 && generatedFlags.every((flag) => flag === 1);
+      if (isAlreadyGenerated) {
+        const err = new Error(
+          'Marksheet has already been generated for one or more selected students.'
+        );
+        err.statusCode = 400;
+        throw err;
+      }
+    }
+
+    let updateSql = `
+      UPDATE exam_result
+      SET is_marksheet_generated = 1
+          ${effectiveBranchId ? ', branch_id = COALESCE(branch_id, ?)' : ''}
+      WHERE school_id = ?
+        AND class_id = ?
+        AND student_id IN (${placeholders})
+        AND result_status = 1
+        AND COALESCE(is_marksheet_generated, 0) = 0
+        AND status = 1
+    `;
+    const updateParams = [];
+    if (effectiveBranchId) {
+      updateParams.push(effectiveBranchId);
+    }
+    updateParams.push(schoolId, Number(classId), ...cleanIds);
+    if (academicYearId) {
+      updateSql += ` AND (academic_year_id = ? OR academic_year_id IS NULL)`;
+      updateParams.push(Number(academicYearId));
+    }
+    if (effectiveBranchId) {
+      updateSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+      updateParams.push(effectiveBranchId);
+    }
+
+    await pool.query(updateSql, updateParams);
+    return { generatedCount: cleanIds.length };
   }
 
   // =========================================================
@@ -2202,6 +2517,7 @@ class AdminExaminationModel {
     limit = 10,
     branchId = null,
   }) {
+    await AdminExaminationModel.initTable();
     const p = parseInt(page, 10) || 1;
     const l = parseInt(limit, 10) || 10;
     const offset = (p - 1) * l;
@@ -2258,10 +2574,11 @@ class AdminExaminationModel {
         sec.section_name,
         CONCAT(COALESCE(pf.first_name, ''), ' ', COALESCE(pf.last_name, '')) AS father_name,
         IF(COALESCE(er_agg.er_count, 0) > 0, 1, 0) AS has_marksheet,
+        COALESCE(er_agg.is_marksheet_generated, 0) AS is_marksheet_generated,
         COALESCE(er_agg.agg_total_marks, 0) AS total_marks,
         COALESCE(er_agg.agg_max_marks, 0) AS max_marks,
         COALESCE(er_agg.agg_percentage, 0) AS percentage,
-        er_agg.agg_result_status AS result_status
+        COALESCE(er_agg.agg_result_status, 0) AS result_status
        FROM student_master s
        LEFT JOIN class_master c ON c.id = s.class
        LEFT JOIN section_master sec ON sec.id = s.section
@@ -2282,17 +2599,16 @@ class AdminExaminationModel {
              1
            ) AS agg_percentage,
            CASE
-             WHEN COUNT(DISTINCT er.id) = 0 THEN NULL
-             WHEN ROUND(
-               IF(
-                 SUM(er.max_marks) > 0,
-                 (SUM(er.total_marks) / SUM(er.max_marks)) * 100,
-                 AVG(er.percentage)
-               ),
-               1
-             ) >= 33 THEN 'Pass'
-             ELSE 'Fail'
-           END AS agg_result_status
+             WHEN COUNT(DISTINCT er.id) = 0 THEN 0
+             WHEN SUM(CASE WHEN er.result_status = 2 THEN 1 ELSE 0 END) > 0 THEN 2
+             WHEN SUM(CASE WHEN er.result_status = 1 THEN 1 ELSE 0 END) > 0 THEN 1
+             ELSE 0
+           END AS agg_result_status,
+           CASE
+             WHEN COUNT(DISTINCT er.id) = 0 THEN 0
+             WHEN SUM(CASE WHEN er.is_marksheet_generated = 1 THEN 1 ELSE 0 END) > 0 THEN 1
+             ELSE 0
+           END AS is_marksheet_generated
          FROM exam_result er
          WHERE er.school_id = ?
            AND (er.academic_year_id = ? OR ? IS NULL)
@@ -2301,7 +2617,13 @@ class AdminExaminationModel {
        ) er_agg ON er_agg.student_id = s.id
        ${whereClause}
        GROUP BY s.id
-       ORDER BY s.roll_number ASC, s.first_name ASC
+       ORDER BY
+         COALESCE(sec.sort_order, 9999) ASC,
+         sec.section_name ASC,
+         CASE WHEN s.roll_number IS NULL OR TRIM(s.roll_number) = '' THEN 1 ELSE 0 END ASC,
+         CAST(s.roll_number AS UNSIGNED) ASC,
+         s.roll_number ASC,
+         s.first_name ASC
        LIMIT ? OFFSET ?`,
       dataParams
     );
@@ -2535,6 +2857,36 @@ class AdminExaminationModel {
     for (const student of studentList) {
       const studentClassId = student.class_id || classId;
       if (!studentClassId) continue;
+
+      // Strictly verify the student has result_status = 1 (Pass) and is_marksheet_generated = 1
+      let statusCheckSql = `
+        SELECT result_status, is_marksheet_generated
+        FROM exam_result
+        WHERE student_id = ? AND school_id = ? AND status = 1
+      `;
+      const statusCheckParams = [student.id, schoolId];
+      if (branchId) {
+        statusCheckSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+        statusCheckParams.push(Number(branchId));
+      }
+      if (academicYearId) {
+        statusCheckSql += ` AND (academic_year_id = ? OR academic_year_id IS NULL)`;
+        statusCheckParams.push(academicYearId);
+      }
+      const [statusRows] = await pool.query(statusCheckSql, statusCheckParams);
+      const hasPassFlag =
+        Array.isArray(statusRows) &&
+        statusRows.length > 0 &&
+        statusRows.some((sr) => Number(sr.result_status) === 1) &&
+        !statusRows.some((sr) => Number(sr.result_status) === 2) &&
+        !statusRows.some((sr) => Number(sr.result_status) === 0);
+      const isGenerated =
+        Array.isArray(statusRows) &&
+        statusRows.some((sr) => Number(sr.is_marksheet_generated) === 1);
+
+      if (!hasPassFlag || !isGenerated) {
+        continue;
+      }
 
       // Fetch subjects for this class
       let subSql = `SELECT id, subject_name FROM subject_master WHERE class_id = ? AND school_id = ? AND status = 1`;

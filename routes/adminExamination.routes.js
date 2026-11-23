@@ -287,11 +287,21 @@ router.post(
   rbacMiddleware(['Admin', 'Super Admin', 'Teacher'], 'examination/examResult', 'add'),
   AdminExaminationController.saveStudentMarksBatch
 );
+router.patch(
+  '/results/:id/result-status',
+  rbacMiddleware(['Admin', 'Super Admin', 'Teacher'], 'examination/examResult', 'edit'),
+  AdminExaminationController.updateExamResultStatus
+);
 
 // 7. A4 Portrait Marksheet PDF Generation & Student List
 router.get(
   '/marksheet/students',
   AdminExaminationController.getMarksheetStudents
+);
+router.post(
+  '/marksheet/generate',
+  rbacMiddleware(['Admin', 'Super Admin', 'Teacher'], ['examination/examResult', 'records/marksheet'], 'add'),
+  AdminExaminationController.generateMarksheets
 );
 router.get(
   '/marksheet/pdf',

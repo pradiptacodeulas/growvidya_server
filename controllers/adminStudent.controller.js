@@ -929,9 +929,8 @@ class AdminStudentController {
         return ApiResponse.error(res, 'Please select at least one student to process.', null, 400);
       }
 
-      const needsTargetClass = students.some(
-        (s) => String(s.promotion_status || 'promoted').toLowerCase() === 'promoted'
-      );
+      // Promotion status numeric codes: 1 = Promote, 2 = Detained/Repeat, 3 = Hold, 4 = Graduated, 5 = Assign Held
+      const needsTargetClass = students.some((s) => Number(s.promotion_status ?? 1) === 1);
 
       if (!to_academic_year || (needsTargetClass && !to_class_id)) {
         return ApiResponse.error(
@@ -945,7 +944,7 @@ class AdminStudentController {
       const isSameYear =
         from_academic_year && String(from_academic_year) === String(to_academic_year);
       const allowsSameYearHoldUpdate = students.every((s) =>
-        ['assign_hold', 'hold'].includes(String(s.promotion_status || '').toLowerCase())
+        [3, 5].includes(Number(s.promotion_status))
       );
 
       if (isSameYear && !allowsSameYearHoldUpdate) {

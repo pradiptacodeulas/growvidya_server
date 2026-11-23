@@ -1024,6 +1024,54 @@ class AdminExaminationController {
 
       return ApiResponse.success(res, 'Student marks saved and grades computed successfully.');
     } catch (error) {
+      if (error && error.statusCode === 400) {
+        return ApiResponse.error(res, error.message, null, 400);
+      }
+      next(error);
+    }
+  }
+
+  static async updateExamResultStatus(req, res, next) {
+    try {
+      const schoolId = req.user?.schoolId || req.user?.school_id;
+      const branchId =
+        req.branchId || req.body?.branch_id || req.body?.branchId || req.query?.branch_id || null;
+      const resultId = parseInt(req.params.id, 10);
+      const rawStatus = req.body?.result_status ?? req.body?.resultStatus ?? 0;
+
+      if (!resultId) {
+        return ApiResponse.error(res, 'Valid exam result ID is required.', null, 400);
+      }
+
+      const numericStatus = Number(rawStatus);
+      if (![0, 1, 2].includes(numericStatus)) {
+        return ApiResponse.error(
+          res,
+          'Invalid result status code. Allowed values are 0 (Pending), 1 (Pass), or 2 (Fail).',
+          null,
+          400
+        );
+      }
+
+      const updated = await AdminExaminationModel.updateExamResultStatus({
+        resultId,
+        resultStatus: numericStatus,
+        schoolId,
+        branchId,
+      });
+
+      if (!updated) {
+        return ApiResponse.error(res, 'Exam result record not found.', null, 404);
+      }
+
+      return ApiResponse.success(res, 'Student result status updated successfully.', {
+        id: resultId,
+        result_status: numericStatus,
+      });
+    } catch (error) {
+      if (error && error.statusCode === 400) {
+        return ApiResponse.error(res, error.message, null, 400);
+      }
       next(error);
     }
   }
@@ -1069,6 +1117,64 @@ class AdminExaminationController {
     }
   }
 
+  static async generateMarksheets(req, res, next) {
+    try {
+      const schoolId = req.user?.schoolId || req.user?.school_id;
+      const branchId =
+        req.branchId || req.body?.branch_id || req.body?.branchId || req.query?.branch_id || null;
+      const {
+        academicYearId,
+        academic_year_id,
+        classId,
+        class_id,
+        studentIds,
+        student_ids,
+      } = req.body || {};
+
+      const finalYearId =
+        academicYearId || academic_year_id
+          ? parseInt(academicYearId || academic_year_id, 10)
+          : null;
+      const finalClassId = classId || class_id ? parseInt(classId || class_id, 10) : null;
+      const ids = Array.isArray(studentIds)
+        ? studentIds
+        : Array.isArray(student_ids)
+        ? student_ids
+        : [];
+
+      if (!finalClassId) {
+        return ApiResponse.error(res, 'Class selection is required.', null, 400);
+      }
+      if (ids.length === 0) {
+        return ApiResponse.error(
+          res,
+          'Please select at least one student with a Pass status to generate marksheets.',
+          null,
+          400
+        );
+      }
+
+      const result = await AdminExaminationModel.generateMarksheetsForStudents({
+        schoolId,
+        branchId,
+        academicYearId: finalYearId,
+        classId: finalClassId,
+        studentIds: ids,
+      });
+
+      return ApiResponse.success(
+        res,
+        `Marksheet generated successfully for ${result.generatedCount} student(s).`,
+        result
+      );
+    } catch (error) {
+      if (error && error.statusCode === 400) {
+        return ApiResponse.error(res, error.message, null, 400);
+      }
+      next(error);
+    }
+  }
+
   static async downloadMarksheetPdf(req, res, next) {
     try {
       const schoolId = req.user?.schoolId;
@@ -1110,7 +1216,12 @@ class AdminExaminationController {
       });
 
       if (!marksheetData || marksheetData.length === 0) {
-        return ApiResponse.error(res, 'No marksheet records found for the selected student(s)', null, 404);
+        return ApiResponse.error(
+          res,
+          'Marksheet is not available. Only students flagged as Pass are eligible for a marksheet.',
+          null,
+          404
+        );
       }
 
       if (req.query.format === 'json') {

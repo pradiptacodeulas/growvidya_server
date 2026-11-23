@@ -1048,6 +1048,11 @@ class ParentModel {
       const allStudentIds = await ParentModel._resolveStudentSessionIds(studentId, schoolId);
       const stuPlaceholders = allStudentIds.map(() => '?').join(',');
 
+      try {
+        const AdminExaminationModel = require('./adminExamination.model');
+        await AdminExaminationModel.initTable();
+      } catch (_) {}
+
       const [results] = await pool.query(
         `SELECT 
           er.id AS exam_result_id,
@@ -1058,7 +1063,11 @@ class ParentModel {
          FROM exam_result er
          LEFT JOIN exam_master em ON er.exam_id = em.id
          LEFT JOIN academic_year_master ay ON er.academic_year_id = ay.id
-         WHERE er.student_id IN (${stuPlaceholders}) AND (er.school_id = ? OR ? IS NULL) AND er.status != 4
+         WHERE er.student_id IN (${stuPlaceholders})
+           AND (er.school_id = ? OR ? IS NULL)
+           AND er.status != 4
+           AND er.is_marksheet_generated = 1
+           AND er.result_status = 1
          ORDER BY er.id DESC`,
         [...allStudentIds, schoolId, schoolId]
       );

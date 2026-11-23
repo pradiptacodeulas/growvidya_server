@@ -187,7 +187,7 @@ class StudentModel {
         er_agg.agg_total_marks AS obtained_marks,
         er_agg.agg_max_marks AS full_marks,
         er_agg.agg_percentage AS exam_percentage,
-        er_agg.agg_result_status AS result_status
+        COALESCE(er_agg.agg_result_status, 0) AS result_status
       FROM student_master s
       LEFT JOIN branch_master brm ON s.branch_id = brm.id
       LEFT JOIN class_master cm ON s.class = cm.id
@@ -211,10 +211,10 @@ class StudentModel {
             1
           ) AS agg_percentage,
           CASE
-            WHEN COUNT(DISTINCT er.id) = 0 THEN NULL
-            WHEN SUM(CASE WHEN LOWER(TRIM(IFNULL(er.result_status, ''))) = 'fail' THEN 1 ELSE 0 END) > 0 THEN 'Fail'
-            WHEN SUM(CASE WHEN LOWER(TRIM(IFNULL(er.result_status, ''))) = 'pass' THEN 1 ELSE 0 END) > 0 THEN 'Pass'
-            ELSE NULL
+            WHEN COUNT(DISTINCT er.id) = 0 THEN 0
+            WHEN SUM(CASE WHEN er.result_status = 2 THEN 1 ELSE 0 END) > 0 THEN 2
+            WHEN SUM(CASE WHEN er.result_status = 1 THEN 1 ELSE 0 END) > 0 THEN 1
+            ELSE 0
           END AS agg_result_status
         FROM exam_result er
         WHERE er.school_id = ? AND er.status = 1
@@ -2735,15 +2735,31 @@ class StudentModel {
           to_class_id INT DEFAULT NULL,
           to_section_id INT DEFAULT NULL,
           to_roll_number VARCHAR(100) DEFAULT NULL,
-          promotion_status VARCHAR(50) NOT NULL DEFAULT 'promoted',
+          promotion_status TINYINT(1) NOT NULL DEFAULT 1 COMMENT '1=Promoted, 2=Detained, 3=Hold, 4=Graduated',
           promoted_by INT DEFAULT NULL,
           promoted_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
       `);
 
-      const [sphCols] = await connection.query(`SHOW COLUMNS FROM student_promotion_history LIKE 'new_student_id'`);
-      if (!sphCols || sphCols.length === 0) {
+      const [sphCols] = await connection.query(`SHOW COLUMNS FROM student_promotion_history`);
+      const hasNewStudentId = (sphCols || []).some((c) => c.Field === 'new_student_id');
+      if (!hasNewStudentId) {
         await connection.query(`ALTER TABLE student_promotion_history ADD COLUMN new_student_id INT DEFAULT NULL AFTER student_id`);
+      }
+      const promoStatusCol = (sphCols || []).find((c) => c.Field === 'promotion_status');
+      if (promoStatusCol && /char|text/i.test(String(promoStatusCol.Type || ''))) {
+        await connection.query(
+          `UPDATE student_promotion_history
+           SET promotion_status = CASE
+             WHEN LOWER(TRIM(IFNULL(promotion_status, ''))) IN ('detained', '2') THEN '2'
+             WHEN LOWER(TRIM(IFNULL(promotion_status, ''))) IN ('hold', '3') THEN '3'
+             WHEN LOWER(TRIM(IFNULL(promotion_status, ''))) IN ('graduated', '4') THEN '4'
+             ELSE '1'
+           END`
+        );
+        await connection.query(
+          `ALTER TABLE student_promotion_history MODIFY COLUMN promotion_status TINYINT(1) NOT NULL DEFAULT 1 COMMENT '1=Promoted, 2=Detained, 3=Hold, 4=Graduated'`
+        );
       }
       try {
         await connection.query(`ALTER TABLE student_promotion_history MODIFY COLUMN to_class_id INT DEFAULT NULL`);
@@ -2751,14 +2767,48 @@ class StudentModel {
 
       const nextAcademicYear = Number(toAcademicYear);
 
-      // Verify target academic year exists and is active in academic_year_master
-      const [targetYearRows] = await connection.query(
-        `SELECT id, academic_year, start_date, end_date, status
-         FROM academic_year_master
-         WHERE id = ? AND school_id = ? AND status = 1
-         LIMIT 1`,
-        [nextAcademicYear, schoolId]
+      // Load and validate active branches for this school from branch_master
+      const [schoolBranchRows] = await connection.query(
+        `SELECT id, is_main_branch
+         FROM branch_master
+         WHERE school_id = ? AND (status != 4 OR status IS NULL)
+         ORDER BY is_main_branch DESC, id ASC`,
+        [schoolId]
       );
+      const validBranchIdSet = new Set((schoolBranchRows || []).map((b) => Number(b.id)));
+      const defaultSchoolBranchId =
+        schoolBranchRows && schoolBranchRows.length > 0 ? Number(schoolBranchRows[0].id) : null;
+
+      let validatedReqBranchId = null;
+      if (
+        branchId !== null &&
+        branchId !== undefined &&
+        branchId !== '' &&
+        branchId !== 'all' &&
+        branchId !== 0 &&
+        branchId !== '0'
+      ) {
+        const parsedReqBranch = Number(branchId);
+        if (Number.isNaN(parsedReqBranch) || !validBranchIdSet.has(parsedReqBranch)) {
+          throw createValidationError('Invalid or unauthorized branch selected.');
+        }
+        validatedReqBranchId = parsedReqBranch;
+      }
+
+      // Verify target academic year exists, is active, and matches branch scope
+      let targetYearSql = `
+        SELECT id, branch_id, academic_year, start_date, end_date, status
+        FROM academic_year_master
+        WHERE id = ? AND school_id = ? AND status = 1
+      `;
+      const targetYearParams = [nextAcademicYear, schoolId];
+      if (validatedReqBranchId) {
+        targetYearSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+        targetYearParams.push(validatedReqBranchId);
+      }
+      targetYearSql += ` LIMIT 1`;
+
+      const [targetYearRows] = await connection.query(targetYearSql, targetYearParams);
       if (!targetYearRows || targetYearRows.length === 0) {
         throw createValidationError('Selected target academic year is invalid or inactive.');
       }
@@ -2790,9 +2840,9 @@ class StudentModel {
 
         let fetchSql = `SELECT * FROM student_master WHERE id = ? AND school_id = ? AND status = 1`;
         const fetchParams = [studentId, schoolId];
-        if (branchId && branchId !== 'all') {
+        if (validatedReqBranchId) {
           fetchSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
-          fetchParams.push(Number(branchId));
+          fetchParams.push(validatedReqBranchId);
         }
         fetchSql += ` LIMIT 1 FOR UPDATE`;
 
@@ -2800,11 +2850,36 @@ class StudentModel {
         if (!rows || rows.length === 0) continue;
 
         const current = rows[0];
-        const statusAction = String(item.promotion_status || 'promoted').toLowerCase();
+        const currentStudentBranchId = current.branch_id ? Number(current.branch_id) : null;
+        if (
+          currentStudentBranchId &&
+          validatedReqBranchId &&
+          currentStudentBranchId !== validatedReqBranchId
+        ) {
+          throw createValidationError('Student does not belong to the selected branch.');
+        }
+
+        // Resolve and verify the effective branch_id against branch_master before any DB write
+        let effectiveBranchId =
+          validatedReqBranchId ||
+          (currentStudentBranchId && validBranchIdSet.has(currentStudentBranchId)
+            ? currentStudentBranchId
+            : null) ||
+          defaultSchoolBranchId;
+
+        if (effectiveBranchId && !validBranchIdSet.has(Number(effectiveBranchId))) {
+          throw createValidationError('Invalid branch context for student record.');
+        }
+
+        // Strict numeric promotion_status: 1 = Promote, 2 = Detained, 3 = Hold, 4 = Graduated, 5 = Assign Held
+        const statusAction = Number(item.promotion_status) || 1;
+        if (![1, 2, 3, 4, 5].includes(statusAction)) {
+          throw createValidationError('Invalid promotion status action.');
+        }
         const currentYearId = Number(current.academic_year);
         const isSameAcademicYear = currentYearId === nextAcademicYear;
 
-        if (isSameAcademicYear && !['assign_hold', 'hold'].includes(statusAction)) {
+        if (isSameAcademicYear && ![3, 5].includes(statusAction)) {
           throw createValidationError('Please select a future academic year for promotion.');
         }
 
@@ -2844,53 +2919,72 @@ class StudentModel {
             ? String(item.roll_number).trim()
             : null;
 
-        if (statusAction === 'detained') {
+        if (statusAction === 2) {
           nextClassId = Number(current.class);
-        } else if (statusAction === 'assign_hold') {
+        } else if (statusAction === 5) {
           nextClassId = toClassId ? Number(toClassId) : Number(current.class);
-        } else if (statusAction === 'hold') {
+        } else if (statusAction === 3) {
           nextClassId = toClassId ? Number(toClassId) : Number(current.class);
           nextSectionId = null;
           newRollNumber = null;
-        } else if (statusAction === 'graduated') {
+        } else if (statusAction === 4) {
           nextClassId = null;
           nextSectionId = null;
           newRollNumber = null;
         }
 
-        if (statusAction === 'promoted') {
-          if (!nextClassId || Number(nextClassId) === Number(current.class)) {
-            throw createValidationError('Target class must be different from the current class for promotion.');
-          }
+        if (nextClassId) {
           const [clsRows] = await connection.query(
-            `SELECT id FROM class_master WHERE id = ? AND school_id = ? AND status = 1 LIMIT 1`,
+            `SELECT id, branch_id FROM class_master WHERE id = ? AND school_id = ? AND status = 1 LIMIT 1`,
             [nextClassId, schoolId]
           );
           if (!clsRows || clsRows.length === 0) {
             throw createValidationError('Selected target class is invalid or inactive.');
           }
+          const clsBranchId = clsRows[0].branch_id ? Number(clsRows[0].branch_id) : null;
+          if (clsBranchId && !validBranchIdSet.has(clsBranchId)) {
+            throw createValidationError('Target class is linked to an invalid branch.');
+          }
+          if (clsBranchId && effectiveBranchId && clsBranchId !== Number(effectiveBranchId)) {
+            throw createValidationError('Target class does not belong to the student branch.');
+          }
+          if (!effectiveBranchId && clsBranchId) {
+            effectiveBranchId = clsBranchId;
+          }
+        }
 
-          // Strictly verify student's Pass flag in exam_result from the database
-          const [examRows] = await connection.query(
-            `SELECT result_status
-             FROM exam_result
-             WHERE school_id = ? AND student_id = ? AND status = 1`,
-            [schoolId, studentId]
-          );
-          const hasPass = (examRows || []).some(
-            (er) => String(er.result_status || '').trim().toLowerCase() === 'pass'
-          );
-          const hasFail = (examRows || []).some(
-            (er) => String(er.result_status || '').trim().toLowerCase() === 'fail'
-          );
-          if (!examRows || examRows.length === 0 || !hasPass || hasFail) {
+        if (statusAction === 1) {
+          if (!nextClassId || Number(nextClassId) === Number(current.class)) {
+            throw createValidationError('Target class must be different from the current class for promotion.');
+          }
+
+          // Strictly verify student's numeric Pass status (result_status = 1) in exam_result from the database
+          let examCheckSql = `
+            SELECT result_status
+            FROM exam_result
+            WHERE school_id = ? AND student_id = ? AND status = 1
+          `;
+          const examCheckParams = [schoolId, studentId];
+          if (currentYearId) {
+            examCheckSql += ` AND (academic_year_id = ? OR academic_year_id IS NULL)`;
+            examCheckParams.push(currentYearId);
+          }
+          if (effectiveBranchId) {
+            examCheckSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+            examCheckParams.push(effectiveBranchId);
+          }
+          const [examRows] = await connection.query(examCheckSql, examCheckParams);
+          const hasPass = (examRows || []).some((er) => Number(er.result_status) === 1);
+          const hasFail = (examRows || []).some((er) => Number(er.result_status) === 2);
+          const hasPending = (examRows || []).some((er) => Number(er.result_status) === 0);
+          if (!examRows || examRows.length === 0 || !hasPass || hasFail || hasPending) {
             throw createValidationError(
               'Only students with a Pass result status can be promoted to the next class.'
             );
           }
         }
 
-        if (['promoted', 'detained', 'assign_hold'].includes(statusAction)) {
+        if ([1, 2, 5].includes(statusAction)) {
           if (!nextClassId) {
             throw createValidationError('Target class selection is required.');
           }
@@ -2915,6 +3009,7 @@ class StudentModel {
         preparedItems.push({
           studentId,
           current,
+          effectiveBranchId,
           statusAction,
           isSameAcademicYear,
           nextClassId,
@@ -2930,7 +3025,7 @@ class StudentModel {
       // Pass 2: Enforce section existence, maximum section capacity, and roll number uniqueness
       const sectionBuckets = new Map();
       for (const p of preparedItems) {
-        if (!['promoted', 'detained', 'assign_hold'].includes(p.statusAction)) continue;
+        if (![1, 2, 5].includes(p.statusAction)) continue;
         const secKey = `${p.nextClassId}_${p.nextSectionId}`;
         if (!sectionBuckets.has(secKey)) {
           sectionBuckets.set(secKey, {
@@ -2951,7 +3046,7 @@ class StudentModel {
 
       for (const bucket of sectionBuckets.values()) {
         const [secRows] = await connection.query(
-          `SELECT id, class_id, section_name, capacity
+          `SELECT id, class_id, branch_id, section_name, capacity
            FROM section_master
            WHERE id = ? AND class_id = ? AND school_id = ? AND status = 1
            LIMIT 1 FOR UPDATE`,
@@ -2961,6 +3056,19 @@ class StudentModel {
           throw createValidationError('Selected target section does not exist or is inactive.');
         }
         const secRecord = secRows[0];
+        const secBranchId = secRecord.branch_id ? Number(secRecord.branch_id) : null;
+        if (secBranchId && !validBranchIdSet.has(secBranchId)) {
+          throw createValidationError('Selected target section is linked to an invalid branch.');
+        }
+        for (const bItem of bucket.items) {
+          if (
+            secBranchId &&
+            bItem.effectiveBranchId &&
+            secBranchId !== Number(bItem.effectiveBranchId)
+          ) {
+            throw createValidationError('Selected target section does not belong to the student branch.');
+          }
+        }
         const maxCapacity = Number(secRecord.capacity) || 0;
         if (maxCapacity <= 0) {
           throw createValidationError('Target section capacity is not configured.');
@@ -3012,6 +3120,7 @@ class StudentModel {
         const {
           studentId,
           current,
+          effectiveBranchId,
           statusAction,
           isSameAcademicYear,
           nextClassId,
@@ -3021,13 +3130,13 @@ class StudentModel {
 
         let newStudentId = null;
 
-        if (isSameAcademicYear && ['assign_hold', 'hold'].includes(statusAction)) {
+        if (isSameAcademicYear && [3, 5].includes(statusAction)) {
           newStudentId = studentId;
           await connection.query(
             `UPDATE student_master
-             SET class = ?, section = ?, roll_number = ?, status = 1
+             SET class = ?, section = ?, roll_number = ?, branch_id = COALESCE(branch_id, ?), status = 1
              WHERE id = ? AND school_id = ?`,
-            [nextClassId, nextSectionId, newRollNumber, studentId, schoolId]
+            [nextClassId, nextSectionId, newRollNumber, effectiveBranchId, studentId, schoolId]
           );
         } else {
           // 1. Mark the previous academic year student record as Inactive (status = 2)
@@ -3038,7 +3147,7 @@ class StudentModel {
             [studentId, schoolId]
           );
 
-          if (statusAction === 'graduated') {
+          if (statusAction === 4) {
             // Deactivate transport, hostel, and old fee allocations for graduated students
             await connection.query(
               `UPDATE student_transport SET status = 2 WHERE student_id = ? AND school_id = ? AND status = 1`,
@@ -3069,12 +3178,12 @@ class StudentModel {
               newStudentId = Number(existingTargetRows[0].id);
               await connection.query(
                 `UPDATE student_master
-                 SET class = ?, section = ?, roll_number = ?, status = 1
+                 SET class = ?, section = ?, roll_number = ?, branch_id = COALESCE(branch_id, ?), status = 1
                  WHERE id = ? AND school_id = ?`,
-                [nextClassId, nextSectionId, newRollNumber, newStudentId, schoolId]
+                [nextClassId, nextSectionId, newRollNumber, effectiveBranchId, newStudentId, schoolId]
               );
             } else {
-              // 2. Create the student's record for the new academic year with status = 1 (Active)
+              // 2. Create the student's record for the new academic year with validated branch_id and status = 1 (Active)
               const [insertRes] = await connection.query(
                 `INSERT INTO student_master (
                    school_id, branch_id, academic_year, admission_number, admission_date, roll_number,
@@ -3085,7 +3194,7 @@ class StudentModel {
                  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)`,
                 [
                   schoolId,
-                  current.branch_id || null,
+                  effectiveBranchId,
                   nextAcademicYear,
                   current.admission_number,
                   current.admission_date,
@@ -3118,7 +3227,7 @@ class StudentModel {
               newStudentId = insertRes.insertId;
             }
 
-            // Sync child tables if not already present for newStudentId
+            // Sync child tables if not already present for newStudentId using validated effectiveBranchId
             const [existingParentLink] = await connection.query(
               `SELECT id FROM student_to_parent WHERE student_id = ? AND school_id = ? AND status != 4 LIMIT 1`,
               [newStudentId, schoolId]
@@ -3126,10 +3235,10 @@ class StudentModel {
             if (!existingParentLink || existingParentLink.length === 0) {
               await connection.query(
                 `INSERT INTO student_to_parent (school_id, branch_id, student_id, father_id, mother_id, guardian_id, status)
-                 SELECT school_id, branch_id, ?, father_id, mother_id, guardian_id, 1
+                 SELECT school_id, COALESCE(branch_id, ?), ?, father_id, mother_id, guardian_id, 1
                  FROM student_to_parent
                  WHERE student_id = ? AND school_id = ? AND status != 4`,
-                [newStudentId, studentId, schoolId]
+                [effectiveBranchId, newStudentId, studentId, schoolId]
               );
             }
 
@@ -3140,10 +3249,10 @@ class StudentModel {
             if (!existingAddr || existingAddr.length === 0) {
               await connection.query(
                 `INSERT INTO student_address (school_id, branch_id, student_id, address_type, same_permanent, country, state, city, postal_code, address1, address2, created_at)
-                 SELECT school_id, branch_id, ?, address_type, same_permanent, country, state, city, postal_code, address1, address2, NOW()
+                 SELECT school_id, COALESCE(branch_id, ?), ?, address_type, same_permanent, country, state, city, postal_code, address1, address2, NOW()
                  FROM student_address
                  WHERE student_id = ? AND school_id = ?`,
-                [newStudentId, studentId, schoolId]
+                [effectiveBranchId, newStudentId, studentId, schoolId]
               );
             }
 
@@ -3154,10 +3263,10 @@ class StudentModel {
             if (!existingTrans || existingTrans.length === 0) {
               await connection.query(
                 `INSERT INTO student_transport (school_id, branch_id, student_id, route, vehicle_number, pickup_point, drop_point, status)
-                 SELECT school_id, branch_id, ?, route, vehicle_number, pickup_point, drop_point, 1
+                 SELECT school_id, COALESCE(branch_id, ?), ?, route, vehicle_number, pickup_point, drop_point, 1
                  FROM student_transport
                  WHERE student_id = ? AND school_id = ? AND status = 1`,
-                [newStudentId, studentId, schoolId]
+                [effectiveBranchId, newStudentId, studentId, schoolId]
               );
             }
 
@@ -3168,10 +3277,10 @@ class StudentModel {
             if (!existingHostel || existingHostel.length === 0) {
               await connection.query(
                 `INSERT INTO student_hostel (school_id, branch_id, student_id, hostel_name, room_number, academic_year, status)
-                 SELECT school_id, branch_id, ?, hostel_name, room_number, ?, 1
+                 SELECT school_id, COALESCE(branch_id, ?), ?, hostel_name, room_number, ?, 1
                  FROM student_hostel
                  WHERE student_id = ? AND school_id = ? AND status = 1`,
-                [newStudentId, nextAcademicYear, studentId, schoolId]
+                [effectiveBranchId, newStudentId, nextAcademicYear, studentId, schoolId]
               );
             }
 
@@ -3182,10 +3291,10 @@ class StudentModel {
             if (!existingMed || existingMed.length === 0) {
               await connection.query(
                 `INSERT INTO student_medical_history (school_id, branch_id, student_id, medical_condition, description, medical_time, is_informed, status)
-                 SELECT school_id, branch_id, ?, medical_condition, description, medical_time, is_informed, status
+                 SELECT school_id, COALESCE(branch_id, ?), ?, medical_condition, description, medical_time, is_informed, status
                  FROM student_medical_history
                  WHERE student_id = ? AND school_id = ? AND status = 1`,
-                [newStudentId, studentId, schoolId]
+                [effectiveBranchId, newStudentId, studentId, schoolId]
               );
             }
 
@@ -3196,10 +3305,10 @@ class StudentModel {
             if (!existingPrevSchool || existingPrevSchool.length === 0) {
               await connection.query(
                 `INSERT INTO previous_school_address (school_id, branch_id, student_id, school_name, address1, address2, country, state, city, postal_code)
-                 SELECT school_id, branch_id, ?, school_name, address1, address2, country, state, city, postal_code
+                 SELECT school_id, COALESCE(branch_id, ?), ?, school_name, address1, address2, country, state, city, postal_code
                  FROM previous_school_address
                  WHERE student_id = ? AND school_id = ?`,
-                [newStudentId, studentId, schoolId]
+                [effectiveBranchId, newStudentId, studentId, schoolId]
               );
             }
 
@@ -3210,10 +3319,10 @@ class StudentModel {
             if (!existingDocs || existingDocs.length === 0) {
               await connection.query(
                 `INSERT INTO student_document (school_id, branch_id, student_id, document_type, file_name, attachments, status)
-                 SELECT school_id, branch_id, ?, document_type, file_name, attachments, status
+                 SELECT school_id, COALESCE(branch_id, ?), ?, document_type, file_name, attachments, status
                  FROM student_document
                  WHERE student_id = ? AND school_id = ? AND status != 4`,
-                [newStudentId, studentId, schoolId]
+                [effectiveBranchId, newStudentId, studentId, schoolId]
               );
             }
 
@@ -3249,15 +3358,20 @@ class StudentModel {
               [newStudentId, studentId, schoolId]
             ).catch(() => {});
 
-            // Auto-allocate active fee structures for the target class and academic year if any exist
+            // Auto-allocate active fee structures for the target class, academic year, and validated branch_id
             if (nextClassId && nextAcademicYear) {
               try {
-                const [structures] = await connection.query(
-                  `SELECT id, total_amount, branch_id
-                   FROM fee_structures
-                   WHERE school_id = ? AND academic_year_id = ? AND class_id = ? AND status = 1`,
-                  [schoolId, nextAcademicYear, nextClassId]
-                );
+                let feeStructSql = `
+                  SELECT id, total_amount, branch_id
+                  FROM fee_structures
+                  WHERE school_id = ? AND academic_year_id = ? AND class_id = ? AND status = 1
+                `;
+                const feeStructParams = [schoolId, nextAcademicYear, nextClassId];
+                if (effectiveBranchId) {
+                  feeStructSql += ` AND (branch_id = ? OR branch_id IS NULL)`;
+                  feeStructParams.push(effectiveBranchId);
+                }
+                const [structures] = await connection.query(feeStructSql, feeStructParams);
                 for (const fs of structures || []) {
                   const [existingAlloc] = await connection.query(
                     `SELECT id FROM student_fee_allocations
@@ -3266,6 +3380,11 @@ class StudentModel {
                     [schoolId, newStudentId, fs.id]
                   );
                   if (!existingAlloc || existingAlloc.length === 0) {
+                    const allocBranchId =
+                      effectiveBranchId ||
+                      (fs.branch_id && validBranchIdSet.has(Number(fs.branch_id))
+                        ? Number(fs.branch_id)
+                        : null);
                     await connection.query(
                       `INSERT INTO student_fee_allocations (
                          school_id, branch_id, student_id, fee_structure_id, academic_year_id,
@@ -3273,7 +3392,7 @@ class StudentModel {
                        ) VALUES (?, ?, ?, ?, ?, ?, 0, ?, 1)`,
                       [
                         schoolId,
-                        current.branch_id || fs.branch_id || null,
+                        allocBranchId,
                         newStudentId,
                         fs.id,
                         nextAcademicYear,
@@ -3297,7 +3416,7 @@ class StudentModel {
            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             schoolId,
-            current.branch_id || null,
+            effectiveBranchId,
             studentId,
             newStudentId,
             current.academic_year ? Number(current.academic_year) : null,
@@ -3307,8 +3426,8 @@ class StudentModel {
             nextAcademicYear,
             nextClassId,
             nextSectionId,
-            ['graduated', 'hold'].includes(statusAction) ? null : newRollNumber,
-            statusAction === 'assign_hold' ? 'promoted' : statusAction,
+            [3, 4].includes(statusAction) ? null : newRollNumber,
+            statusAction === 5 ? 1 : statusAction,
             promotedBy ? Number(promotedBy) : null,
           ]
         );
