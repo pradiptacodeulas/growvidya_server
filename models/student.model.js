@@ -47,17 +47,27 @@ class StudentModel {
       }
     }
 
-    if (classId) {
-      whereClauses.push('(s.class = ? OR s.class = (SELECT class_name FROM class_master WHERE id = ? LIMIT 1))');
-      params.push(classId, classId);
+    if (classId && String(classId).trim() && String(classId).toLowerCase() !== 'all') {
+      const cleanClassId = String(classId).trim();
+      if (/^\d+$/.test(cleanClassId)) {
+        whereClauses.push('s.class = ?');
+        params.push(Number(cleanClassId));
+      } else {
+        whereClauses.push('s.class IN (SELECT id FROM class_master WHERE school_id = ? AND LOWER(TRIM(class_name)) = LOWER(TRIM(?)) AND status != 4)');
+        params.push(schoolId, cleanClassId);
+      }
     }
 
-    if (sectionId) {
-      if (String(sectionId).toLowerCase() === 'unassigned') {
+    if (sectionId && String(sectionId).trim() && String(sectionId).toLowerCase() !== 'all') {
+      const cleanSectionId = String(sectionId).trim();
+      if (cleanSectionId.toLowerCase() === 'unassigned') {
         whereClauses.push("(s.section IS NULL OR s.section = 0 OR s.section = '' OR s.roll_number IS NULL OR TRIM(s.roll_number) = '')");
+      } else if (/^\d+$/.test(cleanSectionId)) {
+        whereClauses.push('s.section = ?');
+        params.push(Number(cleanSectionId));
       } else {
-        whereClauses.push('(s.section = ? OR s.section = (SELECT section_name FROM section_master WHERE id = ? LIMIT 1))');
-        params.push(sectionId, sectionId);
+        whereClauses.push('s.section IN (SELECT id FROM section_master WHERE school_id = ? AND LOWER(TRIM(section_name)) = LOWER(TRIM(?)) AND status != 4)');
+        params.push(schoolId, cleanSectionId);
       }
     }
 

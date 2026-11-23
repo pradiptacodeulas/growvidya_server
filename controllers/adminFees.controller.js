@@ -111,11 +111,12 @@ class AdminFeesController {
     try {
       const schoolId = req.user.schoolId;
       const branchId = req.branchId || req.query.branch_id || null;
-      const { academic_year_id, status, search } = req.query;
+      const { academic_year_id, academicYearId, class_id, classId, status, search } = req.query;
       const structures = await AdminFeesModel.getAllStructures({
         schoolId,
         branchId,
-        academicYearId: academic_year_id,
+        academicYearId: academic_year_id || academicYearId,
+        classId: class_id || classId,
         status,
         search,
       });

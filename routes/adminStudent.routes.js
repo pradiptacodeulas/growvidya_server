@@ -7,10 +7,17 @@ const rbacMiddleware = require('../middlewares/rbac.middleware');
 // All student admin routes require JWT authentication
 router.use(authMiddleware);
 
-// Read-only queries (Accessible by Super Admin, Admin, Teacher)
-router.get('/', rbacMiddleware(['Super Admin', 'Admin', 'Teacher'], 'ward/students', 'view'), AdminStudentController.getAllStudents);
-router.post('/filter', rbacMiddleware(['Super Admin', 'Admin', 'Teacher'], 'ward/students', 'view'), AdminStudentController.getAllStudents);
-router.post('/search', rbacMiddleware(['Super Admin', 'Admin', 'Teacher'], 'ward/students', 'view'), AdminStudentController.getAllStudents);
+// Read-only queries (Accessible by Super Admin, Admin, Teacher, and Fees Management staff)
+const studentViewModules = [
+  'ward/students',
+  'feesmanagement/invoices',
+  'feesmanagement/payments',
+  'feesmanagement/allocations',
+  'feesmanagement/structures',
+];
+router.get('/', rbacMiddleware(['Super Admin', 'Admin', 'Teacher'], studentViewModules, 'view'), AdminStudentController.getAllStudents);
+router.post('/filter', rbacMiddleware(['Super Admin', 'Admin', 'Teacher'], studentViewModules, 'view'), AdminStudentController.getAllStudents);
+router.post('/search', rbacMiddleware(['Super Admin', 'Admin', 'Teacher'], studentViewModules, 'view'), AdminStudentController.getAllStudents);
 
 // Check email, admission number, and roll number duplicate availability
 router.get('/check-email', rbacMiddleware(['Super Admin', 'Admin'], 'ward/students', 'view'), AdminStudentController.checkEmail);

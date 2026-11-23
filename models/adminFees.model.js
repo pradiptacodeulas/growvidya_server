@@ -151,7 +151,7 @@ class AdminFeesModel {
   // 2. FEE STRUCTURES & COMPONENTS
   // =========================================================
 
-  static async getAllStructures({ schoolId, branchId, academicYearId, status, search }) {
+  static async getAllStructures({ schoolId, branchId, academicYearId, classId, status, search }) {
     let query = `
       SELECT 
         fs.id,
@@ -184,12 +184,16 @@ class AdminFeesModel {
     const params = [schoolId];
 
     if (branchId) {
-      query += ` AND fs.branch_id = ?`;
+      query += ` AND (fs.branch_id = ? OR fs.branch_id IS NULL)`;
       params.push(Number(branchId));
     }
     if (academicYearId) {
       query += ` AND fs.academic_year_id = ?`;
       params.push(academicYearId);
+    }
+    if (classId) {
+      query += ` AND (fs.class_id IS NULL OR TRIM(fs.class_id) = '' OR FIND_IN_SET(?, REPLACE(fs.class_id, ' ', '')) > 0)`;
+      params.push(String(classId).trim());
     }
     if (status !== undefined && status !== '') {
       query += ` AND fs.status = ?`;
@@ -206,7 +210,10 @@ class AdminFeesModel {
     const [structures] = await pool.query(query, params);
 
     // Fetch classes lookup for mapping class_ids
-    const [classes] = await pool.query(`SELECT id, class_name FROM class_master WHERE status != 4`);
+    const [classes] = await pool.query(
+      `SELECT id, class_name FROM class_master WHERE school_id = ? AND status != 4`,
+      [schoolId]
+    );
     const classMap = {};
     classes.forEach((c) => {
       classMap[c.id] = c.class_name;
@@ -483,18 +490,22 @@ class AdminFeesModel {
             effectiveAcademicYearId = currentYearRows[0]?.id || null;
           }
 
+          const numericTargetClassIds = targetClassIds.filter((cid) => /^\d+$/.test(String(cid))).map(Number);
           let studentQuery = `
             SELECT sm.id
             FROM student_master sm
             WHERE sm.school_id = ? 
-              AND sm.status = 1 
-              AND (sm.status != 4 OR sm.status IS NULL)
-              AND (
-                sm.class IN (?) 
-                OR sm.class IN (SELECT class_name FROM class_master WHERE id IN (?))
-              )
+              AND sm.status = 1
           `;
-          const studentQueryParams = [schoolId, targetClassIds, targetClassIds];
+          const studentQueryParams = [schoolId];
+
+          if (numericTargetClassIds.length > 0) {
+            studentQuery += ` AND sm.class IN (?)`;
+            studentQueryParams.push(numericTargetClassIds);
+          } else {
+            studentQuery += ` AND sm.class IN (SELECT id FROM class_master WHERE school_id = ? AND class_name IN (?) AND status != 4)`;
+            studentQueryParams.push(schoolId, targetClassIds);
+          }
 
           if (branchId) {
             studentQuery += ` AND sm.branch_id = ?`;
@@ -502,8 +513,13 @@ class AdminFeesModel {
           }
 
           if (sectionId) {
-            studentQuery += ` AND (sm.section = ? OR sm.section IN (SELECT section_name FROM section_master WHERE id = ?))`;
-            studentQueryParams.push(sectionId, sectionId);
+            if (/^\d+$/.test(String(sectionId).trim())) {
+              studentQuery += ` AND sm.section = ?`;
+              studentQueryParams.push(Number(sectionId));
+            } else {
+              studentQuery += ` AND sm.section IN (SELECT id FROM section_master WHERE school_id = ? AND section_name = ? AND status != 4)`;
+              studentQueryParams.push(schoolId, String(sectionId).trim());
+            }
           }
 
           const [students] = await connection.query(studentQuery, studentQueryParams);
@@ -624,18 +640,22 @@ class AdminFeesModel {
             effectiveAcademicYearId = currentYearRows[0]?.id || null;
           }
 
+          const numericClassIds = classIds.filter((cid) => /^\d+$/.test(String(cid))).map(Number);
           let studentQuery = `
             SELECT sm.id
             FROM student_master sm
             WHERE sm.school_id = ? 
-              AND sm.status = 1 
-              AND (sm.status != 4 OR sm.status IS NULL)
-              AND (
-                sm.class IN (?) 
-                OR sm.class IN (SELECT class_name FROM class_master WHERE id IN (?))
-              )
+              AND sm.status = 1
           `;
-          const studentQueryParams = [schoolId, classIds, classIds];
+          const studentQueryParams = [schoolId];
+
+          if (numericClassIds.length > 0) {
+            studentQuery += ` AND sm.class IN (?)`;
+            studentQueryParams.push(numericClassIds);
+          } else {
+            studentQuery += ` AND sm.class IN (SELECT id FROM class_master WHERE school_id = ? AND class_name IN (?) AND status != 4)`;
+            studentQueryParams.push(schoolId, classIds);
+          }
 
           if (current.branch_id) {
             studentQuery += ` AND sm.branch_id = ?`;
@@ -714,20 +734,22 @@ class AdminFeesModel {
     let whereClause = `
       WHERE sfa.school_id = ?
         AND sfa.status != 4
+        AND sm.status != 4
+        AND (fs.status != 4 OR fs.status IS NULL)
     `;
     const params = [schoolId];
 
     if (branchId) {
-      whereClause += ` AND (sm.branch_id = ? OR fs.branch_id = ?)`;
+      whereClause += ` AND (sm.branch_id = ? OR fs.branch_id = ? OR fs.branch_id IS NULL)`;
       params.push(Number(branchId), Number(branchId));
     }
     if (classId) {
-      whereClause += ` AND sm.class = ?`;
-      params.push(classId);
+      whereClause += ` AND sm.class = ? AND (fs.class_id IS NULL OR TRIM(fs.class_id) = '' OR FIND_IN_SET(?, REPLACE(fs.class_id, ' ', '')) > 0)`;
+      params.push(Number(classId) || classId, String(classId).trim());
     }
     if (sectionId) {
       whereClause += ` AND sm.section = ?`;
-      params.push(sectionId);
+      params.push(Number(sectionId) || sectionId);
     }
     if (structureId) {
       whereClause += ` AND sfa.fee_structure_id = ?`;
@@ -908,6 +930,8 @@ class AdminFeesModel {
   }) {
     let whereClause = `
       WHERE fi.school_id = ?
+        AND fi.status != '4'
+        AND sm.status != 4
     `;
     const params = [schoolId];
 
@@ -916,12 +940,14 @@ class AdminFeesModel {
       params.push(Number(branchId), Number(branchId));
     }
     if (classId) {
-      whereClause += ` AND fi.class_id = ?`;
-      params.push(classId);
+      const cleanClassId = Number(classId) || classId;
+      whereClause += ` AND COALESCE(fi.class_id, sm.class) = ? AND sm.class = ?`;
+      params.push(cleanClassId, cleanClassId);
     }
     if (sectionId) {
-      whereClause += ` AND fi.section_id = ?`;
-      params.push(sectionId);
+      const cleanSectionId = Number(sectionId) || sectionId;
+      whereClause += ` AND COALESCE(fi.section_id, sm.section) = ? AND sm.section = ?`;
+      params.push(cleanSectionId, cleanSectionId);
     }
     if (structureId) {
       whereClause += ` AND fi.fee_structure_id = ?`;
@@ -950,7 +976,7 @@ class AdminFeesModel {
       params.push(studentId, schoolId, studentId);
     }
     if (status && status !== 'all') {
-      whereClause += ` AND fi.status = ?`;
+      whereClause += ` AND LOWER(fi.status) = LOWER(?)`;
       params.push(status);
     }
     if (search) {
@@ -976,8 +1002,8 @@ class AdminFeesModel {
         brm.branch_name,
         brm.branch_code,
         fi.student_id,
-        fi.class_id,
-        fi.section_id,
+        COALESCE(fi.class_id, sm.class) AS class_id,
+        COALESCE(fi.section_id, sm.section) AS section_id,
         fi.academic_year_id,
         fi.fee_structure_id,
         fi.title,
@@ -1003,12 +1029,13 @@ class AdminFeesModel {
         cm.class_name,
         sec.section_name,
         fs.name AS structure_name,
+        fs.frequency AS structure_frequency,
         ay.academic_year
       FROM fee_invoices fi
       INNER JOIN student_master sm ON sm.id = fi.student_id
       LEFT JOIN branch_master brm ON brm.id = COALESCE(fi.branch_id, sm.branch_id)
-      LEFT JOIN class_master cm ON cm.id = fi.class_id
-      LEFT JOIN section_master sec ON sec.id = fi.section_id
+      LEFT JOIN class_master cm ON cm.id = COALESCE(fi.class_id, sm.class)
+      LEFT JOIN section_master sec ON sec.id = COALESCE(fi.section_id, sm.section)
       LEFT JOIN fee_structures fs ON fs.id = fi.fee_structure_id
       LEFT JOIN academic_year_master ay ON ay.id = fi.academic_year_id
       ${whereClause}
@@ -1153,7 +1180,7 @@ class AdminFeesModel {
     const effectiveIssueDate = this.toLocalDateStr(issueDate);
 
     // 1. Fetch fee structure info
-    let structQuery = `SELECT id, name, frequency, start_month, due_day, grace_period_days, academic_year_id FROM fee_structures WHERE id = ? AND school_id = ?`;
+    let structQuery = `SELECT id, name, class_id, section_id, frequency, start_month, due_day, grace_period_days, academic_year_id FROM fee_structures WHERE id = ? AND school_id = ?`;
     const structParams = [feeStructureId, schoolId];
     if (branchId) {
       structQuery += ` AND (branch_id = ? OR branch_id IS NULL)`;
@@ -1166,32 +1193,74 @@ class AdminFeesModel {
     const structure = structRows[0];
     const frequency = structure.frequency;
 
+    const structClassIds = String(structure.class_id || '')
+      .split(',')
+      .map((c) => c.trim())
+      .filter(Boolean);
+    if (classId && structClassIds.length > 0 && !structClassIds.includes(String(classId).trim())) {
+      return { exists: false, totalStudents: 0, alreadyInvoicedCount: 0, alreadyInvoicedStudentIds: [] };
+    }
+
     // 2. Identify target students
     let targetStudentIds = [];
-    if (studentIds && Array.isArray(studentIds) && studentIds.length > 0) {
-      targetStudentIds = studentIds.map((id) => Number(id)).filter(Boolean);
-    } else if (studentIds && typeof studentIds === 'string' && studentIds.trim()) {
-      targetStudentIds = studentIds.split(',').map((id) => Number(id.trim())).filter(Boolean);
-    } else if (studentId) {
-      targetStudentIds = [Number(studentId)];
-    } else if (classId) {
-      let stSql = `
-        SELECT id FROM student_master 
-        WHERE school_id = ? AND status = 1 AND (status != 4 OR status IS NULL)
-          AND (class = ? OR class = (SELECT class_name FROM class_master WHERE id = ? LIMIT 1))
-      `;
-      const stParams = [schoolId, classId, classId];
-      if (branchId) {
-        stSql += ` AND branch_id = ?`;
-        stParams.push(Number(branchId));
-      }
-      if (sectionId) {
-        stSql += ` AND (section = ? OR section = (SELECT section_name FROM section_master WHERE id = ? LIMIT 1))`;
-        stParams.push(sectionId, sectionId);
-      }
-      const [stRows] = await pool.query(stSql, stParams);
-      targetStudentIds = stRows.map((r) => r.id);
+    let stSql = `
+      SELECT id FROM student_master 
+      WHERE school_id = ? AND status = 1
+    `;
+    const stParams = [schoolId];
+    if (branchId) {
+      stSql += ` AND branch_id = ?`;
+      stParams.push(Number(branchId));
     }
+    if (classId) {
+      if (/^\d+$/.test(String(classId).trim())) {
+        stSql += ` AND class = ?`;
+        stParams.push(Number(classId));
+      } else {
+        stSql += ` AND class IN (SELECT id FROM class_master WHERE school_id = ? AND LOWER(TRIM(class_name)) = LOWER(TRIM(?)) AND status != 4)`;
+        stParams.push(schoolId, String(classId).trim());
+      }
+    } else if (structClassIds.length > 0) {
+      const numericStructClassIds = structClassIds.filter((c) => /^\d+$/.test(c)).map(Number);
+      if (numericStructClassIds.length > 0) {
+        stSql += ` AND class IN (?)`;
+        stParams.push(numericStructClassIds);
+      }
+    }
+    if (sectionId) {
+      if (/^\d+$/.test(String(sectionId).trim())) {
+        stSql += ` AND section = ?`;
+        stParams.push(Number(sectionId));
+      } else {
+        stSql += ` AND section IN (SELECT id FROM section_master WHERE school_id = ? AND LOWER(TRIM(section_name)) = LOWER(TRIM(?)) AND status != 4)`;
+        stParams.push(schoolId, String(sectionId).trim());
+      }
+    } else if (structure.section_id) {
+      stSql += ` AND section = ?`;
+      stParams.push(Number(structure.section_id) || structure.section_id);
+    }
+
+    const effectiveYearId = academicYearId || structure.academic_year_id || null;
+    if (effectiveYearId && /^\d+$/.test(String(effectiveYearId).trim())) {
+      stSql += ` AND (academic_year = ? OR academic_year IS NULL)`;
+      stParams.push(Number(effectiveYearId));
+    }
+
+    if (studentIds && Array.isArray(studentIds) && studentIds.length > 0) {
+      const parsedIds = studentIds.map((id) => Number(id)).filter(Boolean);
+      stSql += ` AND id IN (?)`;
+      stParams.push(parsedIds);
+    } else if (studentIds && typeof studentIds === 'string' && studentIds.trim()) {
+      const parsedIds = studentIds.split(',').map((id) => Number(id.trim())).filter(Boolean);
+      stSql += ` AND id IN (?)`;
+      stParams.push(parsedIds);
+    } else if (studentId) {
+      stSql += ` AND id = ?`;
+      stParams.push(Number(studentId));
+    }
+
+    const [stRows] = await pool.query(stSql, stParams);
+    targetStudentIds = Array.from(new Set(stRows.map((r) => r.id)));
 
     if (targetStudentIds.length === 0) {
       return { exists: false, totalStudents: 0, alreadyInvoicedCount: 0, alreadyInvoicedStudentIds: [] };
@@ -1380,17 +1449,62 @@ class AdminFeesModel {
         }
       }
 
+      const structClassIds = String(structure.class_id || '')
+        .split(',')
+        .map((c) => c.trim())
+        .filter(Boolean);
+
+      if (classId && structClassIds.length > 0 && !structClassIds.includes(String(classId).trim())) {
+        throw new Error(`Fee Structure "${structure.name}" is not applicable to the selected class.`);
+      }
+
+      const targetYear = academicYearId || structure.academic_year_id || null;
+
       // 2. Identify target students
       let studentQuery = `
         SELECT id, class, section, branch_id 
         FROM student_master 
-        WHERE school_id = ? AND status = 1 AND (status != 4 OR status IS NULL)
+        WHERE school_id = ? AND status = 1
       `;
       const studentParams = [schoolId];
 
       if (branchId) {
         studentQuery += ` AND branch_id = ?`;
         studentParams.push(Number(branchId));
+      }
+
+      if (classId) {
+        if (/^\d+$/.test(String(classId).trim())) {
+          studentQuery += ` AND class = ?`;
+          studentParams.push(Number(classId));
+        } else {
+          studentQuery += ` AND class IN (SELECT id FROM class_master WHERE school_id = ? AND LOWER(TRIM(class_name)) = LOWER(TRIM(?)) AND status != 4)`;
+          studentParams.push(schoolId, String(classId).trim());
+        }
+      } else if (structClassIds.length > 0) {
+        const numericStructClassIds = structClassIds.filter((c) => /^\d+$/.test(c)).map(Number);
+        if (numericStructClassIds.length > 0) {
+          studentQuery += ` AND class IN (?)`;
+          studentParams.push(numericStructClassIds);
+        }
+      }
+
+      if (sectionId) {
+        if (/^\d+$/.test(String(sectionId).trim())) {
+          studentQuery += ` AND section = ?`;
+          studentParams.push(Number(sectionId));
+        } else {
+          studentQuery += ` AND section IN (SELECT id FROM section_master WHERE school_id = ? AND LOWER(TRIM(section_name)) = LOWER(TRIM(?)) AND status != 4)`;
+          studentParams.push(schoolId, String(sectionId).trim());
+        }
+      } else if (structure.section_id) {
+        studentQuery += ` AND section = ?`;
+        studentParams.push(Number(structure.section_id) || structure.section_id);
+      }
+
+      if (targetYear && /^\d+$/.test(String(targetYear).trim())) {
+        studentQuery += ` AND (academic_year = ? OR academic_year IS NULL)`;
+        studentParams.push(Number(targetYear));
       }
 
       if (studentIds && Array.isArray(studentIds) && studentIds.length > 0) {
@@ -1405,25 +1519,21 @@ class AdminFeesModel {
       } else if (studentId) {
         studentQuery += ` AND id = ?`;
         studentParams.push(Number(studentId));
-      } else {
-        if (classId) {
-          studentQuery += ` AND (class = ? OR class = (SELECT class_name FROM class_master WHERE id = ? LIMIT 1))`;
-          studentParams.push(classId, classId);
-        }
-        if (sectionId) {
-          studentQuery += ` AND (section = ? OR section = (SELECT section_name FROM section_master WHERE id = ? LIMIT 1))`;
-          studentParams.push(sectionId, sectionId);
-        }
       }
 
-      const [targetStudents] = await connection.query(studentQuery, studentParams);
+      const [rawTargetStudents] = await connection.query(studentQuery, studentParams);
+      const seenStudentIds = new Set();
+      const targetStudents = rawTargetStudents.filter((st) => {
+        if (!st?.id || seenStudentIds.has(st.id)) return false;
+        seenStudentIds.add(st.id);
+        return true;
+      });
       if (targetStudents.length === 0) {
-        throw new Error('No eligible students found to generate invoices.');
+        throw new Error('No eligible students found in the selected class to generate invoices.');
       }
 
       let generatedCount = 0;
       const frequency = structure.frequency;
-      const targetYear = academicYearId || structure.academic_year_id || null;
       const intervalExpr = this.getIntervalExpr(frequency);
 
       for (const st of targetStudents) {
