@@ -9,6 +9,8 @@ const SubscriptionPolicyService = require('../services/subscriptionPolicy.servic
 const SubscriptionFulfillmentService = require('../services/subscriptionFulfillment.service');
 const ApiResponse = require('../utils/api.response');
 const { getRazorpayConfig } = require('../config/razorpay.config');
+const PasscodeService = require('../services/passcode.service');
+const { generateToken, verifyToken } = require('../utils/jwt.util');
 
 function verifyRazorpaySignature(orderId, paymentId, signature, keySecret) {
   const expectedSignature = crypto
@@ -108,6 +110,182 @@ class SaasController {
   }
 
   /**
+   * Ensure onboarding_email_otps table exists for pre-registration email OTP verification
+   */
+  static async _ensureRegistrationOtpTable() {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS onboarding_email_otps (
+        email VARCHAR(255) NOT NULL PRIMARY KEY,
+        otp VARCHAR(16) DEFAULT NULL,
+        otp_expires_at DATETIME DEFAULT NULL,
+        verified_at DATETIME DEFAULT NULL,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )
+    `);
+  }
+
+  /**
+   * Validate that the admin email has been verified via OTP
+   */
+  static async _isEmailOtpVerified(rawEmail, verificationToken = null) {
+    const cleanEmail = String(rawEmail || '').trim().toLowerCase();
+    if (!cleanEmail) return false;
+
+    if (verificationToken && typeof verificationToken === 'string') {
+      const decoded = verifyToken(verificationToken.trim());
+      if (
+        decoded &&
+        decoded.purpose === 'saas_registration_email_verified' &&
+        String(decoded.email || '').trim().toLowerCase() === cleanEmail
+      ) {
+        return true;
+      }
+    }
+
+    await SaasController._ensureRegistrationOtpTable();
+    const [rows] = await pool.query(
+      `SELECT email FROM onboarding_email_otps
+       WHERE email = ?
+         AND verified_at IS NOT NULL
+         AND verified_at >= DATE_SUB(NOW(), INTERVAL 2 HOUR)
+       LIMIT 1`,
+      [cleanEmail]
+    );
+    return rows.length > 0;
+  }
+
+  /**
+   * POST /api/v1/saas/send-registration-otp
+   * Sends a 6-digit verification OTP to the Super Admin email before completing registration
+   */
+  static async sendRegistrationOtp(req, res, next) {
+    try {
+      const rawEmail = req.body.email || req.body.admin_email || req.body.adminEmail;
+      const firstName = String(req.body.first_name || req.body.firstName || '').trim();
+      const cleanEmail = String(rawEmail || '').trim().toLowerCase();
+
+      if (!cleanEmail) {
+        return ApiResponse.error(res, 'Login email address is required.', null, 400);
+      }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+        return ApiResponse.error(res, 'Please enter a valid email address.', null, 400);
+      }
+
+      const availability = await SaasModel.checkAvailability({ adminEmail: cleanEmail });
+      if (!availability.available) {
+        return ApiResponse.error(res, availability.message, { field: availability.field }, 400);
+      }
+
+      await SaasController._ensureRegistrationOtpTable();
+
+      const otpCode = PasscodeService.generatePasscode();
+      const expiresInMinutes = 10;
+
+      await pool.query(
+        `INSERT INTO onboarding_email_otps (email, otp, otp_expires_at, verified_at)
+         VALUES (?, ?, DATE_ADD(NOW(), INTERVAL ? MINUTE), NULL)
+         ON DUPLICATE KEY UPDATE
+           otp = VALUES(otp),
+           otp_expires_at = VALUES(otp_expires_at),
+           verified_at = NULL`,
+        [cleanEmail, otpCode, expiresInMinutes]
+      );
+
+      try {
+        await PasscodeService.sendOtpEmail({
+          toEmail: cleanEmail,
+          toName: firstName || cleanEmail,
+          otpCode,
+          portalName: 'Growvidya School Registration',
+          expiresInMinutes,
+        });
+      } catch (emailErr) {
+        await pool
+          .query('UPDATE onboarding_email_otps SET otp = NULL, otp_expires_at = NULL WHERE email = ?', [cleanEmail])
+          .catch(() => {});
+        return ApiResponse.error(
+          res,
+          emailErr.message || 'Unable to send verification OTP email at the moment. Please try again.',
+          null,
+          emailErr.statusCode || 502
+        );
+      }
+
+      return ApiResponse.success(res, `A 6-digit verification OTP has been sent to ${cleanEmail}.`, {
+        email: cleanEmail,
+        maskedEmail: PasscodeService.maskEmail(cleanEmail),
+        expiresInMinutes,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/v1/saas/verify-registration-otp
+   * Verifies the 6-digit OTP for the Super Admin registration email
+   */
+  static async verifyRegistrationOtp(req, res, next) {
+    try {
+      const rawEmail = req.body.email || req.body.admin_email || req.body.adminEmail;
+      const otpInput = String(req.body.otp || req.body.code || '').trim();
+      const cleanEmail = String(rawEmail || '').trim().toLowerCase();
+
+      if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+        return ApiResponse.error(res, 'Please provide a valid email address.', null, 400);
+      }
+      if (!otpInput || !/^\d{6}$/.test(otpInput)) {
+        return ApiResponse.error(res, 'Please enter a valid 6-digit OTP.', null, 400);
+      }
+
+      await SaasController._ensureRegistrationOtpTable();
+
+      const [rows] = await pool.query(
+        `SELECT email, otp, otp_expires_at,
+                (otp_expires_at IS NOT NULL AND otp_expires_at >= NOW()) AS is_valid_time
+         FROM onboarding_email_otps
+         WHERE email = ?
+         LIMIT 1`,
+        [cleanEmail]
+      );
+
+      const record = rows[0] || null;
+      if (!record || !record.otp) {
+        return ApiResponse.error(res, 'No active OTP found for this email. Please click Send OTP first.', null, 400);
+      }
+      if (!record.is_valid_time) {
+        return ApiResponse.error(res, 'OTP has expired. Please resend a new 6-digit OTP.', null, 400);
+      }
+      if (String(record.otp).trim() !== otpInput) {
+        return ApiResponse.error(res, 'Invalid 6-digit OTP. Please check the code and try again.', null, 400);
+      }
+
+      await pool.query(
+        `UPDATE onboarding_email_otps
+         SET otp = NULL, otp_expires_at = NULL, verified_at = NOW()
+         WHERE email = ?`,
+        [cleanEmail]
+      );
+
+      const emailVerificationToken = generateToken(
+        {
+          purpose: 'saas_registration_email_verified',
+          email: cleanEmail,
+        },
+        { expiresIn: '2h' }
+      );
+
+      return ApiResponse.success(res, 'Email address verified successfully.', {
+        verified: true,
+        email: cleanEmail,
+        email_verification_token: emailVerificationToken,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * POST /api/v1/saas/create-order
    * Creates a server-bound `subscription_payment_orders` checkout intent (Zero GST)
    * and initializes Razorpay order when grandTotal > 0 (or returns zero_amount_ready for 100% coupon / pure free trial).
@@ -129,6 +307,23 @@ class SaasController {
       const schoolEmail = req.body.school_email || req.body.schoolEmail || req.body.school?.email || null;
       const schoolPhone = req.body.school_phone || req.body.schoolPhone || req.body.school?.phone_number || null;
       const schoolName = req.body.school_name || req.body.schoolName || req.body.school?.school_name || null;
+      const emailVerificationToken =
+        req.body.email_verification_token ||
+        req.body.emailVerificationToken ||
+        req.body.admin?.email_verification_token ||
+        null;
+
+      if (adminEmail) {
+        const isEmailVerified = await SaasController._isEmailOtpVerified(adminEmail, emailVerificationToken);
+        if (!isEmailVerified) {
+          return ApiResponse.error(
+            res,
+            'Please verify your Super Admin email address via OTP before proceeding with registration.',
+            { field: 'admin_email', code: 'EMAIL_OTP_VERIFICATION_REQUIRED' },
+            400
+          );
+        }
+      }
 
       if (adminEmail || adminPhone || schoolEmail || schoolPhone) {
         const availability = await SaasModel.checkAvailability({
@@ -397,6 +592,21 @@ class SaasController {
       );
 
       if (!isAlreadyProvisionedByWebhook) {
+        const emailVerificationToken =
+          req.body.email_verification_token ||
+          req.body.emailVerificationToken ||
+          admin.email_verification_token ||
+          null;
+        const isEmailVerified = await SaasController._isEmailOtpVerified(admin.email, emailVerificationToken);
+        if (!isEmailVerified) {
+          return ApiResponse.error(
+            res,
+            'Please verify your Super Admin email address via OTP before completing registration.',
+            { field: 'admin_email', code: 'EMAIL_OTP_VERIFICATION_REQUIRED' },
+            400
+          );
+        }
+
         const availability = await SaasModel.checkAvailability({
           adminEmail: admin.email,
           adminPhone: admin.phone,
