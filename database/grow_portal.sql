@@ -3,9 +3,9 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Sep 12, 2026 at 01:35 PM
+-- Generation Time: Nov 24, 2026 at 06:34 AM
 -- Server version: 10.4.32-MariaDB
--- PHP Version: 8.2.12
+-- PHP Version: 8.1.25
 
 SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
 START TRANSACTION;
@@ -30,30 +30,23 @@ SET time_zone = "+00:00";
 CREATE TABLE `academic_year_master` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `academic_year` varchar(255) DEFAULT NULL,
   `start_date` varchar(255) DEFAULT NULL,
   `end_date` varchar(255) DEFAULT NULL,
   `is_current` int(11) DEFAULT NULL,
   `status` int(11) NOT NULL DEFAULT 1
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `academic_year_master`
 --
 
-INSERT INTO `academic_year_master` (`id`, `school_id`, `academic_year`, `start_date`, `end_date`, `is_current`, `status`) VALUES
-(1, 1, '2023', '2023-04-01', '2024-03-31', 0, 1),
-(2, 1, '2024', '2024-04-01', '2025-03-31', 0, 1),
-(3, 1, '2025', '2025-04-01', '2026-03-31', 0, 1),
-(4, 1, '2026', '2026-04-01', '2027-03-31', 1, 1),
-(5, 2, '2023', '2023-04-01', '2024-03-31', 0, 1),
-(6, 2, '2025', '2024-04-01', '2025-03-31', 0, 1),
-(7, 2, '2025', '2025-04-01', '2026-03-31', 0, 1),
-(8, 2, '2026', '2026-04-01', '2027-03-31', 1, 1),
-(12, 7, '2026 - 2027', '2026-04-01', '2027-03-31', 1, 1),
-(13, 8, '2026 - 2027', '2026-04-01', '2027-03-31', 1, 1),
-(14, 9, '2026 - 2027', '2026-04-01', '2027-03-31', 1, 1),
-(15, 10, '2026 - 2027', '2026-04-01', '2027-03-31', 1, 1);
+INSERT INTO `academic_year_master` (`id`, `school_id`, `branch_id`, `academic_year`, `start_date`, `end_date`, `is_current`, `status`) VALUES
+(1, 1, 1, '2026', '2026-01-01', '2027-01-01', 1, 1),
+(2, 2, 2, '2026-2027', '2026-04-01', '2027-03-31', 1, 1),
+(3, 2, 2, '2027-2028', '2027-01-01', '2028-03-01', 0, 1),
+(4, 3, 6, '2026 -2027', '2026-01-01', '2027-01-01', 1, 1);
 
 -- --------------------------------------------------------
 
@@ -64,10 +57,11 @@ INSERT INTO `academic_year_master` (`id`, `school_id`, `academic_year`, `start_d
 CREATE TABLE `assesment` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `assesment_name` varchar(255) DEFAULT NULL,
   `duration` varchar(255) DEFAULT NULL,
   `status` int(11) NOT NULL DEFAULT 1 COMMENT '1= active, 2= Inactive, 4=delete'
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -78,12 +72,13 @@ CREATE TABLE `assesment` (
 CREATE TABLE `assesment_master` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `assesment_name` varchar(255) DEFAULT NULL,
   `duration` int(11) DEFAULT NULL,
   `status` int(11) DEFAULT NULL COMMENT '1=active, 2=inactive, 4=delete',
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -94,6 +89,7 @@ CREATE TABLE `assesment_master` (
 CREATE TABLE `assignments` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `assignment_type_id` int(11) DEFAULT NULL,
   `title` varchar(255) DEFAULT NULL,
   `class_id` int(11) DEFAULT NULL,
@@ -103,15 +99,25 @@ CREATE TABLE `assignments` (
   `due_date` varchar(100) DEFAULT NULL,
   `status` int(11) DEFAULT NULL COMMENT '1=Active,2=Inactive,4=Delete',
   `is_published` int(1) DEFAULT 0,
-  `created_on` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+  `created_on` timestamp NOT NULL DEFAULT current_timestamp(),
+  `start_time` varchar(20) DEFAULT NULL,
+  `end_time` varchar(20) DEFAULT NULL,
+  `duration_minutes` int(11) DEFAULT NULL,
+  `total_marks` decimal(10,2) DEFAULT NULL,
+  `passing_marks` decimal(10,2) DEFAULT NULL,
+  `max_attempts` int(11) NOT NULL DEFAULT 1,
+  `instructions` text DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `assignments`
 --
 
-INSERT INTO `assignments` (`id`, `school_id`, `assignment_type_id`, `title`, `class_id`, `section_id`, `subject_id`, `assigned_date`, `due_date`, `status`, `is_published`, `created_on`) VALUES
-(1, 2, 2, 'MCQ', 8, 15, 24, '2026-09-10', '2026-09-22', 1, 1, '2026-09-10 11:21:17');
+INSERT INTO `assignments` (`id`, `school_id`, `branch_id`, `assignment_type_id`, `title`, `class_id`, `section_id`, `subject_id`, `assigned_date`, `due_date`, `status`, `is_published`, `created_on`, `start_time`, `end_time`, `duration_minutes`, `total_marks`, `passing_marks`, `max_attempts`, `instructions`) VALUES
+(1, 2, 2, 1, 'Bengali Assignment 1', 1, 1, 1, '2026-11-18', '2026-11-25', 1, 1, '2026-11-18 10:11:00', NULL, NULL, NULL, NULL, NULL, 1, NULL),
+(2, 2, 2, 1, 'Bengali Assignment 1', 1, 2, 1, '2026-11-18', '2026-11-25', 1, 1, '2026-11-18 10:15:07', NULL, NULL, NULL, NULL, NULL, 1, NULL),
+(3, 2, 2, 1, 'Bengali Test', 1, 1, 1, '2026-11-24', '2026-11-30', 1, 1, '2026-11-23 10:31:24', '09:00', '09:00', 2, 100.00, 97.00, 1, NULL),
+(4, 2, 2, 2, 'General Knowledge Test', 1, 1, 1, '2026-11-23', '2026-11-30', 1, 1, '2026-11-23 12:42:55', '09:00', '12:00', 3, 5.00, 5.00, 1, NULL);
 
 -- --------------------------------------------------------
 
@@ -122,26 +128,59 @@ INSERT INTO `assignments` (`id`, `school_id`, `assignment_type_id`, `title`, `cl
 CREATE TABLE `assignment_answers` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `question_id` int(11) DEFAULT NULL,
-  `answer` varchar(255) DEFAULT NULL,
+  `answer` text DEFAULT NULL,
   `is_correct` int(11) DEFAULT NULL COMMENT '1=Right Answer, 0=Wrong Answer',
   `status` int(11) DEFAULT NULL COMMENT '1=Active,2=Inactive,4=Delete',
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `assignment_answers`
 --
 
-INSERT INTO `assignment_answers` (`id`, `school_id`, `question_id`, `answer`, `is_correct`, `status`, `created_at`) VALUES
-(1, 2, 1, 'Mumbai', 0, 1, '2026-09-10 11:21:17'),
-(2, 2, 1, ' New Delhi', 1, 1, '2026-09-10 11:21:17'),
-(3, 2, 1, 'Kolkata', 0, 1, '2026-09-10 11:21:17'),
-(4, 2, 1, 'Chennai', 0, 1, '2026-09-10 11:21:17'),
-(5, 2, 2, 'Earth', 0, 1, '2026-09-10 11:21:17'),
-(6, 2, 2, 'Venus', 0, 1, '2026-09-10 11:21:17'),
-(7, 2, 2, 'Mars', 1, 1, '2026-09-10 11:21:17'),
-(8, 2, 2, 'Jupiter', 0, 1, '2026-09-10 11:21:17');
+INSERT INTO `assignment_answers` (`id`, `school_id`, `branch_id`, `question_id`, `answer`, `is_correct`, `status`, `created_at`) VALUES
+(1, 2, 2, 1, 'ছাগল', 0, 1, '2026-11-18 10:11:00'),
+(2, 2, 2, 1, 'গরু', 0, 1, '2026-11-18 10:11:00'),
+(3, 2, 2, 1, 'হরিণ', 0, 1, '2026-11-18 10:11:00'),
+(4, 2, 2, 1, 'অজগর', 1, 1, '2026-11-18 10:11:00'),
+(5, 2, 2, 2, 'ব', 0, 1, '2026-11-18 10:11:00'),
+(6, 2, 2, 2, 'ই', 1, 1, '2026-11-18 10:11:00'),
+(7, 2, 2, 2, 'ল', 0, 1, '2026-11-18 10:11:00'),
+(8, 2, 2, 2, 'ম', 0, 1, '2026-11-18 10:11:00'),
+(9, 2, 2, 3, 'জাম', 0, 1, '2026-11-18 10:11:00'),
+(10, 2, 2, 3, 'পেয়ারা', 0, 1, '2026-11-18 10:11:00'),
+(11, 2, 2, 3, 'কলা', 1, 1, '2026-11-18 10:11:00'),
+(12, 2, 2, 3, 'লিচু', 0, 1, '2026-11-18 10:11:00'),
+(13, 2, 2, 4, 'চামচ', 0, 1, '2026-11-18 10:11:00'),
+(14, 2, 2, 4, 'বাটি', 0, 1, '2026-11-18 10:11:00'),
+(15, 2, 2, 4, 'জুতো', 0, 1, '2026-11-18 10:11:00'),
+(16, 2, 2, 4, 'কলম', 1, 1, '2026-11-18 10:11:00'),
+(17, 2, 2, 5, 'সবুজ', 0, 1, '2026-11-18 10:11:00'),
+(18, 2, 2, 5, 'নীল', 1, 1, '2026-11-18 10:11:00'),
+(19, 2, 2, 5, 'বেগুনি', 0, 1, '2026-11-18 10:11:00'),
+(20, 2, 2, 5, 'কমলা', 0, 1, '2026-11-18 10:11:00'),
+(21, 2, 2, 6, 'ছাগল', 0, 1, '2026-11-18 10:15:07'),
+(22, 2, 2, 6, 'গরু', 0, 1, '2026-11-18 10:15:07'),
+(23, 2, 2, 6, 'হরিণ', 0, 1, '2026-11-18 10:15:07'),
+(24, 2, 2, 6, 'অজগর', 1, 1, '2026-11-18 10:15:07'),
+(25, 2, 2, 7, 'ব', 0, 1, '2026-11-18 10:15:07'),
+(26, 2, 2, 7, 'ই', 1, 1, '2026-11-18 10:15:07'),
+(27, 2, 2, 7, 'ল', 0, 1, '2026-11-18 10:15:07'),
+(28, 2, 2, 7, 'ম', 0, 1, '2026-11-18 10:15:07'),
+(29, 2, 2, 8, 'জাম', 0, 1, '2026-11-18 10:15:07'),
+(30, 2, 2, 8, 'পেয়ারা', 0, 1, '2026-11-18 10:15:07'),
+(31, 2, 2, 8, 'কলা', 1, 1, '2026-11-18 10:15:07'),
+(32, 2, 2, 8, 'লিচু', 0, 1, '2026-11-18 10:15:07'),
+(33, 2, 2, 9, 'চামচ', 0, 1, '2026-11-18 10:15:07'),
+(34, 2, 2, 9, 'বাটি', 0, 1, '2026-11-18 10:15:07'),
+(35, 2, 2, 9, 'জুতো', 0, 1, '2026-11-18 10:15:07'),
+(36, 2, 2, 9, 'কলম', 1, 1, '2026-11-18 10:15:07'),
+(37, 2, 2, 10, 'সবুজ', 0, 1, '2026-11-18 10:15:07'),
+(38, 2, 2, 10, 'নীল', 1, 1, '2026-11-18 10:15:07'),
+(39, 2, 2, 10, 'বেগুনি', 0, 1, '2026-11-18 10:15:07'),
+(40, 2, 2, 10, 'কমলা', 0, 1, '2026-11-18 10:15:07');
 
 -- --------------------------------------------------------
 
@@ -152,19 +191,77 @@ INSERT INTO `assignment_answers` (`id`, `school_id`, `question_id`, `answer`, `i
 CREATE TABLE `assignment_questions` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `assignment_id` int(11) DEFAULT NULL,
-  `question` varchar(255) DEFAULT NULL,
+  `question` text DEFAULT NULL,
   `status` int(11) DEFAULT NULL COMMENT '1=Active,2=Inactive,4=Delete',
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `question_type` varchar(50) NOT NULL DEFAULT 'MCQ',
+  `marks` decimal(8,2) NOT NULL DEFAULT 1.00,
+  `instructions` text DEFAULT NULL,
+  `correct_answer_text` text DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `assignment_questions`
 --
 
-INSERT INTO `assignment_questions` (`id`, `school_id`, `assignment_id`, `question`, `status`, `created_at`) VALUES
-(1, 2, 1, 'What is the capital of India?\n', 1, '2026-09-10 11:21:17'),
-(2, 2, 1, 'Which planet is known as the Red Planet?', 1, '2026-09-10 11:21:17');
+INSERT INTO `assignment_questions` (`id`, `school_id`, `branch_id`, `assignment_id`, `question`, `status`, `created_at`, `question_type`, `marks`, `instructions`, `correct_answer_text`) VALUES
+(1, 2, 2, 1, '\"অ-তে ____________ আসছে তেরে।\" শূন্যস্থানের সঠিক শব্দটি কী হবে?', 1, '2026-11-18 10:11:00', 'MCQ', 1.00, NULL, NULL),
+(2, 2, 2, 1, 'নিচের কোনটি ব্যঞ্জনবর্ণ নয় (অর্থাৎ স্বরবর্ণ)?', 1, '2026-11-18 10:11:00', 'MCQ', 1.00, NULL, NULL),
+(3, 2, 2, 1, 'পাকার পর কোন ফলটির রঙ হলুদ হয়?', 1, '2026-11-18 10:11:00', 'MCQ', 1.00, NULL, NULL),
+(4, 2, 2, 1, 'আমরা খাতায় লেখার জন্য কী ব্যবহার করি?', 1, '2026-11-18 10:11:00', 'MCQ', 1.00, NULL, NULL),
+(5, 2, 2, 1, 'রোদঝলমলে পরিষ্কার দিনে আকাশের রঙ কেমন দেখায়?', 1, '2026-11-18 10:11:00', 'MCQ', 1.00, NULL, NULL),
+(6, 2, 2, 2, '\"অ-তে ____________ আসছে তেরে।\" শূন্যস্থানের সঠিক শব্দটি কী হবে?', 1, '2026-11-18 10:15:07', 'MCQ', 1.00, NULL, NULL),
+(7, 2, 2, 2, 'নিচের কোনটি ব্যঞ্জনবর্ণ নয় (অর্থাৎ স্বরবর্ণ)?', 1, '2026-11-18 10:15:07', 'MCQ', 1.00, NULL, NULL),
+(8, 2, 2, 2, 'পাকার পর কোন ফলটির রঙ হলুদ হয়?', 1, '2026-11-18 10:15:07', 'MCQ', 1.00, NULL, NULL),
+(9, 2, 2, 2, 'আমরা খাতায় লেখার জন্য কী ব্যবহার করি?', 1, '2026-11-18 10:15:07', 'MCQ', 1.00, NULL, NULL),
+(10, 2, 2, 2, 'রোদঝলমলে পরিষ্কার দিনে আকাশের রঙ কেমন দেখায়?', 1, '2026-11-18 10:15:07', 'MCQ', 1.00, NULL, NULL),
+(11, 2, 2, 3, 'বাংলা ভাষার উৎপত্তি ও বিকাশ সম্পর্কে আলোচনা করো।', 4, '2026-11-23 10:31:24', 'LONG_ANSWER', 10.00, 'উত্তরটি প্রায় ১৫০–২০০ শব্দের মধ্যে লেখো। প্রাসঙ্গিক উদাহরণ দাও।', NULL),
+(12, 2, 2, 3, 'তোমার প্রিয় ঋতু সম্পর্কে একটি অনুচ্ছেদ লেখো এবং কেন সেই ঋতু তোমার ভালো লাগে তা ব্যাখ্যা করো।', 4, '2026-11-23 10:31:24', 'LONG_ANSWER', 10.00, 'উত্তরটি প্রায় ১৫০–২০০ শব্দের মধ্যে লেখো। প্রাসঙ্গিক উদাহরণ দাও।', NULL),
+(13, 2, 2, 3, 'বাংলার লোকসংস্কৃতি ও লোকসাহিত্যের গুরুত্ব আলোচনা করো।', 4, '2026-11-23 10:31:24', 'LONG_ANSWER', 10.00, 'উত্তরটি প্রায় ১৫০–২০০ শব্দের মধ্যে লেখো। প্রাসঙ্গিক উদাহরণ দাও।', NULL),
+(14, 2, 2, 3, 'পরিবেশ রক্ষায় একজন শিক্ষার্থীর ভূমিকা কী হতে পারে? উদাহরণসহ লেখো।', 4, '2026-11-23 10:31:24', 'LONG_ANSWER', 10.00, 'উত্তরটি প্রায় ১৫০–২০০ শব্দের মধ্যে লেখো। প্রাসঙ্গিক উদাহরণ দাও।', NULL),
+(15, 2, 2, 3, 'তোমার জীবনের একটি স্মরণীয় দিনের অভিজ্ঞতা বর্ণনা করো।', 4, '2026-11-23 10:31:24', 'LONG_ANSWER', 10.00, 'উত্তরটি প্রায় ১৫০–২০০ শব্দের মধ্যে লেখো। প্রাসঙ্গিক উদাহরণ দাও।', NULL),
+(16, 2, 2, 3, 'বই পড়ার অভ্যাস শিক্ষার্থীদের জ্ঞান ও চরিত্র গঠনে কীভাবে সাহায্য করে? আলোচনা করো।', 4, '2026-11-23 10:31:24', 'LONG_ANSWER', 10.00, 'উত্তরটি প্রায় ১৫০–২০০ শব্দের মধ্যে লেখো। প্রাসঙ্গিক উদাহরণ দাও।', NULL),
+(17, 2, 2, 3, 'রবীন্দ্রনাথ ঠাকুরের সাহিত্য ও বাংলা সংস্কৃতিতে তাঁর অবদান সম্পর্কে লেখো।', 4, '2026-11-23 10:31:24', 'LONG_ANSWER', 10.00, 'উত্তরটি প্রায় ১৫০–২০০ শব্দের মধ্যে লেখো। প্রাসঙ্গিক উদাহরণ দাও।', NULL),
+(18, 2, 2, 3, 'সময়ানুবর্তিতার গুরুত্ব ব্যাখ্যা করো এবং দৈনন্দিন জীবনের উদাহরণ দাও।', 4, '2026-11-23 10:31:24', 'LONG_ANSWER', 10.00, 'উত্তরটি প্রায় ১৫০–২০০ শব্দের মধ্যে লেখো। প্রাসঙ্গিক উদাহরণ দাও।', NULL),
+(19, 2, 2, 3, 'গ্রাম ও শহরের জীবনের সুবিধা ও অসুবিধাগুলোর তুলনামূলক আলোচনা করো।', 4, '2026-11-23 10:31:24', 'LONG_ANSWER', 10.00, 'উত্তরটি প্রায় ১৫০–২০০ শব্দের মধ্যে লেখো। প্রাসঙ্গিক উদাহরণ দাও।', NULL),
+(20, 2, 2, 3, 'বৃক্ষরোপণের প্রয়োজনীয়তা এবং পরিবেশের ভারসাম্য রক্ষায় গাছের ভূমিকা আলোচনা করো।', 4, '2026-11-23 10:31:24', 'LONG_ANSWER', 10.00, 'উত্তরটি প্রায় ১৫০–২০০ শব্দের মধ্যে লেখো। প্রাসঙ্গিক উদাহরণ দাও।', NULL),
+(21, 2, 2, 3, 'বাংলা ভাষার উৎপত্তি ও বিকাশ সম্পর্কে আলোচনা করো।', 4, '2026-11-23 10:32:30', 'LONG_ANSWER', 10.00, 'উত্তরটি প্রায় ১৫০–২০০ শব্দের মধ্যে লেখো। প্রাসঙ্গিক উদাহরণ দাও।', NULL),
+(22, 2, 2, 3, 'তোমার প্রিয় ঋতু সম্পর্কে একটি অনুচ্ছেদ লেখো এবং কেন সেই ঋতু তোমার ভালো লাগে তা ব্যাখ্যা করো।', 4, '2026-11-23 10:32:30', 'LONG_ANSWER', 10.00, 'উত্তরটি প্রায় ১৫০–২০০ শব্দের মধ্যে লেখো। প্রাসঙ্গিক উদাহরণ দাও।', NULL),
+(23, 2, 2, 3, 'বাংলার লোকসংস্কৃতি ও লোকসাহিত্যের গুরুত্ব আলোচনা করো।', 4, '2026-11-23 10:32:30', 'LONG_ANSWER', 10.00, 'উত্তরটি প্রায় ১৫০–২০০ শব্দের মধ্যে লেখো। প্রাসঙ্গিক উদাহরণ দাও।', NULL),
+(24, 2, 2, 3, 'পরিবেশ রক্ষায় একজন শিক্ষার্থীর ভূমিকা কী হতে পারে? উদাহরণসহ লেখো।', 4, '2026-11-23 10:32:30', 'LONG_ANSWER', 10.00, 'উত্তরটি প্রায় ১৫০–২০০ শব্দের মধ্যে লেখো। প্রাসঙ্গিক উদাহরণ দাও।', NULL),
+(25, 2, 2, 3, 'তোমার জীবনের একটি স্মরণীয় দিনের অভিজ্ঞতা বর্ণনা করো।', 4, '2026-11-23 10:32:30', 'LONG_ANSWER', 10.00, 'উত্তরটি প্রায় ১৫০–২০০ শব্দের মধ্যে লেখো। প্রাসঙ্গিক উদাহরণ দাও।', NULL),
+(26, 2, 2, 3, 'বই পড়ার অভ্যাস শিক্ষার্থীদের জ্ঞান ও চরিত্র গঠনে কীভাবে সাহায্য করে? আলোচনা করো।', 4, '2026-11-23 10:32:30', 'LONG_ANSWER', 10.00, 'উত্তরটি প্রায় ১৫০–২০০ শব্দের মধ্যে লেখো। প্রাসঙ্গিক উদাহরণ দাও।', NULL),
+(27, 2, 2, 3, 'রবীন্দ্রনাথ ঠাকুরের সাহিত্য ও বাংলা সংস্কৃতিতে তাঁর অবদান সম্পর্কে লেখো।', 4, '2026-11-23 10:32:30', 'LONG_ANSWER', 10.00, 'উত্তরটি প্রায় ১৫০–২০০ শব্দের মধ্যে লেখো। প্রাসঙ্গিক উদাহরণ দাও।', NULL),
+(28, 2, 2, 3, 'সময়ানুবর্তিতার গুরুত্ব ব্যাখ্যা করো এবং দৈনন্দিন জীবনের উদাহরণ দাও।', 4, '2026-11-23 10:32:30', 'LONG_ANSWER', 10.00, 'উত্তরটি প্রায় ১৫০–২০০ শব্দের মধ্যে লেখো। প্রাসঙ্গিক উদাহরণ দাও।', NULL),
+(29, 2, 2, 3, 'গ্রাম ও শহরের জীবনের সুবিধা ও অসুবিধাগুলোর তুলনামূলক আলোচনা করো।', 4, '2026-11-23 10:32:30', 'LONG_ANSWER', 10.00, 'উত্তরটি প্রায় ১৫০–২০০ শব্দের মধ্যে লেখো। প্রাসঙ্গিক উদাহরণ দাও।', NULL),
+(30, 2, 2, 3, 'বৃক্ষরোপণের প্রয়োজনীয়তা এবং পরিবেশের ভারসাম্য রক্ষায় গাছের ভূমিকা আলোচনা করো।', 4, '2026-11-23 10:32:30', 'LONG_ANSWER', 10.00, 'উত্তরটি প্রায় ১৫০–২০০ শব্দের মধ্যে লেখো। প্রাসঙ্গিক উদাহরণ দাও।', NULL),
+(31, 2, 2, 3, 'বাংলা ভাষার উৎপত্তি ও বিকাশ সম্পর্কে আলোচনা করো।', 4, '2026-11-23 10:33:02', 'LONG_ANSWER', 10.00, 'উত্তরটি প্রায় ১৫০–২০০ শব্দের মধ্যে লেখো। প্রাসঙ্গিক উদাহরণ দাও।', NULL),
+(32, 2, 2, 3, 'তোমার প্রিয় ঋতু সম্পর্কে একটি অনুচ্ছেদ লেখো এবং কেন সেই ঋতু তোমার ভালো লাগে তা ব্যাখ্যা করো।', 4, '2026-11-23 10:33:02', 'LONG_ANSWER', 10.00, 'উত্তরটি প্রায় ১৫০–২০০ শব্দের মধ্যে লেখো। প্রাসঙ্গিক উদাহরণ দাও।', NULL),
+(33, 2, 2, 3, 'বাংলার লোকসংস্কৃতি ও লোকসাহিত্যের গুরুত্ব আলোচনা করো।', 4, '2026-11-23 10:33:02', 'LONG_ANSWER', 10.00, 'উত্তরটি প্রায় ১৫০–২০০ শব্দের মধ্যে লেখো। প্রাসঙ্গিক উদাহরণ দাও।', NULL),
+(34, 2, 2, 3, 'পরিবেশ রক্ষায় একজন শিক্ষার্থীর ভূমিকা কী হতে পারে? উদাহরণসহ লেখো।', 4, '2026-11-23 10:33:02', 'LONG_ANSWER', 10.00, 'উত্তরটি প্রায় ১৫০–২০০ শব্দের মধ্যে লেখো। প্রাসঙ্গিক উদাহরণ দাও।', NULL),
+(35, 2, 2, 3, 'তোমার জীবনের একটি স্মরণীয় দিনের অভিজ্ঞতা বর্ণনা করো।', 4, '2026-11-23 10:33:02', 'LONG_ANSWER', 10.00, 'উত্তরটি প্রায় ১৫০–২০০ শব্দের মধ্যে লেখো। প্রাসঙ্গিক উদাহরণ দাও।', NULL),
+(36, 2, 2, 3, 'বই পড়ার অভ্যাস শিক্ষার্থীদের জ্ঞান ও চরিত্র গঠনে কীভাবে সাহায্য করে? আলোচনা করো।', 4, '2026-11-23 10:33:02', 'LONG_ANSWER', 10.00, 'উত্তরটি প্রায় ১৫০–২০০ শব্দের মধ্যে লেখো। প্রাসঙ্গিক উদাহরণ দাও।', NULL),
+(37, 2, 2, 3, 'রবীন্দ্রনাথ ঠাকুরের সাহিত্য ও বাংলা সংস্কৃতিতে তাঁর অবদান সম্পর্কে লেখো।', 4, '2026-11-23 10:33:02', 'LONG_ANSWER', 10.00, 'উত্তরটি প্রায় ১৫০–২০০ শব্দের মধ্যে লেখো। প্রাসঙ্গিক উদাহরণ দাও।', NULL),
+(38, 2, 2, 3, 'সময়ানুবর্তিতার গুরুত্ব ব্যাখ্যা করো এবং দৈনন্দিন জীবনের উদাহরণ দাও।', 4, '2026-11-23 10:33:02', 'LONG_ANSWER', 10.00, 'উত্তরটি প্রায় ১৫০–২০০ শব্দের মধ্যে লেখো। প্রাসঙ্গিক উদাহরণ দাও।', NULL),
+(39, 2, 2, 3, 'গ্রাম ও শহরের জীবনের সুবিধা ও অসুবিধাগুলোর তুলনামূলক আলোচনা করো।', 4, '2026-11-23 10:33:02', 'LONG_ANSWER', 10.00, 'উত্তরটি প্রায় ১৫০–২০০ শব্দের মধ্যে লেখো। প্রাসঙ্গিক উদাহরণ দাও।', NULL),
+(40, 2, 2, 3, 'বৃক্ষরোপণের প্রয়োজনীয়তা এবং পরিবেশের ভারসাম্য রক্ষায় গাছের ভূমিকা আলোচনা করো।', 4, '2026-11-23 10:33:02', 'LONG_ANSWER', 10.00, 'উত্তরটি প্রায় ১৫০–২০০ শব্দের মধ্যে লেখো। প্রাসঙ্গিক উদাহরণ দাও।', NULL),
+(41, 2, 2, 3, 'বাংলা ভাষার উৎপত্তি ও বিকাশ সম্পর্কে আলোচনা করো।', 1, '2026-11-23 11:19:46', 'LONG_ANSWER', 10.00, 'উত্তরটি প্রায় ১৫০–২০০ শব্দের মধ্যে লেখো। প্রাসঙ্গিক উদাহরণ দাও।', NULL),
+(42, 2, 2, 3, 'তোমার প্রিয় ঋতু সম্পর্কে একটি অনুচ্ছেদ লেখো এবং কেন সেই ঋতু তোমার ভালো লাগে তা ব্যাখ্যা করো।', 1, '2026-11-23 11:19:46', 'LONG_ANSWER', 10.00, 'উত্তরটি প্রায় ১৫০–২০০ শব্দের মধ্যে লেখো। প্রাসঙ্গিক উদাহরণ দাও।', NULL),
+(43, 2, 2, 3, 'বাংলার লোকসংস্কৃতি ও লোকসাহিত্যের গুরুত্ব আলোচনা করো।', 1, '2026-11-23 11:19:46', 'LONG_ANSWER', 10.00, 'উত্তরটি প্রায় ১৫০–২০০ শব্দের মধ্যে লেখো। প্রাসঙ্গিক উদাহরণ দাও।', NULL),
+(44, 2, 2, 3, 'পরিবেশ রক্ষায় একজন শিক্ষার্থীর ভূমিকা কী হতে পারে? উদাহরণসহ লেখো।', 1, '2026-11-23 11:19:46', 'LONG_ANSWER', 10.00, 'উত্তরটি প্রায় ১৫০–২০০ শব্দের মধ্যে লেখো। প্রাসঙ্গিক উদাহরণ দাও।', NULL),
+(45, 2, 2, 3, 'তোমার জীবনের একটি স্মরণীয় দিনের অভিজ্ঞতা বর্ণনা করো।', 1, '2026-11-23 11:19:46', 'LONG_ANSWER', 10.00, 'উত্তরটি প্রায় ১৫০–২০০ শব্দের মধ্যে লেখো। প্রাসঙ্গিক উদাহরণ দাও।', NULL),
+(46, 2, 2, 3, 'বই পড়ার অভ্যাস শিক্ষার্থীদের জ্ঞান ও চরিত্র গঠনে কীভাবে সাহায্য করে? আলোচনা করো।', 1, '2026-11-23 11:19:46', 'LONG_ANSWER', 10.00, 'উত্তরটি প্রায় ১৫০–২০০ শব্দের মধ্যে লেখো। প্রাসঙ্গিক উদাহরণ দাও।', NULL),
+(47, 2, 2, 3, 'রবীন্দ্রনাথ ঠাকুরের সাহিত্য ও বাংলা সংস্কৃতিতে তাঁর অবদান সম্পর্কে লেখো।', 1, '2026-11-23 11:19:46', 'LONG_ANSWER', 10.00, 'উত্তরটি প্রায় ১৫০–২০০ শব্দের মধ্যে লেখো। প্রাসঙ্গিক উদাহরণ দাও।', NULL),
+(48, 2, 2, 3, 'সময়ানুবর্তিতার গুরুত্ব ব্যাখ্যা করো এবং দৈনন্দিন জীবনের উদাহরণ দাও।', 1, '2026-11-23 11:19:46', 'LONG_ANSWER', 10.00, 'উত্তরটি প্রায় ১৫০–২০০ শব্দের মধ্যে লেখো। প্রাসঙ্গিক উদাহরণ দাও।', NULL),
+(49, 2, 2, 3, 'গ্রাম ও শহরের জীবনের সুবিধা ও অসুবিধাগুলোর তুলনামূলক আলোচনা করো।', 1, '2026-11-23 11:19:46', 'LONG_ANSWER', 10.00, 'উত্তরটি প্রায় ১৫০–২০০ শব্দের মধ্যে লেখো। প্রাসঙ্গিক উদাহরণ দাও।', NULL),
+(50, 2, 2, 3, 'বৃক্ষরোপণের প্রয়োজনীয়তা এবং পরিবেশের ভারসাম্য রক্ষায় গাছের ভূমিকা আলোচনা করো।', 1, '2026-11-23 11:19:46', 'LONG_ANSWER', 10.00, 'উত্তরটি প্রায় ১৫০–২০০ শব্দের মধ্যে লেখো। প্রাসঙ্গিক উদাহরণ দাও।', NULL),
+(51, 2, 2, 4, 'বাংলা ভাষার বর্ণমালা কয়টি?', 1, '2026-11-23 12:42:55', 'SHORT_ANSWER', 1.00, 'সংক্ষেপে উত্তর দাও।', NULL),
+(52, 2, 2, 4, 'বাংলা ভাষার দুটি স্বরবর্ণ লেখো।', 1, '2026-11-23 12:42:55', 'SHORT_ANSWER', 1.00, 'সংক্ষেপে উত্তর দাও।', NULL),
+(53, 2, 2, 4, 'বাংলাদেশের জাতীয় ফুলের নাম কী?', 1, '2026-11-23 12:42:55', 'SHORT_ANSWER', 1.00, 'সংক্ষেপে উত্তর দাও।', NULL),
+(54, 2, 2, 4, '‘সুন্দর’ শব্দের বিপরীত শব্দ কী?', 1, '2026-11-23 12:42:55', 'SHORT_ANSWER', 1.00, 'সংক্ষেপে উত্তর দাও।', NULL),
+(55, 2, 2, 4, 'একটি বাক্য দিয়ে তোমার বিদ্যালয়ের নাম লেখো।', 1, '2026-11-23 12:42:55', 'SHORT_ANSWER', 1.00, 'সংক্ষেপে উত্তর দাও।', NULL);
 
 -- --------------------------------------------------------
 
@@ -175,18 +272,44 @@ INSERT INTO `assignment_questions` (`id`, `school_id`, `assignment_id`, `questio
 CREATE TABLE `assignment_types` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `type_name` varchar(100) DEFAULT NULL,
   `status` int(11) DEFAULT NULL COMMENT '1=Active,2=Inactive,4=delete',
   `created_on` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `assignment_types`
 --
 
-INSERT INTO `assignment_types` (`id`, `school_id`, `type_name`, `status`, `created_on`) VALUES
-(1, 2, 'Homework', 1, '2026-09-11 08:05:27'),
-(2, 2, 'Classwork', 1, '2026-09-11 08:05:36');
+INSERT INTO `assignment_types` (`id`, `school_id`, `branch_id`, `type_name`, `status`, `created_on`) VALUES
+(1, 2, 2, 'Homework', 1, '2026-11-18 09:37:11'),
+(2, 2, 2, 'Classwork', 1, '2026-11-18 09:37:14');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `attendance_machine_master`
+--
+
+CREATE TABLE `attendance_machine_master` (
+  `id` int(11) NOT NULL,
+  `machine_name` varchar(150) NOT NULL COMMENT 'e.g. ZKTeco MB20, eSSL K90 Pro',
+  `model_number` varchar(60) NOT NULL COMMENT 'Unique hardware model/SKU',
+  `brand` varchar(100) NOT NULL COMMENT 'e.g. ZKTeco, eSSL, Realtime, Mantra',
+  `machine_type` enum('fingerprint','face_recognition','rfid_card','hybrid','turnstile') NOT NULL DEFAULT 'hybrid',
+  `connectivity` varchar(100) DEFAULT 'LAN, Wi-Fi' COMMENT 'e.g. Wi-Fi, LAN, 4G SIM, USB',
+  `user_capacity` int(11) DEFAULT 1000 COMMENT 'Max registered faces/fingerprints/cards',
+  `log_capacity` int(11) DEFAULT 100000 COMMENT 'Max stored attendance punch records',
+  `push_protocol` varchar(50) DEFAULT 'Cloud Push' COMMENT 'e.g. ADMS, MQTT, REST Webhook',
+  `unit_price` decimal(10,2) NOT NULL DEFAULT 0.00 COMMENT 'Hardware cost in INR',
+  `amc_price` decimal(10,2) NOT NULL DEFAULT 0.00 COMMENT 'Optional annual maintenance/support cost',
+  `machine_image` varchar(255) DEFAULT NULL COMMENT 'Product thumbnail/image',
+  `specifications` text DEFAULT NULL COMMENT 'Technical datasheet, display size, battery backup',
+  `status` tinyint(1) NOT NULL DEFAULT 1 COMMENT '1 = Active, 0 = Inactive',
+  `created_at` datetime DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -207,7 +330,7 @@ CREATE TABLE `attendance_settings` (
   `week_start_from` int(11) DEFAULT NULL,
   `alert_after_status` int(11) DEFAULT NULL,
   `created_on` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -223,7 +346,39 @@ CREATE TABLE `award_settings` (
   `summery` text DEFAULT NULL,
   `status` int(11) DEFAULT NULL,
   `created_on` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `bank_account_master`
+--
+
+CREATE TABLE `bank_account_master` (
+  `id` int(11) NOT NULL,
+  `account_title` varchar(150) NOT NULL COMMENT 'Display label e.g. Primary Operating Account, HDFC Current',
+  `beneficiary_name` varchar(200) NOT NULL COMMENT 'Legal entity / Account holder name',
+  `account_number` varchar(50) NOT NULL COMMENT 'Bank Account Number',
+  `bank_name` varchar(150) NOT NULL COMMENT 'Bank Name e.g. HDFC Bank, ICICI Bank',
+  `branch_name` varchar(150) DEFAULT NULL COMMENT 'Branch Name & Location',
+  `ifsc_code` varchar(30) NOT NULL COMMENT 'IFSC Code',
+  `account_type` varchar(50) DEFAULT 'Current' COMMENT 'Account Type e.g. Current, Savings',
+  `upi_id` varchar(100) DEFAULT NULL COMMENT 'UPI VPA handle e.g. billing@bank',
+  `swift_code` varchar(50) DEFAULT NULL COMMENT 'SWIFT / BIC Code for wire transfer',
+  `instructions` text DEFAULT NULL COMMENT 'Special instructions or notes for transferring institutions',
+  `qr_code_image` varchar(255) DEFAULT NULL COMMENT 'UPI / Payment QR code image URL',
+  `is_default` tinyint(1) NOT NULL DEFAULT 0 COMMENT '1 = Primary default account for subscription payments',
+  `status` tinyint(1) NOT NULL DEFAULT 1 COMMENT '1 = Active, 0 = Inactive',
+  `created_at` datetime DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `bank_account_master`
+--
+
+INSERT INTO `bank_account_master` (`id`, `account_title`, `beneficiary_name`, `account_number`, `bank_name`, `branch_name`, `ifsc_code`, `account_type`, `upi_id`, `swift_code`, `instructions`, `qr_code_image`, `is_default`, `status`, `created_at`, `updated_at`) VALUES
+(1, 'Growvidya', 'Sumanta Dey', 'xxxxxxxx01', 'State Bank of India', 'Kalyani', 'SBI00006', 'Savings', 'stxaviers@hdfcbank', 'SWIFT25470', NULL, 'upload/platform/bank_accounts/bank_qr_qr_code-1794989436237-e1dab2.png', 1, 1, '2026-11-18 13:40:37', '2026-11-18 13:40:37');
 
 -- --------------------------------------------------------
 
@@ -234,19 +389,55 @@ CREATE TABLE `award_settings` (
 CREATE TABLE `beneficiary_master` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
-  `user_type` int(11) DEFAULT NULL COMMENT '1= User, 2= Teacher',
+  `branch_id` int(11) DEFAULT NULL,
+  `user_type` int(11) DEFAULT NULL COMMENT '1= Staff, 2= Teacher, 3= Driver',
   `employee_id` int(11) DEFAULT NULL,
   `basic_salary` double(15,2) DEFAULT NULL,
   `status` int(11) DEFAULT NULL COMMENT '1=Active, 2=Inactive, 4=Delete',
   `created_on` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `beneficiary_master`
 --
 
-INSERT INTO `beneficiary_master` (`id`, `school_id`, `user_type`, `employee_id`, `basic_salary`, `status`, `created_on`) VALUES
-(1, 2, 1, 3, 5000.00, 1, '2026-09-10 05:26:10');
+INSERT INTO `beneficiary_master` (`id`, `school_id`, `branch_id`, `user_type`, `employee_id`, `basic_salary`, `status`, `created_on`) VALUES
+(1, 2, 3, 1, 3, 0.00, 1, '2026-11-18 09:40:30'),
+(2, 2, 2, 2, 3, 15000.00, 1, '2026-11-19 09:35:04'),
+(3, 2, 2, 2, 1, 19000.00, 1, '2026-11-19 09:36:12'),
+(4, 2, 2, 2, 2, 15000.00, 1, '2026-11-19 09:36:55'),
+(5, 2, 2, 2, 4, 19000.00, 1, '2026-11-19 09:37:24');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `billing_cycle_master`
+--
+
+CREATE TABLE `billing_cycle_master` (
+  `id` int(11) NOT NULL,
+  `code` varchar(50) NOT NULL,
+  `label` varchar(100) NOT NULL,
+  `short_label` varchar(20) NOT NULL,
+  `suffix` varchar(20) NOT NULL,
+  `duration_type` enum('days','months') NOT NULL DEFAULT 'months',
+  `duration_value` int(11) NOT NULL DEFAULT 1,
+  `rank` int(11) NOT NULL DEFAULT 0,
+  `status` tinyint(1) NOT NULL DEFAULT 1 COMMENT '1=Active, 2=Inactive, 4=Soft Deleted',
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `billing_cycle_master`
+--
+
+INSERT INTO `billing_cycle_master` (`id`, `code`, `label`, `short_label`, `suffix`, `duration_type`, `duration_value`, `rank`, `status`, `created_at`, `updated_at`) VALUES
+(1, 'trial', 'Free Trial', 'trial', '', 'days', 14, 0, 1, '2026-11-04 13:08:23', '2026-11-04 13:08:23'),
+(2, 'monthly', 'Monthly', 'month', '/ month', 'months', 1, 1, 1, '2026-11-04 13:08:23', '2026-11-04 13:08:23'),
+(3, 'quarterly', 'Quarterly', 'quarter', '/ quarter', 'months', 3, 3, 2, '2026-11-04 13:08:23', '2026-11-04 13:08:23'),
+(4, 'half_yearly', 'Half-Yearly', '6 months', '/ 6 months', 'months', 6, 6, 2, '2026-11-04 13:08:23', '2026-11-04 13:08:23'),
+(5, 'annual', 'Annual', 'year', '/ year', 'months', 12, 12, 1, '2026-11-04 13:08:23', '2026-11-04 13:08:23');
 
 -- --------------------------------------------------------
 
@@ -257,7 +448,7 @@ INSERT INTO `beneficiary_master` (`id`, `school_id`, `user_type`, `employee_id`,
 CREATE TABLE `blood_group_master` (
   `id` int(11) NOT NULL,
   `blood_group` varchar(255) NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `blood_group_master`
@@ -277,27 +468,75 @@ INSERT INTO `blood_group_master` (`id`, `blood_group`) VALUES
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `branch_master`
+--
+
+CREATE TABLE `branch_master` (
+  `id` int(11) NOT NULL,
+  `school_id` int(11) NOT NULL DEFAULT 1,
+  `branch_name` varchar(255) NOT NULL,
+  `branch_code` varchar(50) NOT NULL,
+  `head_user_id` int(11) DEFAULT NULL,
+  `address` text DEFAULT NULL,
+  `country_id` int(11) DEFAULT NULL,
+  `state_id` int(11) DEFAULT NULL,
+  `city_id` int(11) DEFAULT NULL,
+  `pincode` varchar(20) DEFAULT NULL,
+  `phone` varchar(50) DEFAULT NULL,
+  `email` varchar(100) DEFAULT NULL,
+  `principal_name` varchar(150) DEFAULT NULL,
+  `is_main_branch` tinyint(1) NOT NULL DEFAULT 0,
+  `status` int(11) NOT NULL DEFAULT 1 COMMENT '1 = Active, 2 = Inactive, 4 = Deleted',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  `latitude` decimal(10,7) DEFAULT NULL,
+  `longitude` decimal(10,7) DEFAULT NULL,
+  `geo_address` varchar(500) DEFAULT NULL,
+  `attendance_radius_m` int(11) NOT NULL DEFAULT 150,
+  `gps_max_accuracy_m` int(11) NOT NULL DEFAULT 100,
+  `late_after` time NOT NULL DEFAULT '09:30:00',
+  `working_days` varchar(20) NOT NULL DEFAULT '1,2,3,4,5,6' COMMENT 'ISO days Mon=1..Sun=7',
+  `geo_attendance_enabled` tinyint(1) NOT NULL DEFAULT 0 COMMENT 'Teacher App geofence attendance'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `branch_master`
+--
+
+INSERT INTO `branch_master` (`id`, `school_id`, `branch_name`, `branch_code`, `head_user_id`, `address`, `country_id`, `state_id`, `city_id`, `pincode`, `phone`, `email`, `principal_name`, `is_main_branch`, `status`, `created_at`, `updated_at`, `latitude`, `longitude`, `geo_address`, `attendance_radius_m`, `gps_max_accuracy_m`, `late_after`, `working_days`, `geo_attendance_enabled`) VALUES
+(1, 1, 'Green Valley Public School (Main Campus)', 'GVP2026001-MAIN', 1, '25 Park Street, Kolkata, West Bengal, 700016', 101, 41, 5548, '700016', '9863202541', 'info@greenvalleyschool.in', NULL, 1, 1, '2026-11-18 09:24:35', '2026-11-18 09:24:35', NULL, NULL, NULL, 150, 100, '09:30:00', '1,2,3,4,5,6', 0),
+(2, 2, 'Shishu Kakali KG School', 'SKKS-MAIN', 2, '55 Govindapur, Santipur, Nadia', 101, 41, 5704, '741404', '9865239550', 'shishu.kakali@gmail.com', 'Chitta Banga', 1, 1, '2026-11-18 09:26:50', '2026-11-19 10:45:04', NULL, NULL, NULL, 150, 100, '09:30:00', '1,2,3,4,5,6', 0),
+(3, 2, 'Sunrise International Academy', 'SIA2026002', 3, NULL, 101, 41, 5542, NULL, '6853241250', 'ardhendu.codeulas@gmail.com', 'Ardhendu Bag', 0, 1, '2026-11-18 09:38:36', '2026-11-18 09:41:06', 22.4793000, 88.3639000, NULL, 150, 100, '09:30:00', '1,2,3,4,5,6', 1),
+(4, 2, 'qwdqw', 'DWWQDWQ', NULL, NULL, 101, NULL, NULL, NULL, NULL, NULL, NULL, 0, 4, '2026-11-18 13:51:02', '2026-11-18 13:51:52', 22.4793000, 88.3639000, NULL, 150, 100, '09:30:00', '1,2,3,4,5,6', 1),
+(5, 2, 'eterterwq', 'TGGERTRETRE', NULL, NULL, 101, NULL, NULL, NULL, NULL, NULL, NULL, 0, 4, '2026-11-18 13:52:11', '2026-11-18 13:54:29', 22.4793000, 88.3639000, NULL, 150, 100, '09:30:00', '1,2,3,4,5,6', 0),
+(6, 3, 'Codeulas School (Main Campus)', 'CS-MAIN', 5, 'Kalyani, West Bengal, 785210', 101, 41, 5548, '741321', '9630258741', 'codeulas@gmail.com', NULL, 1, 1, '2026-11-19 07:29:54', '2026-11-19 07:29:55', NULL, NULL, NULL, 150, 100, '09:30:00', '1,2,3,4,5,6', 0),
+(7, 2, 'Bangla School', 'BS', NULL, 'Jitendra Nath Lane, Kalyani, Nadia', 101, 41, 5551, '741235', '8745569889', 'kalyani.bangla@gmail.com', NULL, 0, 1, '2026-11-19 07:46:01', '2026-11-19 07:46:01', 22.4793000, 88.3639000, NULL, 150, 100, '09:30:00', '1,2,3,4,5,6', 1);
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `bus_master`
 --
 
 CREATE TABLE `bus_master` (
   `id` int(11) NOT NULL,
   `school_id` int(11) NOT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `name` varchar(255) NOT NULL,
   `number_plate` varchar(255) NOT NULL,
   `seat` int(11) NOT NULL,
   `color` varchar(255) NOT NULL,
+  `image` varchar(255) DEFAULT NULL,
   `status` int(11) NOT NULL DEFAULT 1
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `bus_master`
 --
 
-INSERT INTO `bus_master` (`id`, `school_id`, `name`, `number_plate`, `seat`, `color`, `status`) VALUES
-(1, 1, 'Tata Marcopolo', 'WB892000', 35, 'Yellow', 1),
-(2, 1, 'Shyamali', 'WB898767', 45, 'Red', 1),
-(3, 2, 'Tata Marcopolo', 'WB892000', 25, 'Yellow', 1);
+INSERT INTO `bus_master` (`id`, `school_id`, `branch_id`, `name`, `number_plate`, `seat`, `color`, `image`, `status`) VALUES
+(1, 2, 2, 'Tata Nexon', 'WB90H8957', 30, 'Yellow-Black', 'upload/schools/2/branches/2/buses/bus_bus-1795008930540-4b2d1c.jpg', 1),
+(2, 2, 2, 'Test', 'WB893000', 50, 'Blue', NULL, 1);
 
 -- --------------------------------------------------------
 
@@ -310,7 +549,7 @@ CREATE TABLE `bus_operator` (
   `bus_id` int(11) NOT NULL,
   `operator_id` int(11) NOT NULL,
   `status` int(11) NOT NULL DEFAULT 1
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -321,10 +560,44 @@ CREATE TABLE `bus_operator` (
 CREATE TABLE `bus_to_operator` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `bus_id` int(11) NOT NULL,
   `operator_id` int(11) NOT NULL,
   `status` int(11) NOT NULL DEFAULT 1
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `bus_to_operator`
+--
+
+INSERT INTO `bus_to_operator` (`id`, `school_id`, `branch_id`, `bus_id`, `operator_id`, `status`) VALUES
+(5, 2, 2, 1, 1, 1),
+(6, 2, 2, 1, 2, 1);
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `capacity_unit_master`
+--
+
+CREATE TABLE `capacity_unit_master` (
+  `id` int(11) NOT NULL,
+  `unit_name` varchar(50) NOT NULL COMMENT 'e.g., Gigabyte, Terabyte, Megabyte',
+  `unit_code` varchar(20) NOT NULL COMMENT 'e.g., GB, TB, MB',
+  `factor_in_mb` bigint(20) UNSIGNED NOT NULL DEFAULT 1024 COMMENT 'Value in MB for mathematical conversion',
+  `status` tinyint(1) NOT NULL DEFAULT 1 COMMENT '1 = Active, 0 = Inactive',
+  `created_at` datetime DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `capacity_unit_master`
+--
+
+INSERT INTO `capacity_unit_master` (`id`, `unit_name`, `unit_code`, `factor_in_mb`, `status`, `created_at`, `updated_at`) VALUES
+(1, 'Megabyte', 'MB', 1, 1, '2026-09-24 15:40:05', '2026-09-24 15:40:05'),
+(2, 'Gigabyte', 'GB', 1024, 1, '2026-09-24 15:40:05', '2026-09-24 15:40:05'),
+(3, 'Terabyte', 'TB', 1048576, 1, '2026-09-24 15:40:05', '2026-09-24 15:40:05');
 
 -- --------------------------------------------------------
 
@@ -335,20 +608,11 @@ CREATE TABLE `bus_to_operator` (
 CREATE TABLE `certificate_border_master` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `image` varchar(255) DEFAULT NULL,
   `status` int(11) DEFAULT NULL COMMENT '1=Active, 2=Inactive, 4=Delete',
   `created_on` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
-
---
--- Dumping data for table `certificate_border_master`
---
-
-INSERT INTO `certificate_border_master` (`id`, `school_id`, `image`, `status`, `created_on`) VALUES
-(1, 2, 'upload/template/certificate_01-a4-1789021589387-982.jpg', 1, '2026-09-10 06:26:29'),
-(2, 2, 'upload/template/certificate_04-a4-1789021727959-2486.jpg', 1, '2026-09-10 06:28:47'),
-(3, 2, 'upload/template/certificate_03-a4-1789021734749-803.jpg', 1, '2026-09-10 06:28:54'),
-(4, 2, 'upload/template/certificate_02-a4-1789021745881-6625.jpg', 1, '2026-09-10 06:29:05');
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -359,6 +623,7 @@ INSERT INTO `certificate_border_master` (`id`, `school_id`, `image`, `status`, `
 CREATE TABLE `certificate_category` (
   `id` int(11) NOT NULL,
   `school_id` int(11) NOT NULL DEFAULT 1,
+  `branch_id` int(11) DEFAULT NULL,
   `category_name` varchar(255) DEFAULT NULL,
   `sort_order` int(11) DEFAULT NULL,
   `status` int(11) DEFAULT NULL COMMENT '1=active, 2=inactive, 4=delete',
@@ -366,16 +631,7 @@ CREATE TABLE `certificate_category` (
   `modify_by` int(11) DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT NULL,
   `modify_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
-
---
--- Dumping data for table `certificate_category`
---
-
-INSERT INTO `certificate_category` (`id`, `school_id`, `category_name`, `sort_order`, `status`, `created_by`, `modify_by`, `created_at`, `modify_at`) VALUES
-(1, 2, 'Transfer Certificate', 0, 1, 1, NULL, '2026-09-10 06:41:24', '2026-09-10 06:41:24'),
-(2, 2, 'Sports Certificate', 1, 1, 1, 1, '2026-09-10 06:41:48', '2026-09-10 06:42:10'),
-(3, 2, 'BONAFIDE CERTIFICATE', 0, 1, 1, NULL, '2026-09-10 06:41:58', '2026-09-10 06:41:58');
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -386,26 +642,20 @@ INSERT INTO `certificate_category` (`id`, `school_id`, `category_name`, `sort_or
 CREATE TABLE `certificate_template` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT 1,
+  `branch_id` int(11) DEFAULT NULL,
   `certificate_category` int(11) DEFAULT NULL,
   `template_name` varchar(255) DEFAULT NULL,
   `certificate_heading` varchar(255) DEFAULT NULL,
-  `short_description` text DEFAULT NULL,
-  `description` text DEFAULT NULL,
-  `border` text DEFAULT NULL,
+  `short_description` mediumtext DEFAULT NULL,
+  `description` mediumtext DEFAULT NULL,
+  `border` mediumtext DEFAULT NULL,
   `certified_by` varchar(255) DEFAULT NULL,
   `status` int(11) DEFAULT 1 COMMENT '1=active, 2=inactive, 4=delete',
   `created_by` int(11) DEFAULT NULL,
   `modify_by` int(11) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   `modify_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
-
---
--- Dumping data for table `certificate_template`
---
-
-INSERT INTO `certificate_template` (`id`, `school_id`, `certificate_category`, `template_name`, `certificate_heading`, `short_description`, `description`, `border`, `certified_by`, `status`, `created_by`, `modify_by`, `created_at`, `modify_at`) VALUES
-(1, 2, 1, 'Transfer Certificate Template', 'TRANSFER/SCHOOL LEAVING CERTIFICATE', 'Test short description', 'This is certified that Mr./Mrs. {{name}} Son/Daughter of Mr./Mrs. {{guardian_name}}. His/her date of birth as per school record is {{date_of_birth}}. His/her date of Admission was 12/02/2026, and the date of withdrawal was {{date}}. He/She has been a good student. His/her attendance for the academic session {{academic_year}} was Perfect. All the school dues on his/her account have been paid in full and updated. He/She has been promoted/detained/studying in class {{class}}.', '1', 'Principal', 1, 1, 1, '2026-09-10 08:43:25', '2026-09-10 06:44:21');
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -417,7 +667,7 @@ CREATE TABLE `cities` (
   `id` int(11) NOT NULL,
   `name` varchar(30) NOT NULL,
   `state_id` int(11) NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `cities`
@@ -48398,28 +48648,25 @@ INSERT INTO `cities` (`id`, `name`, `state_id`) VALUES
 CREATE TABLE `class_master` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `shift_id` int(11) DEFAULT NULL,
   `class_name` varchar(255) DEFAULT NULL,
   `sort_order` int(11) DEFAULT NULL,
   `status` int(11) NOT NULL DEFAULT 1,
   `created_on` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `class_master`
 --
 
-INSERT INTO `class_master` (`id`, `school_id`, `shift_id`, `class_name`, `sort_order`, `status`, `created_on`) VALUES
-(1, 1, 1, 'I', 1, 1, '2026-09-09 10:05:54'),
-(2, 1, 1, 'II', 1, 1, '2026-09-09 10:05:58'),
-(3, 1, 1, 'III', 1, 1, '2026-09-09 10:06:03'),
-(4, 1, 1, 'IV', 1, 1, '2026-09-09 10:06:08'),
-(5, 1, 2, 'V', 1, 1, '2026-09-09 14:29:11'),
-(6, 2, 3, 'I', 1, 1, '2026-09-10 05:54:51'),
-(7, 2, 3, 'II', 1, 1, '2026-09-10 05:54:55'),
-(8, 2, 3, 'III', 1, 1, '2026-09-10 05:54:59'),
-(9, 2, 4, 'IV', 1, 1, '2026-09-10 05:55:05'),
-(10, 2, 4, 'V', 1, 1, '2026-09-10 05:55:15');
+INSERT INTO `class_master` (`id`, `school_id`, `branch_id`, `shift_id`, `class_name`, `sort_order`, `status`, `created_on`) VALUES
+(1, 2, 2, 1, 'I', 1, 1, '2026-11-18 09:29:24'),
+(2, 2, 2, 1, 'II', 1, 1, '2026-11-18 09:29:29'),
+(3, 2, 2, 1, 'III', 1, 1, '2026-11-18 09:29:33'),
+(4, 2, 2, 1, 'IV', 1, 1, '2026-11-18 09:29:37'),
+(5, 2, 2, 2, 'V', 1, 1, '2026-11-18 09:30:01'),
+(6, 2, 2, 2, 'VI', 1, 1, '2026-11-18 09:30:08');
 
 -- --------------------------------------------------------
 
@@ -48435,7 +48682,7 @@ CREATE TABLE `company_settings` (
   `company_website` text DEFAULT NULL,
   `status` int(11) DEFAULT NULL,
   `created_on` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -48446,7 +48693,7 @@ CREATE TABLE `company_settings` (
 CREATE TABLE `contract_type_master` (
   `id` int(11) NOT NULL,
   `contract_type` varchar(255) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `contract_type_master`
@@ -48468,7 +48715,7 @@ CREATE TABLE `countries` (
   `name` varchar(150) NOT NULL,
   `phonecode` int(11) NOT NULL,
   `status` int(5) NOT NULL DEFAULT 1
-) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `countries`
@@ -48725,167 +48972,43 @@ INSERT INTO `countries` (`id`, `shortname`, `name`, `phonecode`, `status`) VALUE
 -- --------------------------------------------------------
 
 --
--- Table structure for table `countries_master`
+-- Table structure for table `coupons`
 --
 
-CREATE TABLE `countries_master` (
+CREATE TABLE `coupons` (
   `id` int(11) NOT NULL,
-  `country_name` varchar(100) NOT NULL,
-  `country_code` char(2) NOT NULL,
-  `flag_class` varchar(50) DEFAULT NULL,
-  `phone_code` varchar(10) DEFAULT NULL,
-  `status` int(5) NOT NULL DEFAULT 1
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+  `code` varchar(50) NOT NULL,
+  `description` text DEFAULT NULL,
+  `discount_type` enum('percentage','fixed') NOT NULL DEFAULT 'percentage',
+  `discount_value` decimal(10,2) NOT NULL,
+  `applicable_scope` enum('plan_only','software_and_storage','all') NOT NULL DEFAULT 'plan_only',
+  `min_order_amount` decimal(10,2) DEFAULT 0.00,
+  `max_discount_amount` decimal(10,2) DEFAULT NULL,
+  `start_date` date DEFAULT NULL,
+  `end_date` date DEFAULT NULL,
+  `max_uses` int(11) DEFAULT NULL,
+  `max_uses_per_user` int(10) UNSIGNED NOT NULL DEFAULT 1,
+  `used_count` int(11) DEFAULT 0,
+  `status` tinyint(1) DEFAULT 1,
+  `created_at` datetime DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
 
 --
--- Dumping data for table `countries_master`
+-- Table structure for table `coupon_usages`
 --
 
-INSERT INTO `countries_master` (`id`, `country_name`, `country_code`, `flag_class`, `phone_code`, `status`) VALUES
-(1, 'Afghanistan', 'AF', 'fi fi-af', '+93', 1),
-(2, 'Albania', 'AL', 'fi fi-al', '+355', 1),
-(3, 'Algeria', 'DZ', 'fi fi-dz', '+213', 1),
-(4, 'Andorra', 'AD', 'fi fi-ad', '+376', 1),
-(5, 'Angola', 'AO', 'fi fi-ao', '+244', 1),
-(6, 'Argentina', 'AR', 'fi fi-ar', '+54', 1),
-(7, 'Armenia', 'AM', 'fi fi-am', '+374', 1),
-(8, 'Australia', 'AU', 'fi fi-au', '+61', 1),
-(9, 'Austria', 'AT', 'fi fi-at', '+43', 1),
-(10, 'Azerbaijan', 'AZ', 'fi fi-az', '+994', 1),
-(11, 'Bahamas', 'BS', 'fi fi-bs', '+1-242', 1),
-(12, 'Bahrain', 'BH', 'fi fi-bh', '+973', 1),
-(13, 'Bangladesh', 'BD', 'fi fi-bd', '+880', 1),
-(14, 'Barbados', 'BB', 'fi fi-bb', '+1-246', 1),
-(15, 'Belarus', 'BY', 'fi fi-by', '+375', 1),
-(16, 'Belgium', 'BE', 'fi fi-be', '+32', 1),
-(17, 'Belize', 'BZ', 'fi fi-bz', '+501', 1),
-(18, 'Benin', 'BJ', 'fi fi-bj', '+229', 1),
-(19, 'Bhutan', 'BT', 'fi fi-bt', '+975', 1),
-(20, 'Bolivia', 'BO', 'fi fi-bo', '+591', 1),
-(21, 'Bosnia and Herzegovina', 'BA', 'fi fi-ba', '+387', 1),
-(22, 'Botswana', 'BW', 'fi fi-bw', '+267', 1),
-(23, 'Brazil', 'BR', 'fi fi-br', '+55', 1),
-(24, 'Brunei Darussalam', 'BN', 'fi fi-bn', '+673', 1),
-(25, 'Bulgaria', 'BG', 'fi fi-bg', '+359', 1),
-(26, 'Burkina Faso', 'BF', 'fi fi-bf', '+226', 1),
-(27, 'Burundi', 'BI', 'fi fi-bi', '+257', 1),
-(28, 'Cambodia', 'KH', 'fi fi-kh', '+855', 1),
-(29, 'Cameroon', 'CM', 'fi fi-cm', '+237', 1),
-(30, 'Canada', 'CA', 'fi fi-ca', '+1', 1),
-(31, 'Chile', 'CL', 'fi fi-cl', '+56', 1),
-(32, 'China', 'CN', 'fi fi-cn', '+86', 1),
-(33, 'Colombia', 'CO', 'fi fi-co', '+57', 1),
-(34, 'Costa Rica', 'CR', 'fi fi-cr', '+506', 1),
-(35, 'Croatia', 'HR', 'fi fi-hr', '+385', 1),
-(36, 'Cuba', 'CU', 'fi fi-cu', '+53', 1),
-(37, 'Cyprus', 'CY', 'fi fi-cy', '+357', 1),
-(38, 'Czech Republic', 'CZ', 'fi fi-cz', '+420', 1),
-(39, 'Denmark', 'DK', 'fi fi-dk', '+45', 1),
-(40, 'Dominican Republic', 'DO', 'fi fi-do', '+1-809', 1),
-(41, 'Ecuador', 'EC', 'fi fi-ec', '+593', 1),
-(42, 'Egypt', 'EG', 'fi fi-eg', '+20', 1),
-(43, 'El Salvador', 'SV', 'fi fi-sv', '+503', 1),
-(44, 'Estonia', 'EE', 'fi fi-ee', '+372', 1),
-(45, 'Ethiopia', 'ET', 'fi fi-et', '+251', 1),
-(46, 'Fiji', 'FJ', 'fi fi-fj', '+679', 1),
-(47, 'Finland', 'FI', 'fi fi-fi', '+358', 1),
-(48, 'France', 'FR', 'fi fi-fr', '+33', 1),
-(49, 'Germany', 'DE', 'fi fi-de', '+49', 1),
-(50, 'Ghana', 'GH', 'fi fi-gh', '+233', 1),
-(51, 'Greece', 'GR', 'fi fi-gr', '+30', 1),
-(52, 'Greenland', 'GL', 'fi fi-gl', '+299', 1),
-(53, 'Guatemala', 'GT', 'fi fi-gt', '+502', 1),
-(54, 'Honduras', 'HN', 'fi fi-hn', '+504', 1),
-(55, 'Hong Kong', 'HK', 'fi fi-hk', '+852', 1),
-(56, 'Hungary', 'HU', 'fi fi-hu', '+36', 1),
-(57, 'Iceland', 'IS', 'fi fi-is', '+354', 1),
-(58, 'India', 'IN', 'fi fi-in', '+91', 1),
-(59, 'Indonesia', 'ID', 'fi fi-id', '+62', 1),
-(60, 'Iran', 'IR', 'fi fi-ir', '+98', 1),
-(61, 'Iraq', 'IQ', 'fi fi-iq', '+964', 1),
-(62, 'Ireland', 'IE', 'fi fi-ie', '+353', 1),
-(63, 'Israel', 'IL', 'fi fi-il', '+972', 1),
-(64, 'Italy', 'IT', 'fi fi-it', '+39', 1),
-(65, 'Jamaica', 'JM', 'fi fi-jm', '+1-876', 1),
-(66, 'Japan', 'JP', 'fi fi-jp', '+81', 1),
-(67, 'Jordan', 'JO', 'fi fi-jo', '+962', 1),
-(68, 'Kazakhstan', 'KZ', 'fi fi-kz', '+7', 1),
-(69, 'Kenya', 'KE', 'fi fi-ke', '+254', 1),
-(70, 'Kuwait', 'KW', 'fi fi-kw', '+965', 1),
-(71, 'Kyrgyzstan', 'KG', 'fi fi-kg', '+996', 1),
-(72, 'Laos', 'LA', 'fi fi-la', '+856', 1),
-(73, 'Latvia', 'LV', 'fi fi-lv', '+371', 1),
-(74, 'Lebanon', 'LB', 'fi fi-lb', '+961', 1),
-(75, 'Libya', 'LY', 'fi fi-ly', '+218', 1),
-(76, 'Liechtenstein', 'LI', 'fi fi-li', '+423', 1),
-(77, 'Lithuania', 'LT', 'fi fi-lt', '+370', 1),
-(78, 'Luxembourg', 'LU', 'fi fi-lu', '+352', 1),
-(79, 'Malaysia', 'MY', 'fi fi-my', '+60', 1),
-(80, 'Maldives', 'MV', 'fi fi-mv', '+960', 1),
-(81, 'Mali', 'ML', 'fi fi-ml', '+223', 1),
-(82, 'Malta', 'MT', 'fi fi-mt', '+356', 1),
-(83, 'Mexico', 'MX', 'fi fi-mx', '+52', 1),
-(84, 'Monaco', 'MC', 'fi fi-mc', '+377', 1),
-(85, 'Mongolia', 'MN', 'fi fi-mn', '+976', 1),
-(86, 'Morocco', 'MA', 'fi fi-ma', '+212', 1),
-(87, 'Mozambique', 'MZ', 'fi fi-mz', '+258', 1),
-(88, 'Myanmar', 'MM', 'fi fi-mm', '+95', 1),
-(89, 'Namibia', 'NA', 'fi fi-na', '+264', 1),
-(90, 'Nepal', 'NP', 'fi fi-np', '+977', 1),
-(91, 'Netherlands', 'NL', 'fi fi-nl', '+31', 1),
-(92, 'New Zealand', 'NZ', 'fi fi-nz', '+64', 1),
-(93, 'Nigeria', 'NG', 'fi fi-ng', '+234', 1),
-(94, 'North Korea', 'KP', 'fi fi-kp', '+850', 1),
-(95, 'Norway', 'NO', 'fi fi-no', '+47', 1),
-(96, 'Oman', 'OM', 'fi fi-om', '+968', 1),
-(97, 'Pakistan', 'PK', 'fi fi-pk', '+92', 1),
-(98, 'Palestine', 'PS', 'fi fi-ps', '+970', 1),
-(99, 'Panama', 'PA', 'fi fi-pa', '+507', 1),
-(100, 'Paraguay', 'PY', 'fi fi-py', '+595', 1),
-(101, 'Peru', 'PE', 'fi fi-pe', '+51', 1),
-(102, 'Philippines', 'PH', 'fi fi-ph', '+63', 1),
-(103, 'Poland', 'PL', 'fi fi-pl', '+48', 1),
-(104, 'Portugal', 'PT', 'fi fi-pt', '+351', 1),
-(105, 'Qatar', 'QA', 'fi fi-qa', '+974', 1),
-(106, 'Romania', 'RO', 'fi fi-ro', '+40', 1),
-(107, 'Russia', 'RU', 'fi fi-ru', '+7', 1),
-(108, 'Rwanda', 'RW', 'fi fi-rw', '+250', 1),
-(109, 'Saudi Arabia', 'SA', 'fi fi-sa', '+966', 1),
-(110, 'Senegal', 'SN', 'fi fi-sn', '+221', 1),
-(111, 'Serbia', 'RS', 'fi fi-rs', '+381', 1),
-(112, 'Singapore', 'SG', 'fi fi-sg', '+65', 1),
-(113, 'Slovakia', 'SK', 'fi fi-sk', '+421', 1),
-(114, 'Slovenia', 'SI', 'fi fi-si', '+386', 1),
-(115, 'Somalia', 'SO', 'fi fi-so', '+252', 1),
-(116, 'South Africa', 'ZA', 'fi fi-za', '+27', 1),
-(117, 'South Korea', 'KR', 'fi fi-kr', '+82', 1),
-(118, 'Spain', 'ES', 'fi fi-es', '+34', 1),
-(119, 'Sri Lanka', 'LK', 'fi fi-lk', '+94', 1),
-(120, 'Sudan', 'SD', 'fi fi-sd', '+249', 1),
-(121, 'Sweden', 'SE', 'fi fi-se', '+46', 1),
-(122, 'Switzerland', 'CH', 'fi fi-ch', '+41', 1),
-(123, 'Syria', 'SY', 'fi fi-sy', '+963', 1),
-(124, 'Taiwan', 'TW', 'fi fi-tw', '+886', 1),
-(125, 'Tajikistan', 'TJ', 'fi fi-tj', '+992', 1),
-(126, 'Tanzania', 'TZ', 'fi fi-tz', '+255', 1),
-(127, 'Thailand', 'TH', 'fi fi-th', '+66', 1),
-(128, 'Togo', 'TG', 'fi fi-tg', '+228', 1),
-(129, 'Trinidad and Tobago', 'TT', 'fi fi-tt', '+1-868', 1),
-(130, 'Tunisia', 'TN', 'fi fi-tn', '+216', 1),
-(131, 'Turkey', 'TR', 'fi fi-tr', '+90', 1),
-(132, 'Turkmenistan', 'TM', 'fi fi-tm', '+993', 1),
-(133, 'Uganda', 'UG', 'fi fi-ug', '+256', 1),
-(134, 'Ukraine', 'UA', 'fi fi-ua', '+380', 1),
-(135, 'United Arab Emirates', 'AE', 'fi fi-ae', '+971', 1),
-(136, 'United Kingdom', 'GB', 'fi fi-gb', '+44', 1),
-(137, 'United States', 'US', 'fi fi-us', '+1', 1),
-(138, 'Uruguay', 'UY', 'fi fi-uy', '+598', 1),
-(139, 'Uzbekistan', 'UZ', 'fi fi-uz', '+998', 1),
-(140, 'Venezuela', 'VE', 'fi fi-ve', '+58', 1),
-(141, 'Vietnam', 'VN', 'fi fi-vn', '+84', 1),
-(142, 'Yemen', 'YE', 'fi fi-ye', '+967', 1),
-(143, 'Zambia', 'ZM', 'fi fi-zm', '+260', 1),
-(144, 'Zimbabwe', 'ZW', 'fi fi-zw', '+263', 1);
+CREATE TABLE `coupon_usages` (
+  `id` int(11) NOT NULL,
+  `coupon_id` int(11) NOT NULL,
+  `school_id` int(11) NOT NULL,
+  `subscription_id` int(11) DEFAULT NULL,
+  `payment_order_id` int(11) DEFAULT NULL,
+  `discount_amount` decimal(10,2) NOT NULL,
+  `used_at` datetime DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -48908,7 +49031,7 @@ CREATE TABLE `currency_settings` (
   `is_default` int(11) DEFAULT NULL,
   `status` int(11) DEFAULT NULL,
   `created_on` timestamp NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -48925,7 +49048,7 @@ CREATE TABLE `customer_contact_information` (
   `email` varchar(255) DEFAULT NULL,
   `delivery_address` varchar(255) DEFAULT NULL,
   `remark` text DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -48965,7 +49088,7 @@ CREATE TABLE `customer_information` (
   `buyer` text DEFAULT NULL,
   `seller` text DEFAULT NULL,
   `created_on` timestamp NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -48976,27 +49099,23 @@ CREATE TABLE `customer_information` (
 CREATE TABLE `days_master` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `day_name` varchar(255) DEFAULT NULL,
   `status` int(11) DEFAULT NULL COMMENT '1=active, 2=inactive, 4=delete'
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `days_master`
 --
 
-INSERT INTO `days_master` (`id`, `school_id`, `day_name`, `status`) VALUES
-(1, 1, 'Monday', 1),
-(2, 1, 'Tuesday', 1),
-(3, 1, 'Wednesday', 1),
-(4, 1, 'Thursday', 1),
-(5, 1, 'Friday', 1),
-(6, 1, 'Saturday', 1),
-(7, 2, 'Monday', 1),
-(8, 2, 'Tuesday', 1),
-(9, 2, 'Wednesday', 1),
-(10, 2, 'Thursday', 1),
-(11, 2, 'Friday', 1),
-(12, 2, 'Saturday', 1);
+INSERT INTO `days_master` (`id`, `school_id`, `branch_id`, `day_name`, `status`) VALUES
+(1, 2, 2, 'Monday', 1),
+(2, 2, 2, 'Tuesday', 1),
+(3, 2, 2, 'Wednesday', 1),
+(4, 2, 2, 'Thursday', 1),
+(5, 2, 2, 'Friday', 1),
+(6, 2, 2, 'Saturday', 2),
+(7, 2, 2, 'Sunday', 2);
 
 -- --------------------------------------------------------
 
@@ -49010,7 +49129,7 @@ CREATE TABLE `deal_agent` (
   `deal_category_id` int(11) DEFAULT NULL,
   `status` int(11) DEFAULT NULL,
   `created_on` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -49024,7 +49143,7 @@ CREATE TABLE `deal_agent_category` (
   `deal_category_id` int(11) DEFAULT NULL,
   `status` int(11) DEFAULT NULL,
   `created_on` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -49037,7 +49156,7 @@ CREATE TABLE `deal_category` (
   `deal_category_name` varchar(255) DEFAULT NULL,
   `status` int(11) DEFAULT NULL COMMENT '0=delete, 1=active',
   `created_on` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -49048,20 +49167,50 @@ CREATE TABLE `deal_category` (
 CREATE TABLE `document_type_master` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `document_type_name` varchar(255) DEFAULT NULL,
   `status` int(11) NOT NULL DEFAULT 1 COMMENT '1=Active, 2=Inactive, 4=delete'
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `document_type_master`
 --
 
-INSERT INTO `document_type_master` (`id`, `school_id`, `document_type_name`, `status`) VALUES
-(1, 1, 'Birth Certificate', 1),
-(2, 1, 'Aadhar card', 1),
-(3, 1, 'Application', 1),
-(4, 2, 'Birth Certificate', 1),
-(5, 2, 'Aadhar card', 1);
+INSERT INTO `document_type_master` (`id`, `school_id`, `branch_id`, `document_type_name`, `status`) VALUES
+(1, 2, 2, 'Birth Certificate', 1),
+(2, 2, 2, 'Aadhar card', 1);
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `email_credentials`
+--
+
+CREATE TABLE `email_credentials` (
+  `id` int(11) NOT NULL,
+  `provider` enum('mailjet','zoho','smtp') NOT NULL COMMENT 'Email provider: mailjet, zoho, or smtp',
+  `from_name` varchar(150) NOT NULL COMMENT 'Sender display name',
+  `from_email` varchar(150) NOT NULL COMMENT 'Sender email address',
+  `api_key` varchar(255) DEFAULT NULL COMMENT 'Mailjet API Key (Public Key)',
+  `api_secret` text DEFAULT NULL COMMENT 'AES-256-GCM encrypted Mailjet Secret Key',
+  `smtp_host` varchar(255) DEFAULT NULL COMMENT 'SMTP server hostname',
+  `smtp_port` int(11) DEFAULT 587 COMMENT 'SMTP server port (587, 465, 25)',
+  `smtp_username` varchar(255) DEFAULT NULL COMMENT 'SMTP authentication username',
+  `smtp_password` text DEFAULT NULL COMMENT 'AES-256-GCM encrypted SMTP password',
+  `smtp_encryption` enum('tls','ssl','none') NOT NULL DEFAULT 'tls' COMMENT 'SMTP encryption protocol',
+  `is_default` tinyint(1) NOT NULL DEFAULT 0 COMMENT '1 = Active default email provider',
+  `status` tinyint(1) NOT NULL DEFAULT 1 COMMENT '1 = Active, 0 = Inactive',
+  `created_on` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `email_credentials`
+--
+
+INSERT INTO `email_credentials` (`id`, `provider`, `from_name`, `from_email`, `api_key`, `api_secret`, `smtp_host`, `smtp_port`, `smtp_username`, `smtp_password`, `smtp_encryption`, `is_default`, `status`, `created_on`, `updated_at`) VALUES
+(1, 'mailjet', 'Growvidya', 'info@growvidya.in', '5bc75d858c916ca742d1090ec15fba09', 'enc:v1:aface9ea7b0acf2a8aff917c:818b6fba8c181cb6f1f0fccfd33600e1:b0363d6d95a5e45a3c4578c870ecd89f6614abd26fc7c89b5c9accf334f29317', NULL, NULL, NULL, NULL, 'tls', 1, 1, '2026-10-26 09:14:53', '2026-11-16 13:16:29'),
+(2, 'smtp', 'Growvidya', 'info@codeulas.com', NULL, NULL, 'smtp.gmail.com', 587, 'info@codeulas.com', 'enc:v1:4be34debbc9ee4e5f423c713:3f1b37a4a6d7cef72d25bafacecd017c:aea8344c7b887a70ae1c44d59bc1442d3ba14d', 'tls', 0, 1, '2026-10-26 09:16:08', '2026-11-16 13:16:29');
 
 -- --------------------------------------------------------
 
@@ -49078,7 +49227,7 @@ CREATE TABLE `emergency_contact` (
   `address` text DEFAULT NULL,
   `status` int(11) DEFAULT NULL COMMENT '0=delete, 1=active',
   `created_on` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -49089,6 +49238,7 @@ CREATE TABLE `emergency_contact` (
 CREATE TABLE `employee_salary` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `user_type` int(11) DEFAULT NULL COMMENT '1= User, 2= Teacher',
   `employee_id` int(11) DEFAULT NULL,
   `leave_id` int(11) DEFAULT NULL,
@@ -49100,14 +49250,17 @@ CREATE TABLE `employee_salary` (
   `slip` varchar(255) DEFAULT NULL,
   `payment_status` int(11) DEFAULT NULL COMMENT '1=Paid, 2=Unpaid, 4= Delete',
   `created_on` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `employee_salary`
 --
 
-INSERT INTO `employee_salary` (`id`, `school_id`, `user_type`, `employee_id`, `leave_id`, `basic_salary`, `total_deductions`, `net_salary`, `payment_date`, `transaction_id`, `slip`, `payment_status`, `created_on`) VALUES
-(1, 2, 2, 3, 3, 5000.00, 100.00, 4900.00, '2026-09-10', 'xxxxxxxxxxxxxx01', NULL, 1, '2026-09-10 11:29:08');
+INSERT INTO `employee_salary` (`id`, `school_id`, `branch_id`, `user_type`, `employee_id`, `leave_id`, `basic_salary`, `total_deductions`, `net_salary`, `payment_date`, `transaction_id`, `slip`, `payment_status`, `created_on`) VALUES
+(1, 2, 2, 2, 1, NULL, 19000.00, 0.00, 19000.00, '2026-11-01', 'SAL-20261101-2001-42780', NULL, 1, '2026-11-19 09:40:34'),
+(2, 2, 2, 2, 2, NULL, 15000.00, 0.00, 15000.00, '2026-11-01', 'SAL-20261101-2002-42811', NULL, 1, '2026-11-19 09:40:34'),
+(3, 2, 2, 2, 3, NULL, 15000.00, 0.00, 15000.00, '2026-11-01', 'SAL-20261101-2003-42832', NULL, 1, '2026-11-19 09:40:34'),
+(4, 2, 2, 2, 4, NULL, 19000.00, 0.00, 19000.00, '2026-11-01', 'SAL-20261101-2004-42863', NULL, 1, '2026-11-19 09:40:34');
 
 -- --------------------------------------------------------
 
@@ -49118,20 +49271,14 @@ INSERT INTO `employee_salary` (`id`, `school_id`, `user_type`, `employee_id`, `l
 CREATE TABLE `event` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `title` varchar(255) DEFAULT NULL,
   `from_date` datetime DEFAULT NULL,
   `to_date` datetime DEFAULT NULL,
-  `details` text DEFAULT NULL,
+  `details` mediumtext DEFAULT NULL,
   `status` int(11) NOT NULL DEFAULT 1 COMMENT '1=active, 2=inactive, 4=delete',
   `created_on` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
-
---
--- Dumping data for table `event`
---
-
-INSERT INTO `event` (`id`, `school_id`, `title`, `from_date`, `to_date`, `details`, `status`, `created_on`) VALUES
-(1, 2, 'Healthcare Technology', '2026-09-10 00:00:00', '2026-09-10 00:00:00', 'test', 1, '2026-09-10 11:37:01');
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -49142,6 +49289,7 @@ INSERT INTO `event` (`id`, `school_id`, `title`, `from_date`, `to_date`, `detail
 CREATE TABLE `exam_attendance` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `exam_id` int(11) DEFAULT NULL,
   `class_id` int(11) DEFAULT NULL,
   `academic_year_id` int(11) DEFAULT NULL,
@@ -49151,24 +49299,33 @@ CREATE TABLE `exam_attendance` (
   `attendance_status` int(11) DEFAULT NULL COMMENT '1=Present, 2=Absent',
   `status` int(11) DEFAULT NULL COMMENT '1=Active, 2=Inactive, 4=Delete',
   `created_on` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `exam_attendance`
 --
 
-INSERT INTO `exam_attendance` (`id`, `school_id`, `exam_id`, `class_id`, `academic_year_id`, `student_id`, `subject_id`, `exam_schedule_id`, `attendance_status`, `status`, `created_on`) VALUES
-(1, 2, 1, 6, 8, 3, 15, 1, 1, 1, '2026-09-10 09:12:33'),
-(2, 2, 1, 6, 8, 4, 15, 1, 0, 1, '2026-09-10 09:12:33'),
-(3, 2, 1, 8, 8, 5, 24, 7, 1, 1, '2026-09-10 09:52:06'),
-(4, 2, 1, 8, 8, 5, 23, 6, 0, 1, '2026-09-10 10:31:18'),
-(5, 2, 1, 8, 8, 5, 22, 5, 1, 1, '2026-09-10 10:32:13'),
-(6, 2, 2, 7, 8, 6, 19, 8, 1, 1, '2026-09-11 06:42:02'),
-(7, 2, 2, 7, 8, 6, 20, 9, 1, 1, '2026-09-11 06:42:07'),
-(8, 2, 2, 7, 8, 6, 21, 10, 1, 1, '2026-09-11 06:42:13'),
-(9, 2, 1, 7, 8, 6, 19, 11, 1, 1, '2026-09-11 06:45:23'),
-(10, 2, 1, 7, 8, 6, 20, 12, 1, 1, '2026-09-11 06:45:27'),
-(11, 2, 1, 7, 8, 6, 21, 13, 1, 1, '2026-09-11 06:45:32');
+INSERT INTO `exam_attendance` (`id`, `school_id`, `branch_id`, `exam_id`, `class_id`, `academic_year_id`, `student_id`, `subject_id`, `exam_schedule_id`, `attendance_status`, `status`, `created_on`) VALUES
+(1, 2, 2, 1, 1, 2, 6, 1, 5, 1, 1, '2026-11-20 10:16:58'),
+(2, 2, 2, 1, 1, 2, 7, 1, 5, 1, 1, '2026-11-20 10:16:58'),
+(3, 2, 2, 1, 1, 2, 8, 1, 5, 1, 1, '2026-11-20 10:16:58'),
+(4, 2, 2, 1, 1, 2, 9, 1, 5, 1, 1, '2026-11-20 10:16:58'),
+(5, 2, 2, 1, 1, 2, 10, 1, 5, 1, 1, '2026-11-20 10:16:58'),
+(6, 2, 2, 1, 1, 2, 11, 1, 5, 1, 1, '2026-11-20 10:16:58'),
+(7, 2, 2, 1, 1, 2, 12, 1, 5, 1, 1, '2026-11-20 10:16:58'),
+(8, 2, 2, 1, 1, 2, 13, 1, 5, 1, 1, '2026-11-20 10:16:58'),
+(9, 2, 2, 1, 1, 2, 1, 1, 5, 1, 1, '2026-11-20 10:16:58'),
+(10, 2, 2, 1, 1, 2, 14, 1, 5, 1, 1, '2026-11-20 10:16:58'),
+(11, 2, 2, 1, 1, 2, 15, 1, 5, 1, 1, '2026-11-20 10:16:58'),
+(12, 2, 2, 1, 1, 2, 16, 1, 5, 1, 1, '2026-11-20 10:16:58'),
+(13, 2, 2, 1, 1, 2, 17, 1, 5, 1, 1, '2026-11-20 10:16:58'),
+(14, 2, 2, 1, 1, 2, 18, 1, 5, 1, 1, '2026-11-20 10:16:58'),
+(15, 2, 2, 1, 1, 2, 19, 1, 5, 1, 1, '2026-11-20 10:16:58'),
+(16, 2, 2, 1, 1, 2, 20, 1, 5, 1, 1, '2026-11-20 10:16:58'),
+(17, 2, 2, 1, 1, 2, 21, 1, 5, 1, 1, '2026-11-20 10:16:58'),
+(18, 2, 2, 1, 1, 2, 22, 1, 5, 1, 1, '2026-11-20 10:16:58'),
+(19, 2, 2, 1, 1, 2, 23, 1, 5, 1, 1, '2026-11-20 10:16:58'),
+(20, 2, 2, 1, 1, 2, 24, 1, 5, 1, 1, '2026-11-20 10:16:58');
 
 -- --------------------------------------------------------
 
@@ -49180,18 +49337,19 @@ CREATE TABLE `exam_master` (
   `id` int(11) NOT NULL,
   `academic_year` int(11) DEFAULT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `exam` varchar(255) DEFAULT NULL,
   `status` int(11) DEFAULT NULL COMMENT '1=Active, 2=Inactive, 4=Delete',
   `created_on` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `exam_master`
 --
 
-INSERT INTO `exam_master` (`id`, `academic_year`, `school_id`, `exam`, `status`, `created_on`) VALUES
-(1, 8, 2, 'Term-1', 1, '2026-09-10 06:29:09'),
-(2, 8, 2, 'Term-2', 1, '2026-09-10 06:29:13');
+INSERT INTO `exam_master` (`id`, `academic_year`, `school_id`, `branch_id`, `exam`, `status`, `created_on`) VALUES
+(1, 2, 2, 2, 'Term-1', 1, '2026-11-18 10:23:15'),
+(2, 2, 2, 2, 'Term-2', 1, '2026-11-18 10:23:18');
 
 -- --------------------------------------------------------
 
@@ -49202,22 +49360,27 @@ INSERT INTO `exam_master` (`id`, `academic_year`, `school_id`, `exam`, `status`,
 CREATE TABLE `exam_result` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `academic_year_id` int(11) DEFAULT NULL,
   `student_id` int(11) DEFAULT NULL,
   `exam_id` int(11) DEFAULT NULL,
   `class_id` int(11) DEFAULT NULL,
   `status` int(11) DEFAULT NULL COMMENT '1= Active, 2=Inactive, 4=Delete',
-  `created_on` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+  `created_on` timestamp NOT NULL DEFAULT current_timestamp(),
+  `total_marks` decimal(8,2) DEFAULT 0.00,
+  `max_marks` decimal(8,2) DEFAULT 0.00,
+  `percentage` decimal(5,2) DEFAULT 0.00,
+  `grade_name` varchar(20) DEFAULT NULL,
+  `result_status` tinyint(1) NOT NULL DEFAULT 0 COMMENT '0 = Pending, 1 = Pass, 2 = Fail',
+  `is_marksheet_generated` tinyint(1) NOT NULL DEFAULT 0 COMMENT '0 = Not Generated, 1 = Generated'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `exam_result`
 --
 
-INSERT INTO `exam_result` (`id`, `school_id`, `academic_year_id`, `student_id`, `exam_id`, `class_id`, `status`, `created_on`) VALUES
-(1, 2, 8, 5, 1, 8, 1, '2026-09-10 09:55:41'),
-(2, 2, 8, 6, 2, 7, 1, '2026-09-11 06:42:57'),
-(3, 2, 8, 6, 1, 7, 1, '2026-09-11 06:59:27');
+INSERT INTO `exam_result` (`id`, `school_id`, `branch_id`, `academic_year_id`, `student_id`, `exam_id`, `class_id`, `status`, `created_on`, `total_marks`, `max_marks`, `percentage`, `grade_name`, `result_status`, `is_marksheet_generated`) VALUES
+(1, 2, 2, 2, 1, 1, 1, 1, '2026-11-20 10:17:58', 87.00, 400.00, 21.80, 'D+', 1, 1);
 
 -- --------------------------------------------------------
 
@@ -49228,6 +49391,7 @@ INSERT INTO `exam_result` (`id`, `school_id`, `academic_year_id`, `student_id`, 
 CREATE TABLE `exam_result_subject` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `exam_result_id` int(11) DEFAULT NULL,
   `subject_id` int(11) DEFAULT NULL,
   `exam_type_id` int(11) DEFAULT NULL,
@@ -49235,36 +49399,16 @@ CREATE TABLE `exam_result_subject` (
   `grade_id` int(11) DEFAULT NULL,
   `status` int(11) DEFAULT NULL COMMENT '	1= Active, 2=Inactive, 4=Delete',
   `created_on` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `exam_result_subject`
 --
 
-INSERT INTO `exam_result_subject` (`id`, `school_id`, `exam_result_id`, `subject_id`, `exam_type_id`, `marks`, `grade_id`, `status`, `created_on`) VALUES
-(1, 2, 1, 24, 1, 12, 2, 1, '2026-09-10 09:55:41'),
-(2, 2, 1, 24, 2, 7, 2, 1, '2026-09-10 09:55:41'),
-(3, 2, 1, 24, 3, 65, 2, 1, '2026-09-10 09:55:41'),
-(4, 2, 1, 22, 1, 15, 3, 1, '2026-09-10 10:32:38'),
-(5, 2, 1, 22, 2, 8, 3, 1, '2026-09-10 10:32:38'),
-(6, 2, 1, 22, 3, 54, 3, 1, '2026-09-10 10:32:38'),
-(7, 2, 2, 19, 4, 14, 3, 1, '2026-09-11 06:42:57'),
-(8, 2, 2, 19, 5, 7, 3, 1, '2026-09-11 06:42:57'),
-(9, 2, 2, 19, 6, 54, 3, 1, '2026-09-11 06:42:57'),
-(10, 2, 2, 20, 4, 12, 2, 1, '2026-09-11 06:42:57'),
-(11, 2, 2, 20, 5, 6, 2, 1, '2026-09-11 06:42:57'),
-(12, 2, 2, 20, 6, 67, 2, 1, '2026-09-11 06:42:57'),
-(13, 2, 2, 21, 4, 17, 2, 1, '2026-09-11 06:42:57'),
-(14, 2, 2, 21, 5, 9, 2, 1, '2026-09-11 06:42:57'),
-(15, 2, 2, 21, 6, 62, 2, 1, '2026-09-11 06:42:57'),
-(16, 2, 3, 19, 1, 12, 2, 1, '2026-09-11 06:59:27'),
-(17, 2, 3, 19, 2, 4, 2, 1, '2026-09-11 06:59:27'),
-(18, 2, 3, 19, 3, 68, 2, 1, '2026-09-11 06:59:27'),
-(19, 2, 3, 20, 1, 10, 5, 1, '2026-09-11 06:59:27'),
-(20, 2, 3, 20, 2, 5, 5, 1, '2026-09-11 06:59:27'),
-(21, 2, 3, 20, 3, 45, 5, 1, '2026-09-11 06:59:27'),
-(22, 2, 3, 21, 1, 17, 3, 1, '2026-09-11 06:59:27'),
-(23, 2, 3, 21, 3, 59, 3, 1, '2026-09-11 06:59:27');
+INSERT INTO `exam_result_subject` (`id`, `school_id`, `branch_id`, `exam_result_id`, `subject_id`, `exam_type_id`, `marks`, `grade_id`, `status`, `created_on`) VALUES
+(1, 2, 2, 1, 1, 1, 65, 2, 1, '2026-11-20 10:17:58'),
+(2, 2, 2, 1, 1, 2, 7, 2, 1, '2026-11-20 10:17:58'),
+(3, 2, 2, 1, 1, 3, 15, 2, 1, '2026-11-20 10:17:58');
 
 -- --------------------------------------------------------
 
@@ -49275,6 +49419,7 @@ INSERT INTO `exam_result_subject` (`id`, `school_id`, `exam_result_id`, `subject
 CREATE TABLE `exam_schedule` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `academic_year_id` int(11) DEFAULT NULL,
   `exam_id` int(11) DEFAULT NULL,
   `class_id` int(11) DEFAULT NULL,
@@ -49284,26 +49429,17 @@ CREATE TABLE `exam_schedule` (
   `end_time` varchar(150) DEFAULT NULL,
   `status` int(11) DEFAULT NULL COMMENT '1=Incomplete, 2=Completed, 4=delete',
   `created_on` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `exam_schedule`
 --
 
-INSERT INTO `exam_schedule` (`id`, `school_id`, `academic_year_id`, `exam_id`, `class_id`, `subject_id`, `date`, `start_time`, `end_time`, `status`, `created_on`) VALUES
-(1, 2, 8, 1, 6, 15, '2026-09-10', '08:00', '10:00', 1, '2026-09-10 08:59:58'),
-(2, 2, 8, 1, 6, 16, '2026-09-11', '10:15', '11:00', 1, '2026-09-10 08:59:58'),
-(3, 2, 8, 1, 6, 17, '2026-09-12', '11:15', '12:00', 1, '2026-09-10 08:59:58'),
-(4, 2, 8, 1, 6, 18, '2026-09-13', '12:15', '13:00', 1, '2026-09-10 08:59:58'),
-(5, 2, 8, 1, 8, 22, '2026-09-22', '09:00', '10:00', 1, '2026-09-10 09:51:55'),
-(6, 2, 8, 1, 8, 23, '2026-09-23', '10:15', '11:15', 1, '2026-09-10 09:51:55'),
-(7, 2, 8, 1, 8, 24, '2026-09-24', '11:30', '12:00', 1, '2026-09-10 09:51:55'),
-(8, 2, 8, 2, 7, 19, '2026-09-12', '08:00', '10:00', 1, '2026-09-11 06:35:03'),
-(9, 2, 8, 2, 7, 20, '2026-09-13', '10:15', '11:15', 1, '2026-09-11 06:35:03'),
-(10, 2, 8, 2, 7, 21, '2026-09-14', '11:30', '12:15', 1, '2026-09-11 06:35:03'),
-(11, 2, 8, 1, 7, 19, '2026-09-11', '08:00', '10:00', 1, '2026-09-11 06:45:15'),
-(12, 2, 8, 1, 7, 20, '2026-09-25', '11:00', '12:00', 1, '2026-09-11 06:45:15'),
-(13, 2, 8, 1, 7, 21, '2026-09-26', '13:00', '14:00', 1, '2026-09-11 06:45:15');
+INSERT INTO `exam_schedule` (`id`, `school_id`, `branch_id`, `academic_year_id`, `exam_id`, `class_id`, `subject_id`, `date`, `start_time`, `end_time`, `status`, `created_on`) VALUES
+(5, 2, 2, 2, 1, 1, 1, '2026-11-18', '07:00', '09:00', 1, '2026-11-18 10:42:12'),
+(6, 2, 2, 2, 1, 1, 5, '2026-11-19', '07:00', '09:00', 1, '2026-11-18 10:42:12'),
+(7, 2, 2, 2, 1, 1, 9, '2026-11-20', '07:00', '09:00', 1, '2026-11-18 10:42:12'),
+(8, 2, 2, 2, 1, 1, 13, '2026-11-21', '07:00', '09:00', 1, '2026-11-18 10:42:12');
 
 -- --------------------------------------------------------
 
@@ -49314,6 +49450,7 @@ INSERT INTO `exam_schedule` (`id`, `school_id`, `academic_year_id`, `exam_id`, `
 CREATE TABLE `exam_subject_marks` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `exam_subject_id` int(11) DEFAULT NULL,
   `subject_id` int(11) DEFAULT NULL,
   `is_check` int(11) DEFAULT 2 COMMENT '1=checked, 2=unchecked',
@@ -49321,56 +49458,31 @@ CREATE TABLE `exam_subject_marks` (
   `mark` int(11) DEFAULT 0,
   `status` int(11) DEFAULT NULL COMMENT '1=active, 2=inactive,4=delete',
   `created_on` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `exam_subject_marks`
 --
 
-INSERT INTO `exam_subject_marks` (`id`, `school_id`, `exam_subject_id`, `subject_id`, `is_check`, `exam_type_id`, `mark`, `status`, `created_on`) VALUES
-(1, 2, 1, 15, 1, 1, 20, 1, '2026-09-10 06:32:31'),
-(2, 2, 1, 15, 1, 2, 10, 1, '2026-09-10 06:32:31'),
-(3, 2, 1, 15, 1, 3, 70, 1, '2026-09-10 06:32:31'),
-(4, 2, 1, 16, 1, 1, 20, 1, '2026-09-10 06:32:31'),
-(5, 2, 1, 16, 1, 2, 10, 1, '2026-09-10 06:32:31'),
-(6, 2, 1, 16, 1, 3, 70, 1, '2026-09-10 06:32:31'),
-(7, 2, 1, 17, 1, 1, 20, 1, '2026-09-10 06:32:31'),
-(8, 2, 1, 17, 1, 2, 10, 1, '2026-09-10 06:32:31'),
-(9, 2, 1, 17, 1, 3, 70, 1, '2026-09-10 06:32:31'),
-(10, 2, 1, 18, 1, 1, 20, 1, '2026-09-10 06:32:31'),
-(11, 2, 1, 18, 1, 2, 10, 1, '2026-09-10 06:32:31'),
-(12, 2, 1, 18, 1, 3, 70, 1, '2026-09-10 06:32:31'),
-(13, 2, 2, 25, 1, 4, 20, 1, '2026-09-10 06:33:28'),
-(14, 2, 2, 25, 1, 5, 10, 1, '2026-09-10 06:33:28'),
-(15, 2, 2, 25, 1, 6, 70, 1, '2026-09-10 06:33:28'),
-(16, 2, 2, 26, 1, 4, 20, 1, '2026-09-10 06:33:28'),
-(17, 2, 2, 26, 1, 6, 80, 1, '2026-09-10 06:33:28'),
-(18, 2, 3, 22, 1, 1, 20, 1, '2026-09-10 09:50:52'),
-(19, 2, 3, 22, 1, 2, 10, 1, '2026-09-10 09:50:52'),
-(20, 2, 3, 22, 1, 3, 70, 1, '2026-09-10 09:50:52'),
-(21, 2, 3, 23, 1, 1, 20, 1, '2026-09-10 09:50:52'),
-(22, 2, 3, 23, 1, 2, 10, 1, '2026-09-10 09:50:52'),
-(23, 2, 3, 23, 1, 3, 70, 1, '2026-09-10 09:50:52'),
-(24, 2, 3, 24, 1, 1, 20, 1, '2026-09-10 09:50:52'),
-(25, 2, 3, 24, 1, 2, 10, 1, '2026-09-10 09:50:52'),
-(26, 2, 3, 24, 1, 3, 70, 1, '2026-09-10 09:50:52'),
-(27, 2, 4, 19, 1, 4, 20, 1, '2026-09-11 06:34:16'),
-(28, 2, 4, 19, 1, 5, 10, 1, '2026-09-11 06:34:16'),
-(29, 2, 4, 19, 1, 6, 70, 1, '2026-09-11 06:34:16'),
-(30, 2, 4, 20, 1, 4, 20, 1, '2026-09-11 06:34:16'),
-(31, 2, 4, 20, 1, 5, 10, 1, '2026-09-11 06:34:16'),
-(32, 2, 4, 20, 1, 6, 70, 1, '2026-09-11 06:34:16'),
-(33, 2, 4, 21, 1, 4, 20, 1, '2026-09-11 06:34:16'),
-(34, 2, 4, 21, 1, 5, 10, 1, '2026-09-11 06:34:16'),
-(35, 2, 4, 21, 1, 6, 70, 1, '2026-09-11 06:34:16'),
-(36, 2, 5, 19, 1, 1, 20, 1, '2026-09-11 06:44:18'),
-(37, 2, 5, 19, 1, 2, 10, 1, '2026-09-11 06:44:18'),
-(38, 2, 5, 19, 1, 3, 70, 1, '2026-09-11 06:44:18'),
-(39, 2, 5, 20, 1, 1, 20, 1, '2026-09-11 06:44:18'),
-(40, 2, 5, 20, 1, 2, 10, 1, '2026-09-11 06:44:18'),
-(41, 2, 5, 20, 1, 3, 70, 1, '2026-09-11 06:44:18'),
-(42, 2, 5, 21, 1, 1, 20, 1, '2026-09-11 06:44:18'),
-(43, 2, 5, 21, 1, 3, 80, 1, '2026-09-11 06:44:18');
+INSERT INTO `exam_subject_marks` (`id`, `school_id`, `branch_id`, `exam_subject_id`, `subject_id`, `is_check`, `exam_type_id`, `mark`, `status`, `created_on`) VALUES
+(1, 2, 2, 1, 1, 1, 1, 70, 1, '2026-11-18 10:28:43'),
+(2, 2, 2, 1, 1, 1, 2, 10, 1, '2026-11-18 10:28:43'),
+(3, 2, 2, 1, 1, 1, 3, 20, 1, '2026-11-18 10:28:43'),
+(4, 2, 2, 1, 5, 1, 1, 70, 1, '2026-11-18 10:28:43'),
+(5, 2, 2, 1, 5, 1, 2, 10, 1, '2026-11-18 10:28:43'),
+(6, 2, 2, 1, 5, 1, 3, 20, 1, '2026-11-18 10:28:43'),
+(7, 2, 2, 1, 9, 1, 1, 80, 1, '2026-11-18 10:28:43'),
+(8, 2, 2, 1, 9, 1, 3, 20, 1, '2026-11-18 10:28:43'),
+(9, 2, 2, 1, 13, 1, 1, 80, 1, '2026-11-18 10:28:43'),
+(10, 2, 2, 1, 13, 1, 3, 20, 1, '2026-11-18 10:28:43'),
+(11, 2, 2, 2, 1, 1, 4, 70, 1, '2026-11-18 10:29:32'),
+(12, 2, 2, 2, 1, 1, 5, 10, 1, '2026-11-18 10:29:32'),
+(13, 2, 2, 2, 1, 1, 6, 20, 1, '2026-11-18 10:29:32'),
+(14, 2, 2, 2, 5, 1, 4, 70, 1, '2026-11-18 10:29:32'),
+(15, 2, 2, 2, 5, 1, 5, 10, 1, '2026-11-18 10:29:32'),
+(16, 2, 2, 2, 5, 1, 6, 20, 1, '2026-11-18 10:29:32'),
+(17, 2, 2, 2, 9, 1, 4, 80, 1, '2026-11-18 10:29:32'),
+(18, 2, 2, 2, 9, 1, 6, 20, 1, '2026-11-18 10:29:32');
 
 -- --------------------------------------------------------
 
@@ -49381,22 +49493,20 @@ INSERT INTO `exam_subject_marks` (`id`, `school_id`, `exam_subject_id`, `subject
 CREATE TABLE `exam_subject_master` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `exam_id` int(11) DEFAULT NULL,
   `class_id` int(11) DEFAULT NULL,
   `status` int(11) NOT NULL DEFAULT 1 COMMENT '1=active, 2=inactive, 4=delete',
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `exam_subject_master`
 --
 
-INSERT INTO `exam_subject_master` (`id`, `school_id`, `exam_id`, `class_id`, `status`, `created_at`) VALUES
-(1, 2, 1, 6, 1, '2026-09-10 06:32:31'),
-(2, 2, 2, 9, 1, '2026-09-10 06:33:28'),
-(3, 2, 1, 8, 1, '2026-09-10 09:50:52'),
-(4, 2, 2, 7, 1, '2026-09-11 06:34:16'),
-(5, 2, 1, 7, 1, '2026-09-11 06:44:18');
+INSERT INTO `exam_subject_master` (`id`, `school_id`, `branch_id`, `exam_id`, `class_id`, `status`, `created_at`) VALUES
+(1, 2, 2, 1, 1, 1, '2026-11-18 10:28:43'),
+(2, 2, 2, 2, 1, 1, '2026-11-18 10:29:32');
 
 -- --------------------------------------------------------
 
@@ -49407,25 +49517,27 @@ INSERT INTO `exam_subject_master` (`id`, `school_id`, `exam_id`, `class_id`, `st
 CREATE TABLE `exam_type_master` (
   `id` int(11) NOT NULL,
   `school_id` int(11) NOT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `academic_year` int(11) NOT NULL,
   `exam_id` int(11) DEFAULT NULL,
   `exam_type` varchar(255) DEFAULT NULL,
   `sort_order` int(11) DEFAULT NULL,
   `status` int(11) NOT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `exam_type_master`
 --
 
-INSERT INTO `exam_type_master` (`id`, `school_id`, `academic_year`, `exam_id`, `exam_type`, `sort_order`, `status`, `created_at`) VALUES
-(1, 2, 8, 1, 'Practical', 1, 1, '2026-09-10 06:29:31'),
-(2, 2, 8, 1, 'Assesment', 2, 1, '2026-09-10 06:29:41'),
-(3, 2, 8, 1, 'Theory', 3, 1, '2026-09-10 06:29:41'),
-(4, 2, 8, 2, 'Practical', 1, 1, '2026-09-10 06:29:57'),
-(5, 2, 8, 2, 'Assesment', 2, 1, '2026-09-10 06:29:57'),
-(6, 2, 8, 2, 'Theory', 3, 1, '2026-09-10 06:29:57');
+INSERT INTO `exam_type_master` (`id`, `school_id`, `branch_id`, `academic_year`, `exam_id`, `exam_type`, `sort_order`, `status`, `created_at`) VALUES
+(1, 2, 2, 2, 1, 'Theory', 1, 1, '2026-11-18 10:24:07'),
+(2, 2, 2, 2, 1, 'Practical', 2, 1, '2026-11-18 10:24:07'),
+(3, 2, 2, 2, 1, 'Assessment', 3, 1, '2026-11-18 10:24:07'),
+(4, 2, 2, 2, 2, 'Theory', 1, 1, '2026-11-18 10:24:35'),
+(5, 2, 2, 2, 2, 'Practical', 2, 1, '2026-11-18 10:24:35'),
+(6, 2, 2, 2, 2, 'Assessment', 3, 1, '2026-11-18 10:24:35'),
+(7, 2, 2, 2, 2, 'Assessment', 3, 4, '2026-11-18 10:24:35');
 
 -- --------------------------------------------------------
 
@@ -49438,7 +49550,7 @@ CREATE TABLE `expense_category` (
   `category_name` varchar(255) DEFAULT NULL,
   `status` int(11) DEFAULT NULL COMMENT '1=active, 0=delete',
   `created_on` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -49452,7 +49564,7 @@ CREATE TABLE `expense_user_role` (
   `user_role` int(11) DEFAULT NULL,
   `status` int(11) DEFAULT NULL COMMENT '1=active, 0=delete',
   `created_on` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -49463,6 +49575,7 @@ CREATE TABLE `expense_user_role` (
 CREATE TABLE `fee_components` (
   `id` int(11) NOT NULL,
   `school_id` int(11) NOT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `name` varchar(150) NOT NULL,
   `code` varchar(50) DEFAULT NULL,
   `tax_rate` decimal(5,2) DEFAULT 0.00,
@@ -49470,17 +49583,17 @@ CREATE TABLE `fee_components` (
   `description` text DEFAULT NULL,
   `status` tinyint(1) DEFAULT 1,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `fee_components`
 --
 
-INSERT INTO `fee_components` (`id`, `school_id`, `name`, `code`, `tax_rate`, `account_code`, `description`, `status`, `created_at`) VALUES
-(1, 2, 'Transport Fees', 'TRANS', 0.00, NULL, 'Transport Facility Fee', 1, '2026-09-10 11:42:44'),
-(2, 2, 'Hostel Fees', 'HOSTEL', 0.00, NULL, 'Hostel Accommodation Fee', 1, '2026-09-10 11:43:02'),
-(3, 2, 'Exam Fees', 'EF', 0.00, '10500', 'Description for Exam Fees', 1, '2026-09-10 11:43:29'),
-(4, 2, 'Library Fees', 'LF', 0.00, '10400', 'Description for Library Fees', 1, '2026-09-10 11:43:51');
+INSERT INTO `fee_components` (`id`, `school_id`, `branch_id`, `name`, `code`, `tax_rate`, `account_code`, `description`, `status`, `created_at`) VALUES
+(1, 2, 2, 'Admission Fees', 'AF', 0.00, 'AF-001', NULL, 1, '2026-11-18 11:09:32'),
+(2, 2, 2, 'Tuition Fees', 'TF', 0.00, 'TF-001', NULL, 1, '2026-11-18 11:09:46'),
+(3, 2, 2, 'Library Fees', 'LF', 0.00, 'LF-001', NULL, 1, '2026-11-18 11:10:07'),
+(4, 2, 2, 'Computer Fees', 'CF', 0.00, 'CF-001', NULL, 1, '2026-11-23 07:06:19');
 
 -- --------------------------------------------------------
 
@@ -49492,6 +49605,7 @@ CREATE TABLE `fee_invoices` (
   `id` int(11) NOT NULL,
   `invoice_no` varchar(50) NOT NULL,
   `school_id` int(11) NOT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `student_id` int(11) NOT NULL,
   `class_id` int(11) NOT NULL,
   `section_id` int(11) DEFAULT NULL,
@@ -49510,15 +49624,14 @@ CREATE TABLE `fee_invoices` (
   `notes` text DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `allow_partial_payment` tinyint(1) DEFAULT 1
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `fee_invoices`
 --
 
-INSERT INTO `fee_invoices` (`id`, `invoice_no`, `school_id`, `student_id`, `class_id`, `section_id`, `academic_year_id`, `fee_structure_id`, `title`, `subtotal`, `concession_amount`, `late_fee_amount`, `total_amount`, `paid_amount`, `due_amount`, `issue_date`, `due_date`, `status`, `notes`, `created_at`, `allow_partial_payment`) VALUES
-(1, 'INV-20260910-5-1018', 2, 5, 8, 15, 8, 2, 'September 2026 Monthly Fees', 1200.00, 0.00, 0.00, 1200.00, 1200.00, 0.00, '2026-09-10', '2026-09-24', 'Paid', NULL, '2026-09-10 11:53:00', 1),
-(2, 'INV-20260910-4-2901', 2, 4, 6, 12, 8, 4, 'September 2026 Monthly Fees', 2000.00, 0.00, 0.00, 2000.00, 1000.00, 1000.00, '2026-09-10', '2026-09-24', 'Partial', NULL, '2026-09-10 12:19:13', 1);
+INSERT INTO `fee_invoices` (`id`, `invoice_no`, `school_id`, `branch_id`, `student_id`, `class_id`, `section_id`, `academic_year_id`, `fee_structure_id`, `title`, `subtotal`, `concession_amount`, `late_fee_amount`, `total_amount`, `paid_amount`, `due_amount`, `issue_date`, `due_date`, `status`, `notes`, `created_at`, `allow_partial_payment`) VALUES
+(1, 'INV-20261123-6-6859', 2, 2, 6, 1, 1, 2, 2, 'Annual Fees 2026', 14000.00, 0.00, 0.00, 14000.00, 14000.00, 0.00, '2026-11-23', '2026-11-28', 'Paid', NULL, '2026-11-23 07:54:29', 1);
 
 -- --------------------------------------------------------
 
@@ -49531,18 +49644,17 @@ CREATE TABLE `fee_invoice_items` (
   `invoice_id` int(11) NOT NULL,
   `fee_component_id` int(11) DEFAULT NULL,
   `component_name` varchar(150) NOT NULL,
-  `amount` decimal(10,2) NOT NULL DEFAULT 0.00
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+  `amount` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `branch_id` int(11) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `fee_invoice_items`
 --
 
-INSERT INTO `fee_invoice_items` (`id`, `invoice_id`, `fee_component_id`, `component_name`, `amount`) VALUES
-(1, 1, 3, 'Exam Fees', 1200.00),
-(2, 1, 2, 'Hostel Fees', 0.00),
-(3, 2, 3, 'Exam Fees', 1500.00),
-(4, 2, 4, 'Library Fees', 500.00);
+INSERT INTO `fee_invoice_items` (`id`, `invoice_id`, `fee_component_id`, `component_name`, `amount`, `branch_id`) VALUES
+(1, 1, 1, 'Admission Fees', 12000.00, 2),
+(2, 1, 2, 'Tuition Fees', 2000.00, 2);
 
 -- --------------------------------------------------------
 
@@ -49555,6 +49667,7 @@ CREATE TABLE `fee_payments` (
   `txn_no` varchar(50) NOT NULL,
   `receipt_no` varchar(50) NOT NULL,
   `school_id` int(11) NOT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `student_id` int(11) NOT NULL,
   `invoice_id` int(11) DEFAULT NULL,
   `amount_paid` decimal(10,2) NOT NULL DEFAULT 0.00,
@@ -49567,16 +49680,16 @@ CREATE TABLE `fee_payments` (
   `bounced_penalty` decimal(10,2) DEFAULT 0.00,
   `notes` text DEFAULT NULL,
   `collected_by` int(11) DEFAULT NULL,
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `receipt_file` varchar(255) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `fee_payments`
 --
 
-INSERT INTO `fee_payments` (`id`, `txn_no`, `receipt_no`, `school_id`, `student_id`, `invoice_id`, `amount_paid`, `late_fee_paid`, `payment_method`, `reference_no`, `payment_date`, `bank_name`, `status`, `bounced_penalty`, `notes`, `collected_by`, `created_at`) VALUES
-(1, 'TXN-20260910-5356', 'REC-20260910-5356', 2, 5, 1, 1200.00, 0.00, 'UPI / Online Transfer', 'TXN-P-1789041362625', '2026-09-10', NULL, 'Success', 0.00, 'Parent Online Portal Fee Payment', NULL, '2026-09-10 11:56:02'),
-(2, 'TXN-20260910-2467', 'REC-20260910-2467', 2, 4, 2, 1000.00, 0.00, 'UPI / Online Transfer', 'TXN-P-1789042778757', '2026-09-10', NULL, 'Success', 0.00, 'Parent Online Portal Fee Payment', NULL, '2026-09-10 12:19:38');
+INSERT INTO `fee_payments` (`id`, `txn_no`, `receipt_no`, `school_id`, `branch_id`, `student_id`, `invoice_id`, `amount_paid`, `late_fee_paid`, `payment_method`, `reference_no`, `payment_date`, `bank_name`, `status`, `bounced_penalty`, `notes`, `collected_by`, `created_at`, `receipt_file`) VALUES
+(1, 'TXN-20261123-4691', 'REC-20261123-4691', 2, 2, 6, 1, 14000.00, 0.00, 'UPI / QR Code', 'TXN-P-1795420560590', '2026-11-23', 'State Bank Of India', 'Success', 0.00, 'Receipt uploaded for Annual Fees 2026 [Verified by Admin]', 2, '2026-11-23 07:56:00', 'upload/schools/2/branches/2/fees/product-image-1795420558035-337800.png');
 
 -- --------------------------------------------------------
 
@@ -49587,10 +49700,12 @@ INSERT INTO `fee_payments` (`id`, `txn_no`, `receipt_no`, `school_id`, `student_
 CREATE TABLE `fee_structures` (
   `id` int(11) NOT NULL,
   `school_id` int(11) NOT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `name` varchar(150) NOT NULL,
   `class_id` varchar(255) DEFAULT NULL,
   `academic_year_id` int(11) NOT NULL,
   `frequency` varchar(50) NOT NULL DEFAULT 'Monthly',
+  `start_month` tinyint(4) DEFAULT 1,
   `due_day` int(11) DEFAULT 10,
   `grace_period_days` int(11) DEFAULT 0,
   `late_fee_type` varchar(20) DEFAULT 'flat',
@@ -49602,15 +49717,15 @@ CREATE TABLE `fee_structures` (
   `section_id` varchar(255) DEFAULT NULL,
   `is_published` tinyint(1) DEFAULT 0,
   `generate_on_day` tinyint(4) DEFAULT 1
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `fee_structures`
 --
 
-INSERT INTO `fee_structures` (`id`, `school_id`, `name`, `class_id`, `academic_year_id`, `frequency`, `due_day`, `grace_period_days`, `late_fee_type`, `late_fee_amount`, `description`, `status`, `created_at`, `allow_partial_payment`, `section_id`, `is_published`, `generate_on_day`) VALUES
-(2, 2, 'Monthly Fees (Primary)', '6,7,8,9', 8, 'Monthly', 10, 5, '0', 50.00, NULL, 1, '2026-09-10 11:45:38', 1, NULL, 0, 1),
-(4, 2, 'Test', '6,7,8,9,10', 8, 'Monthly', 10, 5, '0', 50.00, NULL, 1, '2026-09-10 12:10:59', 1, NULL, 0, 1);
+INSERT INTO `fee_structures` (`id`, `school_id`, `branch_id`, `name`, `class_id`, `academic_year_id`, `frequency`, `start_month`, `due_day`, `grace_period_days`, `late_fee_type`, `late_fee_amount`, `description`, `status`, `created_at`, `allow_partial_payment`, `section_id`, `is_published`, `generate_on_day`) VALUES
+(1, 2, 2, 'Additional Fees Structure', '1,2,3,4,5,6', 2, 'Annually', 1, 10, 5, '0', 50.00, NULL, 1, '2026-11-23 07:49:53', 0, NULL, 1, 1),
+(2, 2, 2, 'Admission Fees', '1,2,3,4,5,6', 2, 'Annually', 1, 10, 5, '0', 50.00, NULL, 1, '2026-11-23 07:53:34', 1, NULL, 1, 1);
 
 -- --------------------------------------------------------
 
@@ -49623,19 +49738,19 @@ CREATE TABLE `fee_structure_components` (
   `fee_structure_id` int(11) NOT NULL,
   `fee_component_id` int(11) NOT NULL,
   `amount` decimal(10,2) NOT NULL DEFAULT 0.00,
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `branch_id` int(11) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `fee_structure_components`
 --
 
-INSERT INTO `fee_structure_components` (`id`, `fee_structure_id`, `fee_component_id`, `amount`, `created_at`) VALUES
-(1, 1, 6, 0.00, '2026-09-10 11:04:00'),
-(2, 2, 3, 1200.00, '2026-09-10 11:45:38'),
-(3, 2, 2, 0.00, '2026-09-10 11:45:38'),
-(6, 4, 3, 1500.00, '2026-09-10 12:10:59'),
-(7, 4, 4, 500.00, '2026-09-10 12:10:59');
+INSERT INTO `fee_structure_components` (`id`, `fee_structure_id`, `fee_component_id`, `amount`, `created_at`, `branch_id`) VALUES
+(1, 1, 1, 10000.00, '2026-11-23 07:49:53', 2),
+(2, 1, 2, 5000.00, '2026-11-23 07:49:53', 2),
+(3, 2, 1, 12000.00, '2026-11-23 07:53:34', NULL),
+(4, 2, 2, 2000.00, '2026-11-23 07:53:34', NULL);
 
 -- --------------------------------------------------------
 
@@ -49651,7 +49766,7 @@ CREATE TABLE `filemanager` (
   `shared` int(11) NOT NULL DEFAULT 0 COMMENT '0 = No, 1 = Yes',
   `privacy` int(11) NOT NULL DEFAULT 1 COMMENT '0 = all users, 1 = specific users',
   `status` int(11) NOT NULL DEFAULT 1
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -49664,7 +49779,76 @@ CREATE TABLE `filesharing` (
   `file_id` int(11) NOT NULL,
   `user_id` int(11) NOT NULL,
   `status` int(11) NOT NULL DEFAULT 1
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `file_storage_ledger`
+--
+
+CREATE TABLE `file_storage_ledger` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `school_id` int(11) DEFAULT NULL COMMENT 'NULL or 0 for SaaS platform files; school_id for tenant files',
+  `branch_id` int(11) DEFAULT NULL COMMENT 'Specific branch_id or NULL/0 for school-wide files',
+  `category` varchar(64) NOT NULL DEFAULT 'general',
+  `file_path` varchar(500) NOT NULL COMMENT 'Relative path stored in application tables (upload/...)',
+  `b2_key` varchar(500) NOT NULL COMMENT 'Object key inside Backblaze B2 bucket',
+  `original_name` varchar(255) DEFAULT NULL,
+  `mime_type` varchar(120) NOT NULL DEFAULT 'application/octet-stream',
+  `size_bytes` bigint(20) UNSIGNED NOT NULL DEFAULT 0,
+  `uploaded_by` int(11) DEFAULT NULL,
+  `uploader_role` varchar(50) DEFAULT NULL,
+  `status` tinyint(1) NOT NULL DEFAULT 1 COMMENT '1=Active, 4=Deleted',
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `deleted_at` datetime DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `file_storage_ledger`
+--
+
+INSERT INTO `file_storage_ledger` (`id`, `school_id`, `branch_id`, `category`, `file_path`, `b2_key`, `original_name`, `mime_type`, `size_bytes`, `uploaded_by`, `uploader_role`, `status`, `created_at`, `deleted_at`) VALUES
+(1, NULL, NULL, 'platform_asset', 'upload/platform/bank_accounts/bank_qr_qr_code-1794989436237-e1dab2.png', 'growvidya/platform/bank_accounts/bank_qr_qr_code-1794989436237-e1dab2.png', 'qr_code.png', 'image/png', 4277, 2, 'saas_admin', 1, '2026-11-18 13:40:37', NULL),
+(2, NULL, NULL, 'school_branding', 'upload/platform/school/Logo_Logo-1794993873829-eacc55.png', 'growvidya/platform/school/Logo_Logo-1794993873829-eacc55.png', 'Logo.png', 'image/png', 6844, NULL, NULL, 1, '2026-11-18 14:54:34', NULL),
+(3, 1, 1, 'school_branding', 'upload/platform/school/Logo_Logo-1794993874874-4c9798.png', 'growvidya/platform/school/Logo_Logo-1794993874874-4c9798.png', 'Logo.png', 'image/png', 6844, NULL, NULL, 1, '2026-11-18 14:54:35', NULL),
+(4, NULL, NULL, 'school_branding', 'upload/platform/school/Logo_Logo-1794994008565-5f2cfb.jpg', 'growvidya/platform/school/Logo_Logo-1794994008565-5f2cfb.jpg', 'Logo.jpg', 'image/jpeg', 5695, NULL, NULL, 1, '2026-11-18 14:56:49', NULL),
+(5, NULL, NULL, 'profile_pic', 'upload/platform/staff/Admin_Admin-1794994009302-8df49d.png', 'growvidya/platform/staff/Admin_Admin-1794994009302-8df49d.png', 'Admin.png', 'image/png', 21188, NULL, NULL, 1, '2026-11-18 14:56:49', NULL),
+(6, 2, 2, 'school_branding', 'upload/platform/school/Logo_Logo-1794994009841-7c2fa2.jpg', 'growvidya/platform/school/Logo_Logo-1794994009841-7c2fa2.jpg', 'Logo.jpg', 'image/jpeg', 5695, NULL, NULL, 1, '2026-11-18 14:56:50', NULL),
+(7, 2, 2, 'profile_pic', 'upload/schools/2/branches/2/staff/Admin_Admin-1794994010476-dae910.png', 'growvidya/schools/2/branches/2/staff/Admin_Admin-1794994010476-dae910.png', 'Admin.png', 'image/png', 21188, NULL, NULL, 1, '2026-11-18 14:56:51', NULL),
+(8, 2, 3, 'profile_pic', 'upload/schools/2/branches/3/staff/avatar-1794994850643-474d1f.jpg', 'growvidya/schools/2/branches/3/staff/avatar-1794994850643-474d1f.jpg', 'avatar.jpg', 'image/jpeg', 3626, 2, 'super admin', 1, '2026-11-18 15:10:51', NULL),
+(9, 2, 2, 'profile_pic', 'upload/schools/2/branches/2/student/student_pic/Profile_Profile-1794995590533-2e4090.jpg', 'growvidya/schools/2/branches/2/student/student_pic/Profile_Profile-1794995590533-2e4090.jpg', 'Profile.jpg', 'image/jpeg', 3558, NULL, NULL, 4, '2026-11-18 15:23:11', '2026-11-18 16:28:17'),
+(10, 2, 2, 'study_material', 'upload/schools/2/branches/2/study_material/Growvidya_-_Educational_Portal-1794997112536-e0a3ff.pdf', 'growvidya/schools/2/branches/2/study_material/Growvidya_-_Educational_Portal-1794997112536-e0a3ff.pdf', 'Growvidya - Educational Portal.pdf', 'application/pdf', 1222754, 2, 'super admin', 1, '2026-11-18 15:48:34', NULL),
+(11, 2, 2, 'profile_pic', 'upload/schools/2/branches/2/student/student_pic/Profile_Profile-1794997232457-246d3b.jpg', 'growvidya/schools/2/branches/2/student/student_pic/Profile_Profile-1794997232457-246d3b.jpg', 'Profile.jpg', 'image/jpeg', 5516, NULL, NULL, 1, '2026-11-18 15:50:33', NULL),
+(12, 2, 2, 'student_doc', 'upload/schools/2/branches/2/student/attachment/Attachment_Attachment-1794997233572-36748d.pdf', 'growvidya/schools/2/branches/2/student/attachment/Attachment_Attachment-1794997233572-36748d.pdf', 'Attachment.pdf', 'application/pdf', 84953, NULL, NULL, 1, '2026-11-18 15:50:34', NULL),
+(13, 2, 2, 'study_material', 'upload/schools/2/branches/2/study_material/Project_Management_SaaS_CI3_Documentation-1794997234008-dc05bf.pdf', 'growvidya/schools/2/branches/2/study_material/Project_Management_SaaS_CI3_Documentation-1794997234008-dc05bf.pdf', 'Project_Management_SaaS_CI3_Documentation.pdf', 'application/pdf', 12043, 2, 'super admin', 1, '2026-11-18 15:50:34', NULL),
+(14, 2, 2, 'profile_pic', 'upload/schools/2/branches/2/parent/profile/Parent-Profile_Parent-Profile-1794997234624-b97f84.jpg', 'growvidya/schools/2/branches/2/parent/profile/Parent-Profile_Parent-Profile-1794997234624-b97f84.jpg', 'Parent-Profile.jpg', 'image/jpeg', 26280, NULL, NULL, 1, '2026-11-18 15:50:35', NULL),
+(15, 2, 2, 'profile_pic', 'upload/schools/2/branches/2/parent/profile/Parent-Profile_Parent-Profile-1794997235249-c6ffb2.jpg', 'growvidya/schools/2/branches/2/parent/profile/Parent-Profile_Parent-Profile-1794997235249-c6ffb2.jpg', 'Parent-Profile.jpg', 'image/jpeg', 18842, NULL, NULL, 1, '2026-11-18 15:50:36', NULL),
+(16, 2, 2, 'study_material', 'upload/schools/2/branches/2/study_material/2024050350-1794997594923-9d9c80.pdf', 'growvidya/schools/2/branches/2/study_material/2024050350-1794997594923-9d9c80.pdf', '2024050350.pdf', 'application/pdf', 4042795, 2, 'super admin', 1, '2026-11-18 15:56:37', NULL),
+(17, 2, 2, 'bus_image', 'upload/schools/2/branches/2/buses/bus_bus-1-1794997999464-6a8178.jpg', 'growvidya/schools/2/branches/2/buses/bus_bus-1-1794997999464-6a8178.jpg', 'bus-1.jpg', 'image/jpeg', 94988, 2, 'super admin', 4, '2026-11-18 16:03:20', '2026-11-18 19:04:21'),
+(18, 2, 2, 'driver_doc', 'upload/schools/2/branches/2/drivers/documents/license_dl-2-1794998613230-584563.jpg', 'growvidya/schools/2/branches/2/drivers/documents/license_dl-2-1794998613230-584563.jpg', 'dl-2.jpg', 'image/jpeg', 16779, 2, 'super admin', 1, '2026-11-18 16:13:34', NULL),
+(19, 2, 2, 'driver_doc', 'upload/schools/2/branches/2/drivers/documents/idproof_ad-1-1794998614679-8c5271.jpg', 'growvidya/schools/2/branches/2/drivers/documents/idproof_ad-1-1794998614679-8c5271.jpg', 'ad-1.jpg', 'image/jpeg', 48505, 2, 'super admin', 1, '2026-11-18 16:13:35', NULL),
+(20, 2, 2, 'driver_doc', 'upload/schools/2/branches/2/drivers/documents/idproof_ad-1-1794998805487-acfb5d.jpg', 'growvidya/schools/2/branches/2/drivers/documents/idproof_ad-1-1794998805487-acfb5d.jpg', 'ad-1.jpg', 'image/jpeg', 48505, 2, 'super admin', 1, '2026-11-18 16:16:46', NULL),
+(21, 2, 2, 'school_branding', 'upload/schools/2/branches/2/schools/QR_Code_Example_svg-1795000862304-96cfde.webp', 'growvidya/schools/2/branches/2/schools/QR_Code_Example_svg-1795000862304-96cfde.webp', 'QR_Code_Example.svg.webp', 'image/webp', 1142, 2, 'super admin', 1, '2026-11-18 16:51:03', NULL),
+(22, 2, 2, 'profile_pic', 'upload/schools/2/branches/2/student/student_pic/Profile_Profile-1795001044119-25c004.jpg', 'growvidya/schools/2/branches/2/student/student_pic/Profile_Profile-1795001044119-25c004.jpg', 'Profile.jpg', 'image/jpeg', 9637, NULL, NULL, 1, '2026-11-18 16:54:05', NULL),
+(23, 2, 2, 'profile_pic', 'upload/schools/2/branches/2/parent/profile/Parent-Profile_Parent-Profile-1795001045068-d608dd.jpg', 'growvidya/schools/2/branches/2/parent/profile/Parent-Profile_Parent-Profile-1795001045068-d608dd.jpg', 'Parent-Profile.jpg', 'image/jpeg', 26280, NULL, NULL, 1, '2026-11-18 16:54:05', NULL),
+(24, 2, 2, 'profile_pic', 'upload/schools/2/branches/2/parent/profile/Parent-Profile_Parent-Profile-1795001046008-1ff902.jpg', 'growvidya/schools/2/branches/2/parent/profile/Parent-Profile_Parent-Profile-1795001046008-1ff902.jpg', 'Parent-Profile.jpg', 'image/jpeg', 18842, NULL, NULL, 1, '2026-11-18 16:54:06', NULL),
+(25, 2, 2, 'fee_receipt', 'upload/schools/2/branches/2/fees/no-immage-1795001723550-f43654.jpg', 'growvidya/schools/2/branches/2/fees/no-immage-1795001723550-f43654.jpg', 'no-immage.jpg', 'image/jpeg', 8184, 4, 'parent', 1, '2026-11-18 17:05:24', NULL),
+(26, 2, 2, 'fee_receipt', 'upload/schools/2/branches/2/fees/product-image-1795002061898-4bd0a4.png', 'growvidya/schools/2/branches/2/fees/product-image-1795002061898-4bd0a4.png', 'product-image.png', 'image/png', 28633, 4, 'parent', 1, '2026-11-18 17:11:02', NULL),
+(27, 2, 2, 'fee_receipt', 'upload/schools/2/branches/2/fees/product-image-1795002246278-85c4c8.png', 'growvidya/schools/2/branches/2/fees/product-image-1795002246278-85c4c8.png', 'product-image.png', 'image/png', 28633, 4, 'parent', 1, '2026-11-18 17:14:08', NULL),
+(28, 2, 2, 'bus_image', 'upload/schools/2/branches/2/buses/bus_Professional_Blue_Shirt_Headshot-1795008859945-4dcb54.jpg', 'growvidya/schools/2/branches/2/buses/bus_Professional_Blue_Shirt_Headshot-1795008859945-4dcb54.jpg', 'Professional Blue Shirt Headshot.jpg', 'image/jpeg', 77760, 2, 'super admin', 4, '2026-11-18 19:04:21', '2026-11-18 19:05:31'),
+(29, 2, 2, 'bus_image', 'upload/schools/2/branches/2/buses/bus_bus-1795008930540-4b2d1c.jpg', 'growvidya/schools/2/branches/2/buses/bus_bus-1795008930540-4b2d1c.jpg', 'bus.jpg', 'image/jpeg', 21270, 2, 'super admin', 1, '2026-11-18 19:05:31', NULL),
+(30, NULL, NULL, 'school_branding', 'upload/platform/school/Logo_Logo-1795073391181-c3234f.webp', 'growvidya/platform/school/Logo_Logo-1795073391181-c3234f.webp', 'Logo.webp', 'image/webp', 5202, NULL, NULL, 1, '2026-11-19 12:59:51', NULL),
+(31, NULL, NULL, 'profile_pic', 'upload/platform/staff/Admin_Admin-1795073391968-4578ea.webp', 'growvidya/platform/staff/Admin_Admin-1795073391968-4578ea.webp', 'Admin.webp', 'image/webp', 5202, NULL, NULL, 1, '2026-11-19 12:59:52', NULL),
+(32, 3, 6, 'school_branding', 'upload/platform/school/Logo_Logo-1795073392346-e79dae.webp', 'growvidya/platform/school/Logo_Logo-1795073392346-e79dae.webp', 'Logo.webp', 'image/webp', 5202, NULL, NULL, 1, '2026-11-19 12:59:54', NULL),
+(33, 3, 6, 'profile_pic', 'upload/schools/3/branches/6/staff/Admin_Admin-1795073394720-c66f79.webp', 'growvidya/schools/3/branches/6/staff/Admin_Admin-1795073394720-c66f79.webp', 'Admin.webp', 'image/webp', 5202, NULL, NULL, 1, '2026-11-19 12:59:55', NULL),
+(34, 2, 2, 'fee_receipt', 'upload/schools/2/branches/2/fees/codeulas_logo_small-1795415292781-c15e9d.webp', 'growvidya/schools/2/branches/2/fees/codeulas_logo_small-1795415292781-c15e9d.webp', 'codeulas_logo_small.webp', 'image/webp', 5202, 159, 'parent', 1, '2026-11-23 11:58:13', NULL),
+(35, 2, 2, 'fee_receipt', 'upload/schools/2/branches/2/fees/product-image-1795418034748-06ddcd.png', 'growvidya/schools/2/branches/2/fees/product-image-1795418034748-06ddcd.png', 'product-image.png', 'image/png', 28633, 163, 'parent', 1, '2026-11-23 12:43:56', NULL),
+(36, 2, 2, 'fee_receipt', 'upload/schools/2/branches/2/fees/product-image-1795420558035-337800.png', 'growvidya/schools/2/branches/2/fees/product-image-1795420558035-337800.png', 'product-image.png', 'image/png', 28633, 11, 'parent', 1, '2026-11-23 13:26:00', NULL),
+(37, 2, 2, 'general', 'upload/schools/2/branches/2/student/assignment_submissions/codeulas_logo_small-1795436522595-4e0eb5.webp', 'growvidya/schools/2/branches/2/student/assignment_submissions/codeulas_logo_small-1795436522595-4e0eb5.webp', 'codeulas_logo_small.webp', 'image/webp', 5202, 83, 'student', 1, '2026-11-23 17:52:03', NULL),
+(38, 2, 2, 'general', 'upload/schools/2/branches/2/student/assignment_submissions/bus-1795436537466-d2cba7.jpg', 'growvidya/schools/2/branches/2/student/assignment_submissions/bus-1795436537466-d2cba7.jpg', 'bus.jpg', 'image/jpeg', 21270, 83, 'student', 1, '2026-11-23 17:52:18', NULL),
+(39, 2, 2, 'general', 'upload/schools/2/branches/2/student/assignment_submissions/logo1-1795436551139-ecc208.png', 'growvidya/schools/2/branches/2/student/assignment_submissions/logo1-1795436551139-ecc208.png', 'logo1.png', 'image/png', 5814, 83, 'student', 1, '2026-11-23 17:52:32', NULL),
+(40, 2, 2, 'general', 'upload/schools/2/branches/2/student/assignment_submissions/codeulas_logo_small-1795438984167-9f92ec.webp', 'growvidya/schools/2/branches/2/student/assignment_submissions/codeulas_logo_small-1795438984167-9f92ec.webp', 'codeulas_logo_small.webp', 'image/webp', 5202, 83, 'student', 1, '2026-11-23 18:33:06', NULL);
 
 -- --------------------------------------------------------
 
@@ -49675,7 +49859,7 @@ CREATE TABLE `filesharing` (
 CREATE TABLE `gender_master` (
   `id` int(11) NOT NULL,
   `gender` varchar(255) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `gender_master`
@@ -49695,27 +49879,28 @@ INSERT INTO `gender_master` (`id`, `gender`) VALUES
 CREATE TABLE `grade_settings` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `grade_name` varchar(150) DEFAULT NULL,
   `min_percentage` int(11) DEFAULT NULL,
   `max_percentage` int(11) DEFAULT NULL,
   `status` int(11) DEFAULT NULL COMMENT '1= Active, 2=Inactive, 4=Delete',
   `created_on` timestamp NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `grade_settings`
 --
 
-INSERT INTO `grade_settings` (`id`, `school_id`, `grade_name`, `min_percentage`, `max_percentage`, `status`, `created_on`) VALUES
-(1, 2, 'O', 91, 100, 1, '2026-09-10 06:26:02'),
-(2, 2, 'A+', 81, 90, 1, '2026-09-10 06:26:12'),
-(3, 2, 'A', 71, 80, 1, '2026-09-10 06:26:24'),
-(4, 2, 'B+', 61, 70, 1, '2026-09-10 06:26:34'),
-(5, 2, 'B', 51, 60, 1, '2026-09-10 06:26:47'),
-(6, 2, 'C+', 41, 50, 1, '2026-09-10 06:28:11'),
-(7, 2, 'C', 31, 40, 1, '2026-09-10 06:28:37'),
-(8, 2, 'D+', 0, 30, 1, '2026-09-10 06:28:47'),
-(9, 2, 'D', 0, 15, 1, '2026-09-10 06:28:54');
+INSERT INTO `grade_settings` (`id`, `school_id`, `branch_id`, `grade_name`, `min_percentage`, `max_percentage`, `status`, `created_on`) VALUES
+(1, 2, 2, 'O', 91, 100, 1, '2026-11-18 10:20:52'),
+(2, 2, 2, 'A+', 81, 90, 1, '2026-11-18 10:21:19'),
+(3, 2, 2, 'A', 71, 80, 1, '2026-11-18 10:21:34'),
+(4, 2, 2, 'B+', 61, 70, 1, '2026-11-18 10:21:47'),
+(5, 2, 2, 'B', 51, 60, 1, '2026-11-18 10:22:09'),
+(6, 2, 2, 'C+', 41, 50, 1, '2026-11-18 10:22:27'),
+(7, 2, 2, 'C', 31, 40, 1, '2026-11-18 10:22:42'),
+(8, 2, 2, 'D+', 0, 30, 1, '2026-11-18 10:22:51'),
+(9, 2, 2, 'D', 0, 15, 1, '2026-11-18 10:23:09');
 
 -- --------------------------------------------------------
 
@@ -49726,20 +49911,14 @@ INSERT INTO `grade_settings` (`id`, `school_id`, `grade_name`, `min_percentage`,
 CREATE TABLE `holiday` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `title` varchar(255) DEFAULT NULL,
   `from_date` date DEFAULT NULL,
   `to_date` date DEFAULT NULL,
-  `details` text DEFAULT NULL,
+  `details` mediumtext DEFAULT NULL,
   `status` int(11) NOT NULL DEFAULT 1 COMMENT '1=active, 2=inactive, 4=delete',
   `created_on` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
-
---
--- Dumping data for table `holiday`
---
-
-INSERT INTO `holiday` (`id`, `school_id`, `title`, `from_date`, `to_date`, `details`, `status`, `created_on`) VALUES
-(1, 2, 'Republic Day', '2026-09-10', '2026-09-10', 'Test', 1, '2026-09-10 11:38:22');
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -49750,21 +49929,20 @@ INSERT INTO `holiday` (`id`, `school_id`, `title`, `from_date`, `to_date`, `deta
 CREATE TABLE `hostel_name_master` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `hostel_name` varchar(255) DEFAULT NULL,
   `sort_order` int(11) DEFAULT NULL,
   `status` int(11) NOT NULL DEFAULT 1,
   `hostel_fee` decimal(10,2) DEFAULT 0.00
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `hostel_name_master`
 --
 
-INSERT INTO `hostel_name_master` (`id`, `school_id`, `hostel_name`, `sort_order`, `status`, `hostel_fee`) VALUES
-(1, 1, 'Boys Hostel', 1, 1, 3500.00),
-(2, 1, 'Girls Hostel', 1, 1, 4200.00),
-(3, 2, 'Boys Hostel', 1, 1, 2500.00),
-(4, 2, 'Girls Hostel', 1, 1, 3500.00);
+INSERT INTO `hostel_name_master` (`id`, `school_id`, `branch_id`, `hostel_name`, `sort_order`, `status`, `hostel_fee`) VALUES
+(1, 2, 2, 'Boys Hostel', 1, 1, 500.00),
+(2, 2, 2, 'Girls Hostel', 2, 1, 350.00);
 
 -- --------------------------------------------------------
 
@@ -49775,21 +49953,21 @@ INSERT INTO `hostel_name_master` (`id`, `school_id`, `hostel_name`, `sort_order`
 CREATE TABLE `hostel_room_master` (
   `id` int(11) NOT NULL,
   `school_id` int(11) NOT NULL DEFAULT 1,
+  `branch_id` int(11) DEFAULT NULL,
   `hostel_id` int(11) DEFAULT NULL,
   `room_number` int(11) DEFAULT NULL,
   `sort_order` int(11) DEFAULT NULL,
   `status` int(11) NOT NULL DEFAULT 1
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `hostel_room_master`
 --
 
-INSERT INTO `hostel_room_master` (`id`, `school_id`, `hostel_id`, `room_number`, `sort_order`, `status`) VALUES
-(1, 1, 2, 102, 1, 1),
-(2, 1, 1, 22, 1, 1),
-(3, 2, 3, 104, 1, 1),
-(4, 2, 4, 105, 1, 1);
+INSERT INTO `hostel_room_master` (`id`, `school_id`, `branch_id`, `hostel_id`, `room_number`, `sort_order`, `status`) VALUES
+(1, 2, 2, 1, 101, 1, 1),
+(2, 2, 2, 1, 102, 1, 1),
+(3, 2, 2, 1, 103, 1, 1);
 
 -- --------------------------------------------------------
 
@@ -49800,22 +49978,19 @@ INSERT INTO `hostel_room_master` (`id`, `school_id`, `hostel_id`, `room_number`,
 CREATE TABLE `house_master` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `house_name` varchar(255) DEFAULT NULL,
   `sort_order` int(11) DEFAULT NULL,
   `status` int(11) NOT NULL DEFAULT 1
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `house_master`
 --
 
-INSERT INTO `house_master` (`id`, `school_id`, `house_name`, `sort_order`, `status`) VALUES
-(1, 1, 'Tagore House', 1, 1),
-(2, 1, 'Aryabhata House', 1, 1),
-(3, 1, 'Vivekananda House', 1, 1),
-(4, 1, 'Netaji House', 1, 1),
-(5, 2, 'Red', 1, 1),
-(6, 2, 'Yellow', 1, 1);
+INSERT INTO `house_master` (`id`, `school_id`, `branch_id`, `house_name`, `sort_order`, `status`) VALUES
+(1, 2, 2, 'Green Valley House', 1, 1),
+(2, 2, 2, 'Royal Residency', 1, 1);
 
 -- --------------------------------------------------------
 
@@ -49832,7 +50007,7 @@ CREATE TABLE `lead_deal_stage` (
   `sort_order` int(11) DEFAULT 1,
   `status` int(11) NOT NULL DEFAULT 1 COMMENT '1=active,0=delete',
   `created_on` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -49847,7 +50022,7 @@ CREATE TABLE `lead_pipeline` (
   `color_code` varchar(255) DEFAULT NULL,
   `status` int(11) NOT NULL DEFAULT 1 COMMENT '1=active, 0=delete',
   `created_on` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -49860,7 +50035,7 @@ CREATE TABLE `lead_source` (
   `name` varchar(255) NOT NULL,
   `status` int(11) DEFAULT 1 COMMENT '1=active,0=delete',
   `created_on` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -49872,23 +50047,22 @@ CREATE TABLE `leaves` (
   `id` int(11) NOT NULL,
   `role` int(11) DEFAULT NULL COMMENT '1=teacher, 2=user',
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `staff_id` int(11) DEFAULT NULL,
   `leave_id` int(11) DEFAULT NULL,
   `duration` int(11) DEFAULT NULL COMMENT '1=Full Day, 2=Half Day, 3=Multiple',
-  `document` text DEFAULT NULL,
-  `leave_reason` text DEFAULT NULL,
+  `document` mediumtext DEFAULT NULL,
+  `leave_reason` mediumtext DEFAULT NULL,
   `status` int(11) DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `leaves`
 --
 
-INSERT INTO `leaves` (`id`, `role`, `school_id`, `staff_id`, `leave_id`, `duration`, `document`, `leave_reason`, `status`, `created_at`) VALUES
-(1, 1, 2, 3, 1, 1, NULL, 'Medical', 2, '2026-09-10 13:01:11'),
-(2, 1, 2, 3, 1, 1, 'upload/leave/Student_Certificates_2026-09-10-1789040386724-7670.pdf', 'test', 2, '2026-09-10 17:09:46'),
-(3, 1, 2, 3, 2, 1, '', 'test', 3, '2026-09-10 17:10:53');
+INSERT INTO `leaves` (`id`, `role`, `school_id`, `branch_id`, `staff_id`, `leave_id`, `duration`, `document`, `leave_reason`, `status`, `created_at`) VALUES
+(1, 2, 2, 2, 1, 4, 3, NULL, '', 1, '2026-11-19 16:00:05');
 
 -- --------------------------------------------------------
 
@@ -49899,19 +50073,20 @@ INSERT INTO `leaves` (`id`, `role`, `school_id`, `staff_id`, `leave_id`, `durati
 CREATE TABLE `leaves_date` (
   `id` int(11) NOT NULL,
   `school_id` int(11) NOT NULL DEFAULT 1,
+  `branch_id` int(11) DEFAULT NULL,
   `staff_leave_id` int(11) DEFAULT NULL COMMENT 'leaves table ID',
   `date` datetime DEFAULT NULL,
   `status` int(11) DEFAULT NULL COMMENT '1=pending, 2=approved, 3=rejected'
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `leaves_date`
 --
 
-INSERT INTO `leaves_date` (`id`, `school_id`, `staff_leave_id`, `date`, `status`) VALUES
-(1, 2, 1, '2026-09-10 00:00:00', 2),
-(2, 2, 2, '2026-09-10 00:00:00', 2),
-(3, 2, 3, '2026-09-10 00:00:00', 3);
+INSERT INTO `leaves_date` (`id`, `school_id`, `branch_id`, `staff_leave_id`, `date`, `status`) VALUES
+(1, 2, 2, 1, '2026-11-23 00:00:00', 2),
+(2, 2, 2, 1, '2026-11-24 00:00:00', 2),
+(3, 2, 2, 1, '2026-11-25 00:00:00', 1);
 
 -- --------------------------------------------------------
 
@@ -49922,21 +50097,27 @@ INSERT INTO `leaves_date` (`id`, `school_id`, `staff_leave_id`, `date`, `status`
 CREATE TABLE `leave_master` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `role` int(11) DEFAULT NULL COMMENT '1=teacher, 2=user',
   `leave_name` varchar(255) DEFAULT NULL,
   `need_document` int(11) NOT NULL DEFAULT 0 COMMENT '1=need document, 2=no need document',
+  `is_paid` tinyint(1) NOT NULL DEFAULT 1,
   `no_leave` int(11) DEFAULT NULL,
   `status` int(11) NOT NULL DEFAULT 1,
   `sort_order` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `leave_master`
 --
 
-INSERT INTO `leave_master` (`id`, `school_id`, `role`, `leave_name`, `need_document`, `no_leave`, `status`, `sort_order`) VALUES
-(1, 2, 1, 'Medical Leaves', 1, 2, 1, 1),
-(2, 2, 1, 'CL', 0, 4, 1, 2);
+INSERT INTO `leave_master` (`id`, `school_id`, `branch_id`, `role`, `leave_name`, `need_document`, `is_paid`, `no_leave`, `status`, `sort_order`) VALUES
+(1, 2, 2, 1, 'Casual Leave (CL)', 0, 1, 5, 1, 1),
+(2, 2, 2, 1, 'Sick Leave (SL)', 1, 1, 4, 1, 1),
+(3, 2, 2, 1, 'Paid Leave (PL)', 0, 0, 12, 1, 1),
+(4, 2, 2, 2, 'Casual Leave (CL)', 0, 1, 10, 1, 1),
+(5, 2, 2, 2, 'Sick Leave (SL)', 1, 1, 4, 1, 1),
+(6, 2, 2, 2, 'Paid Leave (PL)', 0, 0, 14, 1, 2);
 
 -- --------------------------------------------------------
 
@@ -49947,12 +50128,13 @@ INSERT INTO `leave_master` (`id`, `school_id`, `role`, `leave_name`, `need_docum
 CREATE TABLE `lession_master` (
   `id` int(11) NOT NULL,
   `school_id` int(11) NOT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `class_id` int(11) DEFAULT NULL,
   `subject_id` int(11) DEFAULT NULL,
   `lession_name` varchar(255) DEFAULT NULL,
-  `lession_description` text DEFAULT NULL,
+  `lession_description` mediumtext DEFAULT NULL,
   `status` int(11) NOT NULL DEFAULT 1 COMMENT '1=active, 2=inactive, 4=delete'
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -49967,18 +50149,16 @@ CREATE TABLE `marital_master` (
   `sort_order` int(11) DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `marital_master`
 --
 
 INSERT INTO `marital_master` (`id`, `marital_status`, `status`, `sort_order`, `created_at`, `updated_at`) VALUES
-(1, 'Single', 1, 1, '2026-09-09 16:38:03', '2026-09-09 11:08:03'),
-(2, 'Married', 1, 2, '2026-09-09 16:38:03', '2026-09-09 11:08:03'),
-(3, 'Divorced', 1, 3, '2026-09-09 16:38:03', '2026-09-09 11:08:03'),
-(4, 'Widowed', 1, 4, '2026-09-09 16:38:03', '2026-09-09 11:08:03'),
-(5, 'Separated', 1, 5, '2026-09-09 16:38:03', '2026-09-09 11:08:03');
+(1, 'Single', 1, 1, '2026-09-17 17:25:18', '2026-09-17 11:55:18'),
+(2, 'Married', 1, 2, '2026-09-17 17:25:18', '2026-09-17 11:55:18'),
+(3, 'Divorced', 1, 3, '2026-09-17 17:25:22', '2026-09-17 11:55:22');
 
 -- --------------------------------------------------------
 
@@ -49989,22 +50169,23 @@ INSERT INTO `marital_master` (`id`, `marital_status`, `status`, `sort_order`, `c
 CREATE TABLE `material_types` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `material_type_name` varchar(255) DEFAULT NULL,
-  `description` text DEFAULT NULL,
+  `description` mediumtext DEFAULT NULL,
   `display_order` int(11) DEFAULT 0,
   `status` int(11) NOT NULL DEFAULT 1,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `material_types`
 --
 
-INSERT INTO `material_types` (`id`, `school_id`, `material_type_name`, `description`, `display_order`, `status`, `created_at`, `updated_at`) VALUES
-(1, 2, 'Syllabus', 'Course syllabus and guidelines', 0, 1, '2026-09-10 15:50:43', '2026-09-10 10:24:28'),
-(2, 2, 'Lecture Notes', 'Notes from the teachers', 0, 1, '2026-09-10 15:51:02', '2026-09-10 10:21:02'),
-(3, 2, 'Reference Book', 'Extra books and references', 0, 1, '2026-09-10 15:51:11', '2026-09-10 10:21:11');
+INSERT INTO `material_types` (`id`, `school_id`, `branch_id`, `material_type_name`, `description`, `display_order`, `status`, `created_at`, `updated_at`) VALUES
+(1, 2, 2, 'Bengali Study Material', '', 0, 1, '2026-11-18 15:46:41', '2026-11-18 10:16:41'),
+(2, 2, 2, 'English Study Material', '', 0, 1, '2026-11-18 15:49:46', '2026-11-18 10:19:46'),
+(3, 2, 2, 'Mathematics Study Material', '', 0, 1, '2026-11-18 15:53:01', '2026-11-18 10:23:14');
 
 -- --------------------------------------------------------
 
@@ -50015,6 +50196,7 @@ INSERT INTO `material_types` (`id`, `school_id`, `material_type_name`, `descript
 CREATE TABLE `message` (
   `id` int(15) NOT NULL,
   `school_id` int(11) NOT NULL DEFAULT 1,
+  `branch_id` int(11) DEFAULT NULL,
   `sender` int(11) NOT NULL,
   `sender_role` varchar(20) NOT NULL DEFAULT 'admin',
   `reciver` int(11) NOT NULL,
@@ -50026,14 +50208,17 @@ CREATE TABLE `message` (
   `time` timestamp NOT NULL DEFAULT current_timestamp(),
   `seen` int(5) NOT NULL DEFAULT 0,
   `status` int(5) NOT NULL DEFAULT 1
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `message`
 --
 
-INSERT INTO `message` (`id`, `school_id`, `sender`, `sender_role`, `reciver`, `receiver_role`, `type`, `message`, `file`, `file_type`, `time`, `seen`, `status`) VALUES
-(1, 2, 3, 'teacher', 2, 'admin', 2, 'hi', NULL, NULL, '2026-09-12 11:34:54', 1, 1);
+INSERT INTO `message` (`id`, `school_id`, `branch_id`, `sender`, `sender_role`, `reciver`, `receiver_role`, `type`, `message`, `file`, `file_type`, `time`, `seen`, `status`) VALUES
+(1, 2, 2, 2, 'teacher', 6, 'parent', 2, 'hello', NULL, NULL, '2026-11-18 12:42:41', 0, 1),
+(2, 2, 2, 4, 'parent', 2, 'teacher', 4, 'hello', NULL, NULL, '2026-11-18 12:43:11', 1, 1),
+(3, 2, 2, 2, 'teacher', 6, 'parent', 2, 'hi', NULL, NULL, '2026-11-18 12:43:28', 0, 1),
+(4, 2, 2, 2, 'teacher', 4, 'parent', 2, 'hi', NULL, NULL, '2026-11-18 12:43:46', 1, 1);
 
 -- --------------------------------------------------------
 
@@ -50048,7 +50233,7 @@ CREATE TABLE `message_settings` (
   `restrict_client` varchar(50) DEFAULT NULL,
   `send_sound_notification` int(11) DEFAULT NULL,
   `created_on` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -50072,7 +50257,7 @@ CREATE TABLE `mf_sample_warehousing` (
   `color` varchar(255) DEFAULT NULL,
   `status` int(11) DEFAULT NULL,
   `created_on` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -50083,21 +50268,20 @@ CREATE TABLE `mf_sample_warehousing` (
 CREATE TABLE `mother_tongue_master` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `mother_tongue` varchar(255) DEFAULT NULL,
   `sort_order` int(11) DEFAULT NULL,
   `status` int(11) NOT NULL DEFAULT 1
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `mother_tongue_master`
 --
 
-INSERT INTO `mother_tongue_master` (`id`, `school_id`, `mother_tongue`, `sort_order`, `status`) VALUES
-(1, 1, 'Bengali', 1, 1),
-(2, 1, 'English', 2, 1),
-(3, 2, 'Bengali', 1, 1),
-(4, 2, 'English', 2, 1),
-(5, 2, 'Hindi', 3, 1);
+INSERT INTO `mother_tongue_master` (`id`, `school_id`, `branch_id`, `mother_tongue`, `sort_order`, `status`) VALUES
+(1, 2, 2, 'Bengali', 1, 1),
+(2, 2, 2, 'English', 2, 1),
+(3, 2, 2, 'Hindi', 3, 1);
 
 -- --------------------------------------------------------
 
@@ -50108,20 +50292,27 @@ INSERT INTO `mother_tongue_master` (`id`, `school_id`, `mother_tongue`, `sort_or
 CREATE TABLE `notice` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `title` varchar(255) DEFAULT NULL,
   `notice_date` date DEFAULT NULL,
-  `publish_on` date DEFAULT NULL,
-  `message` text DEFAULT NULL,
+  `publish_on` datetime DEFAULT NULL,
+  `message` mediumtext DEFAULT NULL,
   `status` int(11) NOT NULL,
+  `target_type` enum('all','class_section','specific_users') NOT NULL DEFAULT 'all',
+  `target_classes` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`target_classes`)),
+  `target_sections` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`target_sections`)),
+  `target_roles` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`target_roles`)),
+  `target_user_ids` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`target_user_ids`)),
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `notice`
 --
 
-INSERT INTO `notice` (`id`, `school_id`, `title`, `notice_date`, `publish_on`, `message`, `status`, `created_at`) VALUES
-(1, 2, 'Ganesh Puja', '2026-09-10', '2026-09-10', 'test', 1, '2026-09-10 11:34:14');
+INSERT INTO `notice` (`id`, `school_id`, `branch_id`, `title`, `notice_date`, `publish_on`, `message`, `status`, `target_type`, `target_classes`, `target_sections`, `target_roles`, `target_user_ids`, `created_at`) VALUES
+(1, 2, 2, 'Leave Application Approved - Casual Leave (CL)', '2026-11-19', '2026-11-19 16:45:17', '<p>Your \"Casual Leave (CL)\" leave request for 23 Nov 2026 has been approved.</p>', 1, 'specific_users', '[]', '[]', '[\"teacher\"]', '[{\"id\":1,\"role\":\"teacher\",\"name\":\"Gitanjali Paul\"}]', '2026-11-19 11:15:17'),
+(2, 2, 2, 'Leave Application Approved - Casual Leave (CL)', '2026-11-19', '2026-11-19 16:45:27', '<p>Your \"Casual Leave (CL)\" leave request for 24 Nov 2026 has been approved.</p>', 1, 'specific_users', '[]', '[]', '[\"teacher\"]', '[{\"id\":1,\"role\":\"teacher\",\"name\":\"Gitanjali Paul\"}]', '2026-11-19 11:15:27');
 
 -- --------------------------------------------------------
 
@@ -50132,15 +50323,174 @@ INSERT INTO `notice` (`id`, `school_id`, `title`, `notice_date`, `publish_on`, `
 CREATE TABLE `notice_message` (
   `id` int(11) NOT NULL,
   `notice_id` int(11) DEFAULT NULL,
-  `message_to` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+  `message_to` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `notice_message`
 --
 
-INSERT INTO `notice_message` (`id`, `notice_id`, `message_to`) VALUES
-(1, 1, 3);
+INSERT INTO `notice_message` (`id`, `notice_id`, `message_to`, `branch_id`) VALUES
+(1, 1, 0, 2),
+(2, 2, 0, 2);
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `notification_master`
+--
+
+CREATE TABLE `notification_master` (
+  `id` int(11) NOT NULL,
+  `type` enum('sms','push') NOT NULL,
+  `recipient` varchar(255) NOT NULL,
+  `message` text NOT NULL,
+  `cost` decimal(5,2) NOT NULL DEFAULT 0.00,
+  `status` enum('sent','failed','pending') NOT NULL DEFAULT 'sent',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `notification_pricing_master`
+--
+
+CREATE TABLE `notification_pricing_master` (
+  `id` int(11) NOT NULL,
+  `channel` enum('sms','push') NOT NULL,
+  `pack_name` varchar(150) NOT NULL,
+  `unit_price` decimal(10,4) NOT NULL DEFAULT 0.0000,
+  `min_qty` int(11) NOT NULL DEFAULT 100,
+  `description` varchar(255) DEFAULT NULL,
+  `status` tinyint(1) NOT NULL DEFAULT 1,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `notification_records`
+--
+
+CREATE TABLE `notification_records` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `school_id` int(11) NOT NULL DEFAULT 1 COMMENT 'Reference to school / tenant',
+  `branch_id` int(11) DEFAULT NULL COMMENT 'Reference to branch if multi-branch',
+  `channel` enum('sms','push') NOT NULL COMMENT 'Notification channel: sms or push',
+  `category` varchar(50) NOT NULL DEFAULT 'general' COMMENT 'attendance, fees, exam, homework, announcement, alert, etc.',
+  `title` varchar(255) DEFAULT NULL COMMENT 'Notification title (header for push or template title)',
+  `message` text NOT NULL COMMENT 'Message text / body content',
+  `payload` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL COMMENT 'JSON payload for push data (deep links, badges, action URLs)' CHECK (json_valid(`payload`)),
+  `recipient_role` enum('student','parent','teacher','staff','admin','saas_admin','other') DEFAULT 'other' COMMENT 'Recipient role',
+  `recipient_id` int(11) DEFAULT NULL COMMENT 'User/Entity ID of recipient',
+  `recipient_name` varchar(150) DEFAULT NULL COMMENT 'Recipient display name for quick lookup',
+  `recipient_phone` varchar(20) DEFAULT NULL COMMENT 'Phone number for SMS (+91XXXXXXXXXX)',
+  `recipient_device_token` text DEFAULT NULL COMMENT 'FCM device registration token or APNS token for push',
+  `recipient_device_type` enum('android','ios','web','all','other') DEFAULT NULL COMMENT 'Target OS/platform',
+  `units_count` int(11) NOT NULL DEFAULT 1 COMMENT 'SMS credit parts or push device count (default 1)',
+  `unit_cost` decimal(8,4) NOT NULL DEFAULT 0.0000 COMMENT 'Per-unit rate in INR (₹0.20 for SMS, ₹0.01 for push)',
+  `total_cost` decimal(10,4) NOT NULL DEFAULT 0.0000 COMMENT 'Total billable cost in INR (charged upon sent/delivered)',
+  `currency` varchar(5) NOT NULL DEFAULT 'INR' COMMENT 'Currency code (INR = ₹)',
+  `status` enum('pending','queued','sent','delivered','failed','cancelled') NOT NULL DEFAULT 'pending' COMMENT 'Message status',
+  `provider` varchar(50) DEFAULT NULL COMMENT 'Provider/Gateway (e.g. fcm, twilio, fast2sms, msg91)',
+  `provider_message_id` varchar(255) DEFAULT NULL COMMENT 'Gateway transaction ID / FCM message ID',
+  `provider_response` text DEFAULT NULL COMMENT 'Raw gateway HTTP response or error payload',
+  `error_message` text DEFAULT NULL COMMENT 'Failure description if sending failed',
+  `dlt_template_id` varchar(100) DEFAULT NULL COMMENT 'TRAI DLT Template ID for Indian SMS compliance',
+  `dlt_entity_id` varchar(100) DEFAULT NULL COMMENT 'TRAI DLT Entity ID',
+  `sender_id` int(11) DEFAULT NULL COMMENT 'User ID of sender/initiator',
+  `sender_role` varchar(50) DEFAULT 'system' COMMENT 'Role of sender (admin, teacher, system)',
+  `scheduled_at` datetime DEFAULT NULL COMMENT 'Scheduled delivery time',
+  `sent_at` datetime DEFAULT NULL COMMENT 'Timestamp when dispatched to gateway',
+  `delivered_at` datetime DEFAULT NULL COMMENT 'Timestamp when delivered report received',
+  `read_at` datetime DEFAULT NULL COMMENT 'Timestamp when push notification was opened/read',
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Unified SMS and Push Notification Records with ₹0.20/SMS and ₹0.01/Push cost tracking';
+
+--
+-- Triggers `notification_records`
+--
+DELIMITER $$
+CREATE TRIGGER `trg_notif_records_before_insert` BEFORE INSERT ON `notification_records` FOR EACH ROW BEGIN
+        -- Default unit_cost based on channel: SMS = ₹0.20, Push = ₹0.01
+        IF NEW.unit_cost IS NULL OR NEW.unit_cost = 0.0000 THEN
+          IF NEW.channel = 'sms' THEN
+            SET NEW.unit_cost = 0.2000;
+          ELSEIF NEW.channel = 'push' THEN
+            SET NEW.unit_cost = 0.0100;
+          END IF;
+        END IF;
+
+        -- Ensure minimum 1 unit
+        IF NEW.units_count IS NULL OR NEW.units_count < 1 THEN
+          SET NEW.units_count = 1;
+        END IF;
+
+        -- Calculate total cost if sent or delivered
+        IF NEW.status IN ('sent', 'delivered') THEN
+          SET NEW.total_cost = NEW.unit_cost * NEW.units_count;
+          IF NEW.sent_at IS NULL THEN
+            SET NEW.sent_at = NOW();
+          END IF;
+        ELSE
+          SET NEW.total_cost = 0.0000;
+        END IF;
+      END
+$$
+DELIMITER ;
+DELIMITER $$
+CREATE TRIGGER `trg_notif_records_before_update` BEFORE UPDATE ON `notification_records` FOR EACH ROW BEGIN
+        -- Default unit_cost based on channel if unset: SMS = ₹0.20, Push = ₹0.01
+        IF NEW.unit_cost IS NULL OR NEW.unit_cost = 0.0000 THEN
+          IF NEW.channel = 'sms' THEN
+            SET NEW.unit_cost = 0.2000;
+          ELSEIF NEW.channel = 'push' THEN
+            SET NEW.unit_cost = 0.0100;
+          END IF;
+        END IF;
+
+        -- Ensure minimum 1 unit
+        IF NEW.units_count IS NULL OR NEW.units_count < 1 THEN
+          SET NEW.units_count = 1;
+        END IF;
+
+        -- Calculate total cost when status transitions to sent or delivered
+        IF NEW.status IN ('sent', 'delivered') THEN
+          SET NEW.total_cost = NEW.unit_cost * NEW.units_count;
+          IF NEW.sent_at IS NULL AND OLD.status NOT IN ('sent', 'delivered') THEN
+            SET NEW.sent_at = NOW();
+          END IF;
+        ELSEIF NEW.status NOT IN ('sent', 'delivered') THEN
+          SET NEW.total_cost = 0.0000;
+        END IF;
+      END
+$$
+DELIMITER ;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `onboarding_email_otps`
+--
+
+CREATE TABLE `onboarding_email_otps` (
+  `email` varchar(255) NOT NULL,
+  `otp` varchar(16) DEFAULT NULL,
+  `otp_expires_at` datetime DEFAULT NULL,
+  `verified_at` datetime DEFAULT NULL,
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `onboarding_email_otps`
+--
+
+INSERT INTO `onboarding_email_otps` (`email`, `otp`, `otp_expires_at`, `verified_at`, `updated_at`) VALUES
+('ardhendubag01@gmail.com', '793413', '2026-11-23 20:12:11', NULL, '2026-11-23 20:02:11');
 
 -- --------------------------------------------------------
 
@@ -50161,7 +50511,28 @@ CREATE TABLE `online_credentials` (
   `live_webhook_signing_secret` text DEFAULT NULL,
   `status` int(11) DEFAULT NULL,
   `created_on` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `operator_bank`
+--
+
+CREATE TABLE `operator_bank` (
+  `id` int(11) NOT NULL,
+  `school_id` int(11) NOT NULL,
+  `branch_id` int(11) DEFAULT NULL,
+  `operator_id` int(11) DEFAULT NULL,
+  `account_name` varchar(255) DEFAULT NULL,
+  `account_number` varchar(255) DEFAULT NULL,
+  `bank_name` varchar(255) DEFAULT NULL,
+  `ifsc_code` varchar(255) DEFAULT NULL,
+  `branch_name` varchar(255) DEFAULT NULL,
+  `status` int(11) NOT NULL DEFAULT 1,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -50172,25 +50543,28 @@ CREATE TABLE `online_credentials` (
 CREATE TABLE `operator_master` (
   `id` int(11) NOT NULL,
   `school_id` int(11) NOT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `first_name` varchar(255) NOT NULL,
   `last_name` varchar(255) NOT NULL,
-  `picture` text DEFAULT NULL,
+  `picture` mediumtext DEFAULT NULL,
   `email` varchar(255) DEFAULT NULL,
   `phone` varchar(255) NOT NULL,
   `lisence_number` varchar(255) DEFAULT NULL,
+  `lisence_doc` varchar(255) DEFAULT NULL,
+  `id_proof_type` varchar(50) DEFAULT NULL,
+  `id_proof_number` varchar(100) DEFAULT NULL,
+  `id_proof_doc` varchar(255) DEFAULT NULL,
   `type` int(11) NOT NULL COMMENT '1 = Driver, 2 = Helper',
   `status` int(11) NOT NULL DEFAULT 1
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `operator_master`
 --
 
-INSERT INTO `operator_master` (`id`, `school_id`, `first_name`, `last_name`, `picture`, `email`, `phone`, `lisence_number`, `type`, `status`) VALUES
-(1, 1, 'Kaustav', 'Khan', '', 'kaustav@codeulas.com', '8523697410', 'TYP58585TYP', 1, 1),
-(2, 1, 'Pritam', 'Mondal', '', 'pritam@gmail.com', '07898650254', NULL, 2, 1),
-(6, 2, 'Ardhendu', 'Bag', '', 'ardhendu.codeulas@gmail.com', '7898650254', 'TYP58505TYP', 1, 1),
-(7, 2, 'Rohan', 'Biswas', '', 'rohan.b@example.com', '9876501010', NULL, 2, 1);
+INSERT INTO `operator_master` (`id`, `school_id`, `branch_id`, `first_name`, `last_name`, `picture`, `email`, `phone`, `lisence_number`, `lisence_doc`, `id_proof_type`, `id_proof_number`, `id_proof_doc`, `type`, `status`) VALUES
+(1, 2, 2, 'Jotin', 'Ghosh', '', 'jotin@gmail.com', '6235985862', 'DL-TEST-2026-000001', 'upload/schools/2/branches/2/drivers/documents/license_dl-2-1794998613230-584563.jpg', 'Aadhaar Card', '0000 0000 0001', 'upload/schools/2/branches/2/drivers/documents/idproof_ad-1-1794998614679-8c5271.jpg', 1, 1),
+(2, 2, 2, 'Gopal', 'Majhi', '', 'gopal@gmail.com', '6259863654', NULL, NULL, 'Aadhaar Card', '560256968468', 'upload/schools/2/branches/2/drivers/documents/idproof_ad-1-1794998805487-acfb5d.jpg', 2, 1);
 
 -- --------------------------------------------------------
 
@@ -50201,6 +50575,7 @@ INSERT INTO `operator_master` (`id`, `school_id`, `first_name`, `last_name`, `pi
 CREATE TABLE `parent_master` (
   `id` int(11) NOT NULL,
   `school_id` int(11) NOT NULL DEFAULT 1,
+  `branch_id` int(11) DEFAULT NULL,
   `first_name` varchar(255) DEFAULT NULL,
   `last_name` varchar(255) DEFAULT NULL,
   `email` varchar(255) DEFAULT NULL,
@@ -50209,32 +50584,184 @@ CREATE TABLE `parent_master` (
   `password` varchar(255) DEFAULT NULL,
   `relation` varchar(255) DEFAULT NULL,
   `parent_type` int(11) DEFAULT NULL COMMENT '1=father, 2=mother, 3=others',
-  `picture` text DEFAULT NULL,
+  `picture` mediumtext DEFAULT NULL,
   `status` int(11) NOT NULL DEFAULT 1,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `passcode` varchar(255) DEFAULT NULL,
   `otp` varchar(10) DEFAULT NULL,
   `otp_expires_at` datetime DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `parent_master`
 --
 
-INSERT INTO `parent_master` (`id`, `school_id`, `first_name`, `last_name`, `email`, `phone`, `occupation`, `password`, `relation`, `parent_type`, `picture`, `status`, `created_at`, `updated_at`, `passcode`, `otp`, `otp_expires_at`) VALUES
-(1, 1, 'Ananya', 'Das', 'ananya@gmail.com', '9654871230', 'Farmer', 'e085a84e8ec80cc9f715dd9f1fd65a0c', 'Father', 1, NULL, 1, '2026-09-09 16:10:09', '2026-09-09 10:40:09', NULL, NULL, NULL),
-(2, 1, 'Riya', 'Banerjee', 'riya@gmail.com', '9632587410', 'Hose wife', '212339605c6afef587c329c72f9e4797', 'Mother', 2, NULL, 1, '2026-09-09 16:10:09', '2026-09-09 10:40:09', NULL, NULL, NULL),
-(3, 1, 'Aditya ', 'Ghosh', 'aditya@gmail.com', '7458963254', 'Job', 'e91e708b9651e2fbda1735045fb2db24', 'Father', 1, NULL, 1, '2026-09-09 16:31:58', '2026-09-09 11:01:58', NULL, NULL, NULL),
-(4, 1, 'Sneha ', 'Mukherjee', 'sneha@gmail.com', '85632410254', 'House Wife', '0e3ce9a1d0c10a8125310f981f5de5ea', 'Mother', 2, NULL, 1, '2026-09-09 16:31:58', '2026-09-09 11:01:58', NULL, NULL, NULL),
-(5, 2, 'Rajesh ', 'Sharma', 'rajesh@gmail.com', '9874563208', 'Software Engineer', '654896c94796b057cc7b5648794a20c0', 'Father', 1, NULL, 1, '2026-09-10 11:54:24', '2026-09-10 06:24:24', NULL, NULL, NULL),
-(6, 2, 'Priya ', 'Sharma', 'priya@gmail.com', '9856324710', 'School Teacher', '9eb9b2e7133f0933e361ae6f76b8d950', 'Mother', 2, NULL, 1, '2026-09-10 11:54:24', '2026-09-10 06:24:24', NULL, NULL, NULL),
-(7, 2, 'Anirban ', 'Sen', 'anirban@gmail.com', '7412589630', 'Businessman', '6031141718e6546e44005666982627a1', 'Father', 1, NULL, 1, '2026-09-10 12:20:43', '2026-09-10 06:50:43', NULL, NULL, NULL),
-(8, 2, 'Madhuri ', 'Sen', 'madhuri@gmail.com', '07898650254', 'Homemaker', '8ab7f2b5c6bedbcd731d6e1d2b600898', 'Mother', 2, NULL, 1, '2026-09-10 12:20:43', '2026-09-10 06:50:43', NULL, NULL, NULL),
-(9, 2, 'Suman ', 'Das', 'suman@gmail.com', '9876501001', 'Accountant', 'e10adc3949ba59abbe56e057f20f883e', 'Father', 1, NULL, 1, '2026-09-10 12:24:40', '2026-09-10 06:54:40', NULL, NULL, NULL),
-(10, 2, 'Rina ', 'Das', 'rina@gmail.com', '9632587410', 'Teacher', '212339605c6afef587c329c72f9e4797', 'Mother', 2, NULL, 1, '2026-09-10 12:24:40', '2026-09-10 06:54:40', NULL, NULL, NULL),
-(13, 2, 'Debashis ', 'Mukherjee', 'debashis@gmail.com', '8745632099', 'Business Owner', '703bc2f3f6bae78039c7e868b4140367', 'Father', 1, NULL, 1, '2026-09-11 12:11:13', '2026-09-11 06:41:13', NULL, NULL, NULL),
-(14, 2, 'moumita', 'Banerjee', 'moumita@gmail.com', '98756325410', 'Teacher', 'a16cab9c213440644013cde416301069', 'Mother', 2, NULL, 1, '2026-09-11 12:11:13', '2026-09-11 06:41:13', NULL, NULL, NULL);
+INSERT INTO `parent_master` (`id`, `school_id`, `branch_id`, `first_name`, `last_name`, `email`, `phone`, `occupation`, `password`, `relation`, `parent_type`, `picture`, `status`, `created_at`, `updated_at`, `passcode`, `otp`, `otp_expires_at`) VALUES
+(1, 2, 2, 'Swapan', 'Mondal', 'father011@example.com', '9100000010', 'Teacher', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:43:25', '2026-11-20 10:13:25', NULL, NULL, NULL),
+(2, 2, 2, 'Kaberi', 'Mondal', 'mother011@example.com', '9200000010', 'Homemaker', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:43:25', '2026-11-20 10:13:25', NULL, NULL, NULL),
+(3, 2, 2, 'Abdul', 'Mondal', 'father031@example.com', '9100000030', 'Teacher', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:43:26', '2026-11-20 10:13:26', NULL, NULL, NULL),
+(4, 2, 2, 'Kaberi', 'Mondal', 'mother031@example.com', '9200000030', 'Homemaker', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:43:26', '2026-11-20 10:13:26', NULL, NULL, NULL),
+(5, 2, 2, 'Pradip', 'Mondal', 'father051@example.com', '9100000050', 'Teacher', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:43:27', '2026-11-20 10:13:27', NULL, NULL, NULL),
+(6, 2, 2, 'Kaberi', 'Mondal', 'mother051@example.com', '9200000050', 'Homemaker', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:43:27', '2026-11-20 10:13:27', NULL, NULL, NULL),
+(7, 2, 2, 'Amit', 'Mondal', 'father071@example.com', '9100000070', 'Teacher', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:43:28', '2026-11-20 10:13:28', NULL, NULL, NULL),
+(8, 2, 2, 'Kaberi', 'Mondal', 'mother071@example.com', '9200000070', 'Homemaker', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:43:28', '2026-11-20 10:13:28', NULL, NULL, NULL),
+(9, 2, 2, 'Rafiqul', 'Mondal', 'father091@example.com', '9100000090', 'Teacher', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:43:29', '2026-11-20 10:13:29', NULL, NULL, NULL),
+(10, 2, 2, 'Kaberi', 'Mondal', 'mother091@example.com', '9200000090', 'Homemaker', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:43:29', '2026-11-20 10:13:29', NULL, NULL, NULL),
+(11, 2, 2, 'Pradip', 'Chatterjee', 'father001@example.com', '9100000000', 'Teacher', '$2b$10$1JDfXZjraTXR6FyAizPbFerY9hq0KhTQ1hK/s66G0LrR0gc1YcK66', 'Father', 1, NULL, 1, '2026-11-20 15:45:22', '2026-11-20 10:15:22', NULL, NULL, NULL),
+(12, 2, 2, 'Kaberi', 'Chatterjee', 'mother001@example.com', '9200000000', 'Homemaker', '$2b$10$1JDfXZjraTXR6FyAizPbFerY9hq0KhTQ1hK/s66G0LrR0gc1YcK66', 'Mother', 2, NULL, 1, '2026-11-20 15:45:22', '2026-11-20 10:15:22', NULL, NULL, NULL),
+(13, 2, 2, 'Tapas', 'Dutta', 'father002@example.com', '9100000001', 'Business', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:22', '2026-11-20 10:15:22', NULL, NULL, NULL),
+(14, 2, 2, 'Sharmila', 'Dutta', 'mother002@example.com', '9200000001', 'Teacher', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:22', '2026-11-20 10:15:22', NULL, NULL, NULL),
+(15, 2, 2, 'Debashis', 'Bose', 'father003@example.com', '9100000002', 'Government Employee', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:22', '2026-11-20 10:15:22', NULL, NULL, NULL),
+(16, 2, 2, 'Ranjana', 'Bose', 'mother003@example.com', '9200000002', 'Tailor', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:22', '2026-11-20 10:15:22', NULL, NULL, NULL),
+(17, 2, 2, 'Bimal', 'Chakraborty', 'father005@example.com', '9100000004', 'Shop Owner', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:23', '2026-11-20 10:15:23', NULL, NULL, NULL),
+(18, 2, 2, 'Shahana', 'Chakraborty', 'mother005@example.com', '9200000004', 'Nurse', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:23', '2026-11-20 10:15:23', NULL, NULL, NULL),
+(19, 2, 2, 'Abdul', 'Mitra', 'father006@example.com', '9100000005', 'Private Employee', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:23', '2026-11-20 10:15:23', NULL, NULL, NULL),
+(20, 2, 2, 'Kaberi', 'Mitra', 'mother006@example.com', '9200000005', 'Shop Owner', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:23', '2026-11-20 10:15:23', NULL, NULL, NULL),
+(21, 2, 2, 'Jalal', 'Banerjee', 'father007@example.com', '9100000006', 'Driver', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:23', '2026-11-20 10:15:23', NULL, NULL, NULL),
+(22, 2, 2, 'Sharmila', 'Banerjee', 'mother007@example.com', '9200000006', 'Business', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:23', '2026-11-20 10:15:23', NULL, NULL, NULL),
+(23, 2, 2, 'Kamrul', 'Sen', 'father008@example.com', '9100000007', 'Accountant', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:23', '2026-11-20 10:15:23', NULL, NULL, NULL),
+(24, 2, 2, 'Ranjana', 'Sen', 'mother008@example.com', '9200000007', 'Community Worker', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:23', '2026-11-20 10:15:23', NULL, NULL, NULL),
+(25, 2, 2, 'Sanjay', 'Das', 'father010@example.com', '9100000009', 'Electrician', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:23', '2026-11-20 10:15:23', NULL, NULL, NULL),
+(26, 2, 2, 'Shahana', 'Das', 'mother010@example.com', '9200000009', 'Homemaker', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:23', '2026-11-20 10:15:23', NULL, NULL, NULL),
+(27, 2, 2, 'Anup', 'Mallick', 'father012@example.com', '9100000011', 'Business', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:23', '2026-11-20 10:15:23', NULL, NULL, NULL),
+(28, 2, 2, 'Sharmila', 'Mallick', 'mother012@example.com', '9200000011', 'Teacher', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:23', '2026-11-20 10:15:23', NULL, NULL, NULL),
+(29, 2, 2, 'Tapan', 'Ghosh', 'father013@example.com', '9100000012', 'Government Employee', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:23', '2026-11-20 10:15:23', NULL, NULL, NULL),
+(30, 2, 2, 'Ranjana', 'Ghosh', 'mother013@example.com', '9200000012', 'Tailor', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:23', '2026-11-20 10:15:23', NULL, NULL, NULL),
+(31, 2, 2, 'Nasir', 'Kundu', 'father015@example.com', '9100000014', 'Shop Owner', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:24', '2026-11-20 10:15:24', NULL, NULL, NULL),
+(32, 2, 2, 'Shahana', 'Kundu', 'mother015@example.com', '9200000014', 'Nurse', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:24', '2026-11-20 10:15:24', NULL, NULL, NULL),
+(33, 2, 2, 'Rafiqul', 'Roy', 'father016@example.com', '9100000015', 'Private Employee', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:24', '2026-11-20 10:15:24', NULL, NULL, NULL),
+(34, 2, 2, 'Kaberi', 'Roy', 'mother016@example.com', '9200000015', 'Shop Owner', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:24', '2026-11-20 10:15:24', NULL, NULL, NULL),
+(35, 2, 2, 'Anwar', 'Biswas', 'father017@example.com', '9100000016', 'Driver', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:24', '2026-11-20 10:15:24', NULL, NULL, NULL),
+(36, 2, 2, 'Sharmila', 'Biswas', 'mother017@example.com', '9200000016', 'Business', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:24', '2026-11-20 10:15:24', NULL, NULL, NULL),
+(37, 2, 2, 'Sushanta', 'Bhattacharya', 'father018@example.com', '9100000017', 'Accountant', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:24', '2026-11-20 10:15:24', NULL, NULL, NULL),
+(38, 2, 2, 'Ranjana', 'Bhattacharya', 'mother018@example.com', '9200000017', 'Community Worker', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:24', '2026-11-20 10:15:24', NULL, NULL, NULL),
+(39, 2, 2, 'Gautam', 'Ghosal', 'father020@example.com', '9100000019', 'Electrician', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:24', '2026-11-20 10:15:24', NULL, NULL, NULL),
+(40, 2, 2, 'Shahana', 'Ghosal', 'mother020@example.com', '9200000019', 'Homemaker', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:24', '2026-11-20 10:15:24', NULL, NULL, NULL),
+(41, 2, 2, 'Amit', 'Chatterjee', 'father021@example.com', '9100000020', 'Teacher', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:24', '2026-11-20 10:15:24', NULL, NULL, NULL),
+(42, 2, 2, 'Kaberi', 'Chatterjee', 'mother021@example.com', '9200000020', 'Homemaker', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:24', '2026-11-20 10:15:24', NULL, NULL, NULL),
+(43, 2, 2, 'Subhash', 'Dutta', 'father022@example.com', '9100000021', 'Business', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:24', '2026-11-20 10:15:24', NULL, NULL, NULL),
+(44, 2, 2, 'Sharmila', 'Dutta', 'mother022@example.com', '9200000021', 'Teacher', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:24', '2026-11-20 10:15:24', NULL, NULL, NULL),
+(45, 2, 2, 'Karim', 'Bose', 'father023@example.com', '9100000022', 'Government Employee', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:25', '2026-11-20 10:15:25', NULL, NULL, NULL),
+(46, 2, 2, 'Ranjana', 'Bose', 'mother023@example.com', '9200000022', 'Tailor', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:25', '2026-11-20 10:15:25', NULL, NULL, NULL),
+(47, 2, 2, 'Akbar', 'Chakraborty', 'father025@example.com', '9100000024', 'Shop Owner', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:25', '2026-11-20 10:15:25', NULL, NULL, NULL),
+(48, 2, 2, 'Shahana', 'Chakraborty', 'mother025@example.com', '9200000024', 'Nurse', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:25', '2026-11-20 10:15:25', NULL, NULL, NULL),
+(49, 2, 2, 'Pradip', 'Mitra', 'father026@example.com', '9100000025', 'Private Employee', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:25', '2026-11-20 10:15:25', NULL, NULL, NULL),
+(50, 2, 2, 'Kaberi', 'Mitra', 'mother026@example.com', '9200000025', 'Shop Owner', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:25', '2026-11-20 10:15:25', NULL, NULL, NULL),
+(51, 2, 2, 'Tapas', 'Banerjee', 'father027@example.com', '9100000026', 'Driver', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:25', '2026-11-20 10:15:25', NULL, NULL, NULL),
+(52, 2, 2, 'Sharmila', 'Banerjee', 'mother027@example.com', '9200000026', 'Business', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:25', '2026-11-20 10:15:25', NULL, NULL, NULL),
+(53, 2, 2, 'Debashis', 'Sen', 'father028@example.com', '9100000027', 'Accountant', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:25', '2026-11-20 10:15:25', NULL, NULL, NULL),
+(54, 2, 2, 'Ranjana', 'Sen', 'mother028@example.com', '9200000027', 'Community Worker', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:25', '2026-11-20 10:15:25', NULL, NULL, NULL),
+(55, 2, 2, 'Bimal', 'Das', 'father030@example.com', '9100000029', 'Electrician', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:25', '2026-11-20 10:15:25', NULL, NULL, NULL),
+(56, 2, 2, 'Shahana', 'Das', 'mother030@example.com', '9200000029', 'Homemaker', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:25', '2026-11-20 10:15:25', NULL, NULL, NULL),
+(57, 2, 2, 'Jalal', 'Mallick', 'father032@example.com', '9100000031', 'Business', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:26', '2026-11-20 10:15:26', NULL, NULL, NULL),
+(58, 2, 2, 'Sharmila', 'Mallick', 'mother032@example.com', '9200000031', 'Teacher', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:26', '2026-11-20 10:15:26', NULL, NULL, NULL),
+(59, 2, 2, 'Kamrul', 'Ghosh', 'father033@example.com', '9100000032', 'Government Employee', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:26', '2026-11-20 10:15:26', NULL, NULL, NULL),
+(60, 2, 2, 'Ranjana', 'Ghosh', 'mother033@example.com', '9200000032', 'Tailor', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:26', '2026-11-20 10:15:26', NULL, NULL, NULL),
+(61, 2, 2, 'Sanjay', 'Kundu', 'father035@example.com', '9100000034', 'Shop Owner', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:26', '2026-11-20 10:15:26', NULL, NULL, NULL),
+(62, 2, 2, 'Shahana', 'Kundu', 'mother035@example.com', '9200000034', 'Nurse', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:26', '2026-11-20 10:15:26', NULL, NULL, NULL),
+(63, 2, 2, 'Swapan', 'Roy', 'father036@example.com', '9100000035', 'Private Employee', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:26', '2026-11-20 10:15:26', NULL, NULL, NULL),
+(64, 2, 2, 'Kaberi', 'Roy', 'mother036@example.com', '9200000035', 'Shop Owner', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:26', '2026-11-20 10:15:26', NULL, NULL, NULL),
+(65, 2, 2, 'Anup', 'Biswas', 'father037@example.com', '9100000036', 'Driver', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:26', '2026-11-20 10:15:26', NULL, NULL, NULL),
+(66, 2, 2, 'Sharmila', 'Biswas', 'mother037@example.com', '9200000036', 'Business', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:26', '2026-11-20 10:15:26', NULL, NULL, NULL),
+(67, 2, 2, 'Tapan', 'Bhattacharya', 'father038@example.com', '9100000037', 'Accountant', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:26', '2026-11-20 10:15:26', NULL, NULL, NULL),
+(68, 2, 2, 'Ranjana', 'Bhattacharya', 'mother038@example.com', '9200000037', 'Community Worker', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:26', '2026-11-20 10:15:26', NULL, NULL, NULL),
+(69, 2, 2, 'Nasir', 'Ghosal', 'father040@example.com', '9100000039', 'Electrician', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:26', '2026-11-20 10:15:26', NULL, NULL, NULL),
+(70, 2, 2, 'Shahana', 'Ghosal', 'mother040@example.com', '9200000039', 'Homemaker', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:26', '2026-11-20 10:15:26', NULL, NULL, NULL),
+(71, 2, 2, 'Rafiqul', 'Chatterjee', 'father041@example.com', '9100000040', 'Teacher', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:27', '2026-11-20 10:15:27', NULL, NULL, NULL),
+(72, 2, 2, 'Kaberi', 'Chatterjee', 'mother041@example.com', '9200000040', 'Homemaker', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:27', '2026-11-20 10:15:27', NULL, NULL, NULL),
+(73, 2, 2, 'Anwar', 'Dutta', 'father042@example.com', '9100000041', 'Business', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:27', '2026-11-20 10:15:27', NULL, NULL, NULL),
+(74, 2, 2, 'Sharmila', 'Dutta', 'mother042@example.com', '9200000041', 'Teacher', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:27', '2026-11-20 10:15:27', NULL, NULL, NULL),
+(75, 2, 2, 'Sushanta', 'Bose', 'father043@example.com', '9100000042', 'Government Employee', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:27', '2026-11-20 10:15:27', NULL, NULL, NULL),
+(76, 2, 2, 'Ranjana', 'Bose', 'mother043@example.com', '9200000042', 'Tailor', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:27', '2026-11-20 10:15:27', NULL, NULL, NULL),
+(77, 2, 2, 'Gautam', 'Chakraborty', 'father045@example.com', '9100000044', 'Shop Owner', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:27', '2026-11-20 10:15:27', NULL, NULL, NULL),
+(78, 2, 2, 'Shahana', 'Chakraborty', 'mother045@example.com', '9200000044', 'Nurse', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:27', '2026-11-20 10:15:27', NULL, NULL, NULL),
+(79, 2, 2, 'Amit', 'Mitra', 'father046@example.com', '9100000045', 'Private Employee', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:27', '2026-11-20 10:15:27', NULL, NULL, NULL),
+(80, 2, 2, 'Kaberi', 'Mitra', 'mother046@example.com', '9200000045', 'Shop Owner', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:27', '2026-11-20 10:15:27', NULL, NULL, NULL),
+(81, 2, 2, 'Subhash', 'Banerjee', 'father047@example.com', '9100000046', 'Driver', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:27', '2026-11-20 10:15:27', NULL, NULL, NULL),
+(82, 2, 2, 'Sharmila', 'Banerjee', 'mother047@example.com', '9200000046', 'Business', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:27', '2026-11-20 10:15:27', NULL, NULL, NULL),
+(83, 2, 2, 'Karim', 'Sen', 'father048@example.com', '9100000047', 'Accountant', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:27', '2026-11-20 10:15:27', NULL, NULL, NULL),
+(84, 2, 2, 'Ranjana', 'Sen', 'mother048@example.com', '9200000047', 'Community Worker', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:27', '2026-11-20 10:15:27', NULL, NULL, NULL),
+(85, 2, 2, 'Akbar', 'Das', 'father050@example.com', '9100000049', 'Electrician', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:28', '2026-11-20 10:15:28', NULL, NULL, NULL),
+(86, 2, 2, 'Shahana', 'Das', 'mother050@example.com', '9200000049', 'Homemaker', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:28', '2026-11-20 10:15:28', NULL, NULL, NULL),
+(87, 2, 2, 'Tapas', 'Mallick', 'father052@example.com', '9100000051', 'Business', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:28', '2026-11-20 10:15:28', NULL, NULL, NULL),
+(88, 2, 2, 'Sharmila', 'Mallick', 'mother052@example.com', '9200000051', 'Teacher', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:28', '2026-11-20 10:15:28', NULL, NULL, NULL),
+(89, 2, 2, 'Debashis', 'Ghosh', 'father053@example.com', '9100000052', 'Government Employee', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:28', '2026-11-20 10:15:28', NULL, NULL, NULL),
+(90, 2, 2, 'Ranjana', 'Ghosh', 'mother053@example.com', '9200000052', 'Tailor', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:28', '2026-11-20 10:15:28', NULL, NULL, NULL),
+(91, 2, 2, 'Bimal', 'Kundu', 'father055@example.com', '9100000054', 'Shop Owner', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:28', '2026-11-20 10:15:28', NULL, NULL, NULL),
+(92, 2, 2, 'Shahana', 'Kundu', 'mother055@example.com', '9200000054', 'Nurse', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:28', '2026-11-20 10:15:28', NULL, NULL, NULL),
+(93, 2, 2, 'Abdul', 'Roy', 'father056@example.com', '9100000055', 'Private Employee', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:28', '2026-11-20 10:15:28', NULL, NULL, NULL),
+(94, 2, 2, 'Kaberi', 'Roy', 'mother056@example.com', '9200000055', 'Shop Owner', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:28', '2026-11-20 10:15:28', NULL, NULL, NULL),
+(95, 2, 2, 'Jalal', 'Biswas', 'father057@example.com', '9100000056', 'Driver', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:28', '2026-11-20 10:15:28', NULL, NULL, NULL),
+(96, 2, 2, 'Sharmila', 'Biswas', 'mother057@example.com', '9200000056', 'Business', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:28', '2026-11-20 10:15:28', NULL, NULL, NULL),
+(97, 2, 2, 'Kamrul', 'Bhattacharya', 'father058@example.com', '9100000057', 'Accountant', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:28', '2026-11-20 10:15:28', NULL, NULL, NULL),
+(98, 2, 2, 'Ranjana', 'Bhattacharya', 'mother058@example.com', '9200000057', 'Community Worker', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:28', '2026-11-20 10:15:28', NULL, NULL, NULL),
+(99, 2, 2, 'Sanjay', 'Ghosal', 'father060@example.com', '9100000059', 'Electrician', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:29', '2026-11-20 10:15:29', NULL, NULL, NULL),
+(100, 2, 2, 'Shahana', 'Ghosal', 'mother060@example.com', '9200000059', 'Homemaker', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:29', '2026-11-20 10:15:29', NULL, NULL, NULL),
+(101, 2, 2, 'Swapan', 'Chatterjee', 'father061@example.com', '9100000060', 'Teacher', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:29', '2026-11-20 10:15:29', NULL, NULL, NULL),
+(102, 2, 2, 'Kaberi', 'Chatterjee', 'mother061@example.com', '9200000060', 'Homemaker', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:29', '2026-11-20 10:15:29', NULL, NULL, NULL),
+(103, 2, 2, 'Anup', 'Dutta', 'father062@example.com', '9100000061', 'Business', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:29', '2026-11-20 10:15:29', NULL, NULL, NULL),
+(104, 2, 2, 'Sharmila', 'Dutta', 'mother062@example.com', '9200000061', 'Teacher', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:29', '2026-11-20 10:15:29', NULL, NULL, NULL),
+(105, 2, 2, 'Tapan', 'Bose', 'father063@example.com', '9100000062', 'Government Employee', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:29', '2026-11-20 10:15:29', NULL, NULL, NULL),
+(106, 2, 2, 'Ranjana', 'Bose', 'mother063@example.com', '9200000062', 'Tailor', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:29', '2026-11-20 10:15:29', NULL, NULL, NULL),
+(107, 2, 2, 'Nasir', 'Chakraborty', 'father065@example.com', '9100000064', 'Shop Owner', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:29', '2026-11-20 10:15:29', NULL, NULL, NULL),
+(108, 2, 2, 'Shahana', 'Chakraborty', 'mother065@example.com', '9200000064', 'Nurse', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:29', '2026-11-20 10:15:29', NULL, NULL, NULL),
+(109, 2, 2, 'Rafiqul', 'Mitra', 'father066@example.com', '9100000065', 'Private Employee', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:29', '2026-11-20 10:15:29', NULL, NULL, NULL),
+(110, 2, 2, 'Kaberi', 'Mitra', 'mother066@example.com', '9200000065', 'Shop Owner', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:29', '2026-11-20 10:15:29', NULL, NULL, NULL),
+(111, 2, 2, 'Anwar', 'Banerjee', 'father067@example.com', '9100000066', 'Driver', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:29', '2026-11-20 10:15:29', NULL, NULL, NULL),
+(112, 2, 2, 'Sharmila', 'Banerjee', 'mother067@example.com', '9200000066', 'Business', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:29', '2026-11-20 10:15:29', NULL, NULL, NULL),
+(113, 2, 2, 'Sushanta', 'Sen', 'father068@example.com', '9100000067', 'Accountant', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:30', '2026-11-20 10:15:30', NULL, NULL, NULL),
+(114, 2, 2, 'Ranjana', 'Sen', 'mother068@example.com', '9200000067', 'Community Worker', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:30', '2026-11-20 10:15:30', NULL, NULL, NULL),
+(115, 2, 2, 'Gautam', 'Das', 'father070@example.com', '9100000069', 'Electrician', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:30', '2026-11-20 10:15:30', NULL, NULL, NULL),
+(116, 2, 2, 'Shahana', 'Das', 'mother070@example.com', '9200000069', 'Homemaker', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:30', '2026-11-20 10:15:30', NULL, NULL, NULL),
+(117, 2, 2, 'Subhash', 'Mallick', 'father072@example.com', '9100000071', 'Business', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:30', '2026-11-20 10:15:30', NULL, NULL, NULL),
+(118, 2, 2, 'Sharmila', 'Mallick', 'mother072@example.com', '9200000071', 'Teacher', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:30', '2026-11-20 10:15:30', NULL, NULL, NULL),
+(119, 2, 2, 'Karim', 'Ghosh', 'father073@example.com', '9100000072', 'Government Employee', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:30', '2026-11-20 10:15:30', NULL, NULL, NULL),
+(120, 2, 2, 'Ranjana', 'Ghosh', 'mother073@example.com', '9200000072', 'Tailor', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:30', '2026-11-20 10:15:30', NULL, NULL, NULL),
+(121, 2, 2, 'Akbar', 'Kundu', 'father075@example.com', '9100000074', 'Shop Owner', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:30', '2026-11-20 10:15:30', NULL, NULL, NULL),
+(122, 2, 2, 'Shahana', 'Kundu', 'mother075@example.com', '9200000074', 'Nurse', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:30', '2026-11-20 10:15:30', NULL, NULL, NULL),
+(123, 2, 2, 'Pradip', 'Roy', 'father076@example.com', '9100000075', 'Private Employee', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:30', '2026-11-20 10:15:30', NULL, NULL, NULL),
+(124, 2, 2, 'Kaberi', 'Roy', 'mother076@example.com', '9200000075', 'Shop Owner', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:30', '2026-11-20 10:15:30', NULL, NULL, NULL),
+(125, 2, 2, 'Tapas', 'Biswas', 'father077@example.com', '9100000076', 'Driver', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:31', '2026-11-20 10:15:31', NULL, NULL, NULL),
+(126, 2, 2, 'Sharmila', 'Biswas', 'mother077@example.com', '9200000076', 'Business', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:31', '2026-11-20 10:15:31', NULL, NULL, NULL),
+(127, 2, 2, 'Debashis', 'Bhattacharya', 'father078@example.com', '9100000077', 'Accountant', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:31', '2026-11-20 10:15:31', NULL, NULL, NULL),
+(128, 2, 2, 'Ranjana', 'Bhattacharya', 'mother078@example.com', '9200000077', 'Community Worker', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:31', '2026-11-20 10:15:31', NULL, NULL, NULL),
+(129, 2, 2, 'Bimal', 'Ghosal', 'father080@example.com', '9100000079', 'Electrician', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:31', '2026-11-20 10:15:31', NULL, NULL, NULL),
+(130, 2, 2, 'Shahana', 'Ghosal', 'mother080@example.com', '9200000079', 'Homemaker', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:31', '2026-11-20 10:15:31', NULL, NULL, NULL),
+(131, 2, 2, 'Abdul', 'Chatterjee', 'father081@example.com', '9100000080', 'Teacher', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:31', '2026-11-20 10:15:31', NULL, NULL, NULL),
+(132, 2, 2, 'Kaberi', 'Chatterjee', 'mother081@example.com', '9200000080', 'Homemaker', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:31', '2026-11-20 10:15:31', NULL, NULL, NULL),
+(133, 2, 2, 'Jalal', 'Dutta', 'father082@example.com', '9100000081', 'Business', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:31', '2026-11-20 10:15:31', NULL, NULL, NULL),
+(134, 2, 2, 'Sharmila', 'Dutta', 'mother082@example.com', '9200000081', 'Teacher', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:31', '2026-11-20 10:15:31', NULL, NULL, NULL),
+(135, 2, 2, 'Kamrul', 'Bose', 'father083@example.com', '9100000082', 'Government Employee', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:31', '2026-11-20 10:15:31', NULL, NULL, NULL),
+(136, 2, 2, 'Ranjana', 'Bose', 'mother083@example.com', '9200000082', 'Tailor', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:31', '2026-11-20 10:15:31', NULL, NULL, NULL),
+(137, 2, 2, 'Sanjay', 'Chakraborty', 'father085@example.com', '9100000084', 'Shop Owner', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:31', '2026-11-20 10:15:31', NULL, NULL, NULL),
+(138, 2, 2, 'Shahana', 'Chakraborty', 'mother085@example.com', '9200000084', 'Nurse', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:31', '2026-11-20 10:15:31', NULL, NULL, NULL),
+(139, 2, 2, 'Swapan', 'Mitra', 'father086@example.com', '9100000085', 'Private Employee', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:32', '2026-11-20 10:15:32', NULL, NULL, NULL),
+(140, 2, 2, 'Kaberi', 'Mitra', 'mother086@example.com', '9200000085', 'Shop Owner', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:32', '2026-11-20 10:15:32', NULL, NULL, NULL),
+(141, 2, 2, 'Anup', 'Banerjee', 'father087@example.com', '9100000086', 'Driver', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:32', '2026-11-20 10:15:32', NULL, NULL, NULL),
+(142, 2, 2, 'Sharmila', 'Banerjee', 'mother087@example.com', '9200000086', 'Business', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:32', '2026-11-20 10:15:32', NULL, NULL, NULL),
+(143, 2, 2, 'Tapan', 'Sen', 'father088@example.com', '9100000087', 'Accountant', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:32', '2026-11-20 10:15:32', NULL, NULL, NULL),
+(144, 2, 2, 'Ranjana', 'Sen', 'mother088@example.com', '9200000087', 'Community Worker', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:32', '2026-11-20 10:15:32', NULL, NULL, NULL),
+(145, 2, 2, 'Nasir', 'Das', 'father090@example.com', '9100000089', 'Electrician', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:32', '2026-11-20 10:15:32', NULL, NULL, NULL),
+(146, 2, 2, 'Shahana', 'Das', 'mother090@example.com', '9200000089', 'Homemaker', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:32', '2026-11-20 10:15:32', NULL, NULL, NULL),
+(147, 2, 2, 'Anwar', 'Mallick', 'father092@example.com', '9100000091', 'Business', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:32', '2026-11-20 10:15:32', NULL, NULL, NULL),
+(148, 2, 2, 'Sharmila', 'Mallick', 'mother092@example.com', '9200000091', 'Teacher', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:32', '2026-11-20 10:15:32', NULL, NULL, NULL),
+(149, 2, 2, 'Sushanta', 'Ghosh', 'father093@example.com', '9100000092', 'Government Employee', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:32', '2026-11-20 10:15:32', NULL, NULL, NULL),
+(150, 2, 2, 'Ranjana', 'Ghosh', 'mother093@example.com', '9200000092', 'Tailor', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:32', '2026-11-20 10:15:32', NULL, NULL, NULL),
+(151, 2, 2, 'Gautam', 'Kundu', 'father095@example.com', '9100000094', 'Shop Owner', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:33', '2026-11-20 10:15:33', NULL, NULL, NULL),
+(152, 2, 2, 'Shahana', 'Kundu', 'mother095@example.com', '9200000094', 'Nurse', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:33', '2026-11-20 10:15:33', NULL, NULL, NULL),
+(153, 2, 2, 'Amit', 'Roy', 'father096@example.com', '9100000095', 'Private Employee', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:33', '2026-11-20 10:15:33', NULL, NULL, NULL),
+(154, 2, 2, 'Kaberi', 'Roy', 'mother096@example.com', '9200000095', 'Shop Owner', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:33', '2026-11-20 10:15:33', NULL, NULL, NULL),
+(155, 2, 2, 'Subhash', 'Biswas', 'father097@example.com', '9100000096', 'Driver', '$2b$10$1JDfXZjraTXR6FyAizPbFerY9hq0KhTQ1hK/s66G0LrR0gc1YcK66', 'Father', 1, NULL, 1, '2026-11-20 15:45:33', '2026-11-20 10:15:33', NULL, NULL, NULL),
+(156, 2, 2, 'Sharmila', 'Biswas', 'mother097@example.com', '9200000096', 'Business', '$2b$10$1JDfXZjraTXR6FyAizPbFerY9hq0KhTQ1hK/s66G0LrR0gc1YcK66', 'Mother', 2, NULL, 1, '2026-11-20 15:45:33', '2026-11-20 10:15:33', NULL, NULL, NULL),
+(157, 2, 2, 'Karim', 'Bhattacharya', 'father098@example.com', '9100000097', 'Accountant', NULL, 'Father', 1, NULL, 1, '2026-11-20 15:45:33', '2026-11-20 10:15:33', NULL, NULL, NULL),
+(158, 2, 2, 'Ranjana', 'Bhattacharya', 'mother098@example.com', '9200000097', 'Community Worker', NULL, 'Mother', 2, NULL, 1, '2026-11-20 15:45:33', '2026-11-20 10:15:33', NULL, NULL, NULL),
+(159, 2, 2, 'Akbar', 'Ghosal', 'father100@example.com', '9100000099', 'Electrician', '$2b$10$1JDfXZjraTXR6FyAizPbFerY9hq0KhTQ1hK/s66G0LrR0gc1YcK66', 'Father', 1, NULL, 1, '2026-11-20 15:45:33', '2026-11-20 10:15:33', NULL, NULL, NULL),
+(160, 2, 2, 'Shahana', 'Ghosal', 'mother100@example.com', '9200000099', 'Homemaker', '$2b$10$1JDfXZjraTXR6FyAizPbFerY9hq0KhTQ1hK/s66G0LrR0gc1YcK66', 'Mother', 2, NULL, 1, '2026-11-20 15:45:33', '2026-11-20 10:15:33', NULL, NULL, NULL),
+(161, 2, 2, 'Prabir', 'Mukherjee', 'father004@example.com', '9100000003', 'Farmer', '$2b$10$GIPwSTyeZjGDuKBNjqHnh.Hf3aHypQJhx/t.G/jRfzpUPq8y7N7xW', 'Father', 1, NULL, 1, '2026-11-23 12:13:54', '2026-11-23 06:43:54', NULL, NULL, NULL),
+(162, 2, 2, 'Amina', 'Mukherjee', 'mother004@example.com', '9200000003', 'Private Employee', '$2b$10$UitJucaLFLFjx7.kw1/RcO5eKss.COe2EaeB8NgTZKuwFQlsq7K8m', 'Mother', 2, NULL, 1, '2026-11-23 12:13:54', '2026-11-23 06:43:54', NULL, NULL, NULL),
+(163, 2, 2, 'Anup', 'Nandi', 'father279@example.com', '9100000279', 'Farmer', '$2b$10$IFUHgmWjUhGmPuDIZ8.L7.n1u/Q17M/49dXGQtgA/rV.AOwLbKP76', 'Father', 1, NULL, 1, '2026-11-23 12:23:17', '2026-11-23 06:53:17', NULL, NULL, NULL),
+(164, 2, 2, 'Soma', 'Nandi', 'mother279@example.com', '9200000279', 'Shop Owner', '$2b$10$zm3VCybRo8G3X021G/0PmeozgNJ2wS2Erv5PlAIw0k.cA6e.hp6Ki', 'Mother', 2, NULL, 1, '2026-11-23 12:23:17', '2026-11-23 06:53:17', NULL, NULL, NULL);
 
 -- --------------------------------------------------------
 
@@ -50245,10 +50772,11 @@ INSERT INTO `parent_master` (`id`, `school_id`, `first_name`, `last_name`, `emai
 CREATE TABLE `parent_master_address` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `parent_id` int(11) DEFAULT NULL,
   `parent_type` int(11) DEFAULT NULL,
-  `address1` text DEFAULT NULL,
-  `address2` text DEFAULT NULL,
+  `address1` mediumtext DEFAULT NULL,
+  `address2` mediumtext DEFAULT NULL,
   `country` int(11) DEFAULT NULL,
   `state` int(11) DEFAULT NULL,
   `city` int(11) DEFAULT NULL,
@@ -50256,26 +50784,533 @@ CREATE TABLE `parent_master_address` (
   `address_type` int(11) DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `parent_master_address`
 --
 
-INSERT INTO `parent_master_address` (`id`, `school_id`, `parent_id`, `parent_type`, `address1`, `address2`, `country`, `state`, `city`, `postal_code`, `address_type`, `created_at`, `updated_at`) VALUES
-(1, 1, 1, 1, 'Kalyani', '', 101, 41, 5330, '70006', NULL, '2026-09-09 16:10:09', '2026-09-09 10:40:09'),
-(2, 1, 2, 2, 'Kalyani', '', 101, 41, 5330, '70006', NULL, '2026-09-09 16:10:09', '2026-09-09 10:40:09'),
-(3, 1, 3, 1, 'Kalyani', '', 101, 41, 5320, '741254', NULL, '2026-09-09 16:31:58', '2026-09-09 11:01:58'),
-(4, 1, 4, 2, 'Kolkata', '', 99, 1649, 21230, '745321', NULL, '2026-09-09 16:31:58', '2026-09-09 11:01:58'),
-(5, 2, 5, 1, 'N/A', '', 5, 169, 6449, '70006', NULL, '2026-09-10 11:54:24', '2026-09-10 06:24:24'),
-(6, 2, 6, 2, 'Kalyani', '', 99, 1654, 21393, '70006', NULL, '2026-09-10 11:54:24', '2026-09-10 06:24:24'),
-(7, 2, 7, 1, 'Kolkata', '', 13, 260, 6567, '70006', NULL, '2026-09-10 12:20:43', '2026-09-10 06:50:43'),
-(8, 2, 8, 2, 'Kalyani', '', 15, 306, 7219, '70006', NULL, '2026-09-10 12:20:43', '2026-09-10 06:50:43'),
-(9, 2, 9, 1, 'Shyamnagar', '', 95, 1609, 20849, '70006', NULL, '2026-09-10 12:24:40', '2026-09-10 06:54:40'),
-(10, 2, 10, 2, 'Howrah', '', 132, 2324, 27086, '70006', NULL, '2026-09-10 12:24:40', '2026-09-10 06:54:40'),
-(11, 1, 12, 1, '', '', NULL, NULL, NULL, '', NULL, '2026-09-10 15:10:37', '2026-09-10 09:40:37'),
-(12, 2, 13, 1, 'Barasat', '', 97, 1634, 20908, '70006', NULL, '2026-09-11 12:11:13', '2026-09-11 06:41:13'),
-(13, 2, 14, 2, 'N/A', '', 134, 2347, 27223, '70006', NULL, '2026-09-11 12:11:13', '2026-09-11 06:41:13');
+INSERT INTO `parent_master_address` (`id`, `school_id`, `branch_id`, `parent_id`, `parent_type`, `address1`, `address2`, `country`, `state`, `city`, `postal_code`, `address_type`, `created_at`, `updated_at`) VALUES
+(3, 2, 2, 2, 1, 'N/A', '', 102, 1684, 21508, '789654', NULL, '2026-11-18 15:37:22', '2026-11-18 10:07:22'),
+(4, 2, 2, 3, 2, 'N/A', '', 102, 1684, 21508, '789654', NULL, '2026-11-18 15:37:22', '2026-11-18 10:07:22'),
+(5, 2, 2, 4, 1, 'A-09/246, Kalyani', '', 101, 41, 5548, '741235', NULL, '2026-11-18 15:50:35', '2026-11-18 10:20:35'),
+(6, 2, 2, 5, 2, 'A-09/246, Kalyani', '', 101, 41, 5548, '741235', NULL, '2026-11-18 15:50:36', '2026-11-18 10:20:36'),
+(7, 2, 2, 6, 1, 'A-09/245, Kalyani', '', 101, 41, 5548, '741235', NULL, '2026-11-18 16:54:06', '2026-11-18 11:24:06'),
+(8, 2, 2, 7, 2, 'A-09/245, Kalyani', '', 101, 41, 5548, '741235', NULL, '2026-11-18 16:54:06', '2026-11-18 11:24:06'),
+(9, 2, 2, 8, 1, 'Kalyani', '', 101, 41, 5548, '741235', NULL, '2026-11-19 11:40:39', '2026-11-19 06:10:39'),
+(10, 2, 2, 9, 2, 'Kalyani', '', 101, 41, 5548, '741235', NULL, '2026-11-19 11:40:39', '2026-11-19 06:10:39'),
+(11, 2, 2, 10, 1, 'Kalyani', '', 101, 41, 5548, '741235', NULL, '2026-11-19 12:05:45', '2026-11-19 06:35:45'),
+(12, 2, 2, 11, 2, 'Kalyani', '', 101, 41, 5548, '741235', NULL, '2026-11-19 12:05:45', '2026-11-19 06:35:45'),
+(13, 2, 2, 12, 1, 'Kalyani', '', 101, 41, 5548, '741235', NULL, '2026-11-19 12:09:48', '2026-11-19 06:39:48'),
+(14, 2, 2, 13, 2, 'Kalyani', '', 101, 41, 5548, '741235', NULL, '2026-11-19 12:09:48', '2026-11-19 06:39:48'),
+(15, 2, 2, 14, 1, 'Kalyani', '', 101, 41, 5548, '741235', NULL, '2026-11-19 12:14:25', '2026-11-19 06:44:25'),
+(16, 2, 2, 15, 2, 'kalyani', '', 101, 41, 5548, '741235', NULL, '2026-11-19 12:14:25', '2026-11-19 06:44:25'),
+(17, 2, 2, 16, 1, 'kalyani', '', 101, 41, 5548, '741235', NULL, '2026-11-19 12:19:04', '2026-11-19 06:49:04'),
+(18, 2, 2, 17, 1, 'Kalyani', '', 101, 41, 5539, '741235', NULL, '2026-11-19 12:23:56', '2026-11-19 06:53:56'),
+(19, 2, 2, 18, 2, 'Kalyani', '', 101, 41, 5548, '741235', NULL, '2026-11-19 12:23:56', '2026-11-19 06:53:56'),
+(20, 2, 2, 19, 1, 'Kalyani', '', 101, 41, 5548, '741235', NULL, '2026-11-19 12:30:10', '2026-11-19 07:00:10'),
+(21, 2, 2, 20, 2, 'kanchrapara', '', 101, 41, 5551, '741235', NULL, '2026-11-19 12:30:10', '2026-11-19 07:00:10'),
+(22, 2, 2, 21, 1, 'Kalyani', '', 101, 41, 5548, '741235', NULL, '2026-11-19 12:34:56', '2026-11-19 07:04:56'),
+(23, 2, 2, 22, 2, 'Kanchrapara', '', 101, 41, 5551, '741235', NULL, '2026-11-19 12:34:56', '2026-11-19 07:04:56'),
+(24, 2, 2, 23, 1, 'kanchrapara', '', 101, 41, 5551, '741235', NULL, '2026-11-19 12:48:03', '2026-11-19 07:18:03'),
+(25, 2, 2, 24, 2, 'Kanchrapara', '', 101, 41, 5551, '741235', NULL, '2026-11-19 12:48:03', '2026-11-19 07:18:03'),
+(26, 2, 2, 25, 1, '25 Park Street', NULL, 101, 41, NULL, '700016', NULL, '2026-11-19 16:21:33', '2026-11-19 10:51:33'),
+(27, 2, 2, 26, 2, '25 Park Street', NULL, 101, 41, NULL, '700016', NULL, '2026-11-19 16:21:33', '2026-11-19 10:51:33'),
+(28, 2, 2, 27, 1, '12 College Road', NULL, 101, 41, NULL, '711101', NULL, '2026-11-19 16:21:33', '2026-11-19 10:51:33'),
+(29, 2, 2, 28, 2, '12 College Road', NULL, 101, 41, NULL, '711101', NULL, '2026-11-19 16:21:33', '2026-11-19 10:51:33'),
+(30, 2, 2, 29, 1, '18 Salt Lake', NULL, 101, 41, NULL, '700091', NULL, '2026-11-19 16:21:33', '2026-11-19 10:51:33'),
+(31, 2, 2, 30, 2, '18 Salt Lake', NULL, 101, 41, NULL, '700091', NULL, '2026-11-19 16:21:33', '2026-11-19 10:51:33'),
+(32, 2, 2, 31, 1, '32 Howrah Road', NULL, 101, 41, NULL, '711102', NULL, '2026-11-19 16:21:34', '2026-11-19 10:51:34'),
+(33, 2, 2, 32, 2, '32 Howrah Road', NULL, 101, 41, NULL, '711102', NULL, '2026-11-19 16:21:34', '2026-11-19 10:51:34'),
+(34, 2, 2, 33, 1, '1, Lake Road', 'Ward No. 1', 101, 41, 5583, '700001', NULL, '2026-11-19 19:28:06', '2026-11-19 13:58:06'),
+(35, 2, 2, 34, 2, '1, Lake Road', 'Ward No. 1', 101, 41, 5583, '700001', NULL, '2026-11-19 19:28:06', '2026-11-19 13:58:06'),
+(36, 2, 2, 35, 1, '2, School Para', 'Ward No. 2', 101, 41, 5512, '700011', NULL, '2026-11-19 19:28:06', '2026-11-19 13:58:06'),
+(37, 2, 2, 36, 2, '2, School Para', 'Ward No. 2', 101, 41, 5512, '700011', NULL, '2026-11-19 19:28:06', '2026-11-19 13:58:06'),
+(38, 2, 2, 37, 1, '3, Gandhi Road', 'Ward No. 3', 101, 41, 5511, '700021', NULL, '2026-11-19 19:28:06', '2026-11-19 13:58:06'),
+(39, 2, 2, 38, 2, '3, Gandhi Road', 'Ward No. 3', 101, 41, 5511, '700021', NULL, '2026-11-19 19:28:06', '2026-11-19 13:58:06'),
+(40, 2, 2, 39, 1, '5, College Road', 'Ward No. 5', 101, 41, 2574, '700041', NULL, '2026-11-19 19:28:07', '2026-11-19 13:58:07'),
+(41, 2, 2, 40, 2, '5, College Road', 'Ward No. 5', 101, 41, 2574, '700041', NULL, '2026-11-19 19:28:07', '2026-11-19 13:58:07'),
+(42, 2, 2, 41, 1, '6, Rabindra Sarani', 'Ward No. 6', 101, 41, 5707, '700051', NULL, '2026-11-19 19:28:07', '2026-11-19 13:58:07'),
+(43, 2, 2, 42, 2, '6, Rabindra Sarani', 'Ward No. 6', 101, 41, 5707, '700051', NULL, '2026-11-19 19:28:07', '2026-11-19 13:58:07'),
+(44, 2, 2, 43, 1, '7, Bosepara', 'Ward No. 7', 101, 41, 5369, '700061', NULL, '2026-11-19 19:28:08', '2026-11-19 13:58:08'),
+(45, 2, 2, 44, 2, '7, Bosepara', 'Ward No. 7', 101, 41, 5369, '700061', NULL, '2026-11-19 19:28:08', '2026-11-19 13:58:08'),
+(46, 2, 2, 45, 1, '8, Station Road', 'Ward No. 8', 101, 41, 5586, '700071', NULL, '2026-11-19 19:28:08', '2026-11-19 13:58:08'),
+(47, 2, 2, 46, 2, '8, Station Road', 'Ward No. 8', 101, 41, 5586, '700071', NULL, '2026-11-19 19:28:08', '2026-11-19 13:58:08'),
+(48, 2, 2, 47, 1, '10, Kazi Nazrul Avenue', 'Ward No. 10', 101, 41, 5361, '700091', NULL, '2026-11-19 19:28:08', '2026-11-19 13:58:08'),
+(49, 2, 2, 48, 2, '10, Kazi Nazrul Avenue', 'Ward No. 10', 101, 41, 5361, '700091', NULL, '2026-11-19 19:28:08', '2026-11-19 13:58:08'),
+(50, 2, 2, 49, 1, '11, Lake Road', 'Ward No. 11', 101, 41, 5583, '700101', NULL, '2026-11-19 19:28:08', '2026-11-19 13:58:08'),
+(51, 2, 2, 50, 2, '11, Lake Road', 'Ward No. 11', 101, 41, 5583, '700101', NULL, '2026-11-19 19:28:08', '2026-11-19 13:58:08'),
+(52, 2, 2, 51, 1, '12, School Para', 'Ward No. 12', 101, 41, 5512, '700111', NULL, '2026-11-19 19:28:08', '2026-11-19 13:58:08'),
+(53, 2, 2, 52, 2, '12, School Para', 'Ward No. 12', 101, 41, 5512, '700111', NULL, '2026-11-19 19:28:08', '2026-11-19 13:58:08'),
+(54, 2, 2, 53, 1, '13, Gandhi Road', 'Ward No. 13', 101, 41, 5511, '700121', NULL, '2026-11-19 19:28:09', '2026-11-19 13:58:09'),
+(55, 2, 2, 54, 2, '13, Gandhi Road', 'Ward No. 13', 101, 41, 5511, '700121', NULL, '2026-11-19 19:28:09', '2026-11-19 13:58:09'),
+(56, 2, 2, 55, 1, '15, College Road', 'Ward No. 15', 101, 41, 2574, '700141', NULL, '2026-11-19 19:28:09', '2026-11-19 13:58:09'),
+(57, 2, 2, 56, 2, '15, College Road', 'Ward No. 15', 101, 41, 2574, '700141', NULL, '2026-11-19 19:28:09', '2026-11-19 13:58:09'),
+(58, 2, 2, 57, 1, '16, Rabindra Sarani', 'Ward No. 16', 101, 41, 5707, '700151', NULL, '2026-11-19 19:28:09', '2026-11-19 13:58:09'),
+(59, 2, 2, 58, 2, '16, Rabindra Sarani', 'Ward No. 16', 101, 41, 5707, '700151', NULL, '2026-11-19 19:28:09', '2026-11-19 13:58:09'),
+(60, 2, 2, 59, 1, '17, Bosepara', 'Ward No. 17', 101, 41, 5369, '700161', NULL, '2026-11-19 19:28:09', '2026-11-19 13:58:09'),
+(61, 2, 2, 60, 2, '17, Bosepara', 'Ward No. 17', 101, 41, 5369, '700161', NULL, '2026-11-19 19:28:09', '2026-11-19 13:58:09'),
+(62, 2, 2, 61, 1, '18, Station Road', 'Ward No. 18', 101, 41, 5586, '700171', NULL, '2026-11-19 19:28:09', '2026-11-19 13:58:09'),
+(63, 2, 2, 62, 2, '18, Station Road', 'Ward No. 18', 101, 41, 5586, '700171', NULL, '2026-11-19 19:28:09', '2026-11-19 13:58:09'),
+(64, 2, 2, 63, 1, '20, Kazi Nazrul Avenue', 'Ward No. 20', 101, 41, 5361, '700191', NULL, '2026-11-19 19:28:10', '2026-11-19 13:58:10'),
+(65, 2, 2, 64, 2, '20, Kazi Nazrul Avenue', 'Ward No. 20', 101, 41, 5361, '700191', NULL, '2026-11-19 19:28:10', '2026-11-19 13:58:10'),
+(66, 2, 2, 65, 1, '21, Lake Road', 'Ward No. 1', 101, 41, 5583, '700201', NULL, '2026-11-19 19:28:10', '2026-11-19 13:58:10'),
+(67, 2, 2, 66, 2, '21, Lake Road', 'Ward No. 1', 101, 41, 5583, '700201', NULL, '2026-11-19 19:28:10', '2026-11-19 13:58:10'),
+(68, 2, 2, 67, 1, '22, School Para', 'Ward No. 2', 101, 41, 5512, '700211', NULL, '2026-11-19 19:28:10', '2026-11-19 13:58:10'),
+(69, 2, 2, 68, 2, '22, School Para', 'Ward No. 2', 101, 41, 5512, '700211', NULL, '2026-11-19 19:28:10', '2026-11-19 13:58:10'),
+(70, 2, 2, 69, 1, '23, Gandhi Road', 'Ward No. 3', 101, 41, 5511, '700221', NULL, '2026-11-19 19:28:10', '2026-11-19 13:58:10'),
+(71, 2, 2, 70, 2, '23, Gandhi Road', 'Ward No. 3', 101, 41, 5511, '700221', NULL, '2026-11-19 19:28:10', '2026-11-19 13:58:10'),
+(72, 2, 2, 71, 1, '25, College Road', 'Ward No. 5', 101, 41, 2574, '700241', NULL, '2026-11-19 19:28:10', '2026-11-19 13:58:10'),
+(73, 2, 2, 72, 2, '25, College Road', 'Ward No. 5', 101, 41, 2574, '700241', NULL, '2026-11-19 19:28:10', '2026-11-19 13:58:10'),
+(74, 2, 2, 73, 1, '26, Rabindra Sarani', 'Ward No. 6', 101, 41, 5707, '700251', NULL, '2026-11-19 19:28:10', '2026-11-19 13:58:10'),
+(75, 2, 2, 74, 2, '26, Rabindra Sarani', 'Ward No. 6', 101, 41, 5707, '700251', NULL, '2026-11-19 19:28:10', '2026-11-19 13:58:10'),
+(76, 2, 2, 75, 1, '27, Bosepara', 'Ward No. 7', 101, 41, 5369, '700261', NULL, '2026-11-19 19:28:10', '2026-11-19 13:58:10'),
+(77, 2, 2, 76, 2, '27, Bosepara', 'Ward No. 7', 101, 41, 5369, '700261', NULL, '2026-11-19 19:28:10', '2026-11-19 13:58:10'),
+(78, 2, 2, 77, 1, '28, Station Road', 'Ward No. 8', 101, 41, 5586, '700271', NULL, '2026-11-19 19:28:11', '2026-11-19 13:58:11'),
+(79, 2, 2, 78, 2, '28, Station Road', 'Ward No. 8', 101, 41, 5586, '700271', NULL, '2026-11-19 19:28:11', '2026-11-19 13:58:11'),
+(80, 2, 2, 79, 1, '30, Kazi Nazrul Avenue', 'Ward No. 10', 101, 41, 5361, '700291', NULL, '2026-11-19 19:28:11', '2026-11-19 13:58:11'),
+(81, 2, 2, 80, 2, '30, Kazi Nazrul Avenue', 'Ward No. 10', 101, 41, 5361, '700291', NULL, '2026-11-19 19:28:11', '2026-11-19 13:58:11'),
+(82, 2, 2, 81, 1, '31, Lake Road', 'Ward No. 11', 101, 41, 5583, '700301', NULL, '2026-11-19 19:28:11', '2026-11-19 13:58:11'),
+(83, 2, 2, 82, 2, '31, Lake Road', 'Ward No. 11', 101, 41, 5583, '700301', NULL, '2026-11-19 19:28:11', '2026-11-19 13:58:11'),
+(84, 2, 2, 83, 1, '32, School Para', 'Ward No. 12', 101, 41, 5512, '700311', NULL, '2026-11-19 19:28:11', '2026-11-19 13:58:11'),
+(85, 2, 2, 84, 2, '32, School Para', 'Ward No. 12', 101, 41, 5512, '700311', NULL, '2026-11-19 19:28:11', '2026-11-19 13:58:11'),
+(86, 2, 2, 85, 1, '33, Gandhi Road', 'Ward No. 13', 101, 41, 5511, '700321', NULL, '2026-11-19 19:28:11', '2026-11-19 13:58:11'),
+(87, 2, 2, 86, 2, '33, Gandhi Road', 'Ward No. 13', 101, 41, 5511, '700321', NULL, '2026-11-19 19:28:11', '2026-11-19 13:58:11'),
+(88, 2, 2, 87, 1, '35, College Road', 'Ward No. 15', 101, 41, 2574, '700341', NULL, '2026-11-19 19:28:11', '2026-11-19 13:58:11'),
+(89, 2, 2, 88, 2, '35, College Road', 'Ward No. 15', 101, 41, 2574, '700341', NULL, '2026-11-19 19:28:11', '2026-11-19 13:58:11'),
+(90, 2, 2, 89, 1, '36, Rabindra Sarani', 'Ward No. 16', 101, 41, 5707, '700351', NULL, '2026-11-19 19:28:12', '2026-11-19 13:58:12'),
+(91, 2, 2, 90, 2, '36, Rabindra Sarani', 'Ward No. 16', 101, 41, 5707, '700351', NULL, '2026-11-19 19:28:12', '2026-11-19 13:58:12'),
+(92, 2, 2, 91, 1, '37, Bosepara', 'Ward No. 17', 101, 41, 5369, '700361', NULL, '2026-11-19 19:28:12', '2026-11-19 13:58:12'),
+(93, 2, 2, 92, 2, '37, Bosepara', 'Ward No. 17', 101, 41, 5369, '700361', NULL, '2026-11-19 19:28:12', '2026-11-19 13:58:12'),
+(94, 2, 2, 93, 1, '38, Station Road', 'Ward No. 18', 101, 41, 5586, '700371', NULL, '2026-11-19 19:28:12', '2026-11-19 13:58:12'),
+(95, 2, 2, 94, 2, '38, Station Road', 'Ward No. 18', 101, 41, 5586, '700371', NULL, '2026-11-19 19:28:12', '2026-11-19 13:58:12'),
+(96, 2, 2, 95, 1, '40, Kazi Nazrul Avenue', 'Ward No. 20', 101, 41, 5361, '700391', NULL, '2026-11-19 19:28:12', '2026-11-19 13:58:12'),
+(97, 2, 2, 96, 2, '40, Kazi Nazrul Avenue', 'Ward No. 20', 101, 41, 5361, '700391', NULL, '2026-11-19 19:28:12', '2026-11-19 13:58:12'),
+(98, 2, 2, 97, 1, '41, Lake Road', 'Ward No. 1', 101, 41, 5583, '700401', NULL, '2026-11-19 19:28:12', '2026-11-19 13:58:12'),
+(99, 2, 2, 98, 2, '41, Lake Road', 'Ward No. 1', 101, 41, 5583, '700401', NULL, '2026-11-19 19:28:12', '2026-11-19 13:58:12'),
+(100, 2, 2, 99, 1, '42, School Para', 'Ward No. 2', 101, 41, 5512, '700411', NULL, '2026-11-19 19:28:12', '2026-11-19 13:58:12'),
+(101, 2, 2, 100, 2, '42, School Para', 'Ward No. 2', 101, 41, 5512, '700411', NULL, '2026-11-19 19:28:12', '2026-11-19 13:58:12'),
+(102, 2, 2, 101, 1, '43, Gandhi Road', 'Ward No. 3', 101, 41, 5511, '700421', NULL, '2026-11-19 19:28:12', '2026-11-19 13:58:12'),
+(103, 2, 2, 102, 2, '43, Gandhi Road', 'Ward No. 3', 101, 41, 5511, '700421', NULL, '2026-11-19 19:28:12', '2026-11-19 13:58:12'),
+(104, 2, 2, 103, 1, '45, College Road', 'Ward No. 5', 101, 41, 2574, '700441', NULL, '2026-11-19 19:28:13', '2026-11-19 13:58:13'),
+(105, 2, 2, 104, 2, '45, College Road', 'Ward No. 5', 101, 41, 2574, '700441', NULL, '2026-11-19 19:28:13', '2026-11-19 13:58:13'),
+(106, 2, 2, 105, 1, '46, Rabindra Sarani', 'Ward No. 6', 101, 41, 5707, '700451', NULL, '2026-11-19 19:28:13', '2026-11-19 13:58:13'),
+(107, 2, 2, 106, 2, '46, Rabindra Sarani', 'Ward No. 6', 101, 41, 5707, '700451', NULL, '2026-11-19 19:28:13', '2026-11-19 13:58:13'),
+(108, 2, 2, 107, 1, '47, Bosepara', 'Ward No. 7', 101, 41, 5369, '700461', NULL, '2026-11-19 19:28:13', '2026-11-19 13:58:13'),
+(109, 2, 2, 108, 2, '47, Bosepara', 'Ward No. 7', 101, 41, 5369, '700461', NULL, '2026-11-19 19:28:13', '2026-11-19 13:58:13'),
+(110, 2, 2, 109, 1, '48, Station Road', 'Ward No. 8', 101, 41, 5586, '700471', NULL, '2026-11-19 19:28:13', '2026-11-19 13:58:13'),
+(111, 2, 2, 110, 2, '48, Station Road', 'Ward No. 8', 101, 41, 5586, '700471', NULL, '2026-11-19 19:28:13', '2026-11-19 13:58:13'),
+(112, 2, 2, 111, 1, '50, Kazi Nazrul Avenue', 'Ward No. 10', 101, 41, 5361, '700491', NULL, '2026-11-19 19:28:13', '2026-11-19 13:58:13'),
+(113, 2, 2, 112, 2, '50, Kazi Nazrul Avenue', 'Ward No. 10', 101, 41, 5361, '700491', NULL, '2026-11-19 19:28:13', '2026-11-19 13:58:13'),
+(114, 2, 2, 113, 1, '51, Lake Road', 'Ward No. 11', 101, 41, 5583, '700001', NULL, '2026-11-19 19:28:14', '2026-11-19 13:58:14'),
+(115, 2, 2, 114, 2, '51, Lake Road', 'Ward No. 11', 101, 41, 5583, '700001', NULL, '2026-11-19 19:28:14', '2026-11-19 13:58:14'),
+(116, 2, 2, 115, 1, '52, School Para', 'Ward No. 12', 101, 41, 5512, '700011', NULL, '2026-11-19 19:28:14', '2026-11-19 13:58:14'),
+(117, 2, 2, 116, 2, '52, School Para', 'Ward No. 12', 101, 41, 5512, '700011', NULL, '2026-11-19 19:28:14', '2026-11-19 13:58:14'),
+(118, 2, 2, 117, 1, '53, Gandhi Road', 'Ward No. 13', 101, 41, 5511, '700021', NULL, '2026-11-19 19:28:14', '2026-11-19 13:58:14'),
+(119, 2, 2, 118, 2, '53, Gandhi Road', 'Ward No. 13', 101, 41, 5511, '700021', NULL, '2026-11-19 19:28:14', '2026-11-19 13:58:14'),
+(120, 2, 2, 119, 1, '55, College Road', 'Ward No. 15', 101, 41, 2574, '700041', NULL, '2026-11-19 19:28:14', '2026-11-19 13:58:14'),
+(121, 2, 2, 120, 2, '55, College Road', 'Ward No. 15', 101, 41, 2574, '700041', NULL, '2026-11-19 19:28:14', '2026-11-19 13:58:14'),
+(122, 2, 2, 121, 1, '56, Rabindra Sarani', 'Ward No. 16', 101, 41, 5707, '700051', NULL, '2026-11-19 19:28:14', '2026-11-19 13:58:14'),
+(123, 2, 2, 122, 2, '56, Rabindra Sarani', 'Ward No. 16', 101, 41, 5707, '700051', NULL, '2026-11-19 19:28:14', '2026-11-19 13:58:14'),
+(124, 2, 2, 123, 1, '57, Bosepara', 'Ward No. 17', 101, 41, 5369, '700061', NULL, '2026-11-19 19:28:14', '2026-11-19 13:58:14'),
+(125, 2, 2, 124, 2, '57, Bosepara', 'Ward No. 17', 101, 41, 5369, '700061', NULL, '2026-11-19 19:28:14', '2026-11-19 13:58:14'),
+(126, 2, 2, 125, 1, '58, Station Road', 'Ward No. 18', 101, 41, 5586, '700071', NULL, '2026-11-19 19:28:14', '2026-11-19 13:58:14'),
+(127, 2, 2, 126, 2, '58, Station Road', 'Ward No. 18', 101, 41, 5586, '700071', NULL, '2026-11-19 19:28:14', '2026-11-19 13:58:14'),
+(128, 2, 2, 127, 1, '60, Kazi Nazrul Avenue', 'Ward No. 20', 101, 41, 5361, '700091', NULL, '2026-11-19 19:28:15', '2026-11-19 13:58:15'),
+(129, 2, 2, 128, 2, '60, Kazi Nazrul Avenue', 'Ward No. 20', 101, 41, 5361, '700091', NULL, '2026-11-19 19:28:15', '2026-11-19 13:58:15'),
+(130, 2, 2, 129, 1, '61, Lake Road', 'Ward No. 1', 101, 41, 5583, '700101', NULL, '2026-11-19 19:28:15', '2026-11-19 13:58:15'),
+(131, 2, 2, 130, 2, '61, Lake Road', 'Ward No. 1', 101, 41, 5583, '700101', NULL, '2026-11-19 19:28:15', '2026-11-19 13:58:15'),
+(132, 2, 2, 131, 1, '62, School Para', 'Ward No. 2', 101, 41, 5512, '700111', NULL, '2026-11-19 19:28:15', '2026-11-19 13:58:15'),
+(133, 2, 2, 132, 2, '62, School Para', 'Ward No. 2', 101, 41, 5512, '700111', NULL, '2026-11-19 19:28:15', '2026-11-19 13:58:15'),
+(134, 2, 2, 133, 1, '63, Gandhi Road', 'Ward No. 3', 101, 41, 5511, '700121', NULL, '2026-11-19 19:28:15', '2026-11-19 13:58:15'),
+(135, 2, 2, 134, 2, '63, Gandhi Road', 'Ward No. 3', 101, 41, 5511, '700121', NULL, '2026-11-19 19:28:15', '2026-11-19 13:58:15'),
+(136, 2, 2, 135, 1, '65, College Road', 'Ward No. 5', 101, 41, 2574, '700141', NULL, '2026-11-19 19:28:15', '2026-11-19 13:58:15'),
+(137, 2, 2, 136, 2, '65, College Road', 'Ward No. 5', 101, 41, 2574, '700141', NULL, '2026-11-19 19:28:15', '2026-11-19 13:58:15'),
+(138, 2, 2, 137, 1, '66, Rabindra Sarani', 'Ward No. 6', 101, 41, 5707, '700151', NULL, '2026-11-19 19:28:15', '2026-11-19 13:58:15'),
+(139, 2, 2, 138, 2, '66, Rabindra Sarani', 'Ward No. 6', 101, 41, 5707, '700151', NULL, '2026-11-19 19:28:15', '2026-11-19 13:58:15'),
+(140, 2, 2, 139, 1, '67, Bosepara', 'Ward No. 7', 101, 41, 5369, '700161', NULL, '2026-11-19 19:28:16', '2026-11-19 13:58:16'),
+(141, 2, 2, 140, 2, '67, Bosepara', 'Ward No. 7', 101, 41, 5369, '700161', NULL, '2026-11-19 19:28:16', '2026-11-19 13:58:16'),
+(142, 2, 2, 141, 1, '68, Station Road', 'Ward No. 8', 101, 41, 5586, '700171', NULL, '2026-11-19 19:28:16', '2026-11-19 13:58:16'),
+(143, 2, 2, 142, 2, '68, Station Road', 'Ward No. 8', 101, 41, 5586, '700171', NULL, '2026-11-19 19:28:16', '2026-11-19 13:58:16'),
+(144, 2, 2, 143, 1, '70, Kazi Nazrul Avenue', 'Ward No. 10', 101, 41, 5361, '700191', NULL, '2026-11-19 19:28:16', '2026-11-19 13:58:16'),
+(145, 2, 2, 144, 2, '70, Kazi Nazrul Avenue', 'Ward No. 10', 101, 41, 5361, '700191', NULL, '2026-11-19 19:28:16', '2026-11-19 13:58:16'),
+(146, 2, 2, 145, 1, '71, Lake Road', 'Ward No. 11', 101, 41, 5583, '700201', NULL, '2026-11-19 19:28:16', '2026-11-19 13:58:16'),
+(147, 2, 2, 146, 2, '71, Lake Road', 'Ward No. 11', 101, 41, 5583, '700201', NULL, '2026-11-19 19:28:16', '2026-11-19 13:58:16'),
+(148, 2, 2, 147, 1, '72, School Para', 'Ward No. 12', 101, 41, 5512, '700211', NULL, '2026-11-19 19:28:16', '2026-11-19 13:58:16'),
+(149, 2, 2, 148, 2, '72, School Para', 'Ward No. 12', 101, 41, 5512, '700211', NULL, '2026-11-19 19:28:16', '2026-11-19 13:58:16'),
+(150, 2, 2, 149, 1, '73, Gandhi Road', 'Ward No. 13', 101, 41, 5511, '700221', NULL, '2026-11-19 19:28:16', '2026-11-19 13:58:16'),
+(151, 2, 2, 150, 2, '73, Gandhi Road', 'Ward No. 13', 101, 41, 5511, '700221', NULL, '2026-11-19 19:28:16', '2026-11-19 13:58:16'),
+(152, 2, 2, 151, 1, '75, College Road', 'Ward No. 15', 101, 41, 2574, '700241', NULL, '2026-11-19 19:28:17', '2026-11-19 13:58:17'),
+(153, 2, 2, 152, 2, '75, College Road', 'Ward No. 15', 101, 41, 2574, '700241', NULL, '2026-11-19 19:28:17', '2026-11-19 13:58:17'),
+(154, 2, 2, 153, 1, '76, Rabindra Sarani', 'Ward No. 16', 101, 41, 5707, '700251', NULL, '2026-11-19 19:28:17', '2026-11-19 13:58:17'),
+(155, 2, 2, 154, 2, '76, Rabindra Sarani', 'Ward No. 16', 101, 41, 5707, '700251', NULL, '2026-11-19 19:28:17', '2026-11-19 13:58:17'),
+(156, 2, 2, 155, 1, '77, Bosepara', 'Ward No. 17', 101, 41, 5369, '700261', NULL, '2026-11-19 19:28:17', '2026-11-19 13:58:17'),
+(157, 2, 2, 156, 2, '77, Bosepara', 'Ward No. 17', 101, 41, 5369, '700261', NULL, '2026-11-19 19:28:17', '2026-11-19 13:58:17'),
+(158, 2, 2, 157, 1, '78, Station Road', 'Ward No. 18', 101, 41, 5586, '700271', NULL, '2026-11-19 19:28:17', '2026-11-19 13:58:17'),
+(159, 2, 2, 158, 2, '78, Station Road', 'Ward No. 18', 101, 41, 5586, '700271', NULL, '2026-11-19 19:28:17', '2026-11-19 13:58:17'),
+(160, 2, 2, 159, 1, '80, Kazi Nazrul Avenue', 'Ward No. 20', 101, 41, 5361, '700291', NULL, '2026-11-19 19:28:17', '2026-11-19 13:58:17'),
+(161, 2, 2, 160, 2, '80, Kazi Nazrul Avenue', 'Ward No. 20', 101, 41, 5361, '700291', NULL, '2026-11-19 19:28:17', '2026-11-19 13:58:17'),
+(162, 2, 2, 161, 1, '81, Lake Road', 'Ward No. 1', 101, 41, 5583, '700301', NULL, '2026-11-19 19:28:17', '2026-11-19 13:58:17'),
+(163, 2, 2, 162, 2, '81, Lake Road', 'Ward No. 1', 101, 41, 5583, '700301', NULL, '2026-11-19 19:28:17', '2026-11-19 13:58:17'),
+(164, 2, 2, 163, 1, '82, School Para', 'Ward No. 2', 101, 41, 5512, '700311', NULL, '2026-11-19 19:28:18', '2026-11-19 13:58:18'),
+(165, 2, 2, 164, 2, '82, School Para', 'Ward No. 2', 101, 41, 5512, '700311', NULL, '2026-11-19 19:28:18', '2026-11-19 13:58:18'),
+(166, 2, 2, 165, 1, '83, Gandhi Road', 'Ward No. 3', 101, 41, 5511, '700321', NULL, '2026-11-19 19:28:18', '2026-11-19 13:58:18'),
+(167, 2, 2, 166, 2, '83, Gandhi Road', 'Ward No. 3', 101, 41, 5511, '700321', NULL, '2026-11-19 19:28:18', '2026-11-19 13:58:18'),
+(168, 2, 2, 167, 1, '85, College Road', 'Ward No. 5', 101, 41, 2574, '700341', NULL, '2026-11-19 19:28:18', '2026-11-19 13:58:18'),
+(169, 2, 2, 168, 2, '85, College Road', 'Ward No. 5', 101, 41, 2574, '700341', NULL, '2026-11-19 19:28:18', '2026-11-19 13:58:18'),
+(170, 2, 2, 169, 1, '86, Rabindra Sarani', 'Ward No. 6', 101, 41, 5707, '700351', NULL, '2026-11-19 19:28:18', '2026-11-19 13:58:18'),
+(171, 2, 2, 170, 2, '86, Rabindra Sarani', 'Ward No. 6', 101, 41, 5707, '700351', NULL, '2026-11-19 19:28:18', '2026-11-19 13:58:18'),
+(172, 2, 2, 171, 1, '87, Bosepara', 'Ward No. 7', 101, 41, 5369, '700361', NULL, '2026-11-19 19:28:18', '2026-11-19 13:58:18'),
+(173, 2, 2, 172, 2, '87, Bosepara', 'Ward No. 7', 101, 41, 5369, '700361', NULL, '2026-11-19 19:28:18', '2026-11-19 13:58:18'),
+(174, 2, 2, 173, 1, '88, Station Road', 'Ward No. 8', 101, 41, 5586, '700371', NULL, '2026-11-19 19:28:18', '2026-11-19 13:58:18'),
+(175, 2, 2, 174, 2, '88, Station Road', 'Ward No. 8', 101, 41, 5586, '700371', NULL, '2026-11-19 19:28:18', '2026-11-19 13:58:18'),
+(176, 2, 2, 175, 1, '90, Kazi Nazrul Avenue', 'Ward No. 10', 101, 41, 5361, '700391', NULL, '2026-11-19 19:28:19', '2026-11-19 13:58:19'),
+(177, 2, 2, 176, 2, '90, Kazi Nazrul Avenue', 'Ward No. 10', 101, 41, 5361, '700391', NULL, '2026-11-19 19:28:19', '2026-11-19 13:58:19'),
+(178, 2, 2, 177, 1, '91, Lake Road', 'Ward No. 11', 101, 41, 5583, '700401', NULL, '2026-11-19 19:28:19', '2026-11-19 13:58:19'),
+(179, 2, 2, 178, 2, '91, Lake Road', 'Ward No. 11', 101, 41, 5583, '700401', NULL, '2026-11-19 19:28:19', '2026-11-19 13:58:19'),
+(180, 2, 2, 179, 1, '92, School Para', 'Ward No. 12', 101, 41, 5512, '700411', NULL, '2026-11-19 19:28:19', '2026-11-19 13:58:19'),
+(181, 2, 2, 180, 2, '92, School Para', 'Ward No. 12', 101, 41, 5512, '700411', NULL, '2026-11-19 19:28:19', '2026-11-19 13:58:19'),
+(182, 2, 2, 181, 1, '93, Gandhi Road', 'Ward No. 13', 101, 41, 5511, '700421', NULL, '2026-11-19 19:28:19', '2026-11-19 13:58:19'),
+(183, 2, 2, 182, 2, '93, Gandhi Road', 'Ward No. 13', 101, 41, 5511, '700421', NULL, '2026-11-19 19:28:19', '2026-11-19 13:58:19'),
+(184, 2, 2, 183, 1, '95, College Road', 'Ward No. 15', 101, 41, 2574, '700441', NULL, '2026-11-19 19:28:19', '2026-11-19 13:58:19'),
+(185, 2, 2, 184, 2, '95, College Road', 'Ward No. 15', 101, 41, 2574, '700441', NULL, '2026-11-19 19:28:19', '2026-11-19 13:58:19'),
+(186, 2, 2, 185, 1, '96, Rabindra Sarani', 'Ward No. 16', 101, 41, 5707, '700451', NULL, '2026-11-19 19:28:19', '2026-11-19 13:58:19'),
+(187, 2, 2, 186, 2, '96, Rabindra Sarani', 'Ward No. 16', 101, 41, 5707, '700451', NULL, '2026-11-19 19:28:19', '2026-11-19 13:58:19'),
+(188, 2, 2, 187, 1, '97, Bosepara', 'Ward No. 17', 101, 41, 5369, '700461', NULL, '2026-11-19 19:28:20', '2026-11-19 13:58:20'),
+(189, 2, 2, 188, 2, '97, Bosepara', 'Ward No. 17', 101, 41, 5369, '700461', NULL, '2026-11-19 19:28:20', '2026-11-19 13:58:20'),
+(190, 2, 2, 189, 1, '98, Station Road', 'Ward No. 18', 101, 41, 5586, '700471', NULL, '2026-11-19 19:28:20', '2026-11-19 13:58:20'),
+(191, 2, 2, 190, 2, '98, Station Road', 'Ward No. 18', 101, 41, 5586, '700471', NULL, '2026-11-19 19:28:20', '2026-11-19 13:58:20'),
+(192, 2, 2, 191, 1, '100, Kazi Nazrul Avenue', 'Ward No. 20', 101, 41, 5361, '700491', NULL, '2026-11-19 19:28:20', '2026-11-19 13:58:20'),
+(193, 2, 2, 192, 2, '100, Kazi Nazrul Avenue', 'Ward No. 20', 101, 41, 5361, '700491', NULL, '2026-11-19 19:28:20', '2026-11-19 13:58:20'),
+(194, 2, 2, 193, 1, '4, New Town', 'Ward No. 4', 101, 41, NULL, '700031', NULL, '2026-11-19 19:33:36', '2026-11-19 14:03:36'),
+(195, 2, 2, 194, 2, '4, New Town', 'Ward No. 4', 101, 41, NULL, '700031', NULL, '2026-11-19 19:33:36', '2026-11-19 14:03:36'),
+(196, 2, 2, 195, 1, '9, Netaji Pally', 'Ward No. 9', 101, 41, NULL, '700081', NULL, '2026-11-19 19:33:36', '2026-11-19 14:03:36'),
+(197, 2, 2, 196, 2, '9, Netaji Pally', 'Ward No. 9', 101, 41, NULL, '700081', NULL, '2026-11-19 19:33:36', '2026-11-19 14:03:36'),
+(198, 2, 2, 197, 1, '14, New Town', 'Ward No. 14', 101, 41, NULL, '700131', NULL, '2026-11-19 19:33:36', '2026-11-19 14:03:36'),
+(199, 2, 2, 198, 2, '14, New Town', 'Ward No. 14', 101, 41, NULL, '700131', NULL, '2026-11-19 19:33:36', '2026-11-19 14:03:36'),
+(200, 2, 2, 199, 1, '19, Netaji Pally', 'Ward No. 19', 101, 41, NULL, '700181', NULL, '2026-11-19 19:33:36', '2026-11-19 14:03:36'),
+(201, 2, 2, 200, 2, '19, Netaji Pally', 'Ward No. 19', 101, 41, NULL, '700181', NULL, '2026-11-19 19:33:36', '2026-11-19 14:03:36'),
+(202, 2, 2, 201, 1, '24, New Town', 'Ward No. 4', 101, 41, NULL, '700231', NULL, '2026-11-19 19:33:36', '2026-11-19 14:03:36'),
+(203, 2, 2, 202, 2, '24, New Town', 'Ward No. 4', 101, 41, NULL, '700231', NULL, '2026-11-19 19:33:36', '2026-11-19 14:03:36'),
+(204, 2, 2, 203, 1, '29, Netaji Pally', 'Ward No. 9', 101, 41, NULL, '700281', NULL, '2026-11-19 19:33:36', '2026-11-19 14:03:36'),
+(205, 2, 2, 204, 2, '29, Netaji Pally', 'Ward No. 9', 101, 41, NULL, '700281', NULL, '2026-11-19 19:33:36', '2026-11-19 14:03:36'),
+(206, 2, 2, 205, 1, '34, New Town', 'Ward No. 14', 101, 41, NULL, '700331', NULL, '2026-11-19 19:33:37', '2026-11-19 14:03:37'),
+(207, 2, 2, 206, 2, '34, New Town', 'Ward No. 14', 101, 41, NULL, '700331', NULL, '2026-11-19 19:33:37', '2026-11-19 14:03:37'),
+(208, 2, 2, 207, 1, '39, Netaji Pally', 'Ward No. 19', 101, 41, NULL, '700381', NULL, '2026-11-19 19:33:37', '2026-11-19 14:03:37'),
+(209, 2, 2, 208, 2, '39, Netaji Pally', 'Ward No. 19', 101, 41, NULL, '700381', NULL, '2026-11-19 19:33:37', '2026-11-19 14:03:37'),
+(210, 2, 2, 209, 1, '44, New Town', 'Ward No. 4', 101, 41, NULL, '700431', NULL, '2026-11-19 19:33:37', '2026-11-19 14:03:37'),
+(211, 2, 2, 210, 2, '44, New Town', 'Ward No. 4', 101, 41, NULL, '700431', NULL, '2026-11-19 19:33:37', '2026-11-19 14:03:37'),
+(212, 2, 2, 211, 1, '49, Netaji Pally', 'Ward No. 9', 101, 41, NULL, '700481', NULL, '2026-11-19 19:33:37', '2026-11-19 14:03:37'),
+(213, 2, 2, 212, 2, '49, Netaji Pally', 'Ward No. 9', 101, 41, NULL, '700481', NULL, '2026-11-19 19:33:37', '2026-11-19 14:03:37'),
+(214, 2, 2, 213, 1, '54, New Town', 'Ward No. 14', 101, 41, NULL, '700031', NULL, '2026-11-19 19:33:37', '2026-11-19 14:03:37'),
+(215, 2, 2, 214, 2, '54, New Town', 'Ward No. 14', 101, 41, NULL, '700031', NULL, '2026-11-19 19:33:37', '2026-11-19 14:03:37'),
+(216, 2, 2, 215, 1, '59, Netaji Pally', 'Ward No. 19', 101, 41, NULL, '700081', NULL, '2026-11-19 19:33:37', '2026-11-19 14:03:37'),
+(217, 2, 2, 216, 2, '59, Netaji Pally', 'Ward No. 19', 101, 41, NULL, '700081', NULL, '2026-11-19 19:33:37', '2026-11-19 14:03:37'),
+(218, 2, 2, 217, 1, '64, New Town', 'Ward No. 4', 101, 41, NULL, '700131', NULL, '2026-11-19 19:33:37', '2026-11-19 14:03:37'),
+(219, 2, 2, 218, 2, '64, New Town', 'Ward No. 4', 101, 41, NULL, '700131', NULL, '2026-11-19 19:33:37', '2026-11-19 14:03:37'),
+(220, 2, 2, 219, 1, '69, Netaji Pally', 'Ward No. 9', 101, 41, NULL, '700181', NULL, '2026-11-19 19:33:37', '2026-11-19 14:03:37'),
+(221, 2, 2, 220, 2, '69, Netaji Pally', 'Ward No. 9', 101, 41, NULL, '700181', NULL, '2026-11-19 19:33:37', '2026-11-19 14:03:37'),
+(222, 2, 2, 221, 1, '74, New Town', 'Ward No. 14', 101, 41, NULL, '700231', NULL, '2026-11-19 19:33:37', '2026-11-19 14:03:37'),
+(223, 2, 2, 222, 2, '74, New Town', 'Ward No. 14', 101, 41, NULL, '700231', NULL, '2026-11-19 19:33:37', '2026-11-19 14:03:37'),
+(224, 2, 2, 223, 1, '79, Netaji Pally', 'Ward No. 19', 101, 41, NULL, '700281', NULL, '2026-11-19 19:33:37', '2026-11-19 14:03:37'),
+(225, 2, 2, 224, 2, '79, Netaji Pally', 'Ward No. 19', 101, 41, NULL, '700281', NULL, '2026-11-19 19:33:37', '2026-11-19 14:03:37'),
+(226, 2, 2, 225, 1, '84, New Town', 'Ward No. 4', 101, 41, NULL, '700331', NULL, '2026-11-19 19:33:38', '2026-11-19 14:03:38'),
+(227, 2, 2, 226, 2, '84, New Town', 'Ward No. 4', 101, 41, NULL, '700331', NULL, '2026-11-19 19:33:38', '2026-11-19 14:03:38'),
+(228, 2, 2, 227, 1, '89, Netaji Pally', 'Ward No. 9', 101, 41, NULL, '700381', NULL, '2026-11-19 19:33:38', '2026-11-19 14:03:38'),
+(229, 2, 2, 228, 2, '89, Netaji Pally', 'Ward No. 9', 101, 41, NULL, '700381', NULL, '2026-11-19 19:33:38', '2026-11-19 14:03:38'),
+(230, 2, 2, 229, 1, '94, New Town', 'Ward No. 14', 101, 41, NULL, '700431', NULL, '2026-11-19 19:33:38', '2026-11-19 14:03:38'),
+(231, 2, 2, 230, 2, '94, New Town', 'Ward No. 14', 101, 41, NULL, '700431', NULL, '2026-11-19 19:33:38', '2026-11-19 14:03:38'),
+(232, 2, 2, 231, 1, '99, Netaji Pally', 'Ward No. 19', 101, 41, NULL, '700481', NULL, '2026-11-19 19:33:38', '2026-11-19 14:03:38'),
+(233, 2, 2, 232, 2, '99, Netaji Pally', 'Ward No. 19', 101, 41, NULL, '700481', NULL, '2026-11-19 19:33:38', '2026-11-19 14:03:38'),
+(234, 2, 2, 233, 1, 'House 22, Sample Road', NULL, 101, 41, 5583, '700051', NULL, '2026-11-20 11:48:16', '2026-11-20 06:18:16'),
+(235, 2, 2, 234, 2, 'House 22, Sample Road', NULL, 101, 41, 5583, '700051', NULL, '2026-11-20 11:48:16', '2026-11-20 06:18:16'),
+(236, 2, 2, 235, 1, 'House 23, Sample Road', NULL, 101, 41, 5583, '700052', NULL, '2026-11-20 11:48:16', '2026-11-20 06:18:16'),
+(237, 2, 2, 236, 2, 'House 23, Sample Road', NULL, 101, 41, 5583, '700052', NULL, '2026-11-20 11:48:16', '2026-11-20 06:18:16'),
+(238, 2, 2, 237, 1, 'House 24, Sample Road', NULL, 101, 41, 5583, '700053', NULL, '2026-11-20 11:48:16', '2026-11-20 06:18:16'),
+(239, 2, 2, 238, 2, 'House 24, Sample Road', NULL, 101, 41, 5583, '700053', NULL, '2026-11-20 11:48:16', '2026-11-20 06:18:16'),
+(240, 2, 2, 239, 1, 'House 25, Sample Road', NULL, 101, 41, 5583, '700054', NULL, '2026-11-20 11:48:16', '2026-11-20 06:18:16'),
+(241, 2, 2, 240, 2, 'House 25, Sample Road', NULL, 101, 41, 5583, '700054', NULL, '2026-11-20 11:48:16', '2026-11-20 06:18:16'),
+(242, 2, 2, 241, 1, 'House 26, Sample Road', NULL, 101, 41, 5583, '700055', NULL, '2026-11-20 11:48:16', '2026-11-20 06:18:16'),
+(243, 2, 2, 242, 2, 'House 26, Sample Road', NULL, 101, 41, 5583, '700055', NULL, '2026-11-20 11:48:16', '2026-11-20 06:18:16'),
+(244, 2, 2, 243, 1, 'House 27, Sample Road', NULL, 101, 41, 5583, '700056', NULL, '2026-11-20 11:48:16', '2026-11-20 06:18:16'),
+(245, 2, 2, 244, 2, 'House 27, Sample Road', NULL, 101, 41, 5583, '700056', NULL, '2026-11-20 11:48:16', '2026-11-20 06:18:16'),
+(246, 2, 2, 245, 1, 'House 28, Sample Road', NULL, 101, 41, 5583, '700057', NULL, '2026-11-20 11:48:16', '2026-11-20 06:18:16'),
+(247, 2, 2, 246, 2, 'House 28, Sample Road', NULL, 101, 41, 5583, '700057', NULL, '2026-11-20 11:48:16', '2026-11-20 06:18:16'),
+(248, 2, 2, 247, 1, 'House 29, Sample Road', NULL, 101, 41, 5583, '700058', NULL, '2026-11-20 11:48:16', '2026-11-20 06:18:16'),
+(249, 2, 2, 248, 2, 'House 29, Sample Road', NULL, 101, 41, 5583, '700058', NULL, '2026-11-20 11:48:17', '2026-11-20 06:18:17'),
+(250, 2, 2, 249, 1, 'House 30, Sample Road', NULL, 101, 41, 5583, '700059', NULL, '2026-11-20 11:48:17', '2026-11-20 06:18:17'),
+(251, 2, 2, 250, 2, 'House 30, Sample Road', NULL, 101, 41, 5583, '700059', NULL, '2026-11-20 11:48:17', '2026-11-20 06:18:17'),
+(252, 2, 2, 251, 1, 'House 31, Sample Road', NULL, 101, 41, 5583, '700060', NULL, '2026-11-20 11:48:17', '2026-11-20 06:18:17'),
+(253, 2, 2, 252, 2, 'House 31, Sample Road', NULL, 101, 41, 5583, '700060', NULL, '2026-11-20 11:48:17', '2026-11-20 06:18:17'),
+(254, 2, 2, 253, 1, 'House 32, Sample Road', NULL, 101, 41, 5583, '700061', NULL, '2026-11-20 11:48:17', '2026-11-20 06:18:17'),
+(255, 2, 2, 254, 2, 'House 32, Sample Road', NULL, 101, 41, 5583, '700061', NULL, '2026-11-20 11:48:17', '2026-11-20 06:18:17'),
+(256, 2, 2, 255, 1, 'House 33, Sample Road', NULL, 101, 41, 5583, '700062', NULL, '2026-11-20 11:48:17', '2026-11-20 06:18:17'),
+(257, 2, 2, 256, 2, 'House 33, Sample Road', NULL, 101, 41, 5583, '700062', NULL, '2026-11-20 11:48:17', '2026-11-20 06:18:17'),
+(258, 2, 2, 257, 1, 'House 34, Sample Road', NULL, 101, 41, 5583, '700063', NULL, '2026-11-20 11:48:17', '2026-11-20 06:18:17'),
+(259, 2, 2, 258, 2, 'House 34, Sample Road', NULL, 101, 41, 5583, '700063', NULL, '2026-11-20 11:48:17', '2026-11-20 06:18:17'),
+(260, 2, 2, 259, 1, 'House 35, Sample Road', NULL, 101, 41, 5583, '700064', NULL, '2026-11-20 11:48:17', '2026-11-20 06:18:17'),
+(261, 2, 2, 260, 2, 'House 35, Sample Road', NULL, 101, 41, 5583, '700064', NULL, '2026-11-20 11:48:17', '2026-11-20 06:18:17'),
+(262, 2, 2, 261, 1, 'House 36, Sample Road', NULL, 101, 41, 5583, '700065', NULL, '2026-11-20 11:48:17', '2026-11-20 06:18:17'),
+(263, 2, 2, 262, 2, 'House 36, Sample Road', NULL, 101, 41, 5583, '700065', NULL, '2026-11-20 11:48:17', '2026-11-20 06:18:17'),
+(264, 2, 2, 263, 1, 'House 37, Sample Road', NULL, 101, 41, 5583, '700066', NULL, '2026-11-20 11:48:17', '2026-11-20 06:18:17'),
+(265, 2, 2, 264, 2, 'House 37, Sample Road', NULL, 101, 41, 5583, '700066', NULL, '2026-11-20 11:48:17', '2026-11-20 06:18:17'),
+(266, 2, 2, 265, 1, 'House 38, Sample Road', NULL, 101, 41, 5583, '700067', NULL, '2026-11-20 11:48:17', '2026-11-20 06:18:17'),
+(267, 2, 2, 266, 2, 'House 38, Sample Road', NULL, 101, 41, 5583, '700067', NULL, '2026-11-20 11:48:17', '2026-11-20 06:18:17'),
+(268, 2, 2, 267, 1, 'House 39, Sample Road', NULL, 101, 41, 5583, '700068', NULL, '2026-11-20 11:48:18', '2026-11-20 06:18:18'),
+(269, 2, 2, 268, 2, 'House 39, Sample Road', NULL, 101, 41, 5583, '700068', NULL, '2026-11-20 11:48:18', '2026-11-20 06:18:18'),
+(270, 2, 2, 269, 1, 'House 40, Sample Road', NULL, 101, 41, 5583, '700069', NULL, '2026-11-20 11:48:18', '2026-11-20 06:18:18'),
+(271, 2, 2, 270, 2, 'House 40, Sample Road', NULL, 101, 41, 5583, '700069', NULL, '2026-11-20 11:48:18', '2026-11-20 06:18:18'),
+(272, 2, 2, 271, 1, 'House 41, Sample Road', NULL, 101, 41, 5583, '700070', NULL, '2026-11-20 11:48:18', '2026-11-20 06:18:18'),
+(273, 2, 2, 272, 2, 'House 41, Sample Road', NULL, 101, 41, 5583, '700070', NULL, '2026-11-20 11:48:18', '2026-11-20 06:18:18'),
+(274, 2, 2, 273, 1, 'House 42, Sample Road', NULL, 101, 41, 5583, '700071', NULL, '2026-11-20 11:48:18', '2026-11-20 06:18:18'),
+(275, 2, 2, 274, 2, 'House 42, Sample Road', NULL, 101, 41, 5583, '700071', NULL, '2026-11-20 11:48:18', '2026-11-20 06:18:18'),
+(276, 2, 2, 275, 1, 'House 43, Sample Road', NULL, 101, 41, 5583, '700072', NULL, '2026-11-20 11:48:18', '2026-11-20 06:18:18'),
+(277, 2, 2, 276, 2, 'House 43, Sample Road', NULL, 101, 41, 5583, '700072', NULL, '2026-11-20 11:48:18', '2026-11-20 06:18:18'),
+(278, 2, 2, 277, 1, 'House 44, Sample Road', NULL, 101, 41, 5583, '700073', NULL, '2026-11-20 11:48:18', '2026-11-20 06:18:18'),
+(279, 2, 2, 278, 2, 'House 44, Sample Road', NULL, 101, 41, 5583, '700073', NULL, '2026-11-20 11:48:18', '2026-11-20 06:18:18'),
+(280, 2, 2, 279, 1, 'House 45, Sample Road', NULL, 101, 41, 5583, '700074', NULL, '2026-11-20 11:48:18', '2026-11-20 06:18:18'),
+(281, 2, 2, 280, 2, 'House 45, Sample Road', NULL, 101, 41, 5583, '700074', NULL, '2026-11-20 11:48:18', '2026-11-20 06:18:18'),
+(282, 2, 2, 281, 1, 'House 46, Sample Road', NULL, 101, 41, 5583, '700075', NULL, '2026-11-20 11:48:18', '2026-11-20 06:18:18'),
+(283, 2, 2, 282, 2, 'House 46, Sample Road', NULL, 101, 41, 5583, '700075', NULL, '2026-11-20 11:48:18', '2026-11-20 06:18:18'),
+(284, 2, 2, 283, 1, 'House 47, Sample Road', NULL, 101, 41, 5583, '700076', NULL, '2026-11-20 11:48:18', '2026-11-20 06:18:18'),
+(285, 2, 2, 284, 2, 'House 47, Sample Road', NULL, 101, 41, 5583, '700076', NULL, '2026-11-20 11:48:18', '2026-11-20 06:18:18'),
+(286, 2, 2, 285, 1, 'House 48, Sample Road', NULL, 101, 41, 5583, '700077', NULL, '2026-11-20 11:48:19', '2026-11-20 06:18:19'),
+(287, 2, 2, 286, 2, 'House 48, Sample Road', NULL, 101, 41, 5583, '700077', NULL, '2026-11-20 11:48:19', '2026-11-20 06:18:19'),
+(288, 2, 2, 287, 1, 'House 49, Sample Road', NULL, 101, 41, 5583, '700078', NULL, '2026-11-20 11:48:19', '2026-11-20 06:18:19'),
+(289, 2, 2, 288, 2, 'House 49, Sample Road', NULL, 101, 41, 5583, '700078', NULL, '2026-11-20 11:48:19', '2026-11-20 06:18:19'),
+(290, 2, 2, 289, 1, 'House 50, Sample Road', NULL, 101, 41, 5583, '700079', NULL, '2026-11-20 11:48:19', '2026-11-20 06:18:19'),
+(291, 2, 2, 290, 2, 'House 50, Sample Road', NULL, 101, 41, 5583, '700079', NULL, '2026-11-20 11:48:19', '2026-11-20 06:18:19'),
+(292, 2, 2, 291, 1, 'House 51, Sample Road', NULL, 101, 41, 5583, '700080', NULL, '2026-11-20 11:48:19', '2026-11-20 06:18:19'),
+(293, 2, 2, 292, 2, 'House 51, Sample Road', NULL, 101, 41, 5583, '700080', NULL, '2026-11-20 11:48:19', '2026-11-20 06:18:19'),
+(294, 2, 2, 293, 1, 'House 52, Sample Road', NULL, 101, 41, 5583, '700081', NULL, '2026-11-20 11:48:19', '2026-11-20 06:18:19'),
+(295, 2, 2, 294, 2, 'House 52, Sample Road', NULL, 101, 41, 5583, '700081', NULL, '2026-11-20 11:48:19', '2026-11-20 06:18:19'),
+(296, 2, 2, 295, 1, 'House 53, Sample Road', NULL, 101, 41, 5583, '700082', NULL, '2026-11-20 11:48:19', '2026-11-20 06:18:19'),
+(297, 2, 2, 296, 2, 'House 53, Sample Road', NULL, 101, 41, 5583, '700082', NULL, '2026-11-20 11:48:19', '2026-11-20 06:18:19'),
+(298, 2, 2, 297, 1, 'House 54, Sample Road', NULL, 101, 41, 5583, '700083', NULL, '2026-11-20 11:48:19', '2026-11-20 06:18:19'),
+(299, 2, 2, 298, 2, 'House 54, Sample Road', NULL, 101, 41, 5583, '700083', NULL, '2026-11-20 11:48:19', '2026-11-20 06:18:19'),
+(300, 2, 2, 299, 1, 'House 55, Sample Road', NULL, 101, 41, 5583, '700084', NULL, '2026-11-20 11:48:19', '2026-11-20 06:18:19'),
+(301, 2, 2, 300, 2, 'House 55, Sample Road', NULL, 101, 41, 5583, '700084', NULL, '2026-11-20 11:48:19', '2026-11-20 06:18:19'),
+(302, 2, 2, 301, 1, 'House 56, Sample Road', NULL, 101, 41, 5583, '700085', NULL, '2026-11-20 11:48:19', '2026-11-20 06:18:19'),
+(303, 2, 2, 302, 2, 'House 56, Sample Road', NULL, 101, 41, 5583, '700085', NULL, '2026-11-20 11:48:19', '2026-11-20 06:18:19'),
+(304, 2, 2, 303, 1, 'House 57, Sample Road', NULL, 101, 41, 5583, '700086', NULL, '2026-11-20 11:48:20', '2026-11-20 06:18:20'),
+(305, 2, 2, 304, 2, 'House 57, Sample Road', NULL, 101, 41, 5583, '700086', NULL, '2026-11-20 11:48:20', '2026-11-20 06:18:20'),
+(306, 2, 2, 305, 1, 'House 58, Sample Road', NULL, 101, 41, 5583, '700087', NULL, '2026-11-20 11:48:20', '2026-11-20 06:18:20'),
+(307, 2, 2, 306, 2, 'House 58, Sample Road', NULL, 101, 41, 5583, '700087', NULL, '2026-11-20 11:48:20', '2026-11-20 06:18:20'),
+(308, 2, 2, 307, 1, 'House 59, Sample Road', NULL, 101, 41, 5583, '700088', NULL, '2026-11-20 11:48:20', '2026-11-20 06:18:20'),
+(309, 2, 2, 308, 2, 'House 59, Sample Road', NULL, 101, 41, 5583, '700088', NULL, '2026-11-20 11:48:20', '2026-11-20 06:18:20'),
+(310, 2, 2, 309, 1, 'House 60, Sample Road', NULL, 101, 41, 5583, '700089', NULL, '2026-11-20 11:48:20', '2026-11-20 06:18:20'),
+(311, 2, 2, 310, 2, 'House 60, Sample Road', NULL, 101, 41, 5583, '700089', NULL, '2026-11-20 11:48:20', '2026-11-20 06:18:20'),
+(312, 2, 2, 311, 1, 'House 61, Sample Road', NULL, 101, 41, 5583, '700030', NULL, '2026-11-20 11:48:20', '2026-11-20 06:18:20'),
+(313, 2, 2, 312, 2, 'House 61, Sample Road', NULL, 101, 41, 5583, '700030', NULL, '2026-11-20 11:48:20', '2026-11-20 06:18:20'),
+(314, 2, 2, 313, 1, 'House 62, Sample Road', NULL, 101, 41, 5583, '700031', NULL, '2026-11-20 11:48:20', '2026-11-20 06:18:20'),
+(315, 2, 2, 314, 2, 'House 62, Sample Road', NULL, 101, 41, 5583, '700031', NULL, '2026-11-20 11:48:20', '2026-11-20 06:18:20'),
+(316, 2, 2, 315, 1, 'House 63, Sample Road', NULL, 101, 41, 5583, '700032', NULL, '2026-11-20 11:48:20', '2026-11-20 06:18:20'),
+(317, 2, 2, 316, 2, 'House 63, Sample Road', NULL, 101, 41, 5583, '700032', NULL, '2026-11-20 11:48:20', '2026-11-20 06:18:20'),
+(318, 2, 2, 317, 1, 'House 64, Sample Road', NULL, 101, 41, 5583, '700033', NULL, '2026-11-20 11:48:20', '2026-11-20 06:18:20'),
+(319, 2, 2, 318, 2, 'House 64, Sample Road', NULL, 101, 41, 5583, '700033', NULL, '2026-11-20 11:48:20', '2026-11-20 06:18:20'),
+(320, 2, 2, 319, 1, 'House 65, Sample Road', NULL, 101, 41, 5583, '700034', NULL, '2026-11-20 11:48:20', '2026-11-20 06:18:20'),
+(321, 2, 2, 320, 2, 'House 65, Sample Road', NULL, 101, 41, 5583, '700034', NULL, '2026-11-20 11:48:20', '2026-11-20 06:18:20'),
+(322, 2, 2, 321, 1, 'House 66, Sample Road', NULL, 101, 41, 5583, '700035', NULL, '2026-11-20 11:48:21', '2026-11-20 06:18:21'),
+(323, 2, 2, 322, 2, 'House 66, Sample Road', NULL, 101, 41, 5583, '700035', NULL, '2026-11-20 11:48:21', '2026-11-20 06:18:21'),
+(324, 2, 2, 323, 1, 'House 67, Sample Road', NULL, 101, 41, 5583, '700036', NULL, '2026-11-20 11:48:21', '2026-11-20 06:18:21'),
+(325, 2, 2, 324, 2, 'House 67, Sample Road', NULL, 101, 41, 5583, '700036', NULL, '2026-11-20 11:48:21', '2026-11-20 06:18:21'),
+(326, 2, 2, 325, 1, 'House 68, Sample Road', NULL, 101, 41, 5583, '700037', NULL, '2026-11-20 11:48:21', '2026-11-20 06:18:21'),
+(327, 2, 2, 326, 2, 'House 68, Sample Road', NULL, 101, 41, 5583, '700037', NULL, '2026-11-20 11:48:21', '2026-11-20 06:18:21'),
+(328, 2, 2, 327, 1, 'House 69, Sample Road', NULL, 101, 41, 5583, '700038', NULL, '2026-11-20 11:48:21', '2026-11-20 06:18:21'),
+(329, 2, 2, 328, 2, 'House 69, Sample Road', NULL, 101, 41, 5583, '700038', NULL, '2026-11-20 11:48:21', '2026-11-20 06:18:21'),
+(330, 2, 2, 329, 1, 'House 70, Sample Road', NULL, 101, 41, 5583, '700039', NULL, '2026-11-20 11:48:21', '2026-11-20 06:18:21'),
+(331, 2, 2, 330, 2, 'House 70, Sample Road', NULL, 101, 41, 5583, '700039', NULL, '2026-11-20 11:48:21', '2026-11-20 06:18:21'),
+(332, 2, 2, 331, 1, 'House 71, Sample Road', NULL, 101, 41, 5583, '700040', NULL, '2026-11-20 11:48:21', '2026-11-20 06:18:21'),
+(333, 2, 2, 332, 2, 'House 71, Sample Road', NULL, 101, 41, 5583, '700040', NULL, '2026-11-20 11:48:21', '2026-11-20 06:18:21'),
+(334, 2, 2, 333, 1, 'House 72, Sample Road', NULL, 101, 41, 5583, '700041', NULL, '2026-11-20 11:48:21', '2026-11-20 06:18:21'),
+(335, 2, 2, 334, 2, 'House 72, Sample Road', NULL, 101, 41, 5583, '700041', NULL, '2026-11-20 11:48:21', '2026-11-20 06:18:21'),
+(336, 2, 2, 335, 1, 'House 73, Sample Road', NULL, 101, 41, 5583, '700042', NULL, '2026-11-20 11:48:21', '2026-11-20 06:18:21'),
+(337, 2, 2, 336, 2, 'House 73, Sample Road', NULL, 101, 41, 5583, '700042', NULL, '2026-11-20 11:48:21', '2026-11-20 06:18:21'),
+(338, 2, 2, 337, 1, 'House 74, Sample Road', NULL, 101, 41, 5583, '700043', NULL, '2026-11-20 11:48:21', '2026-11-20 06:18:21'),
+(339, 2, 2, 338, 2, 'House 74, Sample Road', NULL, 101, 41, 5583, '700043', NULL, '2026-11-20 11:48:21', '2026-11-20 06:18:21'),
+(340, 2, 2, 339, 1, 'House 75, Sample Road', NULL, 101, 41, 5583, '700044', NULL, '2026-11-20 11:48:21', '2026-11-20 06:18:21'),
+(341, 2, 2, 340, 2, 'House 75, Sample Road', NULL, 101, 41, 5583, '700044', NULL, '2026-11-20 11:48:21', '2026-11-20 06:18:21'),
+(342, 2, 2, 341, 1, 'House 76, Sample Road', NULL, 101, 41, 5583, '700045', NULL, '2026-11-20 11:48:22', '2026-11-20 06:18:22'),
+(343, 2, 2, 342, 2, 'House 76, Sample Road', NULL, 101, 41, 5583, '700045', NULL, '2026-11-20 11:48:22', '2026-11-20 06:18:22'),
+(344, 2, 2, 343, 1, 'House 77, Sample Road', NULL, 101, 41, 5583, '700046', NULL, '2026-11-20 11:48:22', '2026-11-20 06:18:22'),
+(345, 2, 2, 344, 2, 'House 77, Sample Road', NULL, 101, 41, 5583, '700046', NULL, '2026-11-20 11:48:22', '2026-11-20 06:18:22'),
+(346, 2, 2, 345, 1, 'House 78, Sample Road', NULL, 101, 41, 5583, '700047', NULL, '2026-11-20 11:48:22', '2026-11-20 06:18:22'),
+(347, 2, 2, 346, 2, 'House 78, Sample Road', NULL, 101, 41, 5583, '700047', NULL, '2026-11-20 11:48:22', '2026-11-20 06:18:22'),
+(348, 2, 2, 347, 1, 'House 79, Sample Road', NULL, 101, 41, 5583, '700048', NULL, '2026-11-20 11:48:22', '2026-11-20 06:18:22'),
+(349, 2, 2, 348, 2, 'House 79, Sample Road', NULL, 101, 41, 5583, '700048', NULL, '2026-11-20 11:48:22', '2026-11-20 06:18:22'),
+(350, 2, 2, 349, 1, 'House 80, Sample Road', NULL, 101, 41, 5583, '700049', NULL, '2026-11-20 11:48:22', '2026-11-20 06:18:22'),
+(351, 2, 2, 350, 2, 'House 80, Sample Road', NULL, 101, 41, 5583, '700049', NULL, '2026-11-20 11:48:22', '2026-11-20 06:18:22'),
+(352, 2, 2, 351, 1, 'House 81, Sample Road', NULL, 101, 41, 5583, '700050', NULL, '2026-11-20 11:48:22', '2026-11-20 06:18:22'),
+(353, 2, 2, 352, 2, 'House 81, Sample Road', NULL, 101, 41, 5583, '700050', NULL, '2026-11-20 11:48:22', '2026-11-20 06:18:22'),
+(354, 2, 2, 353, 1, 'House 82, Sample Road', '', 101, 41, 5583, '700051', NULL, '2026-11-20 11:48:22', '2026-11-20 06:18:22'),
+(355, 2, 2, 354, 2, 'House 82, Sample Road', '', 101, 41, 5583, '700051', NULL, '2026-11-20 11:48:22', '2026-11-20 06:18:22'),
+(356, 2, 2, 355, 1, 'House 83, Sample Road', NULL, 101, 41, 5583, '700052', NULL, '2026-11-20 11:48:22', '2026-11-20 06:18:22'),
+(357, 2, 2, 356, 2, 'House 83, Sample Road', NULL, 101, 41, 5583, '700052', NULL, '2026-11-20 11:48:22', '2026-11-20 06:18:22'),
+(358, 2, 2, 1, 1, '11, Lake Road', 'Ward No. 11', 101, 41, 5583, '700101', NULL, '2026-11-20 15:43:25', '2026-11-20 10:13:25'),
+(359, 2, 2, 2, 2, '11, Lake Road', 'Ward No. 11', 101, 41, 5583, '700101', NULL, '2026-11-20 15:43:25', '2026-11-20 10:13:25'),
+(360, 2, 2, 3, 1, '31, Lake Road', 'Ward No. 11', 101, 41, 5583, '700301', NULL, '2026-11-20 15:43:26', '2026-11-20 10:13:26'),
+(361, 2, 2, 4, 2, '31, Lake Road', 'Ward No. 11', 101, 41, 5583, '700301', NULL, '2026-11-20 15:43:26', '2026-11-20 10:13:26'),
+(362, 2, 2, 5, 1, '51, Lake Road', 'Ward No. 11', 101, 41, 5583, '700001', NULL, '2026-11-20 15:43:27', '2026-11-20 10:13:27'),
+(363, 2, 2, 6, 2, '51, Lake Road', 'Ward No. 11', 101, 41, 5583, '700001', NULL, '2026-11-20 15:43:27', '2026-11-20 10:13:27'),
+(364, 2, 2, 7, 1, '71, Lake Road', 'Ward No. 11', 101, 41, 5583, '700201', NULL, '2026-11-20 15:43:28', '2026-11-20 10:13:28'),
+(365, 2, 2, 8, 2, '71, Lake Road', 'Ward No. 11', 101, 41, 5583, '700201', NULL, '2026-11-20 15:43:28', '2026-11-20 10:13:28'),
+(366, 2, 2, 9, 1, '91, Lake Road', 'Ward No. 11', 101, 41, 5583, '700401', NULL, '2026-11-20 15:43:29', '2026-11-20 10:13:29'),
+(367, 2, 2, 10, 2, '91, Lake Road', 'Ward No. 11', 101, 41, 5583, '700401', NULL, '2026-11-20 15:43:29', '2026-11-20 10:13:29'),
+(368, 2, 2, 11, 1, '1, Lake Road', 'Ward No. 1', 101, 41, 5583, '700001', NULL, '2026-11-20 15:45:22', '2026-11-20 10:15:22'),
+(369, 2, 2, 12, 2, '1, Lake Road', 'Ward No. 1', 101, 41, 5583, '700001', NULL, '2026-11-20 15:45:22', '2026-11-20 10:15:22'),
+(370, 2, 2, 13, 1, '2, School Para', 'Ward No. 2', 101, 41, 5512, '700011', NULL, '2026-11-20 15:45:22', '2026-11-20 10:15:22'),
+(371, 2, 2, 14, 2, '2, School Para', 'Ward No. 2', 101, 41, 5512, '700011', NULL, '2026-11-20 15:45:22', '2026-11-20 10:15:22'),
+(372, 2, 2, 15, 1, '3, Gandhi Road', 'Ward No. 3', 101, 41, 5511, '700021', NULL, '2026-11-20 15:45:22', '2026-11-20 10:15:22'),
+(373, 2, 2, 16, 2, '3, Gandhi Road', 'Ward No. 3', 101, 41, 5511, '700021', NULL, '2026-11-20 15:45:22', '2026-11-20 10:15:22'),
+(374, 2, 2, 17, 1, '5, College Road', 'Ward No. 5', 101, 41, 2574, '700041', NULL, '2026-11-20 15:45:23', '2026-11-20 10:15:23'),
+(375, 2, 2, 18, 2, '5, College Road', 'Ward No. 5', 101, 41, 2574, '700041', NULL, '2026-11-20 15:45:23', '2026-11-20 10:15:23'),
+(376, 2, 2, 19, 1, '6, Rabindra Sarani', 'Ward No. 6', 101, 41, 5707, '700051', NULL, '2026-11-20 15:45:23', '2026-11-20 10:15:23'),
+(377, 2, 2, 20, 2, '6, Rabindra Sarani', 'Ward No. 6', 101, 41, 5707, '700051', NULL, '2026-11-20 15:45:23', '2026-11-20 10:15:23'),
+(378, 2, 2, 21, 1, '7, Bosepara', 'Ward No. 7', 101, 41, 5369, '700061', NULL, '2026-11-20 15:45:23', '2026-11-20 10:15:23'),
+(379, 2, 2, 22, 2, '7, Bosepara', 'Ward No. 7', 101, 41, 5369, '700061', NULL, '2026-11-20 15:45:23', '2026-11-20 10:15:23'),
+(380, 2, 2, 23, 1, '8, Station Road', 'Ward No. 8', 101, 41, 5586, '700071', NULL, '2026-11-20 15:45:23', '2026-11-20 10:15:23'),
+(381, 2, 2, 24, 2, '8, Station Road', 'Ward No. 8', 101, 41, 5586, '700071', NULL, '2026-11-20 15:45:23', '2026-11-20 10:15:23'),
+(382, 2, 2, 25, 1, '10, Kazi Nazrul Avenue', 'Ward No. 10', 101, 41, 5361, '700091', NULL, '2026-11-20 15:45:23', '2026-11-20 10:15:23'),
+(383, 2, 2, 26, 2, '10, Kazi Nazrul Avenue', 'Ward No. 10', 101, 41, 5361, '700091', NULL, '2026-11-20 15:45:23', '2026-11-20 10:15:23'),
+(384, 2, 2, 27, 1, '12, School Para', 'Ward No. 12', 101, 41, 5512, '700111', NULL, '2026-11-20 15:45:23', '2026-11-20 10:15:23'),
+(385, 2, 2, 28, 2, '12, School Para', 'Ward No. 12', 101, 41, 5512, '700111', NULL, '2026-11-20 15:45:23', '2026-11-20 10:15:23'),
+(386, 2, 2, 29, 1, '13, Gandhi Road', 'Ward No. 13', 101, 41, 5511, '700121', NULL, '2026-11-20 15:45:23', '2026-11-20 10:15:23'),
+(387, 2, 2, 30, 2, '13, Gandhi Road', 'Ward No. 13', 101, 41, 5511, '700121', NULL, '2026-11-20 15:45:23', '2026-11-20 10:15:23'),
+(388, 2, 2, 31, 1, '15, College Road', 'Ward No. 15', 101, 41, 2574, '700141', NULL, '2026-11-20 15:45:24', '2026-11-20 10:15:24'),
+(389, 2, 2, 32, 2, '15, College Road', 'Ward No. 15', 101, 41, 2574, '700141', NULL, '2026-11-20 15:45:24', '2026-11-20 10:15:24'),
+(390, 2, 2, 33, 1, '16, Rabindra Sarani', 'Ward No. 16', 101, 41, 5707, '700151', NULL, '2026-11-20 15:45:24', '2026-11-20 10:15:24'),
+(391, 2, 2, 34, 2, '16, Rabindra Sarani', 'Ward No. 16', 101, 41, 5707, '700151', NULL, '2026-11-20 15:45:24', '2026-11-20 10:15:24'),
+(392, 2, 2, 35, 1, '17, Bosepara', 'Ward No. 17', 101, 41, 5369, '700161', NULL, '2026-11-20 15:45:24', '2026-11-20 10:15:24'),
+(393, 2, 2, 36, 2, '17, Bosepara', 'Ward No. 17', 101, 41, 5369, '700161', NULL, '2026-11-20 15:45:24', '2026-11-20 10:15:24');
+INSERT INTO `parent_master_address` (`id`, `school_id`, `branch_id`, `parent_id`, `parent_type`, `address1`, `address2`, `country`, `state`, `city`, `postal_code`, `address_type`, `created_at`, `updated_at`) VALUES
+(394, 2, 2, 37, 1, '18, Station Road', 'Ward No. 18', 101, 41, 5586, '700171', NULL, '2026-11-20 15:45:24', '2026-11-20 10:15:24'),
+(395, 2, 2, 38, 2, '18, Station Road', 'Ward No. 18', 101, 41, 5586, '700171', NULL, '2026-11-20 15:45:24', '2026-11-20 10:15:24'),
+(396, 2, 2, 39, 1, '20, Kazi Nazrul Avenue', 'Ward No. 20', 101, 41, 5361, '700191', NULL, '2026-11-20 15:45:24', '2026-11-20 10:15:24'),
+(397, 2, 2, 40, 2, '20, Kazi Nazrul Avenue', 'Ward No. 20', 101, 41, 5361, '700191', NULL, '2026-11-20 15:45:24', '2026-11-20 10:15:24'),
+(398, 2, 2, 41, 1, '21, Lake Road', 'Ward No. 1', 101, 41, 5583, '700201', NULL, '2026-11-20 15:45:24', '2026-11-20 10:15:24'),
+(399, 2, 2, 42, 2, '21, Lake Road', 'Ward No. 1', 101, 41, 5583, '700201', NULL, '2026-11-20 15:45:24', '2026-11-20 10:15:24'),
+(400, 2, 2, 43, 1, '22, School Para', 'Ward No. 2', 101, 41, 5512, '700211', NULL, '2026-11-20 15:45:24', '2026-11-20 10:15:24'),
+(401, 2, 2, 44, 2, '22, School Para', 'Ward No. 2', 101, 41, 5512, '700211', NULL, '2026-11-20 15:45:24', '2026-11-20 10:15:24'),
+(402, 2, 2, 45, 1, '23, Gandhi Road', 'Ward No. 3', 101, 41, 5511, '700221', NULL, '2026-11-20 15:45:25', '2026-11-20 10:15:25'),
+(403, 2, 2, 46, 2, '23, Gandhi Road', 'Ward No. 3', 101, 41, 5511, '700221', NULL, '2026-11-20 15:45:25', '2026-11-20 10:15:25'),
+(404, 2, 2, 47, 1, '25, College Road', 'Ward No. 5', 101, 41, 2574, '700241', NULL, '2026-11-20 15:45:25', '2026-11-20 10:15:25'),
+(405, 2, 2, 48, 2, '25, College Road', 'Ward No. 5', 101, 41, 2574, '700241', NULL, '2026-11-20 15:45:25', '2026-11-20 10:15:25'),
+(406, 2, 2, 49, 1, '26, Rabindra Sarani', 'Ward No. 6', 101, 41, 5707, '700251', NULL, '2026-11-20 15:45:25', '2026-11-20 10:15:25'),
+(407, 2, 2, 50, 2, '26, Rabindra Sarani', 'Ward No. 6', 101, 41, 5707, '700251', NULL, '2026-11-20 15:45:25', '2026-11-20 10:15:25'),
+(408, 2, 2, 51, 1, '27, Bosepara', 'Ward No. 7', 101, 41, 5369, '700261', NULL, '2026-11-20 15:45:25', '2026-11-20 10:15:25'),
+(409, 2, 2, 52, 2, '27, Bosepara', 'Ward No. 7', 101, 41, 5369, '700261', NULL, '2026-11-20 15:45:25', '2026-11-20 10:15:25'),
+(410, 2, 2, 53, 1, '28, Station Road', 'Ward No. 8', 101, 41, 5586, '700271', NULL, '2026-11-20 15:45:25', '2026-11-20 10:15:25'),
+(411, 2, 2, 54, 2, '28, Station Road', 'Ward No. 8', 101, 41, 5586, '700271', NULL, '2026-11-20 15:45:25', '2026-11-20 10:15:25'),
+(412, 2, 2, 55, 1, '30, Kazi Nazrul Avenue', 'Ward No. 10', 101, 41, 5361, '700291', NULL, '2026-11-20 15:45:25', '2026-11-20 10:15:25'),
+(413, 2, 2, 56, 2, '30, Kazi Nazrul Avenue', 'Ward No. 10', 101, 41, 5361, '700291', NULL, '2026-11-20 15:45:25', '2026-11-20 10:15:25'),
+(414, 2, 2, 57, 1, '32, School Para', 'Ward No. 12', 101, 41, 5512, '700311', NULL, '2026-11-20 15:45:26', '2026-11-20 10:15:26'),
+(415, 2, 2, 58, 2, '32, School Para', 'Ward No. 12', 101, 41, 5512, '700311', NULL, '2026-11-20 15:45:26', '2026-11-20 10:15:26'),
+(416, 2, 2, 59, 1, '33, Gandhi Road', 'Ward No. 13', 101, 41, 5511, '700321', NULL, '2026-11-20 15:45:26', '2026-11-20 10:15:26'),
+(417, 2, 2, 60, 2, '33, Gandhi Road', 'Ward No. 13', 101, 41, 5511, '700321', NULL, '2026-11-20 15:45:26', '2026-11-20 10:15:26'),
+(418, 2, 2, 61, 1, '35, College Road', 'Ward No. 15', 101, 41, 2574, '700341', NULL, '2026-11-20 15:45:26', '2026-11-20 10:15:26'),
+(419, 2, 2, 62, 2, '35, College Road', 'Ward No. 15', 101, 41, 2574, '700341', NULL, '2026-11-20 15:45:26', '2026-11-20 10:15:26'),
+(420, 2, 2, 63, 1, '36, Rabindra Sarani', 'Ward No. 16', 101, 41, 5707, '700351', NULL, '2026-11-20 15:45:26', '2026-11-20 10:15:26'),
+(421, 2, 2, 64, 2, '36, Rabindra Sarani', 'Ward No. 16', 101, 41, 5707, '700351', NULL, '2026-11-20 15:45:26', '2026-11-20 10:15:26'),
+(422, 2, 2, 65, 1, '37, Bosepara', 'Ward No. 17', 101, 41, 5369, '700361', NULL, '2026-11-20 15:45:26', '2026-11-20 10:15:26'),
+(423, 2, 2, 66, 2, '37, Bosepara', 'Ward No. 17', 101, 41, 5369, '700361', NULL, '2026-11-20 15:45:26', '2026-11-20 10:15:26'),
+(424, 2, 2, 67, 1, '38, Station Road', 'Ward No. 18', 101, 41, 5586, '700371', NULL, '2026-11-20 15:45:26', '2026-11-20 10:15:26'),
+(425, 2, 2, 68, 2, '38, Station Road', 'Ward No. 18', 101, 41, 5586, '700371', NULL, '2026-11-20 15:45:26', '2026-11-20 10:15:26'),
+(426, 2, 2, 69, 1, '40, Kazi Nazrul Avenue', 'Ward No. 20', 101, 41, 5361, '700391', NULL, '2026-11-20 15:45:26', '2026-11-20 10:15:26'),
+(427, 2, 2, 70, 2, '40, Kazi Nazrul Avenue', 'Ward No. 20', 101, 41, 5361, '700391', NULL, '2026-11-20 15:45:26', '2026-11-20 10:15:26'),
+(428, 2, 2, 71, 1, '41, Lake Road', 'Ward No. 1', 101, 41, 5583, '700401', NULL, '2026-11-20 15:45:27', '2026-11-20 10:15:27'),
+(429, 2, 2, 72, 2, '41, Lake Road', 'Ward No. 1', 101, 41, 5583, '700401', NULL, '2026-11-20 15:45:27', '2026-11-20 10:15:27'),
+(430, 2, 2, 73, 1, '42, School Para', 'Ward No. 2', 101, 41, 5512, '700411', NULL, '2026-11-20 15:45:27', '2026-11-20 10:15:27'),
+(431, 2, 2, 74, 2, '42, School Para', 'Ward No. 2', 101, 41, 5512, '700411', NULL, '2026-11-20 15:45:27', '2026-11-20 10:15:27'),
+(432, 2, 2, 75, 1, '43, Gandhi Road', 'Ward No. 3', 101, 41, 5511, '700421', NULL, '2026-11-20 15:45:27', '2026-11-20 10:15:27'),
+(433, 2, 2, 76, 2, '43, Gandhi Road', 'Ward No. 3', 101, 41, 5511, '700421', NULL, '2026-11-20 15:45:27', '2026-11-20 10:15:27'),
+(434, 2, 2, 77, 1, '45, College Road', 'Ward No. 5', 101, 41, 2574, '700441', NULL, '2026-11-20 15:45:27', '2026-11-20 10:15:27'),
+(435, 2, 2, 78, 2, '45, College Road', 'Ward No. 5', 101, 41, 2574, '700441', NULL, '2026-11-20 15:45:27', '2026-11-20 10:15:27'),
+(436, 2, 2, 79, 1, '46, Rabindra Sarani', 'Ward No. 6', 101, 41, 5707, '700451', NULL, '2026-11-20 15:45:27', '2026-11-20 10:15:27'),
+(437, 2, 2, 80, 2, '46, Rabindra Sarani', 'Ward No. 6', 101, 41, 5707, '700451', NULL, '2026-11-20 15:45:27', '2026-11-20 10:15:27'),
+(438, 2, 2, 81, 1, '47, Bosepara', 'Ward No. 7', 101, 41, 5369, '700461', NULL, '2026-11-20 15:45:27', '2026-11-20 10:15:27'),
+(439, 2, 2, 82, 2, '47, Bosepara', 'Ward No. 7', 101, 41, 5369, '700461', NULL, '2026-11-20 15:45:27', '2026-11-20 10:15:27'),
+(440, 2, 2, 83, 1, '48, Station Road', 'Ward No. 8', 101, 41, 5586, '700471', NULL, '2026-11-20 15:45:27', '2026-11-20 10:15:27'),
+(441, 2, 2, 84, 2, '48, Station Road', 'Ward No. 8', 101, 41, 5586, '700471', NULL, '2026-11-20 15:45:27', '2026-11-20 10:15:27'),
+(442, 2, 2, 85, 1, '50, Kazi Nazrul Avenue', 'Ward No. 10', 101, 41, 5361, '700491', NULL, '2026-11-20 15:45:28', '2026-11-20 10:15:28'),
+(443, 2, 2, 86, 2, '50, Kazi Nazrul Avenue', 'Ward No. 10', 101, 41, 5361, '700491', NULL, '2026-11-20 15:45:28', '2026-11-20 10:15:28'),
+(444, 2, 2, 87, 1, '52, School Para', 'Ward No. 12', 101, 41, 5512, '700011', NULL, '2026-11-20 15:45:28', '2026-11-20 10:15:28'),
+(445, 2, 2, 88, 2, '52, School Para', 'Ward No. 12', 101, 41, 5512, '700011', NULL, '2026-11-20 15:45:28', '2026-11-20 10:15:28'),
+(446, 2, 2, 89, 1, '53, Gandhi Road', 'Ward No. 13', 101, 41, 5511, '700021', NULL, '2026-11-20 15:45:28', '2026-11-20 10:15:28'),
+(447, 2, 2, 90, 2, '53, Gandhi Road', 'Ward No. 13', 101, 41, 5511, '700021', NULL, '2026-11-20 15:45:28', '2026-11-20 10:15:28'),
+(448, 2, 2, 91, 1, '55, College Road', 'Ward No. 15', 101, 41, 2574, '700041', NULL, '2026-11-20 15:45:28', '2026-11-20 10:15:28'),
+(449, 2, 2, 92, 2, '55, College Road', 'Ward No. 15', 101, 41, 2574, '700041', NULL, '2026-11-20 15:45:28', '2026-11-20 10:15:28'),
+(450, 2, 2, 93, 1, '56, Rabindra Sarani', 'Ward No. 16', 101, 41, 5707, '700051', NULL, '2026-11-20 15:45:28', '2026-11-20 10:15:28'),
+(451, 2, 2, 94, 2, '56, Rabindra Sarani', 'Ward No. 16', 101, 41, 5707, '700051', NULL, '2026-11-20 15:45:28', '2026-11-20 10:15:28'),
+(452, 2, 2, 95, 1, '57, Bosepara', 'Ward No. 17', 101, 41, 5369, '700061', NULL, '2026-11-20 15:45:28', '2026-11-20 10:15:28'),
+(453, 2, 2, 96, 2, '57, Bosepara', 'Ward No. 17', 101, 41, 5369, '700061', NULL, '2026-11-20 15:45:28', '2026-11-20 10:15:28'),
+(454, 2, 2, 97, 1, '58, Station Road', 'Ward No. 18', 101, 41, 5586, '700071', NULL, '2026-11-20 15:45:28', '2026-11-20 10:15:28'),
+(455, 2, 2, 98, 2, '58, Station Road', 'Ward No. 18', 101, 41, 5586, '700071', NULL, '2026-11-20 15:45:28', '2026-11-20 10:15:28'),
+(456, 2, 2, 99, 1, '60, Kazi Nazrul Avenue', 'Ward No. 20', 101, 41, 5361, '700091', NULL, '2026-11-20 15:45:29', '2026-11-20 10:15:29'),
+(457, 2, 2, 100, 2, '60, Kazi Nazrul Avenue', 'Ward No. 20', 101, 41, 5361, '700091', NULL, '2026-11-20 15:45:29', '2026-11-20 10:15:29'),
+(458, 2, 2, 101, 1, '61, Lake Road', 'Ward No. 1', 101, 41, 5583, '700101', NULL, '2026-11-20 15:45:29', '2026-11-20 10:15:29'),
+(459, 2, 2, 102, 2, '61, Lake Road', 'Ward No. 1', 101, 41, 5583, '700101', NULL, '2026-11-20 15:45:29', '2026-11-20 10:15:29'),
+(460, 2, 2, 103, 1, '62, School Para', 'Ward No. 2', 101, 41, 5512, '700111', NULL, '2026-11-20 15:45:29', '2026-11-20 10:15:29'),
+(461, 2, 2, 104, 2, '62, School Para', 'Ward No. 2', 101, 41, 5512, '700111', NULL, '2026-11-20 15:45:29', '2026-11-20 10:15:29'),
+(462, 2, 2, 105, 1, '63, Gandhi Road', 'Ward No. 3', 101, 41, 5511, '700121', NULL, '2026-11-20 15:45:29', '2026-11-20 10:15:29'),
+(463, 2, 2, 106, 2, '63, Gandhi Road', 'Ward No. 3', 101, 41, 5511, '700121', NULL, '2026-11-20 15:45:29', '2026-11-20 10:15:29'),
+(464, 2, 2, 107, 1, '65, College Road', 'Ward No. 5', 101, 41, 2574, '700141', NULL, '2026-11-20 15:45:29', '2026-11-20 10:15:29'),
+(465, 2, 2, 108, 2, '65, College Road', 'Ward No. 5', 101, 41, 2574, '700141', NULL, '2026-11-20 15:45:29', '2026-11-20 10:15:29'),
+(466, 2, 2, 109, 1, '66, Rabindra Sarani', 'Ward No. 6', 101, 41, 5707, '700151', NULL, '2026-11-20 15:45:29', '2026-11-20 10:15:29'),
+(467, 2, 2, 110, 2, '66, Rabindra Sarani', 'Ward No. 6', 101, 41, 5707, '700151', NULL, '2026-11-20 15:45:29', '2026-11-20 10:15:29'),
+(468, 2, 2, 111, 1, '67, Bosepara', 'Ward No. 7', 101, 41, 5369, '700161', NULL, '2026-11-20 15:45:29', '2026-11-20 10:15:29'),
+(469, 2, 2, 112, 2, '67, Bosepara', 'Ward No. 7', 101, 41, 5369, '700161', NULL, '2026-11-20 15:45:29', '2026-11-20 10:15:29'),
+(470, 2, 2, 113, 1, '68, Station Road', 'Ward No. 8', 101, 41, 5586, '700171', NULL, '2026-11-20 15:45:30', '2026-11-20 10:15:30'),
+(471, 2, 2, 114, 2, '68, Station Road', 'Ward No. 8', 101, 41, 5586, '700171', NULL, '2026-11-20 15:45:30', '2026-11-20 10:15:30'),
+(472, 2, 2, 115, 1, '70, Kazi Nazrul Avenue', 'Ward No. 10', 101, 41, 5361, '700191', NULL, '2026-11-20 15:45:30', '2026-11-20 10:15:30'),
+(473, 2, 2, 116, 2, '70, Kazi Nazrul Avenue', 'Ward No. 10', 101, 41, 5361, '700191', NULL, '2026-11-20 15:45:30', '2026-11-20 10:15:30'),
+(474, 2, 2, 117, 1, '72, School Para', 'Ward No. 12', 101, 41, 5512, '700211', NULL, '2026-11-20 15:45:30', '2026-11-20 10:15:30'),
+(475, 2, 2, 118, 2, '72, School Para', 'Ward No. 12', 101, 41, 5512, '700211', NULL, '2026-11-20 15:45:30', '2026-11-20 10:15:30'),
+(476, 2, 2, 119, 1, '73, Gandhi Road', 'Ward No. 13', 101, 41, 5511, '700221', NULL, '2026-11-20 15:45:30', '2026-11-20 10:15:30'),
+(477, 2, 2, 120, 2, '73, Gandhi Road', 'Ward No. 13', 101, 41, 5511, '700221', NULL, '2026-11-20 15:45:30', '2026-11-20 10:15:30'),
+(478, 2, 2, 121, 1, '75, College Road', 'Ward No. 15', 101, 41, 2574, '700241', NULL, '2026-11-20 15:45:30', '2026-11-20 10:15:30'),
+(479, 2, 2, 122, 2, '75, College Road', 'Ward No. 15', 101, 41, 2574, '700241', NULL, '2026-11-20 15:45:30', '2026-11-20 10:15:30'),
+(480, 2, 2, 123, 1, '76, Rabindra Sarani', 'Ward No. 16', 101, 41, 5707, '700251', NULL, '2026-11-20 15:45:30', '2026-11-20 10:15:30'),
+(481, 2, 2, 124, 2, '76, Rabindra Sarani', 'Ward No. 16', 101, 41, 5707, '700251', NULL, '2026-11-20 15:45:30', '2026-11-20 10:15:30'),
+(482, 2, 2, 125, 1, '77, Bosepara', 'Ward No. 17', 101, 41, 5369, '700261', NULL, '2026-11-20 15:45:31', '2026-11-20 10:15:31'),
+(483, 2, 2, 126, 2, '77, Bosepara', 'Ward No. 17', 101, 41, 5369, '700261', NULL, '2026-11-20 15:45:31', '2026-11-20 10:15:31'),
+(484, 2, 2, 127, 1, '78, Station Road', 'Ward No. 18', 101, 41, 5586, '700271', NULL, '2026-11-20 15:45:31', '2026-11-20 10:15:31'),
+(485, 2, 2, 128, 2, '78, Station Road', 'Ward No. 18', 101, 41, 5586, '700271', NULL, '2026-11-20 15:45:31', '2026-11-20 10:15:31'),
+(486, 2, 2, 129, 1, '80, Kazi Nazrul Avenue', 'Ward No. 20', 101, 41, 5361, '700291', NULL, '2026-11-20 15:45:31', '2026-11-20 10:15:31'),
+(487, 2, 2, 130, 2, '80, Kazi Nazrul Avenue', 'Ward No. 20', 101, 41, 5361, '700291', NULL, '2026-11-20 15:45:31', '2026-11-20 10:15:31'),
+(488, 2, 2, 131, 1, '81, Lake Road', 'Ward No. 1', 101, 41, 5583, '700301', NULL, '2026-11-20 15:45:31', '2026-11-20 10:15:31'),
+(489, 2, 2, 132, 2, '81, Lake Road', 'Ward No. 1', 101, 41, 5583, '700301', NULL, '2026-11-20 15:45:31', '2026-11-20 10:15:31'),
+(490, 2, 2, 133, 1, '82, School Para', 'Ward No. 2', 101, 41, 5512, '700311', NULL, '2026-11-20 15:45:31', '2026-11-20 10:15:31'),
+(491, 2, 2, 134, 2, '82, School Para', 'Ward No. 2', 101, 41, 5512, '700311', NULL, '2026-11-20 15:45:31', '2026-11-20 10:15:31'),
+(492, 2, 2, 135, 1, '83, Gandhi Road', 'Ward No. 3', 101, 41, 5511, '700321', NULL, '2026-11-20 15:45:31', '2026-11-20 10:15:31'),
+(493, 2, 2, 136, 2, '83, Gandhi Road', 'Ward No. 3', 101, 41, 5511, '700321', NULL, '2026-11-20 15:45:31', '2026-11-20 10:15:31'),
+(494, 2, 2, 137, 1, '85, College Road', 'Ward No. 5', 101, 41, 2574, '700341', NULL, '2026-11-20 15:45:31', '2026-11-20 10:15:31'),
+(495, 2, 2, 138, 2, '85, College Road', 'Ward No. 5', 101, 41, 2574, '700341', NULL, '2026-11-20 15:45:31', '2026-11-20 10:15:31'),
+(496, 2, 2, 139, 1, '86, Rabindra Sarani', 'Ward No. 6', 101, 41, 5707, '700351', NULL, '2026-11-20 15:45:32', '2026-11-20 10:15:32'),
+(497, 2, 2, 140, 2, '86, Rabindra Sarani', 'Ward No. 6', 101, 41, 5707, '700351', NULL, '2026-11-20 15:45:32', '2026-11-20 10:15:32'),
+(498, 2, 2, 141, 1, '87, Bosepara', 'Ward No. 7', 101, 41, 5369, '700361', NULL, '2026-11-20 15:45:32', '2026-11-20 10:15:32'),
+(499, 2, 2, 142, 2, '87, Bosepara', 'Ward No. 7', 101, 41, 5369, '700361', NULL, '2026-11-20 15:45:32', '2026-11-20 10:15:32'),
+(500, 2, 2, 143, 1, '88, Station Road', 'Ward No. 8', 101, 41, 5586, '700371', NULL, '2026-11-20 15:45:32', '2026-11-20 10:15:32'),
+(501, 2, 2, 144, 2, '88, Station Road', 'Ward No. 8', 101, 41, 5586, '700371', NULL, '2026-11-20 15:45:32', '2026-11-20 10:15:32'),
+(502, 2, 2, 145, 1, '90, Kazi Nazrul Avenue', 'Ward No. 10', 101, 41, 5361, '700391', NULL, '2026-11-20 15:45:32', '2026-11-20 10:15:32'),
+(503, 2, 2, 146, 2, '90, Kazi Nazrul Avenue', 'Ward No. 10', 101, 41, 5361, '700391', NULL, '2026-11-20 15:45:32', '2026-11-20 10:15:32'),
+(504, 2, 2, 147, 1, '92, School Para', 'Ward No. 12', 101, 41, 5512, '700411', NULL, '2026-11-20 15:45:32', '2026-11-20 10:15:32'),
+(505, 2, 2, 148, 2, '92, School Para', 'Ward No. 12', 101, 41, 5512, '700411', NULL, '2026-11-20 15:45:32', '2026-11-20 10:15:32'),
+(506, 2, 2, 149, 1, '93, Gandhi Road', 'Ward No. 13', 101, 41, 5511, '700421', NULL, '2026-11-20 15:45:32', '2026-11-20 10:15:32'),
+(507, 2, 2, 150, 2, '93, Gandhi Road', 'Ward No. 13', 101, 41, 5511, '700421', NULL, '2026-11-20 15:45:32', '2026-11-20 10:15:32'),
+(508, 2, 2, 151, 1, '95, College Road', 'Ward No. 15', 101, 41, 2574, '700441', NULL, '2026-11-20 15:45:33', '2026-11-20 10:15:33'),
+(509, 2, 2, 152, 2, '95, College Road', 'Ward No. 15', 101, 41, 2574, '700441', NULL, '2026-11-20 15:45:33', '2026-11-20 10:15:33'),
+(510, 2, 2, 153, 1, '96, Rabindra Sarani', 'Ward No. 16', 101, 41, 5707, '700451', NULL, '2026-11-20 15:45:33', '2026-11-20 10:15:33'),
+(511, 2, 2, 154, 2, '96, Rabindra Sarani', 'Ward No. 16', 101, 41, 5707, '700451', NULL, '2026-11-20 15:45:33', '2026-11-20 10:15:33'),
+(512, 2, 2, 155, 1, '97, Bosepara', 'Ward No. 17', 101, 41, 5369, '700461', NULL, '2026-11-20 15:45:33', '2026-11-20 10:15:33'),
+(513, 2, 2, 156, 2, '97, Bosepara', 'Ward No. 17', 101, 41, 5369, '700461', NULL, '2026-11-20 15:45:33', '2026-11-20 10:15:33'),
+(514, 2, 2, 157, 1, '98, Station Road', 'Ward No. 18', 101, 41, 5586, '700471', NULL, '2026-11-20 15:45:33', '2026-11-20 10:15:33'),
+(515, 2, 2, 158, 2, '98, Station Road', 'Ward No. 18', 101, 41, 5586, '700471', NULL, '2026-11-20 15:45:33', '2026-11-20 10:15:33'),
+(516, 2, 2, 159, 1, '100, Kazi Nazrul Avenue', 'Ward No. 20', 101, 41, 5361, '700491', NULL, '2026-11-20 15:45:33', '2026-11-20 10:15:33'),
+(517, 2, 2, 160, 2, '100, Kazi Nazrul Avenue', 'Ward No. 20', 101, 41, 5361, '700491', NULL, '2026-11-20 15:45:33', '2026-11-20 10:15:33'),
+(518, 2, 2, 161, 1, '4, New Town', 'Ward No. 4', 101, 41, NULL, '700031', NULL, '2026-11-23 12:13:54', '2026-11-23 06:43:54'),
+(519, 2, 2, 162, 2, '4, New Town', 'Ward No. 4', 101, 41, NULL, '700031', NULL, '2026-11-23 12:13:54', '2026-11-23 06:43:54'),
+(520, 2, 2, 163, 1, 'House 200, Sample Road', NULL, 101, 41, 5583, '700049', NULL, '2026-11-23 12:23:17', '2026-11-23 06:53:17'),
+(521, 2, 2, 164, 2, 'House 200, Sample Road', NULL, 101, 41, 5583, '700049', NULL, '2026-11-23 12:23:17', '2026-11-23 06:53:17');
 
 -- --------------------------------------------------------
 
@@ -50286,7 +51321,7 @@ INSERT INTO `parent_master_address` (`id`, `school_id`, `parent_id`, `parent_typ
 CREATE TABLE `parent_type_master` (
   `id` int(11) NOT NULL,
   `parent_type` varchar(255) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -50297,10 +51332,21 @@ CREATE TABLE `parent_type_master` (
 CREATE TABLE `payment_credentials` (
   `id` int(11) NOT NULL,
   `method` varchar(255) DEFAULT NULL,
-  `description` text DEFAULT NULL,
+  `key_id` varchar(255) DEFAULT NULL,
+  `key_secret` text DEFAULT NULL,
+  `webhook_secret` text DEFAULT NULL,
   `status` int(11) DEFAULT NULL,
-  `created_on` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+  `created_on` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `payment_credentials`
+--
+
+INSERT INTO `payment_credentials` (`id`, `method`, `key_id`, `key_secret`, `webhook_secret`, `status`, `created_on`, `updated_at`) VALUES
+(3, 'razorpay', 'rzp_test_TaMXvhupLKahuL', 'enc:v1:6ece3c043c693ab23e1f7ce4:820f12f794992fd3726bd53a577884c4:58fa1c221283bdc59cf28ef0d62fbfe9bc811000708205d8', NULL, 4, '2026-10-23 12:51:14', '2026-11-03 10:34:22'),
+(4, 'razorpay', 'rzp_test_TaMXvhupLKahuL', 'enc:v1:ce7e118790a28794354df4ad:5779a1ee1c2412b4936c5a9347241a30:8eeda8c9b26ac4e7a725964991d1d75d62c00615ed7f26d2', NULL, 1, '2026-11-03 10:56:56', '2026-11-03 10:56:56');
 
 -- --------------------------------------------------------
 
@@ -50322,15 +51368,7 @@ CREATE TABLE `payment_webhook_logs` (
   `error_message` text DEFAULT NULL,
   `payload_json` longtext DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
---
--- Dumping data for table `payment_webhook_logs`
---
-
-INSERT INTO `payment_webhook_logs` (`id`, `event_id`, `event_name`, `order_id`, `payment_id`, `school_id`, `plan_id`, `amount`, `currency`, `status`, `error_message`, `payload_json`, `created_at`) VALUES
-(1, 'evt_unit_1789132512595', 'order.paid', 'order_1789132512595', 'pay_1789132512595', 1, 2, 24999.00, 'INR', 'processed', NULL, '{\"entity\":\"event\",\"account_id\":\"acc_test_growvidya\",\"event\":\"order.paid\",\"contains\":[\"order\",\"payment\"],\"id\":\"evt_unit_1789132512595\",\"payload\":{\"order\":{\"entity\":{\"id\":\"order_1789132512595\",\"amount\":2499900,\"currency\":\"INR\",\"status\":\"paid\",\"notes\":{\"school_id\":\"1\",\"plan_id\":\"2\",\"plan_name\":\"Growth Annual\",\"type\":\"subscription_upgrade\"}}},\"payment\":{\"entity\":{\"id\":\"pay_1789132512595\",\"amount\":2499900,\"currency\":\"INR\",\"status\":\"captured\",\"order_id\":\"order_1789132512595\"}}},\"created_at\":1789132512}', '2026-09-11 13:15:12'),
-(2, 'evt_test_1789132519896', 'order.paid', 'order_1789132519896', 'pay_1789132519896', 1, 2, 24999.00, 'INR', 'processed', NULL, '{\"entity\":\"event\",\"account_id\":\"acc_test_growvidya\",\"event\":\"order.paid\",\"contains\":[\"order\",\"payment\"],\"id\":\"evt_test_1789132519896\",\"payload\":{\"order\":{\"entity\":{\"id\":\"order_1789132519896\",\"amount\":2499900,\"currency\":\"INR\",\"status\":\"paid\",\"notes\":{\"school_id\":\"1\",\"plan_id\":\"2\",\"plan_name\":\"Growth Annual\",\"type\":\"subscription_upgrade\"}}},\"payment\":{\"entity\":{\"id\":\"pay_1789132519896\",\"amount\":2499900,\"currency\":\"INR\",\"status\":\"captured\",\"order_id\":\"order_1789132519896\"}}},\"created_at\":1789132519}', '2026-09-11 13:15:19');
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -50341,25 +51379,24 @@ INSERT INTO `payment_webhook_logs` (`id`, `event_id`, `event_name`, `order_id`, 
 CREATE TABLE `period_master` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `shift_id` int(11) DEFAULT NULL,
   `period_name` varchar(255) DEFAULT NULL,
   `start_time` time DEFAULT NULL,
   `end_time` time DEFAULT NULL,
   `status` int(11) NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `period_master`
 --
 
-INSERT INTO `period_master` (`id`, `school_id`, `shift_id`, `period_name`, `start_time`, `end_time`, `status`) VALUES
-(1, 1, 1, '1st Period', '08:00:00', '08:30:00', 1),
-(2, 1, 1, '2nd Period', '08:45:00', '09:45:00', 1),
-(3, 1, 1, '3rd Period', '10:00:00', '11:30:00', 1),
-(4, 1, 1, '4th Period', '11:15:00', '12:10:00', 1),
-(5, 2, 3, '1st Period', '08:00:00', '08:30:00', 1),
-(6, 2, 3, '2nd Period', '09:00:00', '10:00:00', 1),
-(7, 2, 3, '3rd Period', '10:15:00', '11:15:00', 1);
+INSERT INTO `period_master` (`id`, `school_id`, `branch_id`, `shift_id`, `period_name`, `start_time`, `end_time`, `status`) VALUES
+(1, 2, 2, 1, '1st Period', '07:00:00', '07:30:00', 1),
+(2, 2, 2, 1, '2nd Period', '07:30:00', '08:00:00', 1),
+(3, 2, 2, 1, '3rd Period', '08:00:00', '08:30:00', 1),
+(4, 2, 2, 1, '4th Period', '08:30:00', '09:00:00', 1),
+(5, 2, 2, 1, '5th Period', '09:30:00', '10:00:00', 1);
 
 -- --------------------------------------------------------
 
@@ -50375,74 +51412,132 @@ CREATE TABLE `permission` (
   `add_access` int(11) DEFAULT NULL,
   `edit_access` int(11) DEFAULT NULL,
   `delete_access` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `permission`
 --
 
 INSERT INTO `permission` (`id`, `role_id`, `module`, `view_access`, `add_access`, `edit_access`, `delete_access`) VALUES
-(367, 3, 'academic/classes', 1, 1, 1, 1),
-(368, 3, 'academic/sections', 1, 1, 1, 1),
-(369, 3, 'academic/subject', 1, 1, 1, 1),
-(370, 3, 'academic/syllabus', 1, 1, 1, 1),
-(371, 3, 'academic/material', 1, 1, 1, 1),
-(372, 3, 'academic/routine', 1, 1, 1, 1),
-(373, 3, 'academic/assignment', 1, 1, 1, 1),
-(374, 3, 'academic/assignmenttype', 1, 1, 1, 1),
-(375, 3, 'academic/days', 1, 1, 1, 1),
-(376, 3, 'academic/period', 1, 1, 1, 1),
-(377, 3, 'academic/shift', 1, 1, 1, 1),
-(378, 3, 'academic/house', 1, 1, 1, 1),
-(379, 3, 'academic/year', 1, 1, 1, 1),
-(380, 3, 'academic/documentType', 1, 1, 1, 1),
-(381, 3, 'ward/students', 0, 0, 0, 0),
-(382, 3, 'ward/parents', 0, 0, 0, 0),
-(383, 3, 'staff/teachers', 0, 0, 0, 0),
-(384, 3, 'staff/users', 0, 0, 0, 0),
-(385, 3, 'attendance/student', 0, 0, 0, 0),
-(386, 3, 'attendance/teacher', 0, 0, 0, 0),
-(387, 3, 'attendance/staff', 0, 0, 0, 0),
-(388, 3, 'leaves/leaveapply', 0, 0, 0, 0),
-(389, 3, 'leaves/leaveassign', 0, 0, 0, 0),
-(390, 3, 'transport/route', 0, 0, 0, 0),
-(391, 3, 'transport/bus', 0, 0, 0, 0),
-(392, 3, 'transport/driver', 0, 0, 0, 0),
-(393, 3, 'transport/helper', 0, 0, 0, 0),
-(394, 3, 'examination/exam', 1, 1, 1, 1),
-(395, 3, 'examination/examtype', 1, 1, 1, 1),
-(396, 3, 'examination/examschedule', 1, 1, 1, 1),
-(397, 3, 'examination/examsubject', 1, 1, 1, 1),
-(398, 3, 'examination/examAttendance', 1, 1, 1, 1),
-(399, 3, 'examination/examResult', 1, 1, 1, 1),
-(400, 3, 'examination/gradeSettings', 1, 1, 1, 1),
-(401, 3, 'feesmanagement/structures', 0, 0, 0, 0),
-(402, 3, 'feesmanagement/components', 0, 0, 0, 0),
-(403, 3, 'feesmanagement/allocations', 0, 0, 0, 0),
-(404, 3, 'feesmanagement/invoices', 0, 0, 0, 0),
-(405, 3, 'feesmanagement/payments', 0, 0, 0, 0),
-(406, 3, 'hostel/hostelList', 0, 0, 0, 0),
-(407, 3, 'hostel/hostelRooms', 0, 0, 0, 0),
-(408, 3, 'announcement/notice', 0, 0, 0, 0),
-(409, 3, 'announcement/event', 0, 0, 0, 0),
-(410, 3, 'announcement/holiday', 0, 0, 0, 0),
-(411, 3, 'certificate/category', 0, 0, 0, 0),
-(412, 3, 'certificate/template', 0, 0, 0, 0),
-(413, 3, 'certificate/certificatecreate', 0, 0, 0, 0),
-(414, 3, 'records/idcard', 0, 0, 0, 0),
-(415, 3, 'records/admitcard', 0, 0, 0, 0),
-(416, 3, 'records/marksheet', 0, 0, 0, 0),
-(417, 3, 'records/certificate', 0, 0, 0, 0),
-(418, 3, 'records/transfercertificate', 0, 0, 0, 0),
-(419, 3, 'report/classReport', 0, 0, 0, 0),
-(420, 3, 'report/studentReport', 0, 0, 0, 0),
-(421, 3, 'report/attendanceReport', 0, 0, 0, 0),
-(422, 3, 'report/calendarReport', 0, 0, 0, 0),
-(423, 3, 'permissions/permission', 0, 0, 0, 0),
-(424, 3, 'settings/general', 0, 0, 0, 0),
-(425, 3, 'settings/miscManagement', 0, 0, 0, 0),
-(426, 3, 'settings/salarydatesettings', 0, 0, 0, 0),
-(427, 3, 'languages/language', 0, 0, 0, 0);
+(1, 1, 'academic/classes', 0, 0, 0, 0),
+(2, 1, 'academic/sections', 0, 0, 0, 0),
+(3, 1, 'academic/subject', 0, 0, 0, 0),
+(4, 1, 'academic/syllabus', 0, 0, 0, 0),
+(5, 1, 'academic/material', 0, 0, 0, 0),
+(6, 1, 'academic/routine', 0, 0, 0, 0),
+(7, 1, 'academic/assignment', 0, 0, 0, 0),
+(8, 1, 'academic/assignmenttype', 0, 0, 0, 0),
+(9, 1, 'academic/days', 0, 0, 0, 0),
+(10, 1, 'academic/period', 0, 0, 0, 0),
+(11, 1, 'academic/shift', 0, 0, 0, 0),
+(12, 1, 'academic/house', 0, 0, 0, 0),
+(13, 1, 'academic/year', 0, 0, 0, 0),
+(14, 1, 'academic/documentType', 0, 0, 0, 0),
+(15, 1, 'ward/students', 0, 0, 0, 0),
+(16, 1, 'ward/parents', 0, 0, 0, 0),
+(17, 1, 'staff/teachers', 0, 0, 0, 0),
+(18, 1, 'staff/users', 0, 0, 0, 0),
+(19, 1, 'attendance/student', 0, 0, 0, 0),
+(20, 1, 'attendance/teacher', 0, 0, 0, 0),
+(21, 1, 'attendance/staff', 0, 0, 0, 0),
+(22, 1, 'leaves/leaveapply', 0, 0, 0, 0),
+(23, 1, 'leaves/leaveassign', 0, 0, 0, 0),
+(24, 1, 'transport/route', 0, 0, 0, 0),
+(25, 1, 'transport/bus', 0, 0, 0, 0),
+(26, 1, 'transport/driver', 0, 0, 0, 0),
+(27, 1, 'transport/helper', 0, 0, 0, 0),
+(28, 1, 'examination/exam', 0, 0, 0, 0),
+(29, 1, 'examination/examtype', 0, 0, 0, 0),
+(30, 1, 'examination/examschedule', 0, 0, 0, 0),
+(31, 1, 'examination/examsubject', 0, 0, 0, 0),
+(32, 1, 'examination/examAttendance', 0, 0, 0, 0),
+(33, 1, 'examination/examResult', 0, 0, 0, 0),
+(34, 1, 'examination/gradeSettings', 0, 0, 0, 0),
+(35, 1, 'feesmanagement/structures', 0, 0, 0, 0),
+(36, 1, 'feesmanagement/components', 0, 0, 0, 0),
+(37, 1, 'feesmanagement/allocations', 0, 0, 0, 0),
+(38, 1, 'feesmanagement/invoices', 0, 0, 0, 0),
+(39, 1, 'feesmanagement/payments', 0, 0, 0, 0),
+(40, 1, 'hostel/hostelList', 0, 0, 0, 0),
+(41, 1, 'hostel/hostelRooms', 0, 0, 0, 0),
+(42, 1, 'announcement/notice', 0, 0, 0, 0),
+(43, 1, 'announcement/event', 0, 0, 0, 0),
+(44, 1, 'announcement/holiday', 0, 0, 0, 0),
+(45, 1, 'certificate/category', 0, 0, 0, 0),
+(46, 1, 'certificate/template', 0, 0, 0, 0),
+(47, 1, 'certificate/certificatecreate', 0, 0, 0, 0),
+(48, 1, 'records/idcard', 0, 0, 0, 0),
+(49, 1, 'records/admitcard', 0, 0, 0, 0),
+(50, 1, 'records/marksheet', 0, 0, 0, 0),
+(51, 1, 'records/certificate', 0, 0, 0, 0),
+(52, 1, 'records/transfercertificate', 0, 0, 0, 0),
+(53, 1, 'report/classReport', 0, 0, 0, 0),
+(54, 1, 'report/studentReport', 0, 0, 0, 0),
+(55, 1, 'report/attendanceReport', 0, 0, 0, 0),
+(56, 1, 'report/calendarReport', 0, 0, 0, 0),
+(57, 1, 'permissions/permission', 0, 0, 0, 0),
+(58, 1, 'settings/general', 0, 0, 0, 0),
+(59, 1, 'settings/miscManagement', 0, 0, 0, 0),
+(60, 1, 'settings/salarydatesettings', 0, 0, 0, 0),
+(61, 1, 'languages/language', 0, 0, 0, 0),
+(62, 2, 'academic/classes', 1, 1, 1, 1),
+(63, 2, 'academic/sections', 1, 1, 1, 1),
+(64, 2, 'academic/subject', 1, 1, 1, 1),
+(65, 2, 'academic/syllabus', 1, 1, 1, 1),
+(66, 2, 'academic/material', 1, 1, 1, 1),
+(67, 2, 'academic/routine', 1, 1, 1, 1),
+(68, 2, 'academic/assignment', 1, 1, 1, 1),
+(69, 2, 'academic/assignmenttype', 1, 1, 1, 1),
+(70, 2, 'academic/days', 1, 1, 1, 1),
+(71, 2, 'academic/period', 1, 1, 1, 1),
+(72, 2, 'academic/shift', 1, 1, 1, 1),
+(73, 2, 'academic/house', 1, 1, 1, 1),
+(74, 2, 'academic/year', 1, 1, 1, 1),
+(75, 2, 'academic/documentType', 1, 1, 1, 1),
+(76, 2, 'ward/students', 1, 1, 1, 1),
+(77, 2, 'ward/parents', 1, 1, 1, 1),
+(78, 2, 'staff/teachers', 1, 1, 1, 1),
+(79, 2, 'staff/users', 1, 1, 1, 1),
+(80, 2, 'attendance/student', 1, 1, 1, 1),
+(81, 2, 'attendance/teacher', 1, 1, 1, 1),
+(82, 2, 'attendance/staff', 1, 1, 1, 1),
+(83, 2, 'leaves/leaveapply', 1, 1, 1, 1),
+(84, 2, 'leaves/leaveassign', 1, 1, 1, 1),
+(85, 2, 'transport/route', 1, 1, 1, 1),
+(86, 2, 'transport/bus', 1, 1, 1, 1),
+(87, 2, 'transport/driver', 1, 1, 1, 1),
+(88, 2, 'transport/helper', 1, 1, 1, 1),
+(89, 2, 'examination/exam', 1, 1, 1, 1),
+(90, 2, 'examination/examtype', 1, 1, 1, 1),
+(91, 2, 'examination/examschedule', 1, 1, 1, 1),
+(92, 2, 'examination/examsubject', 1, 1, 1, 1),
+(93, 2, 'examination/examAttendance', 1, 1, 1, 1),
+(94, 2, 'examination/examResult', 1, 1, 1, 1),
+(95, 2, 'examination/gradeSettings', 1, 1, 1, 1),
+(96, 2, 'feesmanagement/structures', 1, 1, 1, 1),
+(97, 2, 'feesmanagement/components', 1, 1, 1, 1),
+(98, 2, 'feesmanagement/allocations', 1, 1, 1, 1),
+(99, 2, 'feesmanagement/invoices', 1, 1, 1, 1),
+(100, 2, 'feesmanagement/payments', 1, 1, 1, 1),
+(101, 2, 'hostel/hostelList', 1, 1, 1, 1),
+(102, 2, 'hostel/hostelRooms', 1, 1, 1, 1),
+(103, 2, 'announcement/notice', 1, 1, 1, 1),
+(104, 2, 'announcement/event', 1, 1, 1, 1),
+(105, 2, 'announcement/holiday', 1, 1, 1, 1),
+(106, 2, 'certificate/category', 1, 1, 1, 1),
+(107, 2, 'certificate/template', 1, 1, 1, 1),
+(108, 2, 'certificate/certificatecreate', 1, 1, 1, 1),
+(109, 2, 'records/idcard', 1, 1, 1, 1),
+(110, 2, 'records/admitcard', 1, 1, 1, 1),
+(111, 2, 'records/marksheet', 1, 1, 1, 1),
+(112, 2, 'records/certificate', 1, 1, 1, 1),
+(113, 2, 'records/transfercertificate', 1, 1, 1, 1),
+(114, 2, 'report/classReport', 1, 1, 1, 1),
+(115, 2, 'report/studentReport', 1, 1, 1, 1),
+(116, 2, 'report/attendanceReport', 1, 1, 1, 1),
+(117, 2, 'report/calendarReport', 1, 1, 1, 1),
+(118, 2, 'settings/miscManagement', 1, 1, 1, 1),
+(119, 2, 'settings/salarydatesettings', 1, 1, 1, 1);
 
 -- --------------------------------------------------------
 
@@ -50453,10 +51548,11 @@ INSERT INTO `permission` (`id`, `role_id`, `module`, `view_access`, `add_access`
 CREATE TABLE `previous_school_address` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT 1,
+  `branch_id` int(11) DEFAULT NULL,
   `student_id` int(11) DEFAULT NULL,
-  `school_name` text DEFAULT NULL,
-  `address1` text DEFAULT NULL,
-  `address2` text DEFAULT NULL,
+  `school_name` mediumtext DEFAULT NULL,
+  `address1` mediumtext DEFAULT NULL,
+  `address2` mediumtext DEFAULT NULL,
   `country` int(11) DEFAULT NULL,
   `state` int(11) DEFAULT NULL,
   `city` int(11) DEFAULT NULL,
@@ -50464,7 +51560,201 @@ CREATE TABLE `previous_school_address` (
   `address_type` int(11) DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `previous_school_address`
+--
+
+INSERT INTO `previous_school_address` (`id`, `school_id`, `branch_id`, `student_id`, `school_name`, `address1`, `address2`, `country`, `state`, `city`, `postal_code`, `address_type`, `created_at`, `updated_at`) VALUES
+(1, 2, 2, 14, 'Little Star Nursery', '10 Camac Street', NULL, 101, 41, 5583, '700017', NULL, '2026-11-19 16:21:33', '2026-11-19 10:51:33'),
+(2, 2, 2, 15, 'Tiny Tots School', '8 GT Road', NULL, 101, 41, 5512, '711102', NULL, '2026-11-19 16:21:33', '2026-11-19 10:51:33'),
+(3, 2, 2, 16, 'Bright Kids Academy', '5 Bidhannagar Road', NULL, 101, 41, 5583, '700064', NULL, '2026-11-19 16:21:33', '2026-11-19 10:51:33'),
+(4, 2, 2, 17, 'Happy Hearts School', '14 Foreshore Road', NULL, 101, 41, 5512, '711103', NULL, '2026-11-19 16:21:34', '2026-11-19 10:51:34'),
+(5, 2, 2, 18, 'Little Star Nursery', '10 Camac Street', NULL, 101, 41, 5583, '700017', NULL, '2026-11-19 16:29:29', '2026-11-19 10:59:29'),
+(6, 2, 2, 30, 'Kolkata Primary School', '1, Lake Road', 'Ward No. 1', 101, 41, 5583, '700001', NULL, '2026-11-19 19:28:06', '2026-11-19 13:58:06'),
+(7, 2, 2, 31, 'Howrah Primary School', '2, School Para', 'Ward No. 2', 101, 41, 5512, '700011', NULL, '2026-11-19 19:28:06', '2026-11-19 13:58:06'),
+(8, 2, 2, 32, 'Hooghly Primary School', '3, Gandhi Road', 'Ward No. 3', 101, 41, 5511, '700021', NULL, '2026-11-19 19:28:06', '2026-11-19 13:58:06'),
+(9, 2, 2, 33, 'Durgapur Primary School', '5, College Road', 'Ward No. 5', 101, 41, 2574, '700041', NULL, '2026-11-19 19:28:07', '2026-11-19 13:58:07'),
+(10, 2, 2, 34, 'Siliguri Primary School', '6, Rabindra Sarani', 'Ward No. 6', 101, 41, 5707, '700051', NULL, '2026-11-19 19:28:07', '2026-11-19 13:58:07'),
+(11, 2, 2, 35, 'Barasat Primary School', '7, Bosepara', 'Ward No. 7', 101, 41, 5369, '700061', NULL, '2026-11-19 19:28:08', '2026-11-19 13:58:08'),
+(12, 2, 2, 36, 'Krishnanagar Primary School', '8, Station Road', 'Ward No. 8', 101, 41, 5586, '700071', NULL, '2026-11-19 19:28:08', '2026-11-19 13:58:08'),
+(13, 2, 2, 37, 'Bankura Primary School', '10, Kazi Nazrul Avenue', 'Ward No. 10', 101, 41, 5361, '700091', NULL, '2026-11-19 19:28:08', '2026-11-19 13:58:08'),
+(14, 2, 2, 38, 'Kolkata Primary School', '11, Lake Road', 'Ward No. 11', 101, 41, 5583, '700101', NULL, '2026-11-19 19:28:08', '2026-11-19 13:58:08'),
+(15, 2, 2, 39, 'Howrah Primary School', '12, School Para', 'Ward No. 12', 101, 41, 5512, '700111', NULL, '2026-11-19 19:28:08', '2026-11-19 13:58:08'),
+(16, 2, 2, 40, 'Hooghly Primary School', '13, Gandhi Road', 'Ward No. 13', 101, 41, 5511, '700121', NULL, '2026-11-19 19:28:09', '2026-11-19 13:58:09'),
+(17, 2, 2, 41, 'Durgapur Primary School', '15, College Road', 'Ward No. 15', 101, 41, 2574, '700141', NULL, '2026-11-19 19:28:09', '2026-11-19 13:58:09'),
+(18, 2, 2, 42, 'Siliguri Primary School', '16, Rabindra Sarani', 'Ward No. 16', 101, 41, 5707, '700151', NULL, '2026-11-19 19:28:09', '2026-11-19 13:58:09'),
+(19, 2, 2, 43, 'Barasat Primary School', '17, Bosepara', 'Ward No. 17', 101, 41, 5369, '700161', NULL, '2026-11-19 19:28:09', '2026-11-19 13:58:09'),
+(20, 2, 2, 44, 'Krishnanagar Primary School', '18, Station Road', 'Ward No. 18', 101, 41, 5586, '700171', NULL, '2026-11-19 19:28:09', '2026-11-19 13:58:09'),
+(21, 2, 2, 45, 'Bankura Primary School', '20, Kazi Nazrul Avenue', 'Ward No. 20', 101, 41, 5361, '700191', NULL, '2026-11-19 19:28:10', '2026-11-19 13:58:10'),
+(22, 2, 2, 46, 'Kolkata Primary School', '21, Lake Road', 'Ward No. 1', 101, 41, 5583, '700201', NULL, '2026-11-19 19:28:10', '2026-11-19 13:58:10'),
+(23, 2, 2, 47, 'Howrah Primary School', '22, School Para', 'Ward No. 2', 101, 41, 5512, '700211', NULL, '2026-11-19 19:28:10', '2026-11-19 13:58:10'),
+(24, 2, 2, 48, 'Hooghly Primary School', '23, Gandhi Road', 'Ward No. 3', 101, 41, 5511, '700221', NULL, '2026-11-19 19:28:10', '2026-11-19 13:58:10'),
+(25, 2, 2, 49, 'Durgapur Primary School', '25, College Road', 'Ward No. 5', 101, 41, 2574, '700241', NULL, '2026-11-19 19:28:10', '2026-11-19 13:58:10'),
+(26, 2, 2, 50, 'Siliguri Primary School', '26, Rabindra Sarani', 'Ward No. 6', 101, 41, 5707, '700251', NULL, '2026-11-19 19:28:10', '2026-11-19 13:58:10'),
+(27, 2, 2, 51, 'Barasat Primary School', '27, Bosepara', 'Ward No. 7', 101, 41, 5369, '700261', NULL, '2026-11-19 19:28:10', '2026-11-19 13:58:10'),
+(28, 2, 2, 52, 'Krishnanagar Primary School', '28, Station Road', 'Ward No. 8', 101, 41, 5586, '700271', NULL, '2026-11-19 19:28:11', '2026-11-19 13:58:11'),
+(29, 2, 2, 53, 'Bankura Primary School', '30, Kazi Nazrul Avenue', 'Ward No. 10', 101, 41, 5361, '700291', NULL, '2026-11-19 19:28:11', '2026-11-19 13:58:11'),
+(30, 2, 2, 54, 'Kolkata Primary School', '1, Lake Road', 'Ward No. 11', 101, 41, 5583, '700301', NULL, '2026-11-19 19:28:11', '2026-11-19 13:58:11'),
+(31, 2, 2, 55, 'Howrah Primary School', '2, School Para', 'Ward No. 12', 101, 41, 5512, '700311', NULL, '2026-11-19 19:28:11', '2026-11-19 13:58:11'),
+(32, 2, 2, 56, 'Hooghly Primary School', '3, Gandhi Road', 'Ward No. 13', 101, 41, 5511, '700321', NULL, '2026-11-19 19:28:11', '2026-11-19 13:58:11'),
+(33, 2, 2, 57, 'Durgapur Primary School', '5, College Road', 'Ward No. 15', 101, 41, 2574, '700341', NULL, '2026-11-19 19:28:11', '2026-11-19 13:58:11'),
+(34, 2, 2, 58, 'Siliguri Primary School', '6, Rabindra Sarani', 'Ward No. 16', 101, 41, 5707, '700351', NULL, '2026-11-19 19:28:12', '2026-11-19 13:58:12'),
+(35, 2, 2, 59, 'Barasat Primary School', '7, Bosepara', 'Ward No. 17', 101, 41, 5369, '700361', NULL, '2026-11-19 19:28:12', '2026-11-19 13:58:12'),
+(36, 2, 2, 60, 'Krishnanagar Primary School', '8, Station Road', 'Ward No. 18', 101, 41, 5586, '700371', NULL, '2026-11-19 19:28:12', '2026-11-19 13:58:12'),
+(37, 2, 2, 61, 'Bankura Primary School', '10, Kazi Nazrul Avenue', 'Ward No. 20', 101, 41, 5361, '700391', NULL, '2026-11-19 19:28:12', '2026-11-19 13:58:12'),
+(38, 2, 2, 62, 'Kolkata Primary School', '11, Lake Road', 'Ward No. 1', 101, 41, 5583, '700401', NULL, '2026-11-19 19:28:12', '2026-11-19 13:58:12'),
+(39, 2, 2, 63, 'Howrah Primary School', '12, School Para', 'Ward No. 2', 101, 41, 5512, '700411', NULL, '2026-11-19 19:28:12', '2026-11-19 13:58:12'),
+(40, 2, 2, 64, 'Hooghly Primary School', '13, Gandhi Road', 'Ward No. 3', 101, 41, 5511, '700421', NULL, '2026-11-19 19:28:12', '2026-11-19 13:58:12'),
+(41, 2, 2, 65, 'Durgapur Primary School', '15, College Road', 'Ward No. 5', 101, 41, 2574, '700441', NULL, '2026-11-19 19:28:13', '2026-11-19 13:58:13'),
+(42, 2, 2, 66, 'Siliguri Primary School', '16, Rabindra Sarani', 'Ward No. 6', 101, 41, 5707, '700451', NULL, '2026-11-19 19:28:13', '2026-11-19 13:58:13'),
+(43, 2, 2, 67, 'Barasat Primary School', '17, Bosepara', 'Ward No. 7', 101, 41, 5369, '700461', NULL, '2026-11-19 19:28:13', '2026-11-19 13:58:13'),
+(44, 2, 2, 68, 'Krishnanagar Primary School', '18, Station Road', 'Ward No. 8', 101, 41, 5586, '700471', NULL, '2026-11-19 19:28:13', '2026-11-19 13:58:13'),
+(45, 2, 2, 69, 'Bankura Primary School', '20, Kazi Nazrul Avenue', 'Ward No. 10', 101, 41, 5361, '700491', NULL, '2026-11-19 19:28:13', '2026-11-19 13:58:13'),
+(46, 2, 2, 70, 'Kolkata Primary School', '21, Lake Road', 'Ward No. 11', 101, 41, 5583, '700001', NULL, '2026-11-19 19:28:13', '2026-11-19 13:58:13'),
+(47, 2, 2, 71, 'Howrah Primary School', '22, School Para', 'Ward No. 12', 101, 41, 5512, '700011', NULL, '2026-11-19 19:28:14', '2026-11-19 13:58:14'),
+(48, 2, 2, 72, 'Hooghly Primary School', '23, Gandhi Road', 'Ward No. 13', 101, 41, 5511, '700021', NULL, '2026-11-19 19:28:14', '2026-11-19 13:58:14'),
+(49, 2, 2, 73, 'Durgapur Primary School', '25, College Road', 'Ward No. 15', 101, 41, 2574, '700041', NULL, '2026-11-19 19:28:14', '2026-11-19 13:58:14'),
+(50, 2, 2, 74, 'Siliguri Primary School', '26, Rabindra Sarani', 'Ward No. 16', 101, 41, 5707, '700051', NULL, '2026-11-19 19:28:14', '2026-11-19 13:58:14'),
+(51, 2, 2, 75, 'Barasat Primary School', '27, Bosepara', 'Ward No. 17', 101, 41, 5369, '700061', NULL, '2026-11-19 19:28:14', '2026-11-19 13:58:14'),
+(52, 2, 2, 76, 'Krishnanagar Primary School', '28, Station Road', 'Ward No. 18', 101, 41, 5586, '700071', NULL, '2026-11-19 19:28:14', '2026-11-19 13:58:14'),
+(53, 2, 2, 77, 'Bankura Primary School', '30, Kazi Nazrul Avenue', 'Ward No. 20', 101, 41, 5361, '700091', NULL, '2026-11-19 19:28:15', '2026-11-19 13:58:15'),
+(54, 2, 2, 78, 'Kolkata Primary School', '1, Lake Road', 'Ward No. 1', 101, 41, 5583, '700101', NULL, '2026-11-19 19:28:15', '2026-11-19 13:58:15'),
+(55, 2, 2, 79, 'Howrah Primary School', '2, School Para', 'Ward No. 2', 101, 41, 5512, '700111', NULL, '2026-11-19 19:28:15', '2026-11-19 13:58:15'),
+(56, 2, 2, 80, 'Hooghly Primary School', '3, Gandhi Road', 'Ward No. 3', 101, 41, 5511, '700121', NULL, '2026-11-19 19:28:15', '2026-11-19 13:58:15'),
+(57, 2, 2, 81, 'Durgapur Primary School', '5, College Road', 'Ward No. 5', 101, 41, 2574, '700141', NULL, '2026-11-19 19:28:15', '2026-11-19 13:58:15'),
+(58, 2, 2, 82, 'Siliguri Primary School', '6, Rabindra Sarani', 'Ward No. 6', 101, 41, 5707, '700151', NULL, '2026-11-19 19:28:15', '2026-11-19 13:58:15'),
+(59, 2, 2, 83, 'Barasat Primary School', '7, Bosepara', 'Ward No. 7', 101, 41, 5369, '700161', NULL, '2026-11-19 19:28:16', '2026-11-19 13:58:16'),
+(60, 2, 2, 84, 'Krishnanagar Primary School', '8, Station Road', 'Ward No. 8', 101, 41, 5586, '700171', NULL, '2026-11-19 19:28:16', '2026-11-19 13:58:16'),
+(61, 2, 2, 85, 'Bankura Primary School', '10, Kazi Nazrul Avenue', 'Ward No. 10', 101, 41, 5361, '700191', NULL, '2026-11-19 19:28:16', '2026-11-19 13:58:16'),
+(62, 2, 2, 86, 'Kolkata Primary School', '11, Lake Road', 'Ward No. 11', 101, 41, 5583, '700201', NULL, '2026-11-19 19:28:16', '2026-11-19 13:58:16'),
+(63, 2, 2, 87, 'Howrah Primary School', '12, School Para', 'Ward No. 12', 101, 41, 5512, '700211', NULL, '2026-11-19 19:28:16', '2026-11-19 13:58:16'),
+(64, 2, 2, 88, 'Hooghly Primary School', '13, Gandhi Road', 'Ward No. 13', 101, 41, 5511, '700221', NULL, '2026-11-19 19:28:16', '2026-11-19 13:58:16'),
+(65, 2, 2, 89, 'Durgapur Primary School', '15, College Road', 'Ward No. 15', 101, 41, 2574, '700241', NULL, '2026-11-19 19:28:17', '2026-11-19 13:58:17'),
+(66, 2, 2, 90, 'Siliguri Primary School', '16, Rabindra Sarani', 'Ward No. 16', 101, 41, 5707, '700251', NULL, '2026-11-19 19:28:17', '2026-11-19 13:58:17'),
+(67, 2, 2, 91, 'Barasat Primary School', '17, Bosepara', 'Ward No. 17', 101, 41, 5369, '700261', NULL, '2026-11-19 19:28:17', '2026-11-19 13:58:17'),
+(68, 2, 2, 92, 'Krishnanagar Primary School', '18, Station Road', 'Ward No. 18', 101, 41, 5586, '700271', NULL, '2026-11-19 19:28:17', '2026-11-19 13:58:17'),
+(69, 2, 2, 93, 'Bankura Primary School', '20, Kazi Nazrul Avenue', 'Ward No. 20', 101, 41, 5361, '700291', NULL, '2026-11-19 19:28:17', '2026-11-19 13:58:17'),
+(70, 2, 2, 94, 'Kolkata Primary School', '21, Lake Road', 'Ward No. 1', 101, 41, 5583, '700301', NULL, '2026-11-19 19:28:17', '2026-11-19 13:58:17'),
+(71, 2, 2, 95, 'Howrah Primary School', '22, School Para', 'Ward No. 2', 101, 41, 5512, '700311', NULL, '2026-11-19 19:28:18', '2026-11-19 13:58:18'),
+(72, 2, 2, 96, 'Hooghly Primary School', '23, Gandhi Road', 'Ward No. 3', 101, 41, 5511, '700321', NULL, '2026-11-19 19:28:18', '2026-11-19 13:58:18'),
+(73, 2, 2, 97, 'Durgapur Primary School', '25, College Road', 'Ward No. 5', 101, 41, 2574, '700341', NULL, '2026-11-19 19:28:18', '2026-11-19 13:58:18'),
+(74, 2, 2, 98, 'Siliguri Primary School', '26, Rabindra Sarani', 'Ward No. 6', 101, 41, 5707, '700351', NULL, '2026-11-19 19:28:18', '2026-11-19 13:58:18'),
+(75, 2, 2, 99, 'Barasat Primary School', '27, Bosepara', 'Ward No. 7', 101, 41, 5369, '700361', NULL, '2026-11-19 19:28:18', '2026-11-19 13:58:18'),
+(76, 2, 2, 100, 'Krishnanagar Primary School', '28, Station Road', 'Ward No. 8', 101, 41, 5586, '700371', NULL, '2026-11-19 19:28:18', '2026-11-19 13:58:18'),
+(77, 2, 2, 101, 'Bankura Primary School', '30, Kazi Nazrul Avenue', 'Ward No. 10', 101, 41, 5361, '700391', NULL, '2026-11-19 19:28:19', '2026-11-19 13:58:19'),
+(78, 2, 2, 102, 'Kolkata Primary School', '1, Lake Road', 'Ward No. 11', 101, 41, 5583, '700401', NULL, '2026-11-19 19:28:19', '2026-11-19 13:58:19'),
+(79, 2, 2, 103, 'Howrah Primary School', '2, School Para', 'Ward No. 12', 101, 41, 5512, '700411', NULL, '2026-11-19 19:28:19', '2026-11-19 13:58:19'),
+(80, 2, 2, 104, 'Hooghly Primary School', '3, Gandhi Road', 'Ward No. 13', 101, 41, 5511, '700421', NULL, '2026-11-19 19:28:19', '2026-11-19 13:58:19'),
+(81, 2, 2, 105, 'Durgapur Primary School', '5, College Road', 'Ward No. 15', 101, 41, 2574, '700441', NULL, '2026-11-19 19:28:19', '2026-11-19 13:58:19'),
+(82, 2, 2, 106, 'Siliguri Primary School', '6, Rabindra Sarani', 'Ward No. 16', 101, 41, 5707, '700451', NULL, '2026-11-19 19:28:19', '2026-11-19 13:58:19'),
+(83, 2, 2, 107, 'Barasat Primary School', '7, Bosepara', 'Ward No. 17', 101, 41, 5369, '700461', NULL, '2026-11-19 19:28:20', '2026-11-19 13:58:20'),
+(84, 2, 2, 108, 'Krishnanagar Primary School', '8, Station Road', 'Ward No. 18', 101, 41, 5586, '700471', NULL, '2026-11-19 19:28:20', '2026-11-19 13:58:20'),
+(85, 2, 2, 109, 'Bankura Primary School', '10, Kazi Nazrul Avenue', 'Ward No. 20', 101, 41, 5361, '700491', NULL, '2026-11-19 19:28:20', '2026-11-19 13:58:20'),
+(86, 2, 2, 110, 'Bardhaman Primary School', '4, New Town', 'Ward No. 4', 101, 41, NULL, '700031', NULL, '2026-11-19 19:33:36', '2026-11-19 14:03:36'),
+(87, 2, 2, 111, 'Midnapore Primary School', '9, Netaji Pally', 'Ward No. 9', 101, 41, NULL, '700081', NULL, '2026-11-19 19:33:36', '2026-11-19 14:03:36'),
+(88, 2, 2, 112, 'Bardhaman Primary School', '14, New Town', 'Ward No. 14', 101, 41, NULL, '700131', NULL, '2026-11-19 19:33:36', '2026-11-19 14:03:36'),
+(89, 2, 2, 113, 'Midnapore Primary School', '19, Netaji Pally', 'Ward No. 19', 101, 41, NULL, '700181', NULL, '2026-11-19 19:33:36', '2026-11-19 14:03:36'),
+(90, 2, 2, 114, 'Bardhaman Primary School', '24, New Town', 'Ward No. 4', 101, 41, NULL, '700231', NULL, '2026-11-19 19:33:36', '2026-11-19 14:03:36'),
+(91, 2, 2, 115, 'Midnapore Primary School', '29, Netaji Pally', 'Ward No. 9', 101, 41, NULL, '700281', NULL, '2026-11-19 19:33:36', '2026-11-19 14:03:36'),
+(92, 2, 2, 116, 'Bardhaman Primary School', '4, New Town', 'Ward No. 14', 101, 41, NULL, '700331', NULL, '2026-11-19 19:33:37', '2026-11-19 14:03:37'),
+(93, 2, 2, 117, 'Midnapore Primary School', '9, Netaji Pally', 'Ward No. 19', 101, 41, NULL, '700381', NULL, '2026-11-19 19:33:37', '2026-11-19 14:03:37'),
+(94, 2, 2, 118, 'Bardhaman Primary School', '14, New Town', 'Ward No. 4', 101, 41, NULL, '700431', NULL, '2026-11-19 19:33:37', '2026-11-19 14:03:37'),
+(95, 2, 2, 119, 'Midnapore Primary School', '19, Netaji Pally', 'Ward No. 9', 101, 41, NULL, '700481', NULL, '2026-11-19 19:33:37', '2026-11-19 14:03:37'),
+(96, 2, 2, 120, 'Bardhaman Primary School', '24, New Town', 'Ward No. 14', 101, 41, NULL, '700031', NULL, '2026-11-19 19:33:37', '2026-11-19 14:03:37'),
+(97, 2, 2, 121, 'Midnapore Primary School', '29, Netaji Pally', 'Ward No. 19', 101, 41, NULL, '700081', NULL, '2026-11-19 19:33:37', '2026-11-19 14:03:37'),
+(98, 2, 2, 122, 'Bardhaman Primary School', '4, New Town', 'Ward No. 4', 101, 41, NULL, '700131', NULL, '2026-11-19 19:33:37', '2026-11-19 14:03:37'),
+(99, 2, 2, 123, 'Midnapore Primary School', '9, Netaji Pally', 'Ward No. 9', 101, 41, NULL, '700181', NULL, '2026-11-19 19:33:37', '2026-11-19 14:03:37'),
+(100, 2, 2, 124, 'Bardhaman Primary School', '14, New Town', 'Ward No. 14', 101, 41, NULL, '700231', NULL, '2026-11-19 19:33:37', '2026-11-19 14:03:37'),
+(101, 2, 2, 125, 'Midnapore Primary School', '19, Netaji Pally', 'Ward No. 19', 101, 41, NULL, '700281', NULL, '2026-11-19 19:33:37', '2026-11-19 14:03:37'),
+(102, 2, 2, 126, 'Bardhaman Primary School', '24, New Town', 'Ward No. 4', 101, 41, NULL, '700331', NULL, '2026-11-19 19:33:38', '2026-11-19 14:03:38'),
+(103, 2, 2, 127, 'Midnapore Primary School', '29, Netaji Pally', 'Ward No. 9', 101, 41, NULL, '700381', NULL, '2026-11-19 19:33:38', '2026-11-19 14:03:38'),
+(104, 2, 2, 128, 'Bardhaman Primary School', '4, New Town', 'Ward No. 14', 101, 41, NULL, '700431', NULL, '2026-11-19 19:33:38', '2026-11-19 14:03:38'),
+(105, 2, 2, 129, 'Midnapore Primary School', '9, Netaji Pally', 'Ward No. 19', 101, 41, NULL, '700481', NULL, '2026-11-19 19:33:38', '2026-11-19 14:03:38'),
+(106, 2, 2, 213, 'Kolkata Primary School', '1, Lake Road', 'Ward No. 1', 101, 41, 5583, '700001', NULL, '2026-11-20 12:32:21', '2026-11-20 07:02:21'),
+(107, 2, 2, 214, 'Kolkata Primary School', '1, Lake Road', 'Ward No. 1', 101, 41, 5583, '700001', NULL, '2026-11-20 12:36:36', '2026-11-20 07:06:36'),
+(108, 2, 2, 1, 'Kolkata Primary School', '11, Lake Road', 'Ward No. 11', 101, 41, 5583, '700101', NULL, '2026-11-20 15:43:25', '2026-11-20 10:13:25'),
+(109, 2, 2, 2, 'Kolkata Primary School', '1, Lake Road', 'Ward No. 11', 101, 41, 5583, '700301', NULL, '2026-11-20 15:43:26', '2026-11-20 10:13:26'),
+(110, 2, 2, 3, 'Kolkata Primary School', '21, Lake Road', 'Ward No. 11', 101, 41, 5583, '700001', NULL, '2026-11-20 15:43:27', '2026-11-20 10:13:27'),
+(111, 2, 2, 4, 'Kolkata Primary School', '11, Lake Road', 'Ward No. 11', 101, 41, 5583, '700201', NULL, '2026-11-20 15:43:28', '2026-11-20 10:13:28'),
+(112, 2, 2, 5, 'Kolkata Primary School', '1, Lake Road', 'Ward No. 11', 101, 41, 5583, '700401', NULL, '2026-11-20 15:43:29', '2026-11-20 10:13:29'),
+(113, 2, 2, 6, 'Kolkata Primary School', '1, Lake Road', 'Ward No. 1', 101, 41, 5583, '700001', NULL, '2026-11-20 15:45:22', '2026-11-20 10:15:22'),
+(114, 2, 2, 7, 'Howrah Primary School', '2, School Para', 'Ward No. 2', 101, 41, 5512, '700011', NULL, '2026-11-20 15:45:22', '2026-11-20 10:15:22'),
+(115, 2, 2, 8, 'Hooghly Primary School', '3, Gandhi Road', 'Ward No. 3', 101, 41, 5511, '700021', NULL, '2026-11-20 15:45:22', '2026-11-20 10:15:22'),
+(116, 2, 2, 9, 'Durgapur Primary School', '5, College Road', 'Ward No. 5', 101, 41, 2574, '700041', NULL, '2026-11-20 15:45:23', '2026-11-20 10:15:23'),
+(117, 2, 2, 10, 'Siliguri Primary School', '6, Rabindra Sarani', 'Ward No. 6', 101, 41, 5707, '700051', NULL, '2026-11-20 15:45:23', '2026-11-20 10:15:23'),
+(118, 2, 2, 11, 'Barasat Primary School', '7, Bosepara', 'Ward No. 7', 101, 41, 5369, '700061', NULL, '2026-11-20 15:45:23', '2026-11-20 10:15:23'),
+(119, 2, 2, 12, 'Krishnanagar Primary School', '8, Station Road', 'Ward No. 8', 101, 41, 5586, '700071', NULL, '2026-11-20 15:45:23', '2026-11-20 10:15:23'),
+(120, 2, 2, 13, 'Bankura Primary School', '10, Kazi Nazrul Avenue', 'Ward No. 10', 101, 41, 5361, '700091', NULL, '2026-11-20 15:45:23', '2026-11-20 10:15:23'),
+(121, 2, 2, 14, 'Howrah Primary School', '12, School Para', 'Ward No. 12', 101, 41, 5512, '700111', NULL, '2026-11-20 15:45:23', '2026-11-20 10:15:23'),
+(122, 2, 2, 15, 'Hooghly Primary School', '13, Gandhi Road', 'Ward No. 13', 101, 41, 5511, '700121', NULL, '2026-11-20 15:45:23', '2026-11-20 10:15:23'),
+(123, 2, 2, 16, 'Durgapur Primary School', '15, College Road', 'Ward No. 15', 101, 41, 2574, '700141', NULL, '2026-11-20 15:45:24', '2026-11-20 10:15:24'),
+(124, 2, 2, 17, 'Siliguri Primary School', '16, Rabindra Sarani', 'Ward No. 16', 101, 41, 5707, '700151', NULL, '2026-11-20 15:45:24', '2026-11-20 10:15:24'),
+(125, 2, 2, 18, 'Barasat Primary School', '17, Bosepara', 'Ward No. 17', 101, 41, 5369, '700161', NULL, '2026-11-20 15:45:24', '2026-11-20 10:15:24'),
+(126, 2, 2, 19, 'Krishnanagar Primary School', '18, Station Road', 'Ward No. 18', 101, 41, 5586, '700171', NULL, '2026-11-20 15:45:24', '2026-11-20 10:15:24'),
+(127, 2, 2, 20, 'Bankura Primary School', '20, Kazi Nazrul Avenue', 'Ward No. 20', 101, 41, 5361, '700191', NULL, '2026-11-20 15:45:24', '2026-11-20 10:15:24'),
+(128, 2, 2, 21, 'Kolkata Primary School', '21, Lake Road', 'Ward No. 1', 101, 41, 5583, '700201', NULL, '2026-11-20 15:45:24', '2026-11-20 10:15:24'),
+(129, 2, 2, 22, 'Howrah Primary School', '22, School Para', 'Ward No. 2', 101, 41, 5512, '700211', NULL, '2026-11-20 15:45:24', '2026-11-20 10:15:24'),
+(130, 2, 2, 23, 'Hooghly Primary School', '23, Gandhi Road', 'Ward No. 3', 101, 41, 5511, '700221', NULL, '2026-11-20 15:45:25', '2026-11-20 10:15:25'),
+(131, 2, 2, 24, 'Durgapur Primary School', '25, College Road', 'Ward No. 5', 101, 41, 2574, '700241', NULL, '2026-11-20 15:45:25', '2026-11-20 10:15:25'),
+(132, 2, 2, 25, 'Siliguri Primary School', '26, Rabindra Sarani', 'Ward No. 6', 101, 41, 5707, '700251', NULL, '2026-11-20 15:45:25', '2026-11-20 10:15:25'),
+(133, 2, 2, 26, 'Barasat Primary School', '27, Bosepara', 'Ward No. 7', 101, 41, 5369, '700261', NULL, '2026-11-20 15:45:25', '2026-11-20 10:15:25'),
+(134, 2, 2, 27, 'Krishnanagar Primary School', '28, Station Road', 'Ward No. 8', 101, 41, 5586, '700271', NULL, '2026-11-20 15:45:25', '2026-11-20 10:15:25'),
+(135, 2, 2, 28, 'Bankura Primary School', '30, Kazi Nazrul Avenue', 'Ward No. 10', 101, 41, 5361, '700291', NULL, '2026-11-20 15:45:25', '2026-11-20 10:15:25'),
+(136, 2, 2, 29, 'Howrah Primary School', '2, School Para', 'Ward No. 12', 101, 41, 5512, '700311', NULL, '2026-11-20 15:45:26', '2026-11-20 10:15:26'),
+(137, 2, 2, 30, 'Hooghly Primary School', '3, Gandhi Road', 'Ward No. 13', 101, 41, 5511, '700321', NULL, '2026-11-20 15:45:26', '2026-11-20 10:15:26'),
+(138, 2, 2, 31, 'Durgapur Primary School', '5, College Road', 'Ward No. 15', 101, 41, 2574, '700341', NULL, '2026-11-20 15:45:26', '2026-11-20 10:15:26'),
+(139, 2, 2, 32, 'Siliguri Primary School', '6, Rabindra Sarani', 'Ward No. 16', 101, 41, 5707, '700351', NULL, '2026-11-20 15:45:26', '2026-11-20 10:15:26'),
+(140, 2, 2, 33, 'Barasat Primary School', '7, Bosepara', 'Ward No. 17', 101, 41, 5369, '700361', NULL, '2026-11-20 15:45:26', '2026-11-20 10:15:26'),
+(141, 2, 2, 34, 'Krishnanagar Primary School', '8, Station Road', 'Ward No. 18', 101, 41, 5586, '700371', NULL, '2026-11-20 15:45:26', '2026-11-20 10:15:26'),
+(142, 2, 2, 35, 'Bankura Primary School', '10, Kazi Nazrul Avenue', 'Ward No. 20', 101, 41, 5361, '700391', NULL, '2026-11-20 15:45:26', '2026-11-20 10:15:26'),
+(143, 2, 2, 36, 'Kolkata Primary School', '11, Lake Road', 'Ward No. 1', 101, 41, 5583, '700401', NULL, '2026-11-20 15:45:27', '2026-11-20 10:15:27'),
+(144, 2, 2, 37, 'Howrah Primary School', '12, School Para', 'Ward No. 2', 101, 41, 5512, '700411', NULL, '2026-11-20 15:45:27', '2026-11-20 10:15:27'),
+(145, 2, 2, 38, 'Hooghly Primary School', '13, Gandhi Road', 'Ward No. 3', 101, 41, 5511, '700421', NULL, '2026-11-20 15:45:27', '2026-11-20 10:15:27'),
+(146, 2, 2, 39, 'Durgapur Primary School', '15, College Road', 'Ward No. 5', 101, 41, 2574, '700441', NULL, '2026-11-20 15:45:27', '2026-11-20 10:15:27'),
+(147, 2, 2, 40, 'Siliguri Primary School', '16, Rabindra Sarani', 'Ward No. 6', 101, 41, 5707, '700451', NULL, '2026-11-20 15:45:27', '2026-11-20 10:15:27'),
+(148, 2, 2, 41, 'Barasat Primary School', '17, Bosepara', 'Ward No. 7', 101, 41, 5369, '700461', NULL, '2026-11-20 15:45:27', '2026-11-20 10:15:27'),
+(149, 2, 2, 42, 'Krishnanagar Primary School', '18, Station Road', 'Ward No. 8', 101, 41, 5586, '700471', NULL, '2026-11-20 15:45:27', '2026-11-20 10:15:27'),
+(150, 2, 2, 43, 'Bankura Primary School', '20, Kazi Nazrul Avenue', 'Ward No. 10', 101, 41, 5361, '700491', NULL, '2026-11-20 15:45:28', '2026-11-20 10:15:28'),
+(151, 2, 2, 44, 'Howrah Primary School', '22, School Para', 'Ward No. 12', 101, 41, 5512, '700011', NULL, '2026-11-20 15:45:28', '2026-11-20 10:15:28'),
+(152, 2, 2, 45, 'Hooghly Primary School', '23, Gandhi Road', 'Ward No. 13', 101, 41, 5511, '700021', NULL, '2026-11-20 15:45:28', '2026-11-20 10:15:28'),
+(153, 2, 2, 46, 'Durgapur Primary School', '25, College Road', 'Ward No. 15', 101, 41, 2574, '700041', NULL, '2026-11-20 15:45:28', '2026-11-20 10:15:28'),
+(154, 2, 2, 47, 'Siliguri Primary School', '26, Rabindra Sarani', 'Ward No. 16', 101, 41, 5707, '700051', NULL, '2026-11-20 15:45:28', '2026-11-20 10:15:28'),
+(155, 2, 2, 48, 'Barasat Primary School', '27, Bosepara', 'Ward No. 17', 101, 41, 5369, '700061', NULL, '2026-11-20 15:45:28', '2026-11-20 10:15:28'),
+(156, 2, 2, 49, 'Krishnanagar Primary School', '28, Station Road', 'Ward No. 18', 101, 41, 5586, '700071', NULL, '2026-11-20 15:45:28', '2026-11-20 10:15:28'),
+(157, 2, 2, 50, 'Bankura Primary School', '30, Kazi Nazrul Avenue', 'Ward No. 20', 101, 41, 5361, '700091', NULL, '2026-11-20 15:45:29', '2026-11-20 10:15:29'),
+(158, 2, 2, 51, 'Kolkata Primary School', '1, Lake Road', 'Ward No. 1', 101, 41, 5583, '700101', NULL, '2026-11-20 15:45:29', '2026-11-20 10:15:29'),
+(159, 2, 2, 52, 'Howrah Primary School', '2, School Para', 'Ward No. 2', 101, 41, 5512, '700111', NULL, '2026-11-20 15:45:29', '2026-11-20 10:15:29'),
+(160, 2, 2, 53, 'Hooghly Primary School', '3, Gandhi Road', 'Ward No. 3', 101, 41, 5511, '700121', NULL, '2026-11-20 15:45:29', '2026-11-20 10:15:29'),
+(161, 2, 2, 54, 'Durgapur Primary School', '5, College Road', 'Ward No. 5', 101, 41, 2574, '700141', NULL, '2026-11-20 15:45:29', '2026-11-20 10:15:29'),
+(162, 2, 2, 55, 'Siliguri Primary School', '6, Rabindra Sarani', 'Ward No. 6', 101, 41, 5707, '700151', NULL, '2026-11-20 15:45:29', '2026-11-20 10:15:29'),
+(163, 2, 2, 56, 'Barasat Primary School', '7, Bosepara', 'Ward No. 7', 101, 41, 5369, '700161', NULL, '2026-11-20 15:45:29', '2026-11-20 10:15:29'),
+(164, 2, 2, 57, 'Krishnanagar Primary School', '8, Station Road', 'Ward No. 8', 101, 41, 5586, '700171', NULL, '2026-11-20 15:45:30', '2026-11-20 10:15:30'),
+(165, 2, 2, 58, 'Bankura Primary School', '10, Kazi Nazrul Avenue', 'Ward No. 10', 101, 41, 5361, '700191', NULL, '2026-11-20 15:45:30', '2026-11-20 10:15:30'),
+(166, 2, 2, 59, 'Howrah Primary School', '12, School Para', 'Ward No. 12', 101, 41, 5512, '700211', NULL, '2026-11-20 15:45:30', '2026-11-20 10:15:30'),
+(167, 2, 2, 60, 'Hooghly Primary School', '13, Gandhi Road', 'Ward No. 13', 101, 41, 5511, '700221', NULL, '2026-11-20 15:45:30', '2026-11-20 10:15:30'),
+(168, 2, 2, 61, 'Durgapur Primary School', '15, College Road', 'Ward No. 15', 101, 41, 2574, '700241', NULL, '2026-11-20 15:45:30', '2026-11-20 10:15:30'),
+(169, 2, 2, 62, 'Siliguri Primary School', '16, Rabindra Sarani', 'Ward No. 16', 101, 41, 5707, '700251', NULL, '2026-11-20 15:45:30', '2026-11-20 10:15:30'),
+(170, 2, 2, 63, 'Barasat Primary School', '17, Bosepara', 'Ward No. 17', 101, 41, 5369, '700261', NULL, '2026-11-20 15:45:31', '2026-11-20 10:15:31'),
+(171, 2, 2, 64, 'Krishnanagar Primary School', '18, Station Road', 'Ward No. 18', 101, 41, 5586, '700271', NULL, '2026-11-20 15:45:31', '2026-11-20 10:15:31'),
+(172, 2, 2, 65, 'Bankura Primary School', '20, Kazi Nazrul Avenue', 'Ward No. 20', 101, 41, 5361, '700291', NULL, '2026-11-20 15:45:31', '2026-11-20 10:15:31'),
+(173, 2, 2, 66, 'Kolkata Primary School', '21, Lake Road', 'Ward No. 1', 101, 41, 5583, '700301', NULL, '2026-11-20 15:45:31', '2026-11-20 10:15:31'),
+(174, 2, 2, 67, 'Howrah Primary School', '22, School Para', 'Ward No. 2', 101, 41, 5512, '700311', NULL, '2026-11-20 15:45:31', '2026-11-20 10:15:31'),
+(175, 2, 2, 68, 'Hooghly Primary School', '23, Gandhi Road', 'Ward No. 3', 101, 41, 5511, '700321', NULL, '2026-11-20 15:45:31', '2026-11-20 10:15:31'),
+(176, 2, 2, 69, 'Durgapur Primary School', '25, College Road', 'Ward No. 5', 101, 41, 2574, '700341', NULL, '2026-11-20 15:45:31', '2026-11-20 10:15:31'),
+(177, 2, 2, 70, 'Siliguri Primary School', '26, Rabindra Sarani', 'Ward No. 6', 101, 41, 5707, '700351', NULL, '2026-11-20 15:45:32', '2026-11-20 10:15:32'),
+(178, 2, 2, 71, 'Barasat Primary School', '27, Bosepara', 'Ward No. 7', 101, 41, 5369, '700361', NULL, '2026-11-20 15:45:32', '2026-11-20 10:15:32'),
+(179, 2, 2, 72, 'Krishnanagar Primary School', '28, Station Road', 'Ward No. 8', 101, 41, 5586, '700371', NULL, '2026-11-20 15:45:32', '2026-11-20 10:15:32'),
+(180, 2, 2, 73, 'Bankura Primary School', '30, Kazi Nazrul Avenue', 'Ward No. 10', 101, 41, 5361, '700391', NULL, '2026-11-20 15:45:32', '2026-11-20 10:15:32'),
+(181, 2, 2, 74, 'Howrah Primary School', '2, School Para', 'Ward No. 12', 101, 41, 5512, '700411', NULL, '2026-11-20 15:45:32', '2026-11-20 10:15:32'),
+(182, 2, 2, 75, 'Hooghly Primary School', '3, Gandhi Road', 'Ward No. 13', 101, 41, 5511, '700421', NULL, '2026-11-20 15:45:32', '2026-11-20 10:15:32'),
+(183, 2, 2, 76, 'Durgapur Primary School', '5, College Road', 'Ward No. 15', 101, 41, 2574, '700441', NULL, '2026-11-20 15:45:33', '2026-11-20 10:15:33'),
+(184, 2, 2, 77, 'Siliguri Primary School', '6, Rabindra Sarani', 'Ward No. 16', 101, 41, 5707, '700451', NULL, '2026-11-20 15:45:33', '2026-11-20 10:15:33'),
+(185, 2, 2, 78, 'Barasat Primary School', '7, Bosepara', 'Ward No. 17', 101, 41, 5369, '700461', NULL, '2026-11-20 15:45:33', '2026-11-20 10:15:33'),
+(186, 2, 2, 79, 'Krishnanagar Primary School', '8, Station Road', 'Ward No. 18', 101, 41, 5586, '700471', NULL, '2026-11-20 15:45:33', '2026-11-20 10:15:33'),
+(187, 2, 2, 80, 'Bankura Primary School', '10, Kazi Nazrul Avenue', 'Ward No. 20', 101, 41, 5361, '700491', NULL, '2026-11-20 15:45:33', '2026-11-20 10:15:33'),
+(188, 2, 2, 81, 'Bardhaman Primary School', '4, New Town', 'Ward No. 4', 101, 41, NULL, '700031', NULL, '2026-11-23 12:13:54', '2026-11-23 06:43:54');
 
 -- --------------------------------------------------------
 
@@ -50477,7 +51767,7 @@ CREATE TABLE `product_category` (
   `category_name` varchar(255) DEFAULT NULL,
   `status` int(11) DEFAULT 1 COMMENT '1=active, 0=delete',
   `created_on` timestamp NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -50504,7 +51794,7 @@ CREATE TABLE `product_information` (
   `specification_model` text DEFAULT NULL,
   `specification_abbreviation` text DEFAULT NULL,
   `date` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -50518,7 +51808,7 @@ CREATE TABLE `product_sub_category` (
   `sub_category_name` varchar(255) DEFAULT NULL,
   `status` int(11) DEFAULT NULL COMMENT '1=active, 0=delete',
   `created_on` timestamp NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -50532,7 +51822,7 @@ CREATE TABLE `product_tax` (
   `tax_value` float DEFAULT NULL,
   `status` int(11) DEFAULT NULL COMMENT '1=active, 0=delete',
   `created_on` timestamp NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -50545,7 +51835,7 @@ CREATE TABLE `product_unit` (
   `unit_name` varchar(20) DEFAULT NULL,
   `status` int(11) DEFAULT NULL COMMENT '1=active, 0=delete',
   `created_on` timestamp NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -50559,7 +51849,7 @@ CREATE TABLE `profile_document` (
   `document_file` text DEFAULT NULL,
   `status` int(11) DEFAULT NULL,
   `created_on` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -50572,7 +51862,7 @@ CREATE TABLE `project_category` (
   `name` varchar(255) DEFAULT NULL,
   `status` int(11) DEFAULT NULL,
   `created_on` timestamp NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -50585,7 +51875,7 @@ CREATE TABLE `project_settings` (
   `remind_to` varchar(255) DEFAULT NULL,
   `remind_time` varchar(255) DEFAULT NULL,
   `created_on` timestamp NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -50600,7 +51890,7 @@ CREATE TABLE `project_status` (
   `is_default` int(11) DEFAULT NULL,
   `status` int(11) DEFAULT NULL,
   `created_on` timestamp NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -50611,28 +51901,42 @@ CREATE TABLE `project_status` (
 CREATE TABLE `religion_master` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `religion` varchar(255) DEFAULT NULL,
   `sort_order` int(11) DEFAULT NULL,
   `status` int(11) NOT NULL DEFAULT 1
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `religion_master`
 --
 
-INSERT INTO `religion_master` (`id`, `school_id`, `religion`, `sort_order`, `status`) VALUES
-(1, 1, 'Hinduism', 1, 1),
-(2, 1, 'Islam', 2, 1),
-(3, 1, 'Christianity', 3, 1),
-(4, 1, 'Sikhism', 4, 1),
-(5, 1, 'Buddhism', 5, 1),
-(6, 1, 'Jainism', 6, 1),
-(7, 2, 'Hinduism', 1, 1),
-(8, 2, 'Islam', 2, 1),
-(9, 2, 'Christianity', 3, 1),
-(10, 2, 'Sikhism', 4, 1),
-(11, 2, 'Buddhism', 5, 1),
-(12, 2, 'Jainism', 6, 1);
+INSERT INTO `religion_master` (`id`, `school_id`, `branch_id`, `religion`, `sort_order`, `status`) VALUES
+(1, 2, 2, 'Hinduism', 1, 1),
+(2, 2, 2, 'Islam', 2, 1);
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `rfid_card_master`
+--
+
+CREATE TABLE `rfid_card_master` (
+  `id` int(11) NOT NULL,
+  `card_name` varchar(150) NOT NULL COMMENT 'e.g. Mifare 1K Smart Card, EM4100 Proximity Card',
+  `card_code` varchar(50) NOT NULL COMMENT 'Unique SKU/Model e.g. RFID-MF-1K',
+  `card_type` varchar(50) NOT NULL DEFAULT 'pvc_card' COMMENT 'pvc_card, keyfob, wristband, sticker',
+  `frequency` varchar(50) DEFAULT NULL COMMENT 'e.g. 13.56 MHz, 125 kHz, 860-960 MHz',
+  `read_range` varchar(50) DEFAULT NULL COMMENT 'e.g. 2-5 cm, 1-3 meters',
+  `unit_price` decimal(10,2) NOT NULL DEFAULT 0.00 COMMENT 'Per-card price in INR',
+  `min_order_qty` int(11) NOT NULL DEFAULT 1 COMMENT 'Minimum order quantity',
+  `card_image` varchar(255) DEFAULT NULL COMMENT 'Image/preview URL',
+  `rfid_image` varchar(255) DEFAULT NULL,
+  `description` text DEFAULT NULL,
+  `status` tinyint(1) NOT NULL DEFAULT 1 COMMENT '1 = Active, 0 = Inactive',
+  `created_at` datetime DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -50644,16 +51948,18 @@ CREATE TABLE `role_master` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
   `role_name` varchar(255) DEFAULT NULL,
+  `is_system_role` tinyint(1) NOT NULL DEFAULT 0,
   `created_on` datetime NOT NULL DEFAULT current_timestamp(),
   `status` int(11) NOT NULL DEFAULT 1
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `role_master`
 --
 
-INSERT INTO `role_master` (`id`, `school_id`, `role_name`, `created_on`, `status`) VALUES
-(3, 2, 'Accountant', '2026-09-09 19:18:05', 1);
+INSERT INTO `role_master` (`id`, `school_id`, `role_name`, `is_system_role`, `created_on`, `status`) VALUES
+(1, 2, 'Accountant', 0, '2026-11-18 15:09:08', 1),
+(2, 2, 'Branch Head', 1, '2026-11-18 15:11:06', 1);
 
 -- --------------------------------------------------------
 
@@ -50664,6 +51970,7 @@ INSERT INTO `role_master` (`id`, `school_id`, `role_name`, `created_on`, `status
 CREATE TABLE `routine` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `shift_id` int(11) DEFAULT NULL,
   `class_id` int(11) DEFAULT NULL,
   `section_id` int(11) DEFAULT NULL,
@@ -50674,15 +51981,172 @@ CREATE TABLE `routine` (
   `status` int(11) DEFAULT NULL COMMENT '1=active, 2=inactive, 4=delete',
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `routine`
 --
 
-INSERT INTO `routine` (`id`, `school_id`, `shift_id`, `class_id`, `section_id`, `day`, `period_id`, `teacher_id`, `subject_id`, `status`, `created_at`, `updated_at`) VALUES
-(1, 2, 3, 8, 15, 7, 5, 3, 24, 1, '2026-09-10 16:08:11', '2026-09-10 10:38:11'),
-(2, 2, 3, 8, 15, 10, 5, 3, 24, 1, '2026-09-10 16:16:26', '2026-09-10 10:46:26');
+INSERT INTO `routine` (`id`, `school_id`, `branch_id`, `shift_id`, `class_id`, `section_id`, `day`, `period_id`, `teacher_id`, `subject_id`, `status`, `created_at`, `updated_at`) VALUES
+(1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, '2026-11-18 15:19:38', '2026-11-18 09:49:38'),
+(2, 2, 2, 1, 1, 1, 2, 1, 1, 1, 1, '2026-11-18 15:19:42', '2026-11-18 09:49:42'),
+(3, 2, 2, 1, 1, 1, 3, 1, 1, 1, 1, '2026-11-18 15:19:45', '2026-11-18 09:49:45'),
+(4, 2, 2, 1, 1, 1, 4, 1, 1, 1, 1, '2026-11-18 15:19:50', '2026-11-18 09:49:50'),
+(5, 2, 2, 1, 1, 1, 5, 1, 1, 1, 1, '2026-11-18 15:19:54', '2026-11-18 09:49:54'),
+(6, 2, 2, 1, 1, 1, 1, 2, 2, 5, 1, '2026-11-18 15:19:58', '2026-11-18 09:49:58'),
+(7, 2, 2, 1, 1, 1, 2, 2, 2, 5, 1, '2026-11-18 15:20:02', '2026-11-18 09:50:02'),
+(8, 2, 2, 1, 1, 1, 3, 2, 2, 5, 1, '2026-11-18 15:20:05', '2026-11-18 09:50:05'),
+(9, 2, 2, 1, 1, 1, 4, 2, 2, 5, 1, '2026-11-18 15:20:09', '2026-11-18 09:50:09'),
+(10, 2, 2, 1, 1, 1, 5, 2, 2, 5, 1, '2026-11-18 15:20:13', '2026-11-18 09:50:13'),
+(11, 2, 2, 1, 1, 2, 1, 1, 2, 5, 1, '2026-11-18 15:20:31', '2026-11-18 09:50:31'),
+(12, 2, 2, 1, 1, 2, 2, 1, 2, 5, 1, '2026-11-18 15:20:35', '2026-11-18 09:50:35'),
+(13, 2, 2, 1, 1, 2, 3, 1, 2, 5, 1, '2026-11-18 15:20:38', '2026-11-18 09:50:38'),
+(14, 2, 2, 1, 1, 2, 4, 1, 2, 5, 1, '2026-11-18 15:20:42', '2026-11-18 09:50:42'),
+(15, 2, 2, 1, 1, 2, 5, 1, 2, 5, 1, '2026-11-18 15:20:47', '2026-11-18 09:50:47'),
+(16, 2, 2, 1, 1, 2, 1, 2, 1, 1, 1, '2026-11-18 15:20:52', '2026-11-18 09:50:52'),
+(17, 2, 2, 1, 1, 2, 2, 2, 1, 1, 1, '2026-11-18 15:21:00', '2026-11-18 09:51:00'),
+(18, 2, 2, 1, 1, 2, 3, 2, 1, 1, 1, '2026-11-18 15:21:06', '2026-11-18 09:51:06'),
+(19, 2, 2, 1, 1, 2, 4, 2, 1, 1, 1, '2026-11-18 15:21:12', '2026-11-18 09:51:12'),
+(20, 2, 2, 1, 1, 2, 5, 2, 1, 1, 1, '2026-11-18 15:21:17', '2026-11-18 09:51:17');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `saas_admin_users`
+--
+
+CREATE TABLE `saas_admin_users` (
+  `id` int(11) NOT NULL,
+  `first_name` varchar(100) DEFAULT NULL,
+  `last_name` varchar(100) DEFAULT NULL,
+  `gender` int(11) DEFAULT NULL,
+  `profile_image` varchar(255) DEFAULT NULL,
+  `phone_number` varchar(30) DEFAULT NULL,
+  `email` varchar(150) NOT NULL,
+  `password` varchar(255) NOT NULL,
+  `role` varchar(50) NOT NULL DEFAULT 'superadmin',
+  `role_id` int(11) DEFAULT NULL,
+  `status` tinyint(1) NOT NULL DEFAULT 1,
+  `created_at` datetime DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `saas_admin_users`
+--
+
+INSERT INTO `saas_admin_users` (`id`, `first_name`, `last_name`, `gender`, `profile_image`, `phone_number`, `email`, `password`, `role`, `role_id`, `status`, `created_at`, `updated_at`) VALUES
+(2, 'Sumanta', 'Dey', 1, NULL, '9874563210', 'admin@gmail.com', '$2b$10$1JDfXZjraTXR6FyAizPbFerY9hq0KhTQ1hK/s66G0LrR0gc1YcK66', 'superadmin', NULL, 1, '2026-11-18 13:30:31', '2026-11-18 13:33:40');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `saas_communication_settings`
+--
+
+CREATE TABLE `saas_communication_settings` (
+  `id` int(11) NOT NULL,
+  `email_alerts_enabled` tinyint(1) NOT NULL DEFAULT 0 COMMENT 'Super Admin toggle: 1 = Send subscription emails via active Mailjet/SMTP, 0 = Off',
+  `sms_alerts_enabled` tinyint(1) NOT NULL DEFAULT 0 COMMENT 'Super Admin toggle: 1 = Send subscription SMS alerts, 0 = Off',
+  `notify_on_payment_success` tinyint(1) NOT NULL DEFAULT 1,
+  `notify_on_offline_decision` tinyint(1) NOT NULL DEFAULT 1,
+  `notify_on_expiry_reminder` tinyint(1) NOT NULL DEFAULT 1,
+  `sms_provider` varchar(50) DEFAULT NULL,
+  `sms_api_key_encrypted` text DEFAULT NULL,
+  `sms_sender_id` varchar(30) DEFAULT NULL,
+  `updated_by` int(11) DEFAULT NULL,
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `saas_communication_settings`
+--
+
+INSERT INTO `saas_communication_settings` (`id`, `email_alerts_enabled`, `sms_alerts_enabled`, `notify_on_payment_success`, `notify_on_offline_decision`, `notify_on_expiry_reminder`, `sms_provider`, `sms_api_key_encrypted`, `sms_sender_id`, `updated_by`, `updated_at`) VALUES
+(1, 0, 0, 1, 1, 1, NULL, NULL, NULL, NULL, '2026-11-18 13:23:48');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `saas_modules`
+--
+
+CREATE TABLE `saas_modules` (
+  `id` int(11) NOT NULL,
+  `module_key` varchar(50) NOT NULL,
+  `module_name` varchar(100) NOT NULL,
+  `description` varchar(255) DEFAULT NULL,
+  `display_order` int(11) DEFAULT 0,
+  `status` tinyint(1) NOT NULL DEFAULT 1,
+  `created_at` datetime DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `saas_roles`
+--
+
+CREATE TABLE `saas_roles` (
+  `id` int(11) NOT NULL,
+  `role_name` varchar(100) NOT NULL,
+  `slug` varchar(100) DEFAULT NULL,
+  `description` text DEFAULT NULL,
+  `is_system` tinyint(1) NOT NULL DEFAULT 0,
+  `status` tinyint(1) NOT NULL DEFAULT 1,
+  `created_at` datetime DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `saas_role_permissions`
+--
+
+CREATE TABLE `saas_role_permissions` (
+  `id` int(11) NOT NULL,
+  `role_id` int(11) NOT NULL,
+  `module_key` varchar(50) NOT NULL,
+  `can_view` tinyint(1) NOT NULL DEFAULT 0,
+  `can_add` tinyint(1) NOT NULL DEFAULT 0,
+  `can_edit` tinyint(1) NOT NULL DEFAULT 0,
+  `can_delete` tinyint(1) NOT NULL DEFAULT 0,
+  `can_manage` tinyint(1) NOT NULL DEFAULT 0,
+  `created_at` datetime DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `school_attendance_machines`
+--
+
+CREATE TABLE `school_attendance_machines` (
+  `id` int(11) NOT NULL,
+  `order_no` varchar(100) DEFAULT NULL,
+  `school_id` int(11) NOT NULL COMMENT 'References school_master.id',
+  `payment_order_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL COMMENT 'References branch_master.id',
+  `machine_master_id` int(11) NOT NULL COMMENT 'References attendance_machine_master.id',
+  `quantity` int(11) NOT NULL DEFAULT 1,
+  `unit_price` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `total_amount` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `device_serial_number` varchar(100) DEFAULT NULL,
+  `device_location` varchar(100) DEFAULT NULL,
+  `ip_address` varchar(50) DEFAULT NULL,
+  `port` int(11) DEFAULT 4370,
+  `status` tinyint(1) NOT NULL DEFAULT 1 COMMENT '1 = Online/Active, 0 = Offline/Disabled',
+  `order_status` enum('pending','approved','dispatched','delivered','cancelled') NOT NULL DEFAULT 'pending',
+  `payment_transaction_id` varchar(150) DEFAULT NULL,
+  `shipping_address` text DEFAULT NULL,
+  `remarks` text DEFAULT NULL,
+  `last_sync_at` datetime DEFAULT NULL,
+  `created_at` datetime DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -50695,34 +52159,126 @@ CREATE TABLE `school_master` (
   `school_name` varchar(255) DEFAULT NULL,
   `school_code` varchar(50) DEFAULT NULL,
   `school_logo` varchar(255) DEFAULT NULL,
-  `address` text DEFAULT NULL,
+  `address` mediumtext DEFAULT NULL,
   `city` int(11) DEFAULT NULL,
   `state` int(11) DEFAULT NULL,
   `country` int(11) DEFAULT NULL,
   `postal_code` varchar(20) DEFAULT NULL,
   `phone_number` varchar(20) DEFAULT NULL,
   `email` varchar(255) DEFAULT NULL,
-  `website` text DEFAULT NULL,
+  `website` mediumtext DEFAULT NULL,
   `established_year` varchar(20) DEFAULT NULL,
   `school_type` varchar(100) DEFAULT NULL,
   `affiliation_board` varchar(100) DEFAULT NULL,
   `medium_of_instruction` varchar(100) DEFAULT NULL,
+  `registration_type` enum('single','multiple') NOT NULL DEFAULT 'single',
   `footer` varchar(255) DEFAULT NULL,
   `status` int(11) NOT NULL DEFAULT 1,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-  `updated_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `bank_name` varchar(150) DEFAULT NULL,
+  `account_holder_name` varchar(150) DEFAULT NULL,
+  `account_number` varchar(50) DEFAULT NULL,
+  `ifsc_code` varchar(50) DEFAULT NULL,
+  `branch_name` varchar(150) DEFAULT NULL,
+  `upi_id` varchar(100) DEFAULT NULL,
+  `qr_code` varchar(255) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `school_master`
 --
 
-INSERT INTO `school_master` (`id`, `school_name`, `school_code`, `school_logo`, `address`, `city`, `state`, `country`, `postal_code`, `phone_number`, `email`, `website`, `established_year`, `school_type`, `affiliation_board`, `medium_of_instruction`, `footer`, `status`, `created_at`, `updated_at`) VALUES
-(1, 'Codeulas School', 'SC-4578', NULL, 'A-09/245, Kalyani, West Bengal, 754281', 5624, 41, 101, '742589', '4758952458', 'codeulas@gmail.com', NULL, NULL, NULL, NULL, NULL, 'Copyright © 2026 GrowVidya - School Management System', 1, '2026-09-09 12:51:18', '2026-09-09 12:51:18'),
-(2, 'St. Mary’s Valley School', 'SC-4579', 'upload/general/Favicon-02-1789109063652-1345.png', '452 Orchid Valley Road, Sector 4', 5624, 41, 101, '745836', '1233456878', 'demo@gmail.com', 'www.codeulas.school.com', '2026', NULL, 'CBSC', NULL, 'Copyright © 2026 St. Mary’s Valley School - School Management System', 1, '2026-09-09 12:51:18', '2026-09-11 06:44:23'),
-(7, 'Kalyani School', 'SIX-5656', 'upload/school/Logo-1789047536059-3454.png', 'A-09/245, Kalyani', 5548, 41, 101, '742589', '1234567890', 'pradipta@gmail.com', NULL, '2026', 'High school', 'CBSE', 'English', 'test footer?', 1, '2026-09-10 13:38:56', '2026-09-10 13:38:56'),
-(9, 'Sunrise International Public School', 'SIPS001', 'upload/school/Logo-1789129377062-8038.jpg', '25 Green Valley Road', 5583, 41, 101, '70006', '+917898650254', 'info@gmail.com', NULL, '2026', 'Co-Educational', 'CBSE', NULL, 'Copyright © 2026 Dr. Ananya Sharma - All Rights Reserved', 1, '2026-09-11 12:22:57', '2026-09-11 12:22:57'),
-(10, 'Green Valley International School', 'GVIS2026', 'upload/school/Logo-1789135491356-7435.png', '25 Lake View Road', 5583, 41, 101, '70006', '8657412540', 'dmin@greenvalleyschool.test', NULL, '2026', 'High school', 'CBSE', NULL, 'Copyright © 2026 Green Valley International School - All Rights Reserved', 1, '2026-09-11 14:04:51', '2026-09-11 14:04:51');
+INSERT INTO `school_master` (`id`, `school_name`, `school_code`, `school_logo`, `address`, `city`, `state`, `country`, `postal_code`, `phone_number`, `email`, `website`, `established_year`, `school_type`, `affiliation_board`, `medium_of_instruction`, `registration_type`, `footer`, `status`, `created_at`, `updated_at`, `bank_name`, `account_holder_name`, `account_number`, `ifsc_code`, `branch_name`, `upi_id`, `qr_code`) VALUES
+(1, 'Green Valley Public School', 'GVP2026001', 'upload/platform/school/Logo_Logo-1794993874874-4c9798.png', '25 Park Street, Kolkata, West Bengal, 700016', 5548, 41, 101, '700016', '9863202541', 'info@greenvalleyschool.in', 'www.greenvalleyschool.in', '2026', 'Co-Educational', 'CBSC', 'English', 'multiple', 'Copyright © 2026 Green Valley Public School - School Management System', 1, '2026-11-18 09:24:35', '2026-11-18 09:24:35', NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+(2, 'Shishu Kakali KG School', 'SKKS', 'upload/platform/school/Logo_Logo-1794994009841-7c2fa2.jpg', '55 Govindapur, Santipur, Nadia', 5704, 41, 101, '741404', '9865239550', 'shishu.kakali@gmail.com', 'www.shishukakali.com', '1990', 'Private', 'CBSC', 'Bengali', 'multiple', 'Copyright © 2026 Shishu Kakali KG School - School Management System', 1, '2026-11-18 09:26:50', '2026-11-18 11:21:03', 'State Bank Of India', 'Shishu Kakali', '895632147890', 'IFSC00016', 'Kalyani', NULL, 'upload/schools/2/branches/2/schools/QR_Code_Example_svg-1795000862304-96cfde.webp'),
+(3, 'Codeulas School', 'CS', 'upload/platform/school/Logo_Logo-1795073392346-e79dae.webp', 'Kalyani, West Bengal, 785210', 5548, 41, 101, '741321', '9630258741', 'codeulas@gmail.com', 'https://codeulas.com/', '1990', 'Private', 'CBSE', 'English', 'multiple', 'Copyright © 2026 Codeulas School - School Management System', 1, '2026-11-19 07:29:54', '2026-11-19 07:29:54', NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `school_notification_ledger`
+--
+
+CREATE TABLE `school_notification_ledger` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `school_id` int(11) NOT NULL,
+  `channel` enum('sms','push') NOT NULL,
+  `entry_type` enum('credit','debit','adjustment') NOT NULL,
+  `units` int(11) NOT NULL,
+  `balance_after` int(11) NOT NULL DEFAULT 0,
+  `unit_price` decimal(10,4) NOT NULL DEFAULT 0.0000,
+  `total_amount` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `payment_order_id` int(11) DEFAULT NULL,
+  `reference_note` varchar(255) DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `school_notification_wallets`
+--
+
+CREATE TABLE `school_notification_wallets` (
+  `id` int(11) NOT NULL,
+  `school_id` int(11) NOT NULL,
+  `sms_balance` int(11) NOT NULL DEFAULT 0,
+  `push_balance` int(11) NOT NULL DEFAULT 0,
+  `total_sms_purchased` int(11) NOT NULL DEFAULT 0,
+  `total_push_purchased` int(11) NOT NULL DEFAULT 0,
+  `total_sms_used` int(11) NOT NULL DEFAULT 0,
+  `total_push_used` int(11) NOT NULL DEFAULT 0,
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `school_rfid_orders`
+--
+
+CREATE TABLE `school_rfid_orders` (
+  `id` int(11) NOT NULL,
+  `order_no` varchar(50) NOT NULL,
+  `school_id` int(11) NOT NULL,
+  `payment_order_id` int(11) DEFAULT NULL,
+  `rfid_card_id` int(11) NOT NULL,
+  `quantity` int(11) NOT NULL DEFAULT 1,
+  `unit_price` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `total_amount` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `order_status` enum('pending','approved','dispatched','delivered','cancelled') NOT NULL DEFAULT 'pending',
+  `payment_transaction_id` varchar(150) DEFAULT NULL,
+  `shipping_address` text DEFAULT NULL,
+  `remarks` text DEFAULT NULL,
+  `created_at` datetime DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `school_storage_orders`
+--
+
+CREATE TABLE `school_storage_orders` (
+  `id` int(11) NOT NULL,
+  `order_no` varchar(100) NOT NULL,
+  `school_id` int(11) NOT NULL,
+  `payment_order_id` int(11) DEFAULT NULL,
+  `storage_plan_id` int(11) NOT NULL,
+  `billing_cycle` varchar(30) NOT NULL DEFAULT 'annual',
+  `quantity` int(11) NOT NULL DEFAULT 1,
+  `unit_price` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `total_amount` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `payment_transaction_id` varchar(150) DEFAULT NULL,
+  `order_status` enum('pending','active','expired','cancelled') NOT NULL DEFAULT 'pending',
+  `start_date` date DEFAULT NULL,
+  `end_date` date DEFAULT NULL,
+  `remarks` text DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -50734,29 +52290,41 @@ CREATE TABLE `school_subscriptions` (
   `id` int(11) NOT NULL,
   `school_id` int(11) NOT NULL,
   `plan_id` int(11) NOT NULL,
+  `storage_plan_id` int(11) DEFAULT NULL,
+  `action_type` enum('onboarding','trial','renewal','upgrade','manual_override') NOT NULL DEFAULT 'onboarding',
+  `plan_amount` decimal(10,2) DEFAULT NULL,
+  `addons_amount` decimal(10,2) NOT NULL DEFAULT 0.00,
   `amount_paid` decimal(10,2) NOT NULL,
-  `payment_gateway` varchar(50) DEFAULT 'dummy',
+  `payment_gateway` varchar(50) DEFAULT 'razorpay',
   `payment_transaction_id` varchar(150) DEFAULT NULL,
+  `payment_order_id` int(11) DEFAULT NULL,
+  `invoice_no` varchar(60) DEFAULT NULL,
+  `coupon_id` int(11) DEFAULT NULL,
+  `discount_amount` decimal(10,2) DEFAULT 0.00,
+  `original_amount` decimal(10,2) DEFAULT NULL,
   `payment_status` enum('completed','pending','failed') DEFAULT 'completed',
   `start_date` date NOT NULL,
   `end_date` date NOT NULL,
-  `status` enum('trial','active','expired','suspended') DEFAULT 'active',
-  `created_at` datetime DEFAULT current_timestamp()
+  `status` enum('trial','active','expired','suspended','pending','rejected','superseded') DEFAULT 'pending',
+  `verification_notes` text DEFAULT NULL,
+  `verified_by` int(11) DEFAULT NULL,
+  `verified_at` datetime DEFAULT NULL,
+  `superseded_by_id` int(11) DEFAULT NULL,
+  `created_at` datetime DEFAULT current_timestamp(),
+  `snapshot_max_students` int(11) DEFAULT NULL,
+  `snapshot_storage_gb` int(11) DEFAULT NULL,
+  `snapshot_tier_rank` int(11) DEFAULT NULL,
+  `snapshot_billing_cycle` varchar(50) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `school_subscriptions`
 --
 
-INSERT INTO `school_subscriptions` (`id`, `school_id`, `plan_id`, `amount_paid`, `payment_gateway`, `payment_transaction_id`, `payment_status`, `start_date`, `end_date`, `status`, `created_at`) VALUES
-(4, 7, 4, 0.00, 'free_trial', 'TRIAL_14DAYS_1789047332888_1666', 'completed', '2026-09-10', '2026-09-24', 'expired', '2026-09-10 19:08:56'),
-(5, 1, 3, 9999.00, 'system_seed', 'SEED_ACTIVE_1', 'completed', '2026-01-01', '2027-01-01', 'expired', '2026-09-10 19:22:32'),
-(6, 2, 2, 5999.00, 'system_seed', 'SEED_ACTIVE_2', 'completed', '2026-01-01', '2027-01-01', 'active', '2026-09-10 19:22:32'),
-(10, 9, 1, 2999.00, 'razorpay', 'pay_TajCWDHzquIkhG', 'completed', '2026-09-11', '2027-09-11', 'active', '2026-09-11 17:52:57'),
-(11, 7, 1, 2999.00, 'razorpay', 'pay_TajplTm4IIVU3D', 'completed', '2026-09-24', '2027-09-24', 'active', '2026-09-24 18:29:53'),
-(12, 1, 2, 24999.00, 'razorpay', 'pay_1789132512595', 'completed', '2026-09-11', '2027-09-11', 'expired', '2026-09-11 18:45:12'),
-(13, 1, 2, 24999.00, 'razorpay', 'pay_1789132519896', 'completed', '2026-09-11', '2027-09-11', 'active', '2026-09-11 18:45:19'),
-(14, 10, 4, 0.00, 'free_trial', 'TRIAL_14DAYS_1789135491349_2534', 'completed', '2026-09-11', '2026-09-25', 'trial', '2026-09-11 19:34:51');
+INSERT INTO `school_subscriptions` (`id`, `school_id`, `plan_id`, `storage_plan_id`, `action_type`, `plan_amount`, `addons_amount`, `amount_paid`, `payment_gateway`, `payment_transaction_id`, `payment_order_id`, `invoice_no`, `coupon_id`, `discount_amount`, `original_amount`, `payment_status`, `start_date`, `end_date`, `status`, `verification_notes`, `verified_by`, `verified_at`, `superseded_by_id`, `created_at`, `snapshot_max_students`, `snapshot_storage_gb`, `snapshot_tier_rank`, `snapshot_billing_cycle`) VALUES
+(1, 1, 8, NULL, 'trial', 0.00, 0.00, 0.00, 'free_trial', 'ORD-20261118-542088', 1, 'INV-2026-00001', NULL, 0.00, 0.00, 'completed', '2026-11-18', '2027-01-17', 'trial', 'Free trial activated on onboarding', 1, '2026-11-18 14:54:35', NULL, '2026-11-18 14:54:35', 200, 5, 0, 'trial'),
+(2, 2, 8, NULL, 'trial', 0.00, 0.00, 0.00, 'free_trial', 'ORD-20261118-909603', 2, 'INV-2026-00002', NULL, 0.00, 0.00, 'completed', '2026-11-18', '2027-01-17', 'trial', 'Free trial activated on onboarding', 2, '2026-11-18 14:56:51', NULL, '2026-11-18 14:56:51', 200, 5, 0, 'trial'),
+(3, 3, 8, NULL, 'trial', 0.00, 0.00, 0.00, 'free_trial', 'ORD-20261119-181088', 3, 'INV-2026-00003', NULL, 0.00, 0.00, 'completed', '2026-11-19', '2027-01-18', 'trial', 'Free trial activated on onboarding', 5, '2026-11-19 12:59:55', NULL, '2026-11-19 12:59:55', 200, 5, 0, 'trial');
 
 -- --------------------------------------------------------
 
@@ -50767,36 +52335,35 @@ INSERT INTO `school_subscriptions` (`id`, `school_id`, `plan_id`, `amount_paid`,
 CREATE TABLE `section_master` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `class_id` int(11) DEFAULT NULL,
   `section_name` varchar(255) DEFAULT NULL,
   `capacity` int(11) DEFAULT NULL,
-  `note` text DEFAULT NULL,
+  `note` mediumtext DEFAULT NULL,
   `sort_order` int(11) NOT NULL,
   `status` int(11) NOT NULL DEFAULT 1,
   `created_on` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `section_master`
 --
 
-INSERT INTO `section_master` (`id`, `school_id`, `class_id`, `section_name`, `capacity`, `note`, `sort_order`, `status`, `created_on`) VALUES
-(1, 1, 1, 'A', 100, 'test', 1, 1, '2026-09-09 10:07:07'),
-(2, 1, 1, 'B', 100, 'test', 1, 1, '2026-09-09 10:07:40'),
-(3, 1, 1, 'C', 100, 'test', 1, 1, '2026-09-09 10:07:50'),
-(4, 1, 2, 'A', 45, 'test', 1, 1, '2026-09-09 10:08:14'),
-(5, 1, 2, 'B', 45, 'test', 1, 1, '2026-09-09 10:08:42'),
-(6, 1, 3, 'A', 45, 'test', 1, 1, '2026-09-09 10:29:22'),
-(7, 1, 4, 'A', 50, 'test', 1, 1, '2026-09-09 10:09:13'),
-(8, 1, 4, 'B', 50, 'test', 1, 1, '2026-09-09 10:09:22'),
-(9, 1, 5, 'A', 100, 'test', 1, 1, '2026-09-09 14:29:51'),
-(10, 2, 6, 'A', 60, 'test', 1, 1, '2026-09-10 05:56:14'),
-(11, 2, 6, 'B', 60, 'test', 1, 1, '2026-09-10 05:56:24'),
-(12, 2, 6, 'C', 60, 'test', 1, 1, '2026-09-10 05:56:36'),
-(13, 2, 7, 'A', 35, 'test', 1, 1, '2026-09-10 05:56:53'),
-(14, 2, 7, 'B', 35, 'test', 1, 1, '2026-09-10 05:57:03'),
-(15, 2, 8, 'A', 70, 'test', 1, 1, '2026-09-10 05:57:14'),
-(16, 2, 8, 'B', 70, 'test', 1, 1, '2026-09-10 05:57:25');
+INSERT INTO `section_master` (`id`, `school_id`, `branch_id`, `class_id`, `section_name`, `capacity`, `note`, `sort_order`, `status`, `created_on`) VALUES
+(1, 2, 2, 1, 'A', 50, '', 1, 1, '2026-11-20 07:05:34'),
+(2, 2, 2, 1, 'B', 100, '', 1, 1, '2026-11-18 09:30:04'),
+(3, 2, 2, 2, 'A', 100, '', 1, 1, '2026-11-18 09:30:09'),
+(4, 2, 2, 2, 'B', 100, '', 1, 1, '2026-11-18 09:30:14'),
+(5, 2, 2, 3, 'A', 10, '', 1, 1, '2026-11-20 11:30:26'),
+(6, 2, 2, 3, 'B', 100, '', 1, 1, '2026-11-18 09:30:26'),
+(7, 2, 2, 4, 'A', 100, '', 1, 1, '2026-11-18 09:30:31'),
+(8, 2, 2, 4, 'B', 100, '', 1, 1, '2026-11-18 09:30:40'),
+(9, 2, 2, 5, 'A', 100, '', 1, 1, '2026-11-18 09:30:47'),
+(10, 2, 2, 5, 'B', 100, '', 1, 1, '2026-11-18 09:30:53'),
+(11, 2, 2, 5, 'C', 100, '', 1, 1, '2026-11-18 09:31:00'),
+(12, 2, 2, 6, 'A', 100, '', 1, 1, '2026-11-18 09:31:06'),
+(13, 2, 2, 6, 'B', 100, '', 1, 1, '2026-11-18 09:31:13'),
+(14, 2, 2, 6, 'C', 100, '', 1, 1, '2026-11-18 09:31:20');
 
 -- --------------------------------------------------------
 
@@ -50807,17 +52374,11 @@ INSERT INTO `section_master` (`id`, `school_id`, `class_id`, `section_name`, `ca
 CREATE TABLE `settings_salary_date` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT 1,
+  `branch_id` int(11) DEFAULT NULL,
   `salary_date` varchar(150) DEFAULT NULL,
   `status` int(11) DEFAULT NULL COMMENT '1=Active,2=Inactive, 4=Delete',
   `created_on` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
-
---
--- Dumping data for table `settings_salary_date`
---
-
-INSERT INTO `settings_salary_date` (`id`, `school_id`, `salary_date`, `status`, `created_on`) VALUES
-(1, 2, '2026-09-02', 1, '2026-09-10 11:26:36');
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -50828,21 +52389,20 @@ INSERT INTO `settings_salary_date` (`id`, `school_id`, `salary_date`, `status`, 
 CREATE TABLE `shift_master` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `shift_name` varchar(255) DEFAULT NULL,
   `start_time` time DEFAULT NULL,
   `end_time` time DEFAULT NULL,
   `status` int(11) NOT NULL DEFAULT 1 COMMENT '1=active, 2=inactive, 4=delete'
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `shift_master`
 --
 
-INSERT INTO `shift_master` (`id`, `school_id`, `shift_name`, `start_time`, `end_time`, `status`) VALUES
-(1, 1, 'Morning', '08:00:00', '10:00:00', 1),
-(2, 1, 'Day ', '11:00:00', '17:00:00', 1),
-(3, 2, 'Morning ', '08:00:00', '11:00:00', 1),
-(4, 2, 'Day', '12:00:00', '16:00:00', 1);
+INSERT INTO `shift_master` (`id`, `school_id`, `branch_id`, `shift_name`, `start_time`, `end_time`, `status`) VALUES
+(1, 2, 2, 'Morning', '07:00:00', '10:00:00', 1),
+(2, 2, 2, 'Day', '11:00:00', '16:00:00', 1);
 
 -- --------------------------------------------------------
 
@@ -50853,6 +52413,7 @@ INSERT INTO `shift_master` (`id`, `school_id`, `shift_name`, `start_time`, `end_
 CREATE TABLE `sibilings` (
   `id` int(11) NOT NULL,
   `school_id` int(11) NOT NULL DEFAULT 1,
+  `branch_id` int(11) DEFAULT NULL,
   `student_id` int(11) DEFAULT NULL,
   `sibiling_student_id` int(11) DEFAULT NULL,
   `academic_year` int(5) NOT NULL,
@@ -50862,7 +52423,7 @@ CREATE TABLE `sibilings` (
   `status` int(11) DEFAULT 1,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -50874,7 +52435,7 @@ CREATE TABLE `signup_settings` (
   `id` int(11) NOT NULL,
   `sign_up_terms` int(11) DEFAULT NULL,
   `created_on` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -50889,7 +52450,7 @@ CREATE TABLE `states` (
   `is_active` int(1) DEFAULT 1,
   `sort_order` int(11) DEFAULT 9999,
   `lang` varchar(10) DEFAULT 'en'
-) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_general_ci ROW_FORMAT=COMPACT;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=COMPACT;
 
 --
 -- Dumping data for table `states`
@@ -55024,25 +56585,45 @@ INSERT INTO `states` (`id_state`, `state`, `country_id`, `is_active`, `sort_orde
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `storage_master`
+--
+
+CREATE TABLE `storage_master` (
+  `id` int(11) NOT NULL,
+  `plan_name` varchar(100) NOT NULL,
+  `storage_capacity` int(11) NOT NULL COMMENT 'Capacity quantity (e.g. 50, 100, 250, 500, 1024)',
+  `capacity_unit_id` int(11) NOT NULL,
+  `monthly_price` decimal(10,2) NOT NULL DEFAULT 0.00 COMMENT 'Monthly price in INR',
+  `annual_price` decimal(10,2) NOT NULL DEFAULT 0.00 COMMENT 'Annual price in INR',
+  `description` text DEFAULT NULL,
+  `status` tinyint(1) NOT NULL DEFAULT 1 COMMENT '1 = Active, 0 = Inactive',
+  `created_at` datetime DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `storage_master`
+--
+
+INSERT INTO `storage_master` (`id`, `plan_name`, `storage_capacity`, `capacity_unit_id`, `monthly_price`, `annual_price`, `description`, `status`, `created_at`, `updated_at`) VALUES
+(1, 'Basic', 5, 2, 499.00, 3999.00, '', 1, '2026-11-23 13:16:03', '2026-11-23 13:16:03');
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `student_activity`
 --
 
 CREATE TABLE `student_activity` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `student_id` int(11) DEFAULT NULL,
   `date` date DEFAULT NULL,
-  `activity_description` text DEFAULT NULL,
+  `activity_description` mediumtext DEFAULT NULL,
   `status` int(11) DEFAULT NULL COMMENT '1=active, 4=delete',
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
-
---
--- Dumping data for table `student_activity`
---
-
-INSERT INTO `student_activity` (`id`, `school_id`, `student_id`, `date`, `activity_description`, `status`, `created_at`) VALUES
-(1, 2, 5, '2026-09-02', 'Activity Description', 1, '2026-09-10 10:45:32');
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -55053,9 +56634,10 @@ INSERT INTO `student_activity` (`id`, `school_id`, `student_id`, `date`, `activi
 CREATE TABLE `student_address` (
   `id` int(11) NOT NULL,
   `school_id` int(11) NOT NULL DEFAULT 1,
+  `branch_id` int(11) DEFAULT NULL,
   `student_id` int(11) NOT NULL,
-  `address1` text NOT NULL,
-  `address2` text NOT NULL,
+  `address1` mediumtext NOT NULL,
+  `address2` mediumtext NOT NULL,
   `country` int(11) NOT NULL,
   `state` int(11) NOT NULL,
   `city` int(11) NOT NULL,
@@ -55064,25 +56646,98 @@ CREATE TABLE `student_address` (
   `same_permanent` int(5) NOT NULL DEFAULT 0 COMMENT '1 = true, 0 = false',
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `student_address`
 --
 
-INSERT INTO `student_address` (`id`, `school_id`, `student_id`, `address1`, `address2`, `country`, `state`, `city`, `postal_code`, `address_type`, `same_permanent`, `created_at`, `updated_at`) VALUES
-(5, 1, 1, 'Kolkata', '', 100, 1657, 21438, '70006', 1, 1, '2026-09-09 16:25:48', '2026-09-09 10:55:48'),
-(6, 1, 1, 'Kolkata', '', 100, 1657, 21438, '70006', 2, 1, '2026-09-09 16:25:48', '2026-09-09 10:55:48'),
-(7, 1, 2, 'N/A', '', 153, 2567, 29797, '785321', 1, 1, '2026-09-09 16:31:58', '2026-09-09 11:01:58'),
-(8, 1, 2, 'N/A', '', 153, 2567, 29797, '785321', 2, 1, '2026-09-09 16:31:58', '2026-09-09 11:01:58'),
-(9, 2, 3, 'kolkata', '', 103, 1711, 21641, '70006', 1, 1, '2026-09-10 11:54:24', '2026-09-10 06:24:24'),
-(10, 2, 3, 'kolkata', '', 103, 1711, 21641, '70006', 2, 1, '2026-09-10 11:54:24', '2026-09-10 06:24:24'),
-(11, 2, 4, '	24 Lake View Road, Ward 12', '', 99, 1639, 20972, '70006', 1, 1, '2026-09-10 12:20:43', '2026-09-10 06:50:43'),
-(12, 2, 4, '	24 Lake View Road, Ward 12', '', 99, 1639, 20972, '70006', 2, 1, '2026-09-10 12:20:43', '2026-09-10 06:50:43'),
-(27, 2, 5, 'Howrah', '', 133, 2328, 27108, '70006', 1, 1, '2026-09-10 16:31:31', '2026-09-10 11:01:31'),
-(28, 2, 5, 'Howrah', '', 133, 2328, 27108, '70006', 2, 1, '2026-09-10 16:31:31', '2026-09-10 11:01:31'),
-(29, 2, 6, '758654', '', 181, 2982, 36069, '70006', 1, 1, '2026-09-11 12:11:13', '2026-09-11 06:41:13'),
-(30, 2, 6, '758654', '', 181, 2982, 36069, '70006', 2, 1, '2026-09-11 12:11:13', '2026-09-11 06:41:13');
+INSERT INTO `student_address` (`id`, `school_id`, `branch_id`, `student_id`, `address1`, `address2`, `country`, `state`, `city`, `postal_code`, `address_type`, `same_permanent`, `created_at`, `updated_at`) VALUES
+(1, 2, 2, 1, '11, Lake Road', 'Ward No. 11', 101, 41, 5583, '700101', 1, 0, '2026-11-20 15:43:25', '2026-11-20 10:13:25'),
+(2, 2, 2, 2, '31, Lake Road', 'Ward No. 11', 101, 41, 5583, '700301', 1, 0, '2026-11-20 15:43:26', '2026-11-20 10:13:26'),
+(3, 2, 2, 3, '51, Lake Road', 'Ward No. 11', 101, 41, 5583, '700001', 1, 0, '2026-11-20 15:43:27', '2026-11-20 10:13:27'),
+(4, 2, 2, 4, '71, Lake Road', 'Ward No. 11', 101, 41, 5583, '700201', 1, 0, '2026-11-20 15:43:28', '2026-11-20 10:13:28'),
+(5, 2, 2, 5, '91, Lake Road', 'Ward No. 11', 101, 41, 5583, '700401', 1, 0, '2026-11-20 15:43:29', '2026-11-20 10:13:29'),
+(6, 2, 2, 6, '1, Lake Road', 'Ward No. 1', 101, 41, 5583, '700001', 1, 0, '2026-11-20 15:45:22', '2026-11-20 10:15:22'),
+(7, 2, 2, 7, '2, School Para', 'Ward No. 2', 101, 41, 5512, '700011', 1, 0, '2026-11-20 15:45:22', '2026-11-20 10:15:22'),
+(8, 2, 2, 8, '3, Gandhi Road', 'Ward No. 3', 101, 41, 5511, '700021', 1, 0, '2026-11-20 15:45:22', '2026-11-20 10:15:22'),
+(9, 2, 2, 9, '5, College Road', 'Ward No. 5', 101, 41, 2574, '700041', 1, 0, '2026-11-20 15:45:23', '2026-11-20 10:15:23'),
+(10, 2, 2, 10, '6, Rabindra Sarani', 'Ward No. 6', 101, 41, 5707, '700051', 1, 0, '2026-11-20 15:45:23', '2026-11-20 10:15:23'),
+(11, 2, 2, 11, '7, Bosepara', 'Ward No. 7', 101, 41, 5369, '700061', 1, 0, '2026-11-20 15:45:23', '2026-11-20 10:15:23'),
+(12, 2, 2, 12, '8, Station Road', 'Ward No. 8', 101, 41, 5586, '700071', 1, 0, '2026-11-20 15:45:23', '2026-11-20 10:15:23'),
+(13, 2, 2, 13, '10, Kazi Nazrul Avenue', 'Ward No. 10', 101, 41, 5361, '700091', 1, 0, '2026-11-20 15:45:23', '2026-11-20 10:15:23'),
+(14, 2, 2, 14, '12, School Para', 'Ward No. 12', 101, 41, 5512, '700111', 1, 0, '2026-11-20 15:45:23', '2026-11-20 10:15:23'),
+(15, 2, 2, 15, '13, Gandhi Road', 'Ward No. 13', 101, 41, 5511, '700121', 1, 0, '2026-11-20 15:45:23', '2026-11-20 10:15:23'),
+(16, 2, 2, 16, '15, College Road', 'Ward No. 15', 101, 41, 2574, '700141', 1, 0, '2026-11-20 15:45:24', '2026-11-20 10:15:24'),
+(17, 2, 2, 17, '16, Rabindra Sarani', 'Ward No. 16', 101, 41, 5707, '700151', 1, 0, '2026-11-20 15:45:24', '2026-11-20 10:15:24'),
+(18, 2, 2, 18, '17, Bosepara', 'Ward No. 17', 101, 41, 5369, '700161', 1, 0, '2026-11-20 15:45:24', '2026-11-20 10:15:24'),
+(19, 2, 2, 19, '18, Station Road', 'Ward No. 18', 101, 41, 5586, '700171', 1, 0, '2026-11-20 15:45:24', '2026-11-20 10:15:24'),
+(20, 2, 2, 20, '20, Kazi Nazrul Avenue', 'Ward No. 20', 101, 41, 5361, '700191', 1, 0, '2026-11-20 15:45:24', '2026-11-20 10:15:24'),
+(21, 2, 2, 21, '21, Lake Road', 'Ward No. 1', 101, 41, 5583, '700201', 1, 0, '2026-11-20 15:45:24', '2026-11-20 10:15:24'),
+(22, 2, 2, 22, '22, School Para', 'Ward No. 2', 101, 41, 5512, '700211', 1, 0, '2026-11-20 15:45:24', '2026-11-20 10:15:24'),
+(23, 2, 2, 23, '23, Gandhi Road', 'Ward No. 3', 101, 41, 5511, '700221', 1, 0, '2026-11-20 15:45:25', '2026-11-20 10:15:25'),
+(24, 2, 2, 24, '25, College Road', 'Ward No. 5', 101, 41, 2574, '700241', 1, 0, '2026-11-20 15:45:25', '2026-11-20 10:15:25'),
+(25, 2, 2, 25, '26, Rabindra Sarani', 'Ward No. 6', 101, 41, 5707, '700251', 1, 0, '2026-11-20 15:45:25', '2026-11-20 10:15:25'),
+(26, 2, 2, 26, '27, Bosepara', 'Ward No. 7', 101, 41, 5369, '700261', 1, 0, '2026-11-20 15:45:25', '2026-11-20 10:15:25'),
+(27, 2, 2, 27, '28, Station Road', 'Ward No. 8', 101, 41, 5586, '700271', 1, 0, '2026-11-20 15:45:25', '2026-11-20 10:15:25'),
+(28, 2, 2, 28, '30, Kazi Nazrul Avenue', 'Ward No. 10', 101, 41, 5361, '700291', 1, 0, '2026-11-20 15:45:25', '2026-11-20 10:15:25'),
+(29, 2, 2, 29, '32, School Para', 'Ward No. 12', 101, 41, 5512, '700311', 1, 0, '2026-11-20 15:45:26', '2026-11-20 10:15:26'),
+(30, 2, 2, 30, '33, Gandhi Road', 'Ward No. 13', 101, 41, 5511, '700321', 1, 0, '2026-11-20 15:45:26', '2026-11-20 10:15:26'),
+(31, 2, 2, 31, '35, College Road', 'Ward No. 15', 101, 41, 2574, '700341', 1, 0, '2026-11-20 15:45:26', '2026-11-20 10:15:26'),
+(32, 2, 2, 32, '36, Rabindra Sarani', 'Ward No. 16', 101, 41, 5707, '700351', 1, 0, '2026-11-20 15:45:26', '2026-11-20 10:15:26'),
+(33, 2, 2, 33, '37, Bosepara', 'Ward No. 17', 101, 41, 5369, '700361', 1, 0, '2026-11-20 15:45:26', '2026-11-20 10:15:26'),
+(34, 2, 2, 34, '38, Station Road', 'Ward No. 18', 101, 41, 5586, '700371', 1, 0, '2026-11-20 15:45:26', '2026-11-20 10:15:26'),
+(35, 2, 2, 35, '40, Kazi Nazrul Avenue', 'Ward No. 20', 101, 41, 5361, '700391', 1, 0, '2026-11-20 15:45:26', '2026-11-20 10:15:26'),
+(36, 2, 2, 36, '41, Lake Road', 'Ward No. 1', 101, 41, 5583, '700401', 1, 0, '2026-11-20 15:45:27', '2026-11-20 10:15:27'),
+(37, 2, 2, 37, '42, School Para', 'Ward No. 2', 101, 41, 5512, '700411', 1, 0, '2026-11-20 15:45:27', '2026-11-20 10:15:27'),
+(38, 2, 2, 38, '43, Gandhi Road', 'Ward No. 3', 101, 41, 5511, '700421', 1, 0, '2026-11-20 15:45:27', '2026-11-20 10:15:27'),
+(39, 2, 2, 39, '45, College Road', 'Ward No. 5', 101, 41, 2574, '700441', 1, 0, '2026-11-20 15:45:27', '2026-11-20 10:15:27'),
+(40, 2, 2, 40, '46, Rabindra Sarani', 'Ward No. 6', 101, 41, 5707, '700451', 1, 0, '2026-11-20 15:45:27', '2026-11-20 10:15:27'),
+(41, 2, 2, 41, '47, Bosepara', 'Ward No. 7', 101, 41, 5369, '700461', 1, 0, '2026-11-20 15:45:27', '2026-11-20 10:15:27'),
+(42, 2, 2, 42, '48, Station Road', 'Ward No. 8', 101, 41, 5586, '700471', 1, 0, '2026-11-20 15:45:27', '2026-11-20 10:15:27'),
+(43, 2, 2, 43, '50, Kazi Nazrul Avenue', 'Ward No. 10', 101, 41, 5361, '700491', 1, 0, '2026-11-20 15:45:28', '2026-11-20 10:15:28'),
+(44, 2, 2, 44, '52, School Para', 'Ward No. 12', 101, 41, 5512, '700011', 1, 0, '2026-11-20 15:45:28', '2026-11-20 10:15:28'),
+(45, 2, 2, 45, '53, Gandhi Road', 'Ward No. 13', 101, 41, 5511, '700021', 1, 0, '2026-11-20 15:45:28', '2026-11-20 10:15:28'),
+(46, 2, 2, 46, '55, College Road', 'Ward No. 15', 101, 41, 2574, '700041', 1, 0, '2026-11-20 15:45:28', '2026-11-20 10:15:28'),
+(47, 2, 2, 47, '56, Rabindra Sarani', 'Ward No. 16', 101, 41, 5707, '700051', 1, 0, '2026-11-20 15:45:28', '2026-11-20 10:15:28'),
+(48, 2, 2, 48, '57, Bosepara', 'Ward No. 17', 101, 41, 5369, '700061', 1, 0, '2026-11-20 15:45:28', '2026-11-20 10:15:28'),
+(49, 2, 2, 49, '58, Station Road', 'Ward No. 18', 101, 41, 5586, '700071', 1, 0, '2026-11-20 15:45:28', '2026-11-20 10:15:28'),
+(50, 2, 2, 50, '60, Kazi Nazrul Avenue', 'Ward No. 20', 101, 41, 5361, '700091', 1, 0, '2026-11-20 15:45:29', '2026-11-20 10:15:29'),
+(51, 2, 2, 51, '61, Lake Road', 'Ward No. 1', 101, 41, 5583, '700101', 1, 0, '2026-11-20 15:45:29', '2026-11-20 10:15:29'),
+(52, 2, 2, 52, '62, School Para', 'Ward No. 2', 101, 41, 5512, '700111', 1, 0, '2026-11-20 15:45:29', '2026-11-20 10:15:29'),
+(53, 2, 2, 53, '63, Gandhi Road', 'Ward No. 3', 101, 41, 5511, '700121', 1, 0, '2026-11-20 15:45:29', '2026-11-20 10:15:29'),
+(54, 2, 2, 54, '65, College Road', 'Ward No. 5', 101, 41, 2574, '700141', 1, 0, '2026-11-20 15:45:29', '2026-11-20 10:15:29'),
+(55, 2, 2, 55, '66, Rabindra Sarani', 'Ward No. 6', 101, 41, 5707, '700151', 1, 0, '2026-11-20 15:45:29', '2026-11-20 10:15:29'),
+(56, 2, 2, 56, '67, Bosepara', 'Ward No. 7', 101, 41, 5369, '700161', 1, 0, '2026-11-20 15:45:29', '2026-11-20 10:15:29'),
+(57, 2, 2, 57, '68, Station Road', 'Ward No. 8', 101, 41, 5586, '700171', 1, 0, '2026-11-20 15:45:30', '2026-11-20 10:15:30'),
+(58, 2, 2, 58, '70, Kazi Nazrul Avenue', 'Ward No. 10', 101, 41, 5361, '700191', 1, 0, '2026-11-20 15:45:30', '2026-11-20 10:15:30'),
+(59, 2, 2, 59, '72, School Para', 'Ward No. 12', 101, 41, 5512, '700211', 1, 0, '2026-11-20 15:45:30', '2026-11-20 10:15:30'),
+(60, 2, 2, 60, '73, Gandhi Road', 'Ward No. 13', 101, 41, 5511, '700221', 1, 0, '2026-11-20 15:45:30', '2026-11-20 10:15:30'),
+(61, 2, 2, 61, '75, College Road', 'Ward No. 15', 101, 41, 2574, '700241', 1, 0, '2026-11-20 15:45:30', '2026-11-20 10:15:30'),
+(62, 2, 2, 62, '76, Rabindra Sarani', 'Ward No. 16', 101, 41, 5707, '700251', 1, 0, '2026-11-20 15:45:30', '2026-11-20 10:15:30'),
+(63, 2, 2, 63, '77, Bosepara', 'Ward No. 17', 101, 41, 5369, '700261', 1, 0, '2026-11-20 15:45:31', '2026-11-20 10:15:31'),
+(64, 2, 2, 64, '78, Station Road', 'Ward No. 18', 101, 41, 5586, '700271', 1, 0, '2026-11-20 15:45:31', '2026-11-20 10:15:31'),
+(65, 2, 2, 65, '80, Kazi Nazrul Avenue', 'Ward No. 20', 101, 41, 5361, '700291', 1, 0, '2026-11-20 15:45:31', '2026-11-20 10:15:31'),
+(66, 2, 2, 66, '81, Lake Road', 'Ward No. 1', 101, 41, 5583, '700301', 1, 0, '2026-11-20 15:45:31', '2026-11-20 10:15:31'),
+(67, 2, 2, 67, '82, School Para', 'Ward No. 2', 101, 41, 5512, '700311', 1, 0, '2026-11-20 15:45:31', '2026-11-20 10:15:31'),
+(68, 2, 2, 68, '83, Gandhi Road', 'Ward No. 3', 101, 41, 5511, '700321', 1, 0, '2026-11-20 15:45:31', '2026-11-20 10:15:31'),
+(69, 2, 2, 69, '85, College Road', 'Ward No. 5', 101, 41, 2574, '700341', 1, 0, '2026-11-20 15:45:31', '2026-11-20 10:15:31'),
+(70, 2, 2, 70, '86, Rabindra Sarani', 'Ward No. 6', 101, 41, 5707, '700351', 1, 0, '2026-11-20 15:45:32', '2026-11-20 10:15:32'),
+(71, 2, 2, 71, '87, Bosepara', 'Ward No. 7', 101, 41, 5369, '700361', 1, 0, '2026-11-20 15:45:32', '2026-11-20 10:15:32'),
+(72, 2, 2, 72, '88, Station Road', 'Ward No. 8', 101, 41, 5586, '700371', 1, 0, '2026-11-20 15:45:32', '2026-11-20 10:15:32'),
+(73, 2, 2, 73, '90, Kazi Nazrul Avenue', 'Ward No. 10', 101, 41, 5361, '700391', 1, 0, '2026-11-20 15:45:32', '2026-11-20 10:15:32'),
+(74, 2, 2, 74, '92, School Para', 'Ward No. 12', 101, 41, 5512, '700411', 1, 0, '2026-11-20 15:45:32', '2026-11-20 10:15:32'),
+(75, 2, 2, 75, '93, Gandhi Road', 'Ward No. 13', 101, 41, 5511, '700421', 1, 0, '2026-11-20 15:45:32', '2026-11-20 10:15:32'),
+(76, 2, 2, 76, '95, College Road', 'Ward No. 15', 101, 41, 2574, '700441', 1, 0, '2026-11-20 15:45:33', '2026-11-20 10:15:33'),
+(77, 2, 2, 77, '96, Rabindra Sarani', 'Ward No. 16', 101, 41, 5707, '700451', 1, 0, '2026-11-20 15:45:33', '2026-11-20 10:15:33'),
+(78, 2, 2, 78, '97, Bosepara', 'Ward No. 17', 101, 41, 5369, '700461', 1, 0, '2026-11-20 15:45:33', '2026-11-20 10:15:33'),
+(79, 2, 2, 79, '98, Station Road', 'Ward No. 18', 101, 41, 5586, '700471', 1, 0, '2026-11-20 15:45:33', '2026-11-20 10:15:33'),
+(80, 2, 2, 80, '100, Kazi Nazrul Avenue', 'Ward No. 20', 101, 41, 5361, '700491', 1, 0, '2026-11-20 15:45:33', '2026-11-20 10:15:33'),
+(81, 2, 2, 81, '4, New Town', 'Ward No. 4', 101, 41, 5583, '700031', 1, 0, '2026-11-23 12:13:54', '2026-11-23 06:43:54'),
+(82, 2, 2, 82, 'House 200, Sample Road', '', 101, 41, 5583, '700049', 1, 1, '2026-11-23 12:23:17', '2026-11-23 06:53:17'),
+(83, 2, 2, 82, 'House 200, Sample Road', '', 101, 41, 5583, '700049', 2, 1, '2026-11-23 12:23:17', '2026-11-23 06:53:17'),
+(84, 2, 2, 83, 'House 200, Sample Road', '', 101, 41, 5583, '700049', 1, 1, '2026-11-23 12:25:02', '2026-11-23 06:55:02'),
+(85, 2, 2, 83, 'House 200, Sample Road', '', 101, 41, 5583, '700049', 2, 1, '2026-11-23 12:25:02', '2026-11-23 06:55:02');
 
 -- --------------------------------------------------------
 
@@ -55093,14 +56748,32 @@ INSERT INTO `student_address` (`id`, `school_id`, `student_id`, `address1`, `add
 CREATE TABLE `student_assignment_attempts` (
   `id` int(11) NOT NULL,
   `school_id` int(11) NOT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `assignment_id` int(11) NOT NULL,
   `student_id` int(11) NOT NULL,
   `total_questions` int(11) NOT NULL DEFAULT 0,
   `correct_answers` int(11) NOT NULL DEFAULT 0,
   `score_percentage` decimal(5,2) NOT NULL DEFAULT 0.00,
   `attempted_at` datetime DEFAULT current_timestamp(),
-  `status` int(11) NOT NULL DEFAULT 1
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+  `status` int(11) NOT NULL DEFAULT 1,
+  `attempt_number` int(11) NOT NULL DEFAULT 1,
+  `started_at` datetime DEFAULT NULL,
+  `submitted_at` datetime DEFAULT NULL,
+  `obtained_marks` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `total_marks` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `is_passed` tinyint(1) DEFAULT NULL,
+  `is_auto_submitted` tinyint(1) NOT NULL DEFAULT 0,
+  `evaluation_status` tinyint(1) NOT NULL DEFAULT 1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `student_assignment_attempts`
+--
+
+INSERT INTO `student_assignment_attempts` (`id`, `school_id`, `branch_id`, `assignment_id`, `student_id`, `total_questions`, `correct_answers`, `score_percentage`, `attempted_at`, `status`, `attempt_number`, `started_at`, `submitted_at`, `obtained_marks`, `total_marks`, `is_passed`, `is_auto_submitted`, `evaluation_status`) VALUES
+(1, 2, 2, 1, 83, 5, 0, 0.00, '2026-11-23 15:28:48', 2, 1, '2026-11-23 15:28:48', NULL, 0.00, 5.00, NULL, 0, 1),
+(2, 2, 2, 3, 83, 10, 4, 40.00, '2026-11-24 16:53:31', 1, 1, '2026-11-24 16:51:32', '2026-11-24 16:53:31', 40.00, 100.00, 0, 1, 1),
+(3, 2, 2, 4, 83, 5, 4, 80.00, '2026-11-23 18:33:42', 1, 1, '2026-11-23 18:30:42', '2026-11-23 18:33:42', 4.00, 5.00, 0, 1, 1);
 
 -- --------------------------------------------------------
 
@@ -55111,14 +56784,41 @@ CREATE TABLE `student_assignment_attempts` (
 CREATE TABLE `student_assignment_submissions` (
   `id` int(11) NOT NULL,
   `school_id` int(11) NOT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `attempt_id` int(11) NOT NULL,
   `assignment_id` int(11) NOT NULL,
   `student_id` int(11) NOT NULL,
   `question_id` int(11) NOT NULL,
   `selected_answer_id` int(11) DEFAULT NULL,
   `is_correct` int(11) NOT NULL DEFAULT 0,
-  `created_at` datetime DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+  `created_at` datetime DEFAULT current_timestamp(),
+  `answer_text` text DEFAULT NULL,
+  `marks_awarded` decimal(8,2) NOT NULL DEFAULT 0.00,
+  `answer_mode` varchar(20) NOT NULL DEFAULT 'ONLINE',
+  `attachment_urls` text DEFAULT NULL,
+  `teacher_remarks` text DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `student_assignment_submissions`
+--
+
+INSERT INTO `student_assignment_submissions` (`id`, `school_id`, `branch_id`, `attempt_id`, `assignment_id`, `student_id`, `question_id`, `selected_answer_id`, `is_correct`, `created_at`, `answer_text`, `marks_awarded`, `answer_mode`, `attachment_urls`, `teacher_remarks`) VALUES
+(1, 2, 2, 2, 3, 83, 41, NULL, 1, '2026-11-24 16:53:31', 'ভূমিকা\nবাংলা ভাষা পৃথিবীর অন্যতম সমৃদ্ধ ও মধুর ভাষা। এটি ইন্দো-ইউরোপীয় ভাষাগোষ্ঠীর অন্তর্গত ইন্দো-আর্য শাখার একটি ভাষা। বর্তমানে বাংলাদেশ ও ভারতের পশ্চিমবঙ্গ, ত্রিপুরা, আসামসহ বিভিন্ন অঞ্চলের মানুষের মাতৃভাষা বাংলা। দীর্ঘ বিবর্তনের মধ্য দিয়ে বাংলা ভাষার উৎপত্তি ও বিকাশ ঘটেছে।\n\nবাংলা ভাষার উৎপত্তি\nবাংলা ভাষার উৎপত্তি হয়েছে প্রাচীন ভারতীয় আর্য ভাষা থেকে। ভাষাবিজ্ঞানীদের মতে, বাংলা ভাষার উৎপত্তির ধারাটি হলো—\n\nইন্দো-ইউরোপীয় → ইন্দো-ইরানীয় → ভারতীয় আর্য → প্রাচীন ভারতীয় আর্য → মধ্য ভারতীয় আর্য → মাগধী প্রাকৃত → মাগধী অপভ্রংশ → অবহট্ঠ → বাংলা।\n\nপ্রাচীন ভারতীয় আর্য ভাষার প্রাচীনতম নিদর্শন পাওয়া যায় বৈদিক ভাষায়। পরবর্তীকালে সংস্কৃত ভাষার বিকাশ ঘটে। সাধারণ মানুষের মুখের ভাষা হিসেবে প্রাকৃত ভাষার প্রচলন হয়। মাগধী প্রাকৃত থেকে বিভিন্ন পরিবর্তনের মাধ্যমে মাগধী অপভ্রংশ ও অবহট্ঠের সৃষ্টি হয়। এই অবহট্ঠ থেকেই আনুমানিক দশম থেকে দ্বাদশ শতাব্দীর মধ্যে বাংলা ভাষার উদ্ভব ঘটে।', 10.00, 'ONLINE', NULL, NULL),
+(2, 2, 2, 2, 3, 83, 42, NULL, 1, '2026-11-24 16:53:31', 'আমার প্রিয় ঋতু — বসন্তকাল\n\nবাংলা ছয় ঋতুর মধ্যে আমার প্রিয় ঋতু হলো বসন্তকাল। বসন্তকে ঋতুরাজ বলা হয়। শীতের বিদায়ের পর বসন্তের আগমন প্রকৃতিতে এক নতুন আনন্দের সৃষ্টি করে। ফাল্গুন ও চৈত্র—এই দুই মাস নিয়ে বসন্তকাল। এ সময় গাছে গাছে নতুন পাতা গজায়, নানা রঙের ফুল ফোটে এবং চারদিকে মনোরম পরিবেশের সৃষ্টি হয়। কোকিলের মিষ্টি ডাক, দক্ষিণা বাতাস এবং ফুলের মিষ্টি সুবাস মনকে আনন্দে ভরিয়ে তোলে। শীতের তীব্রতা ও গ্রীষ্মের প্রচণ্ড গরম কোনোটিই এ সময় থাকে না। আবহাওয়া থাকে বেশ আরামদায়ক ও মনোরম। বসন্তকালে প্রকৃতি যেন নতুন সাজে সেজে ওঠে। এই ঋতুতে দোলযাত্রা ও বসন্ত উৎসব পালিত হয়। বসন্ত আমার ভালো লাগে কারণ এই ঋতুতে প্রকৃতির সৌন্দর্য সবচেয়ে বেশি উপভোগ করা যায়। চারদিকে ফুলের সমারোহ ও পাখির গান মনকে সতেজ করে তোলে। তাই বসন্তকাল আমার সবচেয়ে প্রিয় ঋতু।', 10.00, 'ONLINE', NULL, NULL),
+(3, 2, 2, 2, 3, 83, 43, NULL, 1, '2026-11-24 16:53:31', 'বাংলার লোকসংস্কৃতি ও লোকসাহিত্যের গুরুত্ব\nভূমিকা\nবাংলার লোকসংস্কৃতি ও লোকসাহিত্য বাঙালি জাতির ঐতিহ্য, ইতিহাস ও জীবনধারার অবিচ্ছেদ্য অংশ। প্রাচীনকাল থেকে বাংলার সাধারণ মানুষের মুখে মুখে প্রচলিত আচার-অনুষ্ঠান, গান, গল্প, ছড়া, প্রবাদ-প্রবচন ও নানা রীতিনীতির মাধ্যমে লোকসংস্কৃতি ও লোকসাহিত্যের সৃষ্টি হয়েছে। এগুলো বাঙালির নিজস্ব পরিচয় ও সাংস্কৃতিক ঐতিহ্যকে বহন করে।\n\nলোকসংস্কৃতির পরিচয়\nলোকসংস্কৃতি বলতে সাধারণ মানুষের দৈনন্দিন জীবনযাপন, পোশাক-পরিচ্ছদ, খাদ্যাভ্যাস, উৎসব, ধর্মীয় আচার, নৃত্য, সংগীত, মেলা ও সামাজিক রীতিনীতিকে বোঝায়। বাংলার নবান্ন উৎসব, পয়লা বৈশাখ, পৌষমেলা, গাজন, বাউল গান, যাত্রাপালা ও বিভিন্ন লোকনৃত্য বাংলার লোকসংস্কৃতির গুরুত্বপূর্ণ উদাহরণ।\n\nলোকসাহিত্যের পরিচয়\nলোকসাহিত্য হলো সাধারণ মানুষের মুখে মুখে প্রচলিত সাহিত্য। এটি মূলত মৌখিকভাবে এক প্রজন্ম থেকে অন্য প্রজন্মে ছড়িয়ে পড়েছে। লোকসাহিত্যের প্রধান উপাদান হলো—\n\nলোকগান: বাউল গান, ভাটিয়ালি, ভাওয়াইয়া, জারি ও সারি গান।\n\nলোককথা: ঠাকুরমার ঝুলি, রূপকথা ও উপকথা।\n\nছড়া: শিশুদের মুখে প্রচলিত বিভিন্ন ছড়া।\n\nপ্রবাদ-প্রবচন: মানুষের অভিজ্ঞতা ও জীবনবোধের প্রকাশ।\n\nধাঁধা: বুদ্ধি ও চিন্তাশক্তির বিকাশে সহায়ক লোকসাহিত্য।\n\nপালাগান: যাত্রাপালা, গম্ভীরা ও বিভিন্ন কাহিনিভিত্তিক পরিবেশনা।\n\nবাংলার লোকসংস্কৃতি ও লোকসাহিত্যের গুরুত্ব\n১. ঐতিহ্য ও পরিচয় রক্ষা: লোকসংস্কৃতি ও লোকসাহিত্য বাঙালির নিজস্ব পরিচয়, ঐতিহ্য ও অতীত ইতিহাসকে ধরে রাখে।\n\n২. সামাজিক ঐক্য সৃষ্টি: বিভিন্ন উৎসব, মেলা ও সাংস্কৃতিক অনুষ্ঠানের মাধ্যমে মানুষের মধ্যে সম্প্রীতি ও ঐক্য গড়ে ওঠে।\n\n৩. নৈতিক শিক্ষা প্রদান: লোককথা, প্রবাদ ও রূপকথার মাধ্যমে মানুষ ন্যায়-অন্যায়, সততা, মানবতা ও নৈতিকতার শিক্ষা লাভ করে।\n\n৪. ইতিহাস ও জীবনযাত্রার পরিচয়: লোকসাহিত্যের মাধ্যমে অতীতের মানুষের জীবনযাপন, সমাজব্যবস্থা, বিশ্বাস ও চিন্তাধারা সম্পর্কে জানা যায়।', 10.00, 'ONLINE', NULL, NULL),
+(4, 2, 2, 2, 3, 83, 44, NULL, 1, '2026-11-24 16:53:31', 'পরিবেশ রক্ষায় একজন শিক্ষার্থীর ভূমিকা\n\nভূমিকা\n\nপরিবেশ আমাদের জীবনের অবিচ্ছেদ্য অংশ। গাছপালা, নদী, মাটি, বায়ু, জল ও বিভিন্ন প্রাণী নিয়ে আমাদের পরিবেশ গঠিত। কিন্তু বর্তমানে জনসংখ্যা বৃদ্ধি, বনভূমি ধ্বংস, বায়ুদূষণ, জলদূষণ ও প্লাস্টিকের অতিরিক্ত ব্যবহারের ফলে পরিবেশের ভারসাম্য নষ্ট হচ্ছে। পরিবেশ রক্ষা করা আমাদের সকলের দায়িত্ব। একজন শিক্ষার্থীও এ ক্ষেত্রে গুরুত্বপূর্ণ ভূমিকা পালন করতে পারে।\n\n## পরিবেশ রক্ষায় শিক্ষার্থীর ভূমিকা\n\n১. বৃক্ষরোপণ: শিক্ষার্থীরা বিদ্যালয়, বাড়ি ও আশপাশের খালি জায়গায় গাছ লাগাতে পারে। যেমন—বিশ্ব পরিবেশ দিবসে বিদ্যালয়ে বৃক্ষরোপণ কর্মসূচির আয়োজন করা।\n\n২. প্লাস্টিকের ব্যবহার কমানো: প্লাস্টিক পরিবেশের জন্য ক্ষতিকর। তাই শিক্ষার্থীরা প্লাস্টিকের ব্যাগের পরিবর্তে কাপড়ের বা পাটের ব্যাগ ব্যবহার করতে পারে।\n\n৩. পরিবেশ পরিষ্কার রাখা: যেখানে-সেখানে ময়লা ও আবর্জনা ফেলা উচিত নয়। শিক্ষার্থীরা নিজেদের বিদ্যালয় ও আশপাশের পরিবেশ পরিষ্কার রাখতে পারে।\n\n৪. জল সংরক্ষণ: অপ্রয়োজনে জলের অপচয় বন্ধ করতে হবে। যেমন—দাঁত মাজার সময় কল বন্ধ রাখা এবং বৃষ্টির জল সংরক্ষণ করা।\n\n৫. বায়ুদূষণ রোধ: শিক্ষার্থীরা অপ্রয়োজনীয়ভাবে যানবাহন ব্যবহার না করে হাঁটা বা সাইকেল চালানোর অভ্যাস করতে পারে। এছাড়া গাছ লাগিয়ে বায়ুদূষণ কমাতে সাহায্য করতে পারে।\n\n৬. জনসচেতনতা বৃদ্ধি: শিক্ষার্থীরা পরিবার, বন্ধু ও প্রতিবেশীদের পরিবেশ রক্ষার গুরুত্ব সম্পর্কে সচেতন করতে পারে। পোস্টার, আলোচনা সভা ও প্রচার অভিযানের মাধ্যমে মানুষকে পরিবেশ রক্ষায় উৎসাহিত করা যায়।\n\n৭. জীবজন্তুর প্রতি যত্নশীল হওয়া: পাখি ও অন্যান্য প্রাণীর বাসস্থান নষ্ট করা উচিত নয়। গ্রীষ্মকালে বাড়ির ছাদে বা বারান্দায় পাখিদের জন্য জল রাখা যেতে পারে।\n\nউপসংহার\n\nপরিবেশ রক্ষা করা শুধু সরকারের দায়িত্ব নয়, এটি প্রতিটি মানুষের নৈতিক কর্তব্য। শিক্ষার্থীরা আজকের ভবিষ্যৎ নাগরিক। তাই ছোট ছোট ভালো অভ্যাসের মাধ্যমে তারা পরিবেশ রক্ষায় বড় ভূমিকা পালন করতে পারে। প্রত্যেক শিক্ষার্থী যদি নিজের দায়িত্ব পালন করে, তবে একটি সুন্দর, সুস্থ ও দূষণমুক্ত পৃথিবী গড়ে তোলা সম্ভব হবে। তাই আমাদের সবার শপথ হওয়া উচিত—গাছ লাগাব, পরিবেশ বাঁচাব।', 10.00, 'ONLINE', NULL, NULL),
+(5, 2, 2, 2, 3, 83, 45, NULL, 0, '2026-11-24 16:53:31', NULL, 0.00, 'ONLINE', NULL, NULL),
+(6, 2, 2, 2, 3, 83, 46, NULL, 0, '2026-11-24 16:53:31', NULL, 0.00, 'ONLINE', NULL, NULL),
+(7, 2, 2, 2, 3, 83, 47, NULL, 0, '2026-11-24 16:53:31', NULL, 0.00, 'ONLINE', NULL, NULL),
+(8, 2, 2, 2, 3, 83, 48, NULL, 0, '2026-11-24 16:53:31', NULL, 0.00, 'ONLINE', NULL, NULL),
+(9, 2, 2, 2, 3, 83, 49, NULL, 0, '2026-11-24 16:53:31', NULL, 0.00, 'ONLINE', NULL, NULL),
+(10, 2, 2, 2, 3, 83, 50, NULL, 0, '2026-11-24 16:53:31', NULL, 0.00, 'ONLINE', NULL, NULL),
+(11, 2, 2, 3, 4, 83, 51, NULL, 1, '2026-11-23 18:33:42', '৫০টি বর্ণ', 1.00, 'ONLINE', NULL, NULL),
+(12, 2, 2, 3, 4, 83, 52, NULL, 1, '2026-11-23 18:33:42', 'অ, আ।', 1.00, 'ONLINE', NULL, NULL),
+(13, 2, 2, 3, 4, 83, 53, NULL, 1, '2026-11-23 18:33:42', 'বাংলাদেশের জাতীয় ফুলের নাম শাপলা।', 1.00, 'ONLINE', NULL, NULL),
+(14, 2, 2, 3, 4, 83, 54, NULL, 1, '2026-11-23 18:33:42', '‘সুন্দর’ শব্দের বিপরীত শব্দ হলো কুৎসিত।', 1.00, 'ONLINE', NULL, NULL),
+(15, 2, 2, 3, 4, 83, 55, NULL, 0, '2026-11-23 18:33:42', 'আমার বিদ্যালয়ের নাম আর.বি.এল.আই.।', 0.00, 'HANDWRITTEN', '[\"upload/schools/2/branches/2/student/assignment_submissions/codeulas_logo_small-1795438984167-9f92ec.webp\"]', NULL);
 
 -- --------------------------------------------------------
 
@@ -55129,22 +56829,14 @@ CREATE TABLE `student_assignment_submissions` (
 CREATE TABLE `student_attendance` (
   `id` int(11) NOT NULL,
   `school_id` int(11) NOT NULL DEFAULT 1,
+  `branch_id` int(11) DEFAULT NULL,
   `student_id` int(11) NOT NULL,
   `attendance` int(11) NOT NULL DEFAULT 0 COMMENT 'Absent = 0 Present = 1 Late = 2 Halfday = 3',
   `academic_year` int(11) NOT NULL,
-  `notes` text DEFAULT NULL,
+  `notes` mediumtext DEFAULT NULL,
   `date` datetime NOT NULL DEFAULT current_timestamp(),
   `status` int(5) NOT NULL DEFAULT 1
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
-
---
--- Dumping data for table `student_attendance`
---
-
-INSERT INTO `student_attendance` (`id`, `school_id`, `student_id`, `attendance`, `academic_year`, `notes`, `date`, `status`) VALUES
-(1, 2, 3, 2, 8, 'Late', '2026-09-10 00:00:00', 1),
-(2, 2, 5, 1, 8, 'Present', '2026-09-10 00:00:00', 1),
-(3, 2, 3, 1, 8, 'Present', '2026-09-11 00:00:00', 1);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -55155,24 +56847,21 @@ INSERT INTO `student_attendance` (`id`, `school_id`, `student_id`, `attendance`,
 CREATE TABLE `student_category_master` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `category` varchar(255) DEFAULT NULL,
   `sort_order` int(11) DEFAULT NULL,
   `status` int(11) NOT NULL DEFAULT 1 COMMENT '1= Active, 2=Inactive, 4= Delete'
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `student_category_master`
 --
 
-INSERT INTO `student_category_master` (`id`, `school_id`, `category`, `sort_order`, `status`) VALUES
-(1, 1, 'General', 1, 1),
-(2, 1, 'SC', 2, 1),
-(3, 1, 'ST', 3, 1),
-(4, 1, 'OBC', 4, 1),
-(5, 2, 'General', 1, 1),
-(6, 2, 'SC', 2, 1),
-(7, 2, 'ST', 3, 1),
-(8, 2, 'OBC', 4, 1);
+INSERT INTO `student_category_master` (`id`, `school_id`, `branch_id`, `category`, `sort_order`, `status`) VALUES
+(1, 2, 2, 'General', 1, 1),
+(2, 2, 2, 'SC', 2, 1),
+(3, 2, 2, 'ST', 3, 1),
+(4, 2, 2, 'OBC', 4, 1);
 
 -- --------------------------------------------------------
 
@@ -55183,25 +56872,18 @@ INSERT INTO `student_category_master` (`id`, `school_id`, `category`, `sort_orde
 CREATE TABLE `student_certificate` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `certificate_category_id` int(11) DEFAULT NULL,
   `certificate_template_id` int(11) DEFAULT NULL,
   `student_id` int(11) DEFAULT NULL,
   `certificate_date` varchar(100) DEFAULT NULL,
-  `certificate_description` text DEFAULT NULL,
+  `certificate_description` mediumtext DEFAULT NULL,
   `status` int(11) NOT NULL DEFAULT 1 COMMENT '1=active, 2=inactive, 4=delete',
   `created_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   `created_by` int(11) DEFAULT NULL,
   `modify_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `modify_by` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
-
---
--- Dumping data for table `student_certificate`
---
-
-INSERT INTO `student_certificate` (`id`, `school_id`, `certificate_category_id`, `certificate_template_id`, `student_id`, `certificate_date`, `certificate_description`, `status`, `created_at`, `created_by`, `modify_at`, `modify_by`) VALUES
-(1, 2, 1, 1, 3, '2026-09-10', 'This is certified that Mr./Mrs. Aarav Sharma Son/Daughter of Mr./Mrs. . His/her date of birth as per school record is 06/02/2010. His/her date of Admission was 12/02/2026, and the date of withdrawal was 10/09/2026. He/She has been a good student. His/her attendance for the academic session 2025-2026 was Perfect. All the school dues on his/her account have been paid in full and updated. He/She has been promoted/detained/studying in class .', 1, '2026-09-10 08:43:25', 1, '2026-09-10 06:45:12', NULL),
-(2, 2, 1, 1, 4, '2026-09-11', 'This is certified that Mr./Mrs. Riya  Sen Son/Daughter of Mr./Mrs. . His/her date of birth as per school record is 22/04/2015. His/her date of Admission was 12/02/2026, and the date of withdrawal was 11/09/2026. He/She has been a good student. His/her attendance for the academic session 2025-2026 was Perfect. All the school dues on his/her account have been paid in full and updated. He/She has been promoted/detained/studying in class .', 1, '2026-09-11 05:47:53', 1, '2026-09-11 05:47:53', NULL);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -55212,13 +56894,14 @@ INSERT INTO `student_certificate` (`id`, `school_id`, `certificate_category_id`,
 CREATE TABLE `student_class` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `student_id` int(11) NOT NULL,
   `roll_number` int(11) NOT NULL,
   `academic_year` int(11) NOT NULL,
   `class_id` int(11) NOT NULL,
   `section_id` int(11) NOT NULL,
   `status` int(5) NOT NULL DEFAULT 1
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -55229,21 +56912,15 @@ CREATE TABLE `student_class` (
 CREATE TABLE `student_document` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT 1,
+  `branch_id` int(11) DEFAULT NULL,
   `student_id` int(11) DEFAULT NULL,
   `document_type` int(11) DEFAULT NULL,
-  `attachments` text DEFAULT NULL,
+  `attachments` mediumtext DEFAULT NULL,
   `file_name` varchar(255) DEFAULT NULL,
   `status` int(11) NOT NULL DEFAULT 1,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
-
---
--- Dumping data for table `student_document`
---
-
-INSERT INTO `student_document` (`id`, `school_id`, `student_id`, `document_type`, `attachments`, `file_name`, `status`, `created_at`, `updated_at`) VALUES
-(4, 2, 5, 4, 'upload/student/attachment/Attachment-1789037627642-787.pdf', 'Certificate_Rajesh_Sikder_15.pdf', 1, '2026-09-10 16:31:31', '2026-09-10 11:01:31');
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -55254,6 +56931,7 @@ INSERT INTO `student_document` (`id`, `school_id`, `student_id`, `document_type`
 CREATE TABLE `student_fee_allocations` (
   `id` int(11) NOT NULL,
   `school_id` int(11) NOT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `student_id` int(11) NOT NULL,
   `fee_structure_id` int(11) NOT NULL,
   `academic_year_id` int(11) NOT NULL,
@@ -55261,17 +56939,179 @@ CREATE TABLE `student_fee_allocations` (
   `status` tinyint(1) DEFAULT 1,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `allow_partial_payment` tinyint(1) DEFAULT 1
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `student_fee_allocations`
 --
 
-INSERT INTO `student_fee_allocations` (`id`, `school_id`, `student_id`, `fee_structure_id`, `academic_year_id`, `assigned_date`, `status`, `created_at`, `allow_partial_payment`) VALUES
-(1, 2, 5, 2, 8, '2026-09-10', 1, '2026-09-10 11:49:17', 1),
-(6, 2, 3, 4, 8, '2026-09-10', 1, '2026-09-10 12:10:59', 1),
-(7, 2, 4, 4, 8, '2026-09-10', 1, '2026-09-10 12:10:59', 1),
-(8, 2, 5, 4, 8, '2026-09-10', 1, '2026-09-10 12:10:59', 1);
+INSERT INTO `student_fee_allocations` (`id`, `school_id`, `branch_id`, `student_id`, `fee_structure_id`, `academic_year_id`, `assigned_date`, `status`, `created_at`, `allow_partial_payment`) VALUES
+(1, 2, 2, 1, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(2, 2, 2, 2, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(3, 2, 2, 3, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(4, 2, 2, 4, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(5, 2, 2, 5, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(6, 2, 2, 6, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(7, 2, 2, 7, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(8, 2, 2, 8, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(9, 2, 2, 9, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(10, 2, 2, 10, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(11, 2, 2, 11, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(12, 2, 2, 12, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(13, 2, 2, 13, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(14, 2, 2, 14, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(15, 2, 2, 15, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(16, 2, 2, 16, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(17, 2, 2, 17, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(18, 2, 2, 18, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(19, 2, 2, 19, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(20, 2, 2, 20, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(21, 2, 2, 21, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(22, 2, 2, 22, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(23, 2, 2, 23, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(24, 2, 2, 24, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(25, 2, 2, 25, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(26, 2, 2, 26, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(27, 2, 2, 27, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(28, 2, 2, 28, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(29, 2, 2, 29, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(30, 2, 2, 30, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(31, 2, 2, 31, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(32, 2, 2, 32, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(33, 2, 2, 33, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(34, 2, 2, 34, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(35, 2, 2, 35, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(36, 2, 2, 36, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(37, 2, 2, 37, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(38, 2, 2, 38, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(39, 2, 2, 39, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(40, 2, 2, 40, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(41, 2, 2, 41, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(42, 2, 2, 42, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(43, 2, 2, 43, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(44, 2, 2, 44, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(45, 2, 2, 45, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(46, 2, 2, 46, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(47, 2, 2, 47, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(48, 2, 2, 48, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(49, 2, 2, 49, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(50, 2, 2, 50, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(51, 2, 2, 51, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(52, 2, 2, 52, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(53, 2, 2, 53, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(54, 2, 2, 54, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(55, 2, 2, 55, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(56, 2, 2, 56, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(57, 2, 2, 57, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(58, 2, 2, 58, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(59, 2, 2, 59, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(60, 2, 2, 60, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(61, 2, 2, 61, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(62, 2, 2, 62, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(63, 2, 2, 63, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(64, 2, 2, 64, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(65, 2, 2, 65, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(66, 2, 2, 66, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(67, 2, 2, 67, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(68, 2, 2, 68, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(69, 2, 2, 69, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(70, 2, 2, 70, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(71, 2, 2, 71, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(72, 2, 2, 72, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(73, 2, 2, 73, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(74, 2, 2, 74, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(75, 2, 2, 75, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(76, 2, 2, 76, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(77, 2, 2, 77, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(78, 2, 2, 78, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(79, 2, 2, 79, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(80, 2, 2, 80, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(81, 2, 2, 81, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(82, 2, 2, 82, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(83, 2, 2, 83, 1, 2, '2026-11-23', 1, '2026-11-23 07:49:53', 0),
+(84, 2, NULL, 1, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(85, 2, NULL, 2, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(86, 2, NULL, 3, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(87, 2, NULL, 4, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(88, 2, NULL, 5, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(89, 2, NULL, 6, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(90, 2, NULL, 7, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(91, 2, NULL, 8, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(92, 2, NULL, 9, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(93, 2, NULL, 10, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(94, 2, NULL, 11, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(95, 2, NULL, 12, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(96, 2, NULL, 13, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(97, 2, NULL, 14, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(98, 2, NULL, 15, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(99, 2, NULL, 16, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(100, 2, NULL, 17, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(101, 2, NULL, 18, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(102, 2, NULL, 19, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(103, 2, NULL, 20, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(104, 2, NULL, 21, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(105, 2, NULL, 22, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(106, 2, NULL, 23, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(107, 2, NULL, 24, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(108, 2, NULL, 25, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(109, 2, NULL, 26, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(110, 2, NULL, 27, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(111, 2, NULL, 28, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(112, 2, NULL, 29, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(113, 2, NULL, 30, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(114, 2, NULL, 31, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(115, 2, NULL, 32, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(116, 2, NULL, 33, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(117, 2, NULL, 34, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(118, 2, NULL, 35, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(119, 2, NULL, 36, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(120, 2, NULL, 37, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(121, 2, NULL, 38, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(122, 2, NULL, 39, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(123, 2, NULL, 40, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(124, 2, NULL, 41, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(125, 2, NULL, 42, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(126, 2, NULL, 43, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(127, 2, NULL, 44, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(128, 2, NULL, 45, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(129, 2, NULL, 46, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(130, 2, NULL, 47, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(131, 2, NULL, 48, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(132, 2, NULL, 49, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(133, 2, NULL, 50, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(134, 2, NULL, 51, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(135, 2, NULL, 52, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(136, 2, NULL, 53, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(137, 2, NULL, 54, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(138, 2, NULL, 55, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(139, 2, NULL, 56, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(140, 2, NULL, 57, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(141, 2, NULL, 58, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(142, 2, NULL, 59, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(143, 2, NULL, 60, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(144, 2, NULL, 61, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(145, 2, NULL, 62, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(146, 2, NULL, 63, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(147, 2, NULL, 64, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(148, 2, NULL, 65, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(149, 2, NULL, 66, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(150, 2, NULL, 67, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(151, 2, NULL, 68, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(152, 2, NULL, 69, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(153, 2, NULL, 70, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(154, 2, NULL, 71, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(155, 2, NULL, 72, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(156, 2, NULL, 73, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(157, 2, NULL, 74, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(158, 2, NULL, 75, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(159, 2, NULL, 76, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(160, 2, NULL, 77, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(161, 2, NULL, 78, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(162, 2, NULL, 79, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(163, 2, NULL, 80, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(164, 2, NULL, 81, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(165, 2, NULL, 82, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1),
+(166, 2, NULL, 83, 2, 2, '2026-11-23', 1, '2026-11-23 07:53:38', 1);
 
 -- --------------------------------------------------------
 
@@ -55282,6 +57122,7 @@ INSERT INTO `student_fee_allocations` (`id`, `school_id`, `student_id`, `fee_str
 CREATE TABLE `student_hostel` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT 1,
+  `branch_id` int(11) DEFAULT NULL,
   `student_id` int(11) DEFAULT NULL,
   `hostel_name` int(11) DEFAULT NULL,
   `room_number` int(11) DEFAULT NULL,
@@ -55289,16 +57130,7 @@ CREATE TABLE `student_hostel` (
   `status` int(11) NOT NULL DEFAULT 1,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
-
---
--- Dumping data for table `student_hostel`
---
-
-INSERT INTO `student_hostel` (`id`, `school_id`, `student_id`, `hostel_name`, `room_number`, `academic_year`, `status`, `created_at`, `updated_at`) VALUES
-(1, 1, 1, 1, 2, 4, 1, '2026-09-09 16:14:24', '2026-09-09 10:44:24'),
-(2, 1, 2, 1, 2, 4, 1, '2026-09-09 16:31:58', '2026-09-09 11:01:58'),
-(3, 2, 5, 4, 4, 8, 1, '2026-09-10 16:22:24', '2026-09-10 10:52:24');
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -55309,6 +57141,7 @@ INSERT INTO `student_hostel` (`id`, `school_id`, `student_id`, `hostel_name`, `r
 CREATE TABLE `student_master` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT 1,
+  `branch_id` int(11) DEFAULT NULL,
   `academic_year` int(11) DEFAULT NULL,
   `admission_number` varchar(255) DEFAULT NULL,
   `admission_date` datetime DEFAULT NULL,
@@ -55330,7 +57163,7 @@ CREATE TABLE `student_master` (
   `mother_tongue` int(11) DEFAULT NULL,
   `language_known` varchar(100) DEFAULT NULL,
   `status` int(11) NOT NULL DEFAULT 1 COMMENT '1=active, 2=inactive, 3=pending, 4=delete',
-  `picture` text DEFAULT NULL,
+  `picture` mediumtext DEFAULT NULL,
   `has_siblings` int(11) DEFAULT 0,
   `has_transport` int(11) DEFAULT 0 COMMENT '0=has not transport,\r\n1=has transport',
   `has_hostel` int(11) DEFAULT 0 COMMENT '0=has not hostel, 1=has hostel',
@@ -55341,19 +57174,96 @@ CREATE TABLE `student_master` (
   `passcode` varchar(255) DEFAULT NULL,
   `otp` varchar(10) DEFAULT NULL,
   `otp_expires_at` datetime DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `student_master`
 --
 
-INSERT INTO `student_master` (`id`, `school_id`, `academic_year`, `admission_number`, `admission_date`, `roll_number`, `first_name`, `last_name`, `class`, `section`, `gender`, `date_of_birth`, `password`, `blood_group`, `house`, `religion`, `category`, `primary_contact_number`, `email_address`, `caste`, `mother_tongue`, `language_known`, `status`, `picture`, `has_siblings`, `has_transport`, `has_hostel`, `created_at`, `updated_at`, `hostel_required`, `transport_required`, `passcode`, `otp`, `otp_expires_at`) VALUES
-(1, 1, 4, 'ADM2026001', '2026-04-10 00:00:00', '1', 'Arjun', 'Sharma', 1, 1, 1, '2014-08-06 00:00:00', '647eb705cb0cf118515177aedd0a3a56', 8, 1, 1, 1, '8745632109', 'arjun.sharma@gmail.com', NULL, 1, NULL, 1, 'http://192.168.29.144:5000/upload/student/student_pic/Profile-1788950409886-4416.jpg', 0, 0, 0, '2026-09-09 16:10:09', '2026-09-09 10:40:09', 0, 0, NULL, NULL, NULL),
-(2, 1, 4, 'ADM2026002', '2026-04-07 00:00:00', '1', 'Ananya', 'Das', 2, 4, 1, '2010-02-05 00:00:00', 'd77842b43a7905409881fe4b05ec6cba', 4, 3, 1, 1, '9658745210', 'ananya@gmail.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-09-09 16:31:58', '2026-09-09 11:01:58', 0, 0, NULL, NULL, NULL),
-(3, 2, 8, 'ADM2026-00458', '2026-04-08 00:00:00', '1', 'Aarav', 'Sharma', 6, 10, 1, '2010-02-06 00:00:00', 'd264c412e9dd6aa0aa1e84a2cb0b3876', 3, NULL, 7, 5, '874563210', 'aarav@gmail.com', NULL, 3, NULL, 1, NULL, 0, 0, 0, '2026-09-10 11:54:24', '2026-09-10 06:24:24', 0, 0, NULL, NULL, NULL),
-(4, 2, 8, 'ADM2026-00457', '2026-09-10 00:00:00', '1', 'Riya ', 'Sen', 6, 12, 2, '2015-04-22 00:00:00', 'f6d60e9f23cda581f58ad5b08d1be6f4', 9, 5, 7, 5, '8521479630', 'riya@gmail.com', NULL, 3, NULL, 1, NULL, 0, 0, 0, '2026-09-10 12:20:43', '2026-09-10 06:50:43', 0, 0, NULL, NULL, NULL),
-(5, 2, 8, 'ADM2026-00456', '2026-09-04 00:00:00', '1', 'Aditya ', 'Das', 8, 15, 1, '2005-11-08 00:00:00', '6bc3c3a80ef53416563ec085c90193af', 5, 6, 7, 5, '9876501002', 'adityadas@gmail.com', NULL, 4, NULL, 1, NULL, 0, 0, 0, '2026-09-10 12:24:40', '2026-09-10 06:54:40', 0, 0, NULL, NULL, NULL),
-(6, 2, 8, 'ADM20260045', '2026-06-10 00:00:00', '1', 'Arjun ', 'Mukherjee', 7, 13, 1, '2015-08-18 00:00:00', '340b41e81b0c1837f4a496fb09118711', 5, 5, 7, 5, '8632574125', 'arjun@gmail.com', NULL, 3, NULL, 1, NULL, 0, 0, 0, '2026-09-11 12:11:13', '2026-09-11 06:41:13', 0, 0, NULL, NULL, NULL);
+INSERT INTO `student_master` (`id`, `school_id`, `branch_id`, `academic_year`, `admission_number`, `admission_date`, `roll_number`, `first_name`, `last_name`, `class`, `section`, `gender`, `date_of_birth`, `password`, `blood_group`, `house`, `religion`, `category`, `primary_contact_number`, `email_address`, `caste`, `mother_tongue`, `language_known`, `status`, `picture`, `has_siblings`, `has_transport`, `has_hostel`, `created_at`, `updated_at`, `hostel_required`, `transport_required`, `passcode`, `otp`, `otp_expires_at`) VALUES
+(1, 2, 2, 2, 'SKG20260011', '2026-04-01 00:00:00', '11', 'Rohan', 'Mondal', 1, 1, 1, '2012-11-11 00:00:00', '$2b$10$MSZLJEhn6c6pj3JTRv5NBuRbT63U9.dtqRKfNn/4ahi/uN0woQgG6', 3, NULL, 2, NULL, '9000000010', 'student011@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:43:25', '2026-11-20 10:13:25', 0, 0, NULL, NULL, NULL),
+(2, 2, 2, 2, 'SKG20260031', '2026-04-01 00:00:00', '31', 'Rohan', 'Mondal', 2, 4, 1, '2014-07-04 00:00:00', '$2b$10$AkCWP1.MORh0nnVyH78CTeghrYgBpDvtT627z9M4Ixnt3la3oGm.O', 5, NULL, 2, NULL, '9000000030', 'student031@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:43:26', '2026-11-20 10:13:26', 0, 0, NULL, NULL, NULL),
+(3, 2, 2, 2, 'SKG20260051', '2026-04-01 00:00:00', '51', 'Rohan', 'Mondal', 3, 5, 1, '2016-03-24 00:00:00', '$2b$10$HE.UNPQsM8iyVbW0.ttHKev9Mk54Z74NXfTgVZSU.60j70qdmhvDO', 3, NULL, 2, NULL, '9000000050', 'student051@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:43:27', '2026-11-20 10:13:27', 0, 0, NULL, NULL, NULL),
+(4, 2, 2, 2, 'SKG20260071', '2026-04-01 00:00:00', '71', 'Rohan', 'Mondal', 3, 5, 1, '2018-11-17 00:00:00', '$2b$10$vBrjaIKGDhjSz8Elxh0j3OMHSJNTjMMEWBPOM.ocXQLDuakoyh352', 5, NULL, 2, NULL, '9000000070', 'student071@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:43:28', '2026-11-20 10:13:28', 0, 0, NULL, NULL, NULL),
+(5, 2, 2, 2, 'SKG20260091', '2026-04-01 00:00:00', '91', 'Rohan', 'Mondal', 4, 8, 1, '2011-07-10 00:00:00', '$2b$10$fWs4YvSWwBwF0GaP6bbEFOUH9uBEG7UGQeN.ky8i7BlsYckoF9LYK', 3, NULL, 2, NULL, '9000000090', 'student091@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:43:29', '2026-11-20 10:13:29', 0, 0, NULL, NULL, NULL),
+(6, 2, 2, 2, 'SKG20260001', '2026-04-01 00:00:00', '1', 'Aritra', 'Chatterjee', 1, 1, 1, '2011-01-01 00:00:00', '$2b$10$xmb5SFkVz/NwoEBCDq3pVebEuX3lRGsVrEg8OloEfTbKNAeA5ktcO', 1, NULL, NULL, NULL, '9000000000', 'student001@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:22', '2026-11-20 10:15:22', 0, 0, NULL, NULL, NULL),
+(7, 2, 2, 2, 'SKG20260002', '2026-04-01 00:00:00', '2', 'Riya', 'Dutta', 1, 1, 2, '2012-02-02 00:00:00', '$2b$10$7plw9Z15DRx9PDMttE21Q.y1jZAoMyfAeQ2XPoxg3rgM.4XRYN2W.', 2, NULL, NULL, NULL, '9000000001', 'student002@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:22', '2026-11-20 10:15:22', 0, 0, NULL, NULL, NULL),
+(8, 2, 2, 2, 'SKG20260003', '2026-04-01 00:00:00', '3', 'Arjun', 'Bose', 1, 1, 1, '2013-03-03 00:00:00', '$2b$10$ApllR2/mixLEhSr3ZacXn.51RtceeHudw8la0ON3ofwk.tbDsntxS', 3, NULL, NULL, NULL, '9000000002', 'student003@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:22', '2026-11-20 10:15:22', 0, 0, NULL, NULL, NULL),
+(9, 2, 2, 2, 'SKG20260005', '2026-04-01 00:00:00', '5', 'Debanjan', 'Chakraborty', 1, 1, 1, '2015-05-05 00:00:00', '$2b$10$Fe9oHaQzSj8bDjrCVoXEGuHPrXyjyhxzU67k4gtpvl1ZRUG3BLHkK', 8, NULL, NULL, NULL, '9000000004', 'student005@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:23', '2026-11-20 10:15:23', 0, 0, NULL, NULL, NULL),
+(10, 2, 2, 2, 'SKG20260006', '2026-04-01 00:00:00', '6', 'Moumita', 'Mitra', 1, 1, 2, '2016-06-06 00:00:00', '$2b$10$PD.nElh1L0X/QAsLtCXqu..yMubNiUKBDEnxFM7rvrxligSYpOtjq', 9, NULL, NULL, NULL, '9000000005', 'student006@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:23', '2026-11-20 10:15:23', 0, 0, NULL, NULL, NULL),
+(11, 2, 2, 2, 'SKG20260007', '2026-04-01 00:00:00', '7', 'Abhishek', 'Banerjee', 1, 1, 1, '2017-07-07 00:00:00', '$2b$10$R3olVN6K3d55Dw7ys9Mwh.VbMA1B81FpXsoheMJhR0SudQobliZKq', 5, NULL, NULL, NULL, '9000000006', 'student007@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:23', '2026-11-20 10:15:23', 0, 0, NULL, NULL, NULL),
+(12, 2, 2, 2, 'SKG20260008', '2026-04-01 00:00:00', '8', 'Tiyasha', 'Sen', 1, 1, 2, '2018-08-08 00:00:00', '$2b$10$JQ8VKjzOhykSsw0YAGTys.ROn/wNUHbia140P1MpuB3Qq/.gWlDQq', 6, NULL, NULL, NULL, '9000000007', 'student008@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:23', '2026-11-20 10:15:23', 0, 0, NULL, NULL, NULL),
+(13, 2, 2, 2, 'SKG20260010', '2026-04-01 00:00:00', '10', 'Sneha', 'Das', 1, 1, 2, '2011-10-10 00:00:00', '$2b$10$TOW57SvX9Ioq.40UzgEyqekWeKslHFbfRsD8r62bCKtj6NOqdyCf2', 2, NULL, NULL, NULL, '9000000009', 'student010@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:23', '2026-11-20 10:15:23', 0, 0, NULL, NULL, NULL),
+(14, 2, 2, 2, 'SKG20260012', '2026-04-01 00:00:00', '12', 'Trisha', 'Mallick', 1, 1, 2, '2013-12-12 00:00:00', '$2b$10$qavEnecjxD5Zmdur.vianuwkPf/3zrf4fwXq7BVbvS8oHNqhfh3oG', 4, NULL, NULL, NULL, '9000000011', 'student012@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:23', '2026-11-20 10:15:23', 0, 0, NULL, NULL, NULL),
+(15, 2, 2, 2, 'SKG20260013', '2026-04-01 00:00:00', '13', 'Souvik', 'Ghosh', 1, 1, 1, '2014-01-13 00:00:00', '$2b$10$L0XJrXkglDWin2s4ZVpoauMx.idJ4ebutq5skK0BtqHACb.jFzRJ6', 8, NULL, NULL, NULL, '9000000012', 'student013@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:23', '2026-11-20 10:15:23', 0, 0, NULL, NULL, NULL),
+(16, 2, 2, 2, 'SKG20260015', '2026-04-01 00:00:00', '15', 'Rishav', 'Kundu', 1, 1, 1, '2016-03-15 00:00:00', '$2b$10$g4R2pdB3MSr8nU4V83nlp.APTd82C4SkFU0D6iKNVHxkejeIjM6yK', 5, NULL, NULL, NULL, '9000000014', 'student015@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:24', '2026-11-20 10:15:24', 0, 0, NULL, NULL, NULL),
+(17, 2, 2, 2, 'SKG20260016', '2026-04-01 00:00:00', '16', 'Ayesha', 'Roy', 1, 1, 2, '2017-04-16 00:00:00', '$2b$10$9pVkqoIdru0dU.3HDd9HkOyBT9V5m3P109X0Q9AnXmobr7cg6PJAO', 6, NULL, NULL, NULL, '9000000015', 'student016@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:24', '2026-11-20 10:15:24', 0, 0, NULL, NULL, NULL),
+(18, 2, 2, 2, 'SKG20260017', '2026-04-01 00:00:00', '17', 'Arnab', 'Biswas', 1, 1, 1, '2018-05-17 00:00:00', '$2b$10$s8bjzk2UK/cBPh9kAOCYR.RqcO3omsQqsOo9vzNRRuFdlrl7RiB.y', 1, NULL, NULL, NULL, '9000000016', 'student017@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:24', '2026-11-20 10:15:24', 0, 0, NULL, NULL, NULL),
+(19, 2, 2, 2, 'SKG20260018', '2026-04-01 00:00:00', '18', 'Sadia', 'Bhattacharya', 1, 1, 2, '2019-06-18 00:00:00', '$2b$10$tuqzQDUjYcpXqepRbFR6Du0NwKK6BCIHuZi8gnYXFLKtF6oR/chI2', 2, NULL, NULL, NULL, '9000000017', 'student018@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:24', '2026-11-20 10:15:24', 0, 0, NULL, NULL, NULL),
+(20, 2, 2, 2, 'SKG20260020', '2026-04-01 00:00:00', '20', 'Tasnim', 'Ghosal', 1, 1, 2, '2012-08-20 00:00:00', '$2b$10$9D9QZDaHuK5zwJsEAqfIzONZZbhCie6u64OVZo0UeeSFp0GFdzsqO', 4, NULL, NULL, NULL, '9000000019', 'student020@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:24', '2026-11-20 10:15:24', 0, 0, NULL, NULL, NULL),
+(21, 2, 2, 2, 'SKG20260021', '2026-04-01 00:00:00', '21', 'Aritra', 'Chatterjee', 1, 1, 1, '2013-09-21 00:00:00', '$2b$10$ZGPiBectwZSM3vaVRVeRz.Yb/RSt6.PlTT1UqMhl.jpVVm90r7fPa', 8, NULL, NULL, NULL, '9000000020', 'student021@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:24', '2026-11-20 10:15:24', 0, 0, NULL, NULL, NULL),
+(22, 2, 2, 2, 'SKG20260022', '2026-04-01 00:00:00', '22', 'Riya', 'Dutta', 1, 1, 2, '2014-10-22 00:00:00', '$2b$10$J211VOqiUa8qgogKaB3IheKPODH5M1puJtvMh8tXdLvMz7EAHxXwy', 9, NULL, NULL, NULL, '9000000021', 'student022@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:24', '2026-11-20 10:15:24', 0, 0, NULL, NULL, NULL),
+(23, 2, 2, 2, 'SKG20260023', '2026-04-01 00:00:00', '23', 'Arjun', 'Bose', 1, 1, 1, '2015-11-23 00:00:00', '$2b$10$6txQtPpobWCxwKEmcLBcZuW/8pa4ONltPRAhk401pZWFk99EJwrw6', 5, NULL, NULL, NULL, '9000000022', 'student023@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:25', '2026-11-20 10:15:25', 0, 0, NULL, NULL, NULL),
+(24, 2, 2, 2, 'SKG20260025', '2026-04-01 00:00:00', '25', 'Debanjan', 'Chakraborty', 1, 1, 1, '2017-01-25 00:00:00', '$2b$10$taV25wQOJfAq0dggfP7n6ut.FvalNOnmtJu4DhfJy.mGrjqHde6iS', 1, NULL, NULL, NULL, '9000000024', 'student025@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:25', '2026-11-20 10:15:25', 0, 0, NULL, NULL, NULL),
+(25, 2, 2, 2, 'SKG20260026', '2026-04-01 00:00:00', '26', 'Moumita', 'Mitra', 2, 4, 2, '2018-02-26 00:00:00', '$2b$10$E3c3ubyY3yvU6ciP0nMtXOUw.dHe8ZcHsvZ887n71mKCxsaC3EcXe', 2, NULL, NULL, NULL, '9000000025', 'student026@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:25', '2026-11-20 10:15:25', 0, 0, NULL, NULL, NULL),
+(26, 2, 2, 2, 'SKG20260027', '2026-04-01 00:00:00', '27', 'Abhishek', 'Banerjee', 2, 4, 1, '2019-03-27 00:00:00', '$2b$10$q7./ew.wFoFJ5QJlB5AoWOyy.gH3CDNy6ePuByqA6jqdRMv10hZVO', 3, NULL, NULL, NULL, '9000000026', 'student027@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:25', '2026-11-20 10:15:25', 0, 0, NULL, NULL, NULL),
+(27, 2, 2, 2, 'SKG20260028', '2026-04-01 00:00:00', '28', 'Tiyasha', 'Sen', 2, 4, 2, '2011-04-01 00:00:00', '$2b$10$MIqyhMmSNc4gECaQJMjLw.QGeokF2X9kfba2M.UIMzsgsygcD/ozG', 4, NULL, NULL, NULL, '9000000027', 'student028@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:25', '2026-11-20 10:15:25', 0, 0, NULL, NULL, NULL),
+(28, 2, 2, 2, 'SKG20260030', '2026-04-01 00:00:00', '30', 'Sneha', 'Das', 2, 4, 2, '2013-06-03 00:00:00', '$2b$10$fvcKioXEqrB8bcauFMUAtOG6X9Xs5fgFjSmCXLOTU/psqWt1GYLzq', 9, NULL, NULL, NULL, '9000000029', 'student030@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:25', '2026-11-20 10:15:25', 0, 0, NULL, NULL, NULL),
+(29, 2, 2, 2, 'SKG20260032', '2026-04-01 00:00:00', '32', 'Trisha', 'Mallick', 2, 4, 2, '2015-08-05 00:00:00', '$2b$10$OeI/WH8/PijPRZXCi3UPMOMa1/eSsdIGDR9mQTkIgxDL0erBDIvoe', 6, NULL, NULL, NULL, '9000000031', 'student032@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:26', '2026-11-20 10:15:26', 0, 0, NULL, NULL, NULL),
+(30, 2, 2, 2, 'SKG20260033', '2026-04-01 00:00:00', '33', 'Souvik', 'Ghosh', 2, 4, 1, '2016-09-06 00:00:00', '$2b$10$rDr/5LUVgdjaLSSxjOEnl.kPIJ40.Ixe03Hu./.9HBjLr8W998IRG', 1, NULL, NULL, NULL, '9000000032', 'student033@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:26', '2026-11-20 10:15:26', 0, 0, NULL, NULL, NULL),
+(31, 2, 2, 2, 'SKG20260035', '2026-04-01 00:00:00', '35', 'Rishav', 'Kundu', 2, 4, 1, '2018-11-08 00:00:00', '$2b$10$fSN.jq450tKBVdC/mxmdHeSBMSJ03c1j1xnOcaPB0Cqz.kpz9lokq', 3, NULL, NULL, NULL, '9000000034', 'student035@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:26', '2026-11-20 10:15:26', 0, 0, NULL, NULL, NULL),
+(32, 2, 2, 2, 'SKG20260036', '2026-04-01 00:00:00', '36', 'Ayesha', 'Roy', 2, 4, 2, '2019-12-09 00:00:00', '$2b$10$l/0t3tEGocqN35QFsNFeDe46gcE8hv1m4.nkGQhuI9mBF.pHw6EK6', 4, NULL, NULL, NULL, '9000000035', 'student036@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:26', '2026-11-20 10:15:26', 0, 0, NULL, NULL, NULL),
+(33, 2, 2, 2, 'SKG20260037', '2026-04-01 00:00:00', '37', 'Arnab', 'Biswas', 2, 4, 1, '2011-01-10 00:00:00', '$2b$10$I/33cI2JQ9Hbvy/nj9.MNOMKrw.VOj3ggWlvRYUWgroR13mbc34qG', 8, NULL, NULL, NULL, '9000000036', 'student037@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:26', '2026-11-20 10:15:26', 0, 0, NULL, NULL, NULL),
+(34, 2, 2, 2, 'SKG20260038', '2026-04-01 00:00:00', '38', 'Sadia', 'Bhattacharya', 2, 4, 2, '2012-02-11 00:00:00', '$2b$10$TJ6RP/p71Y/atpa9OAiaaeem2eq.DTKCNwJWiWWMSo1ujGTrSwP3a', 9, NULL, NULL, NULL, '9000000037', 'student038@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:26', '2026-11-20 10:15:26', 0, 0, NULL, NULL, NULL),
+(35, 2, 2, 2, 'SKG20260040', '2026-04-01 00:00:00', '40', 'Tasnim', 'Ghosal', 2, 4, 2, '2014-04-13 00:00:00', '$2b$10$2VnHD2DEvoRGkpi/T6J5se0TUo2yNiM6REdoy9rcPnZMPE.LAn2jq', 6, NULL, NULL, NULL, '9000000039', 'student040@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:26', '2026-11-20 10:15:26', 0, 0, NULL, NULL, NULL),
+(36, 2, 2, 2, 'SKG20260041', '2026-04-01 00:00:00', '41', 'Aritra', 'Chatterjee', 2, 4, 1, '2015-05-14 00:00:00', '$2b$10$N4TLGBTrU/mJOpGOdXcLmeelIIbR2ovc3tMxPe1p44krDGwkOYeFC', 1, NULL, NULL, NULL, '9000000040', 'student041@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:27', '2026-11-20 10:15:27', 0, 0, NULL, NULL, NULL),
+(37, 2, 2, 2, 'SKG20260042', '2026-04-01 00:00:00', '42', 'Riya', 'Dutta', 2, 4, 2, '2016-06-15 00:00:00', '$2b$10$v8XMda.HmkCu.8cb9ZX/g.Q6flMc4UiIZvbSx3fw718fe/ImuFYqa', 2, NULL, NULL, NULL, '9000000041', 'student042@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:27', '2026-11-20 10:15:27', 0, 0, NULL, NULL, NULL),
+(38, 2, 2, 2, 'SKG20260043', '2026-04-01 00:00:00', '43', 'Arjun', 'Bose', 2, 4, 1, '2017-07-16 00:00:00', '$2b$10$hx6inB5bnl1bspH0HuJQMeduHF9zY1a4ld3gZ1QK9H1wPvUOJk2ri', 3, NULL, NULL, NULL, '9000000042', 'student043@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:27', '2026-11-20 10:15:27', 0, 0, NULL, NULL, NULL),
+(39, 2, 2, 2, 'SKG20260045', '2026-04-01 00:00:00', '45', 'Debanjan', 'Chakraborty', 2, 4, 1, '2019-09-18 00:00:00', '$2b$10$T0U8S0yJwaXkGvBLCFfxaOpBJnnIrRRu9KvJrWhWwTrVc3wjvKs7C', 8, NULL, NULL, NULL, '9000000044', 'student045@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:27', '2026-11-20 10:15:27', 0, 0, NULL, NULL, NULL),
+(40, 2, 2, 2, 'SKG20260046', '2026-04-01 00:00:00', '46', 'Moumita', 'Mitra', 2, 4, 2, '2011-10-19 00:00:00', '$2b$10$T1vKyXQ4IVCjTAm4X1qSuuEeH9FseP3FqMHpn/PGx5qZGBTW.0Cei', 9, NULL, NULL, NULL, '9000000045', 'student046@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:27', '2026-11-20 10:15:27', 0, 0, NULL, NULL, NULL),
+(41, 2, 2, 2, 'SKG20260047', '2026-04-01 00:00:00', '47', 'Abhishek', 'Banerjee', 2, 4, 1, '2012-11-20 00:00:00', '$2b$10$I7RLlZehGlwqUiqWkk31L.AQow6nhP8gi8fZlVaCbCzhDwoIyoJnS', 5, NULL, NULL, NULL, '9000000046', 'student047@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:27', '2026-11-20 10:15:27', 0, 0, NULL, NULL, NULL),
+(42, 2, 2, 2, 'SKG20260048', '2026-04-01 00:00:00', '48', 'Tiyasha', 'Sen', 2, 4, 2, '2013-12-21 00:00:00', '$2b$10$W9N540y8N4UiAv7KLlGd9ONP1FDImhqXrR9coBGXlvyrlCsdip9AK', 6, NULL, NULL, NULL, '9000000047', 'student048@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:27', '2026-11-20 10:15:27', 0, 0, NULL, NULL, NULL),
+(43, 2, 2, 2, 'SKG20260050', '2026-04-01 00:00:00', '50', 'Sneha', 'Das', 2, 4, 2, '2015-02-23 00:00:00', '$2b$10$BCvAdx0EvuCsV5ZSoiQ8WOKC8cRlMm6evb8pfzEaH/q6DjO3i0lQu', 2, NULL, NULL, NULL, '9000000049', 'student050@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:28', '2026-11-20 10:15:28', 0, 0, NULL, NULL, NULL),
+(44, 2, 2, 2, 'SKG20260052', '2026-04-01 00:00:00', '52', 'Trisha', 'Mallick', 3, 5, 2, '2017-04-25 00:00:00', '$2b$10$PdEUScBDMsB4YcT1ri3X6O6OjOpLGWNotxCHngIMbG3U3pNkV1FQa', 4, NULL, NULL, NULL, '9000000051', 'student052@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:28', '2026-11-20 10:15:28', 0, 0, NULL, NULL, NULL),
+(45, 2, 2, 2, 'SKG20260053', '2026-04-01 00:00:00', '53', 'Souvik', 'Ghosh', 3, 5, 1, '2018-05-26 00:00:00', '$2b$10$RtmG2TENDyaqcorRf4WBOuJqIUiZPvmXDTb6TRiVgXJ6ru7Knmri.', 8, NULL, NULL, NULL, '9000000052', 'student053@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:28', '2026-11-20 10:15:28', 0, 0, NULL, NULL, NULL),
+(46, 2, 2, 2, 'SKG20260055', '2026-04-01 00:00:00', '55', 'Rishav', 'Kundu', 3, 5, 1, '2011-07-01 00:00:00', '$2b$10$fcGg6k9c3NMNs2AmdYvtoeOGFuRZNvhhHARqkRLND5KznAK2EuPzu', 5, NULL, NULL, NULL, '9000000054', 'student055@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:28', '2026-11-20 10:15:28', 0, 0, NULL, NULL, NULL),
+(47, 2, 2, 2, 'SKG20260056', '2026-04-01 00:00:00', '56', 'Ayesha', 'Roy', 3, 5, 2, '2012-08-02 00:00:00', '$2b$10$h3kZN0UtIEWxMaYh00rLXenveDR.nfCjjoiz24zC8kTJQnMN3mJ5e', 6, NULL, NULL, NULL, '9000000055', 'student056@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:28', '2026-11-20 10:15:28', 0, 0, NULL, NULL, NULL),
+(48, 2, 2, 2, 'SKG20260057', '2026-04-01 00:00:00', '57', 'Arnab', 'Biswas', 3, 5, 1, '2013-09-03 00:00:00', '$2b$10$mqcJIfnNny0beco8vA811.rF/WGvlz8TeyWWokW7Uw7cimcfz88Ue', 1, NULL, NULL, NULL, '9000000056', 'student057@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:28', '2026-11-20 10:15:28', 0, 0, NULL, NULL, NULL),
+(49, 2, 2, 2, 'SKG20260058', '2026-04-01 00:00:00', '58', 'Sadia', 'Bhattacharya', 3, 5, 2, '2014-10-04 00:00:00', '$2b$10$6eITANNNmebM1JEaHlEtJenB3zf9.h5sBCwdNvnhMMYAZk2vkTrEm', 2, NULL, NULL, NULL, '9000000057', 'student058@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:28', '2026-11-20 10:15:28', 0, 0, NULL, NULL, NULL),
+(50, 2, 2, 2, 'SKG20260060', '2026-04-01 00:00:00', '60', 'Tasnim', 'Ghosal', 3, 5, 2, '2016-12-06 00:00:00', '$2b$10$AZ2Pc73lin834D5toEnCbuv.pPM4PF9/gLL/NSNu75wiwreqFqAcW', 4, NULL, NULL, NULL, '9000000059', 'student060@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:29', '2026-11-20 10:15:29', 0, 0, NULL, NULL, NULL),
+(51, 2, 2, 2, 'SKG20260061', '2026-04-01 00:00:00', '61', 'Aritra', 'Chatterjee', 3, 5, 1, '2017-01-07 00:00:00', '$2b$10$4UjYSxxKiLpSUE7nRHoBM.VhBm25xAznRON1xErCcFAGCpbRzOWoC', 8, NULL, NULL, NULL, '9000000060', 'student061@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:29', '2026-11-20 10:15:29', 0, 0, NULL, NULL, NULL),
+(52, 2, 2, 2, 'SKG20260062', '2026-04-01 00:00:00', '62', 'Riya', 'Dutta', 3, 5, 2, '2018-02-08 00:00:00', '$2b$10$hsHQmPukuOvoUxdQqrNw2OtmILU1ZO5EwVmjkf3tc5.qAxUjlUeby', 9, NULL, NULL, NULL, '9000000061', 'student062@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:29', '2026-11-20 10:15:29', 0, 0, NULL, NULL, NULL),
+(53, 2, 2, 2, 'SKG20260063', '2026-04-01 00:00:00', '63', 'Arjun', 'Bose', 3, 5, 1, '2019-03-09 00:00:00', '$2b$10$kaq3.sJjIIpDsusHAH0iSulA2FRCSafgnZKmkJ.MmilEFNA8SV6Xe', 5, NULL, NULL, NULL, '9000000062', 'student063@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:29', '2026-11-20 10:15:29', 0, 0, NULL, NULL, NULL),
+(54, 2, 2, 2, 'SKG20260065', '2026-04-01 00:00:00', '65', 'Debanjan', 'Chakraborty', 3, 5, 1, '2012-05-11 00:00:00', '$2b$10$r0LIX6WzbF5OD.IzLbNhq.yyv2pwfGX389Ki7Sg2p8n2SLWGA5QFK', 1, NULL, NULL, NULL, '9000000064', 'student065@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:29', '2026-11-20 10:15:29', 0, 0, NULL, NULL, NULL),
+(55, 2, 2, 2, 'SKG20260066', '2026-04-01 00:00:00', '66', 'Moumita', 'Mitra', 3, 5, 2, '2013-06-12 00:00:00', '$2b$10$Tzhl.5ppvZMSsoaW7XmJMerM/J2vHEYZrrtCWbc/oU.3PkVvDw8Zi', 2, NULL, NULL, NULL, '9000000065', 'student066@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:29', '2026-11-20 10:15:29', 0, 0, NULL, NULL, NULL),
+(56, 2, 2, 2, 'SKG20260067', '2026-04-01 00:00:00', '67', 'Abhishek', 'Banerjee', 3, 5, 1, '2014-07-13 00:00:00', '$2b$10$tLB3hu6dVae3feF1SOvPu.lIGF8tLTgH5oqbrCLzBG5Dv2Px2ODWq', 3, NULL, NULL, NULL, '9000000066', 'student067@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:29', '2026-11-20 10:15:29', 0, 0, NULL, NULL, NULL),
+(57, 2, 2, 2, 'SKG20260068', '2026-04-01 00:00:00', '68', 'Tiyasha', 'Sen', 3, 5, 2, '2015-08-14 00:00:00', '$2b$10$nJwvejJoLgDPDi6uWLoTD.gEe/Uo9b.7.XMoHopLJgQaurot5CFfm', 4, NULL, NULL, NULL, '9000000067', 'student068@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:30', '2026-11-20 10:15:30', 0, 0, NULL, NULL, NULL),
+(58, 2, 2, 2, 'SKG20260070', '2026-04-01 00:00:00', '70', 'Sneha', 'Das', 3, 5, 2, '2017-10-16 00:00:00', '$2b$10$2Un70fHolqJ0KbJxNLMczuAHzXWBGkxv1/QZ/mGf672N2osQg28iq', 9, NULL, NULL, NULL, '9000000069', 'student070@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:30', '2026-11-20 10:15:30', 0, 0, NULL, NULL, NULL),
+(59, 2, 2, 2, 'SKG20260072', '2026-04-01 00:00:00', '72', 'Trisha', 'Mallick', 3, 5, 2, '2019-12-18 00:00:00', '$2b$10$KERA/i8siMzl/pkLTxDJ3Otn89WDAp2p/S8mPcakJZdcWT2MG6.DK', 6, NULL, NULL, NULL, '9000000071', 'student072@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:30', '2026-11-20 10:15:30', 0, 0, NULL, NULL, NULL),
+(60, 2, 2, 2, 'SKG20260073', '2026-04-01 00:00:00', '73', 'Souvik', 'Ghosh', 3, 5, 1, '2011-01-19 00:00:00', '$2b$10$yRofoMw1IFqmse0Qbz3aVuelHbUxEECpPdZ26tsDy9Q6FzQOwXhK2', 1, NULL, NULL, NULL, '9000000072', 'student073@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:30', '2026-11-20 10:15:30', 0, 0, NULL, NULL, NULL),
+(61, 2, 2, 2, 'SKG20260075', '2026-04-01 00:00:00', '75', 'Rishav', 'Kundu', 3, 5, 1, '2013-03-21 00:00:00', '$2b$10$BuXoHBnK0suTpcbA/vuPXu9YhmeG1SZ8NGY9y4RgsJ1r2GM.C4TvS', 3, NULL, NULL, NULL, '9000000074', 'student075@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:30', '2026-11-20 10:15:30', 0, 0, NULL, NULL, NULL),
+(62, 2, 2, 2, 'SKG20260076', '2026-04-01 00:00:00', '76', 'Ayesha', 'Roy', 4, 8, 2, '2014-04-22 00:00:00', '$2b$10$rAJxtQB2ONEJKSEN4Bx/5OgaFPh1HhcMtqoARTNdttz5ilz0rzzuW', 4, NULL, NULL, NULL, '9000000075', 'student076@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:30', '2026-11-20 10:15:30', 0, 0, NULL, NULL, NULL),
+(63, 2, 2, 2, 'SKG20260077', '2026-04-01 00:00:00', '77', 'Arnab', 'Biswas', 4, 8, 1, '2015-05-23 00:00:00', '$2b$10$1.OoO8D3xSbvPdXkq3tH.uw0xth7svWJHM/ZRRhUbruz0w98NeNJW', 8, NULL, NULL, NULL, '9000000076', 'student077@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:31', '2026-11-20 10:15:31', 0, 0, NULL, NULL, NULL),
+(64, 2, 2, 2, 'SKG20260078', '2026-04-01 00:00:00', '78', 'Sadia', 'Bhattacharya', 4, 8, 2, '2016-06-24 00:00:00', '$2b$10$G2zJjG0dFTK3ydBibSlSg.UwJWXZwNsWk/0arY/sH.Hy2KGViBPL.', 9, NULL, NULL, NULL, '9000000077', 'student078@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:31', '2026-11-20 10:15:31', 0, 0, NULL, NULL, NULL),
+(65, 2, 2, 2, 'SKG20260080', '2026-04-01 00:00:00', '80', 'Tasnim', 'Ghosal', 4, 8, 2, '2018-08-26 00:00:00', '$2b$10$ZVFTzMn9PlvSzCZx1aauwODk7BIqn4.pBLrU0.uUqGtrsGvqM.lY.', 6, NULL, NULL, NULL, '9000000079', 'student080@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:31', '2026-11-20 10:15:31', 0, 0, NULL, NULL, NULL),
+(66, 2, 2, 2, 'SKG20260081', '2026-04-01 00:00:00', '81', 'Aritra', 'Chatterjee', 4, 8, 1, '2019-09-27 00:00:00', '$2b$10$cLrYi2..zRiTq9IqzxhXtu2QQjoknQk6KUP0kAK8dnSjP5wP.g4a6', 1, NULL, NULL, NULL, '9000000080', 'student081@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:31', '2026-11-20 10:15:31', 0, 0, NULL, NULL, NULL),
+(67, 2, 2, 2, 'SKG20260082', '2026-04-01 00:00:00', '82', 'Riya', 'Dutta', 4, 8, 2, '2011-10-01 00:00:00', '$2b$10$u7zt.Gy1qJzEmdUsdf5Tze7HT.kXNqdHfRtE.IGWPcOaPCnAksr2C', 2, NULL, NULL, NULL, '9000000081', 'student082@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:31', '2026-11-20 10:15:31', 0, 0, NULL, NULL, NULL),
+(68, 2, 2, 2, 'SKG20260083', '2026-04-01 00:00:00', '83', 'Arjun', 'Bose', 4, 8, 1, '2012-11-02 00:00:00', '$2b$10$hccNzF0VDZ2eXp0SUj5W0ee5xWXf9UQ7FxHuO9GZwnh9La6sRGN7m', 3, NULL, NULL, NULL, '9000000082', 'student083@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:31', '2026-11-20 10:15:31', 0, 0, NULL, NULL, NULL),
+(69, 2, 2, 2, 'SKG20260085', '2026-04-01 00:00:00', '85', 'Debanjan', 'Chakraborty', 4, 8, 1, '2014-01-04 00:00:00', '$2b$10$a31wUHR.bZBqqhC8fIap.OCffnhn9Sp6jqaicLxzcufWf2TKpjEqO', 8, NULL, NULL, NULL, '9000000084', 'student085@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:31', '2026-11-20 10:15:31', 0, 0, NULL, NULL, NULL),
+(70, 2, 2, 2, 'SKG20260086', '2026-04-01 00:00:00', '86', 'Moumita', 'Mitra', 4, 8, 2, '2015-02-05 00:00:00', '$2b$10$ALtktA6n1vKRBl0qysKxcOEsPePjpe4IkuIKaeDmiYoXc1X2Vvvuy', 9, NULL, NULL, NULL, '9000000085', 'student086@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:32', '2026-11-20 10:15:32', 0, 0, NULL, NULL, NULL),
+(71, 2, 2, 2, 'SKG20260087', '2026-04-01 00:00:00', '87', 'Abhishek', 'Banerjee', 4, 8, 1, '2016-03-06 00:00:00', '$2b$10$KuAaSy5cO/g.fTeOy3AEd.cXNaQtYhdEHjb0pOJB6Yx.2P4rWPURC', 5, NULL, NULL, NULL, '9000000086', 'student087@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:32', '2026-11-20 10:15:32', 0, 0, NULL, NULL, NULL),
+(72, 2, 2, 2, 'SKG20260088', '2026-04-01 00:00:00', '88', 'Tiyasha', 'Sen', 4, 8, 2, '2017-04-07 00:00:00', '$2b$10$udjMj3YFuvuHW0KyUQi73.k/MHGcrLJNgJg5lVbMU8UgbL3TT2QqW', 6, NULL, NULL, NULL, '9000000087', 'student088@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:32', '2026-11-20 10:15:32', 0, 0, NULL, NULL, NULL),
+(73, 2, 2, 2, 'SKG20260090', '2026-04-01 00:00:00', '90', 'Sneha', 'Das', 4, 8, 2, '2019-06-09 00:00:00', '$2b$10$gd5IvGTsvt3sYUHjDz5wsur8x407ua2pDHimR78HSvosCxQfKs1pC', 2, NULL, NULL, NULL, '9000000089', 'student090@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:32', '2026-11-20 10:15:32', 0, 0, NULL, NULL, NULL),
+(74, 2, 2, 2, 'SKG20260092', '2026-04-01 00:00:00', '92', 'Trisha', 'Mallick', 4, 8, 2, '2012-08-11 00:00:00', '$2b$10$DK18cqriIQkkAt05Ble1z.6F00HVsx.Ytuq7Yg47JS427eDwJ7U/K', 4, NULL, NULL, NULL, '9000000091', 'student092@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:32', '2026-11-20 10:15:32', 0, 0, NULL, NULL, NULL),
+(75, 2, 2, 2, 'SKG20260093', '2026-04-01 00:00:00', '93', 'Souvik', 'Ghosh', 4, 8, 1, '2013-09-12 00:00:00', '$2b$10$rXyzcgT1unGiGLEueawln.gB2jBtO9t.dPTb/D2m6.eq6v49MB5mO', 8, NULL, NULL, NULL, '9000000092', 'student093@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:32', '2026-11-20 10:15:32', 0, 0, NULL, NULL, NULL),
+(76, 2, 2, 2, 'SKG20260095', '2026-04-01 00:00:00', '95', 'Rishav', 'Kundu', 4, 8, 1, '2015-11-14 00:00:00', '$2b$10$CcMvg08jG9wI1lBfrAZgv.8CBdONzyVWdXAEwy6i.RqlSw5NPleCy', 5, NULL, NULL, NULL, '9000000094', 'student095@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:33', '2026-11-20 10:15:33', 0, 0, NULL, NULL, NULL),
+(77, 2, 2, 2, 'SKG20260096', '2026-04-01 00:00:00', '96', 'Ayesha', 'Roy', 4, 8, 2, '2016-12-15 00:00:00', '$2b$10$z/3HCRsNSHLH3caThbusiuTl/LIk5wGsR/3VpSEh34KtehivTJAEi', 6, NULL, NULL, NULL, '9000000095', 'student096@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:33', '2026-11-20 10:15:33', 0, 0, NULL, NULL, NULL),
+(78, 2, 2, 2, 'SKG20260097', '2026-04-01 00:00:00', '97', 'Arnab', 'Biswas', 4, 8, 1, '2017-01-16 00:00:00', '$2b$10$SFXqauuV/Y5hoUw4YaqwRunXsEQoCUJ9tAqO1dRf1S9VI.bYRXpki', 1, NULL, NULL, NULL, '9000000096', 'student097@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:33', '2026-11-20 10:15:33', 0, 0, NULL, NULL, NULL),
+(79, 2, 2, 2, 'SKG20260098', '2026-04-01 00:00:00', '98', 'Sadia', 'Bhattacharya', 4, 8, 2, '2018-02-17 00:00:00', '$2b$10$PAit9HtuL4qzyJa10CAZgOMGXGtxmGEHPPjaw/qyI.Jm020k.KeNG', 2, NULL, NULL, NULL, '9000000097', 'student098@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:33', '2026-11-20 10:15:33', 0, 0, NULL, NULL, NULL),
+(80, 2, 2, 2, 'SKG20260100', '2026-04-01 00:00:00', '100', 'Tasnim', 'Ghosal', 4, 8, 2, '2011-04-19 00:00:00', '$2b$10$Il6Cintg2XM2CGTPNkbAneGT8.XNiTH82DiaXJjnCC3UhsCdcDuve', 4, NULL, NULL, NULL, '9000000099', 'student100@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-20 15:45:33', '2026-11-20 10:15:33', 0, 0, NULL, NULL, NULL),
+(81, 2, 2, 2, 'SKG20260004', '2026-04-01 00:00:00', '4', 'Srija', 'Mukherjee', 1, 1, 2, '2014-04-04 00:00:00', '$2b$10$bOU3GNA.88M4oQzpS0vF7eLRa5TjJnkXt1iB7.1y9g3oEE.TzQcCW', 4, NULL, NULL, NULL, '9000000003', 'student004@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-23 12:13:54', '2026-11-23 06:43:54', 0, 0, NULL, NULL, NULL),
+(82, 2, 2, 2, 'SKG20260279', '2026-08-04 00:00:00', '279', 'Shaan', 'Nandi', 4, 8, 2, '2019-08-11 00:00:00', '$2b$10$A6XZoo6gzeYo0AhTk7yEO.2Ch3FJG8Z0owXnA.LrBYzELsnbCShrC', 2, NULL, NULL, NULL, '9000000279', 'student279@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-23 12:23:17', '2026-11-23 06:53:17', 0, 0, NULL, NULL, NULL),
+(83, 2, 2, 2, 'SKG20260278', '2026-08-04 00:00:00', '279', 'Shaan', 'Nandi', 1, 1, 2, '2019-08-11 00:00:00', '$2b$10$5PJxzCiMsB7JmhM0rnhYduCXQvHUyeLy80kUYfGkgPTYooAfTg9hi', 2, NULL, NULL, NULL, '9000000278', 'student278@example.com', NULL, 1, 'Bengali, English, Hindi', 1, NULL, 0, 0, 0, '2026-11-23 12:25:02', '2026-11-23 06:55:02', 0, 0, NULL, NULL, NULL);
 
 -- --------------------------------------------------------
 
@@ -55364,23 +57274,130 @@ INSERT INTO `student_master` (`id`, `school_id`, `academic_year`, `admission_num
 CREATE TABLE `student_medical_history` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT 1,
+  `branch_id` int(11) DEFAULT NULL,
   `student_id` int(11) DEFAULT NULL,
   `medical_condition` int(11) DEFAULT NULL COMMENT '1 = good, 2 = bad, 3 = other',
-  `description` text DEFAULT NULL,
+  `description` mediumtext DEFAULT NULL,
   `status` int(11) DEFAULT 1,
   `medical_time` datetime DEFAULT NULL,
   `is_informed` int(11) NOT NULL DEFAULT 0,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `student_medical_history`
 --
 
-INSERT INTO `student_medical_history` (`id`, `school_id`, `student_id`, `medical_condition`, `description`, `status`, `medical_time`, `is_informed`, `created_at`, `updated_at`) VALUES
-(3, 2, 5, 1, 'Test', 1, '2026-09-10 00:00:00', 1, '2026-09-10 16:31:31', '2026-09-10 11:01:31'),
-(4, 2, 5, 1, 'Description Test', 1, '2026-09-11 00:00:00', 1, '2026-09-10 16:31:31', '2026-09-10 11:01:31');
+INSERT INTO `student_medical_history` (`id`, `school_id`, `branch_id`, `student_id`, `medical_condition`, `description`, `status`, `medical_time`, `is_informed`, `created_at`, `updated_at`) VALUES
+(1, 2, 2, 1, 0, NULL, 1, NULL, 0, '2026-11-20 15:43:25', '2026-11-20 10:13:25'),
+(2, 2, 2, 2, 0, NULL, 1, NULL, 0, '2026-11-20 15:43:26', '2026-11-20 10:13:26'),
+(3, 2, 2, 3, 0, NULL, 1, NULL, 0, '2026-11-20 15:43:27', '2026-11-20 10:13:27'),
+(4, 2, 2, 4, 0, NULL, 1, NULL, 0, '2026-11-20 15:43:28', '2026-11-20 10:13:28'),
+(5, 2, 2, 5, 0, NULL, 1, NULL, 0, '2026-11-20 15:43:29', '2026-11-20 10:13:29'),
+(6, 2, 2, 6, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:22', '2026-11-20 10:15:22'),
+(7, 2, 2, 7, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:22', '2026-11-20 10:15:22'),
+(8, 2, 2, 8, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:22', '2026-11-20 10:15:22'),
+(9, 2, 2, 9, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:23', '2026-11-20 10:15:23'),
+(10, 2, 2, 10, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:23', '2026-11-20 10:15:23'),
+(11, 2, 2, 11, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:23', '2026-11-20 10:15:23'),
+(12, 2, 2, 12, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:23', '2026-11-20 10:15:23'),
+(13, 2, 2, 13, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:23', '2026-11-20 10:15:23'),
+(14, 2, 2, 14, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:23', '2026-11-20 10:15:23'),
+(15, 2, 2, 15, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:23', '2026-11-20 10:15:23'),
+(16, 2, 2, 16, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:24', '2026-11-20 10:15:24'),
+(17, 2, 2, 17, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:24', '2026-11-20 10:15:24'),
+(18, 2, 2, 18, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:24', '2026-11-20 10:15:24'),
+(19, 2, 2, 19, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:24', '2026-11-20 10:15:24'),
+(20, 2, 2, 20, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:24', '2026-11-20 10:15:24'),
+(21, 2, 2, 21, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:24', '2026-11-20 10:15:24'),
+(22, 2, 2, 22, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:24', '2026-11-20 10:15:24'),
+(23, 2, 2, 23, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:25', '2026-11-20 10:15:25'),
+(24, 2, 2, 24, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:25', '2026-11-20 10:15:25'),
+(25, 2, 2, 25, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:25', '2026-11-20 10:15:25'),
+(26, 2, 2, 26, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:25', '2026-11-20 10:15:25'),
+(27, 2, 2, 27, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:25', '2026-11-20 10:15:25'),
+(28, 2, 2, 28, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:25', '2026-11-20 10:15:25'),
+(29, 2, 2, 29, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:26', '2026-11-20 10:15:26'),
+(30, 2, 2, 30, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:26', '2026-11-20 10:15:26'),
+(31, 2, 2, 31, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:26', '2026-11-20 10:15:26'),
+(32, 2, 2, 32, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:26', '2026-11-20 10:15:26'),
+(33, 2, 2, 33, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:26', '2026-11-20 10:15:26'),
+(34, 2, 2, 34, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:26', '2026-11-20 10:15:26'),
+(35, 2, 2, 35, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:26', '2026-11-20 10:15:26'),
+(36, 2, 2, 36, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:27', '2026-11-20 10:15:27'),
+(37, 2, 2, 37, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:27', '2026-11-20 10:15:27'),
+(38, 2, 2, 38, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:27', '2026-11-20 10:15:27'),
+(39, 2, 2, 39, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:27', '2026-11-20 10:15:27'),
+(40, 2, 2, 40, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:27', '2026-11-20 10:15:27'),
+(41, 2, 2, 41, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:27', '2026-11-20 10:15:27'),
+(42, 2, 2, 42, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:27', '2026-11-20 10:15:27'),
+(43, 2, 2, 43, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:28', '2026-11-20 10:15:28'),
+(44, 2, 2, 44, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:28', '2026-11-20 10:15:28'),
+(45, 2, 2, 45, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:28', '2026-11-20 10:15:28'),
+(46, 2, 2, 46, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:28', '2026-11-20 10:15:28'),
+(47, 2, 2, 47, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:28', '2026-11-20 10:15:28'),
+(48, 2, 2, 48, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:28', '2026-11-20 10:15:28'),
+(49, 2, 2, 49, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:28', '2026-11-20 10:15:28'),
+(50, 2, 2, 50, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:29', '2026-11-20 10:15:29'),
+(51, 2, 2, 51, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:29', '2026-11-20 10:15:29'),
+(52, 2, 2, 52, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:29', '2026-11-20 10:15:29'),
+(53, 2, 2, 53, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:29', '2026-11-20 10:15:29'),
+(54, 2, 2, 54, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:29', '2026-11-20 10:15:29'),
+(55, 2, 2, 55, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:29', '2026-11-20 10:15:29'),
+(56, 2, 2, 56, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:29', '2026-11-20 10:15:29'),
+(57, 2, 2, 57, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:30', '2026-11-20 10:15:30'),
+(58, 2, 2, 58, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:30', '2026-11-20 10:15:30'),
+(59, 2, 2, 59, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:30', '2026-11-20 10:15:30'),
+(60, 2, 2, 60, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:30', '2026-11-20 10:15:30'),
+(61, 2, 2, 61, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:30', '2026-11-20 10:15:30'),
+(62, 2, 2, 62, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:30', '2026-11-20 10:15:30'),
+(63, 2, 2, 63, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:31', '2026-11-20 10:15:31'),
+(64, 2, 2, 64, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:31', '2026-11-20 10:15:31'),
+(65, 2, 2, 65, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:31', '2026-11-20 10:15:31'),
+(66, 2, 2, 66, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:31', '2026-11-20 10:15:31'),
+(67, 2, 2, 67, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:31', '2026-11-20 10:15:31'),
+(68, 2, 2, 68, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:31', '2026-11-20 10:15:31'),
+(69, 2, 2, 69, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:31', '2026-11-20 10:15:31'),
+(70, 2, 2, 70, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:32', '2026-11-20 10:15:32'),
+(71, 2, 2, 71, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:32', '2026-11-20 10:15:32'),
+(72, 2, 2, 72, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:32', '2026-11-20 10:15:32'),
+(73, 2, 2, 73, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:32', '2026-11-20 10:15:32'),
+(74, 2, 2, 74, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:32', '2026-11-20 10:15:32'),
+(75, 2, 2, 75, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:32', '2026-11-20 10:15:32'),
+(76, 2, 2, 76, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:33', '2026-11-20 10:15:33'),
+(77, 2, 2, 77, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:33', '2026-11-20 10:15:33'),
+(78, 2, 2, 78, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:33', '2026-11-20 10:15:33'),
+(79, 2, 2, 79, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:33', '2026-11-20 10:15:33'),
+(80, 2, 2, 80, 0, NULL, 1, NULL, 0, '2026-11-20 15:45:33', '2026-11-20 10:15:33'),
+(81, 2, 2, 81, 0, NULL, 1, NULL, 0, '2026-11-23 12:13:54', '2026-11-23 06:43:54'),
+(82, 2, 2, 82, 0, NULL, 1, NULL, 0, '2026-11-23 12:23:17', '2026-11-23 06:53:17'),
+(83, 2, 2, 83, 0, NULL, 1, NULL, 0, '2026-11-23 12:25:02', '2026-11-23 06:55:02');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `student_promotion_history`
+--
+
+CREATE TABLE `student_promotion_history` (
+  `id` int(11) NOT NULL,
+  `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
+  `student_id` int(11) DEFAULT NULL,
+  `new_student_id` int(11) DEFAULT NULL,
+  `from_academic_year` int(11) DEFAULT NULL,
+  `from_class_id` int(11) DEFAULT NULL,
+  `from_section_id` int(11) DEFAULT NULL,
+  `from_roll_number` varchar(100) DEFAULT NULL,
+  `to_academic_year` int(11) DEFAULT NULL,
+  `to_class_id` int(11) DEFAULT NULL,
+  `to_section_id` int(11) DEFAULT NULL,
+  `to_roll_number` varchar(100) DEFAULT NULL,
+  `promotion_status` varchar(50) NOT NULL DEFAULT 'promoted',
+  `promoted_by` int(11) DEFAULT NULL,
+  `promoted_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
 
@@ -55391,24 +57408,102 @@ INSERT INTO `student_medical_history` (`id`, `school_id`, `student_id`, `medical
 CREATE TABLE `student_to_parent` (
   `id` int(11) NOT NULL,
   `school_id` int(11) NOT NULL DEFAULT 1,
+  `branch_id` int(11) DEFAULT NULL,
   `student_id` int(11) DEFAULT NULL,
   `father_id` int(11) DEFAULT NULL,
   `mother_id` int(11) DEFAULT NULL,
   `guardian_id` int(11) DEFAULT NULL,
   `status` int(5) NOT NULL DEFAULT 1
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `student_to_parent`
 --
 
-INSERT INTO `student_to_parent` (`id`, `school_id`, `student_id`, `father_id`, `mother_id`, `guardian_id`, `status`) VALUES
-(1, 1, 1, 1, 2, 1, 1),
-(2, 1, 2, 3, 4, 3, 1),
-(3, 2, 3, 5, 6, 5, 1),
-(4, 2, 4, 7, 8, 7, 1),
-(5, 2, 5, 9, 10, 9, 1),
-(7, 2, 6, 13, 14, 13, 1);
+INSERT INTO `student_to_parent` (`id`, `school_id`, `branch_id`, `student_id`, `father_id`, `mother_id`, `guardian_id`, `status`) VALUES
+(1, 2, 2, 1, 1, 2, 1, 1),
+(2, 2, 2, 2, 3, 4, 3, 1),
+(3, 2, 2, 3, 5, 6, 5, 1),
+(4, 2, 2, 4, 7, 8, 7, 1),
+(5, 2, 2, 5, 9, 10, 9, 1),
+(6, 2, 2, 6, 11, 12, 11, 1),
+(7, 2, 2, 7, 13, 14, 13, 1),
+(8, 2, 2, 8, 15, 16, 15, 1),
+(9, 2, 2, 9, 17, 18, 17, 1),
+(10, 2, 2, 10, 19, 20, 19, 1),
+(11, 2, 2, 11, 21, 22, 21, 1),
+(12, 2, 2, 12, 23, 24, 23, 1),
+(13, 2, 2, 13, 25, 26, 25, 1),
+(14, 2, 2, 14, 27, 28, 27, 1),
+(15, 2, 2, 15, 29, 30, 29, 1),
+(16, 2, 2, 16, 31, 32, 31, 1),
+(17, 2, 2, 17, 33, 34, 33, 1),
+(18, 2, 2, 18, 35, 36, 35, 1),
+(19, 2, 2, 19, 37, 38, 37, 1),
+(20, 2, 2, 20, 39, 40, 39, 1),
+(21, 2, 2, 21, 41, 42, 41, 1),
+(22, 2, 2, 22, 43, 44, 43, 1),
+(23, 2, 2, 23, 45, 46, 45, 1),
+(24, 2, 2, 24, 47, 48, 47, 1),
+(25, 2, 2, 25, 49, 50, 49, 1),
+(26, 2, 2, 26, 51, 52, 51, 1),
+(27, 2, 2, 27, 53, 54, 53, 1),
+(28, 2, 2, 28, 55, 56, 55, 1),
+(29, 2, 2, 29, 57, 58, 57, 1),
+(30, 2, 2, 30, 59, 60, 59, 1),
+(31, 2, 2, 31, 61, 62, 61, 1),
+(32, 2, 2, 32, 63, 64, 63, 1),
+(33, 2, 2, 33, 65, 66, 65, 1),
+(34, 2, 2, 34, 67, 68, 67, 1),
+(35, 2, 2, 35, 69, 70, 69, 1),
+(36, 2, 2, 36, 71, 72, 71, 1),
+(37, 2, 2, 37, 73, 74, 73, 1),
+(38, 2, 2, 38, 75, 76, 75, 1),
+(39, 2, 2, 39, 77, 78, 77, 1),
+(40, 2, 2, 40, 79, 80, 79, 1),
+(41, 2, 2, 41, 81, 82, 81, 1),
+(42, 2, 2, 42, 83, 84, 83, 1),
+(43, 2, 2, 43, 85, 86, 85, 1),
+(44, 2, 2, 44, 87, 88, 87, 1),
+(45, 2, 2, 45, 89, 90, 89, 1),
+(46, 2, 2, 46, 91, 92, 91, 1),
+(47, 2, 2, 47, 93, 94, 93, 1),
+(48, 2, 2, 48, 95, 96, 95, 1),
+(49, 2, 2, 49, 97, 98, 97, 1),
+(50, 2, 2, 50, 99, 100, 99, 1),
+(51, 2, 2, 51, 101, 102, 101, 1),
+(52, 2, 2, 52, 103, 104, 103, 1),
+(53, 2, 2, 53, 105, 106, 105, 1),
+(54, 2, 2, 54, 107, 108, 107, 1),
+(55, 2, 2, 55, 109, 110, 109, 1),
+(56, 2, 2, 56, 111, 112, 111, 1),
+(57, 2, 2, 57, 113, 114, 113, 1),
+(58, 2, 2, 58, 115, 116, 115, 1),
+(59, 2, 2, 59, 117, 118, 117, 1),
+(60, 2, 2, 60, 119, 120, 119, 1),
+(61, 2, 2, 61, 121, 122, 121, 1),
+(62, 2, 2, 62, 123, 124, 123, 1),
+(63, 2, 2, 63, 125, 126, 125, 1),
+(64, 2, 2, 64, 127, 128, 127, 1),
+(65, 2, 2, 65, 129, 130, 129, 1),
+(66, 2, 2, 66, 131, 132, 131, 1),
+(67, 2, 2, 67, 133, 134, 133, 1),
+(68, 2, 2, 68, 135, 136, 135, 1),
+(69, 2, 2, 69, 137, 138, 137, 1),
+(70, 2, 2, 70, 139, 140, 139, 1),
+(71, 2, 2, 71, 141, 142, 141, 1),
+(72, 2, 2, 72, 143, 144, 143, 1),
+(73, 2, 2, 73, 145, 146, 145, 1),
+(74, 2, 2, 74, 147, 148, 147, 1),
+(75, 2, 2, 75, 149, 150, 149, 1),
+(76, 2, 2, 76, 151, 152, 151, 1),
+(77, 2, 2, 77, 153, 154, 153, 1),
+(78, 2, 2, 78, 155, 156, 155, 1),
+(79, 2, 2, 79, 157, 158, 157, 1),
+(80, 2, 2, 80, 159, 160, 159, 1),
+(81, 2, 2, 81, 161, 162, 161, 1),
+(82, 2, 2, 82, 163, 164, 163, 1),
+(83, 2, 2, 83, 163, 164, 163, 1);
 
 -- --------------------------------------------------------
 
@@ -55419,24 +57514,16 @@ INSERT INTO `student_to_parent` (`id`, `school_id`, `student_id`, `father_id`, `
 CREATE TABLE `student_transport` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT 1,
+  `branch_id` int(11) DEFAULT NULL,
   `student_id` int(11) DEFAULT NULL,
   `route` int(11) DEFAULT NULL,
   `vehicle_number` int(11) DEFAULT NULL,
-  `pickup_point` text DEFAULT NULL,
-  `drop_point` text DEFAULT NULL,
+  `pickup_point` mediumtext DEFAULT NULL,
+  `drop_point` mediumtext DEFAULT NULL,
   `status` int(11) NOT NULL DEFAULT 1,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
-
---
--- Dumping data for table `student_transport`
---
-
-INSERT INTO `student_transport` (`id`, `school_id`, `student_id`, `route`, `vehicle_number`, `pickup_point`, `drop_point`, `status`, `created_at`, `updated_at`) VALUES
-(1, 1, 1, 2, 0, 'Chakdah', 'Kalyani', 1, '2026-09-09 16:25:48', '2026-09-09 10:55:48'),
-(2, 1, 2, 1, 0, 'Test', '', 1, '2026-09-09 16:31:58', '2026-09-09 11:01:58'),
-(3, 2, 5, 3, 0, 'Kolkata', 'Shyamnagar', 1, '2026-09-10 16:20:10', '2026-09-10 10:50:10');
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -55447,6 +57534,7 @@ INSERT INTO `student_transport` (`id`, `school_id`, `student_id`, `route`, `vehi
 CREATE TABLE `study_materials` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `academic_year_id` int(11) DEFAULT NULL,
   `class_id` int(11) DEFAULT NULL,
   `section_id` int(11) DEFAULT NULL,
@@ -55455,7 +57543,7 @@ CREATE TABLE `study_materials` (
   `uploaded_by` int(11) DEFAULT NULL,
   `uploader_type` varchar(50) DEFAULT NULL COMMENT 'admin or teacher',
   `title` varchar(255) DEFAULT NULL,
-  `description` text DEFAULT NULL,
+  `description` mediumtext DEFAULT NULL,
   `chapter` varchar(255) DEFAULT NULL,
   `attachment` varchar(255) DEFAULT NULL,
   `attachment_original_name` varchar(255) DEFAULT NULL,
@@ -55468,15 +57556,16 @@ CREATE TABLE `study_materials` (
   `status` int(11) NOT NULL DEFAULT 1 COMMENT '1 = Active, 2 = Inactive, 4 = Deleted',
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `study_materials`
 --
 
-INSERT INTO `study_materials` (`id`, `school_id`, `academic_year_id`, `class_id`, `section_id`, `subject_id`, `material_type_id`, `uploaded_by`, `uploader_type`, `title`, `description`, `chapter`, `attachment`, `attachment_original_name`, `attachment_extension`, `attachment_size`, `publish_date`, `expiry_date`, `allow_download`, `display_order`, `status`, `created_at`, `updated_at`) VALUES
-(1, 2, 8, 6, 10, 15, 1, 1, 'admin', 'Mathematics (Volume 1) | competency‐based', NULL, NULL, NULL, NULL, NULL, NULL, '2026-09-10', NULL, 1, 0, 1, '2026-09-10 15:53:29', '2026-09-10 10:23:29'),
-(2, 2, 8, 8, 15, 23, 3, 1, 'admin', 'English Syllabus 2026', 'Syllabus for the academic year 2026', 'All Chapters', NULL, NULL, NULL, NULL, '2026-09-10', NULL, 1, 0, 1, '2026-09-10 15:55:19', '2026-09-10 10:27:02');
+INSERT INTO `study_materials` (`id`, `school_id`, `branch_id`, `academic_year_id`, `class_id`, `section_id`, `subject_id`, `material_type_id`, `uploaded_by`, `uploader_type`, `title`, `description`, `chapter`, `attachment`, `attachment_original_name`, `attachment_extension`, `attachment_size`, `publish_date`, `expiry_date`, `allow_download`, `display_order`, `status`, `created_at`, `updated_at`) VALUES
+(1, 2, 2, 2, 1, 1, 1, 1, 2, 'super_admin', 'Bengali Kishalay', NULL, 'Chapter 1: Introduction', 'upload/schools/2/branches/2/study_material/Growvidya_-_Educational_Portal-1794997112536-e0a3ff.pdf', 'Growvidya - Educational Portal.pdf', 'pdf', 1222754, '2026-11-18', NULL, 1, 0, 1, '2026-11-18 15:48:34', '2026-11-18 10:18:34'),
+(2, 2, 2, 2, 1, 1, 5, 2, 2, 'super_admin', 'English Blossom', NULL, 'Chapter 1: Introduction', 'upload/schools/2/branches/2/study_material/Project_Management_SaaS_CI3_Documentation-1794997234008-dc05bf.pdf', 'Project_Management_SaaS_CI3_Documentation.pdf', 'pdf', 12043, '2026-11-18', NULL, 1, 0, 1, '2026-11-18 15:50:34', '2026-11-18 10:20:34'),
+(3, 2, 2, 2, 1, 1, 9, 3, 2, 'super_admin', 'Mathematics', NULL, 'Chapter 1: Introduction', 'upload/schools/2/branches/2/study_material/2024050350-1794997594923-9d9c80.pdf', '2024050350.pdf', 'pdf', 4042795, '2026-11-18', NULL, 1, 0, 1, '2026-11-18 15:56:37', '2026-11-18 10:26:37');
 
 -- --------------------------------------------------------
 
@@ -55487,44 +57576,159 @@ INSERT INTO `study_materials` (`id`, `school_id`, `academic_year_id`, `class_id`
 CREATE TABLE `subject_master` (
   `id` int(11) NOT NULL,
   `school_id` int(11) NOT NULL DEFAULT 1,
+  `branch_id` int(11) DEFAULT NULL,
   `class_id` int(11) DEFAULT NULL,
   `subject_name` varchar(255) DEFAULT NULL,
   `status` int(11) NOT NULL DEFAULT 1 COMMENT '1=Active, 2=Inactive, 4=Delete',
   `sort_order` int(11) DEFAULT NULL,
   `created_on` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `subject_master`
 --
 
-INSERT INTO `subject_master` (`id`, `school_id`, `class_id`, `subject_name`, `status`, `sort_order`, `created_on`) VALUES
-(1, 1, 1, 'Bengali', 1, 1, '2026-09-09 10:24:57'),
-(2, 1, 1, 'English', 1, 1, '2026-09-09 10:25:02'),
-(3, 1, 1, 'Math', 1, 1, '2026-09-09 10:25:05'),
-(4, 1, 1, 'GK', 1, 1, '2026-09-09 10:25:09'),
-(5, 1, 1, 'Computer', 1, 1, '2026-09-09 10:25:14'),
-(6, 1, 1, 'Environmental science', 1, 1, '2026-09-09 10:25:29'),
-(7, 1, 2, 'Bengali', 1, 1, '2026-09-09 10:25:50'),
-(8, 1, 2, 'English', 1, 1, '2026-09-09 10:25:57'),
-(9, 1, 2, 'Math', 1, 1, '2026-09-09 10:26:03'),
-(10, 1, 2, 'Computer', 1, 1, '2026-09-09 10:26:20'),
-(11, 1, 3, 'Bengali', 1, 1, '2026-09-09 10:27:08'),
-(12, 1, 3, 'English', 1, 1, '2026-09-09 10:27:15'),
-(13, 1, 3, 'Math', 1, 1, '2026-09-09 10:27:20'),
-(14, 1, 3, 'GK', 1, 1, '2026-09-09 10:27:30'),
-(15, 2, 6, 'Bengali', 1, 1, '2026-09-10 06:03:38'),
-(16, 2, 6, 'English', 1, 1, '2026-09-10 06:03:42'),
-(17, 2, 6, 'GK', 1, 1, '2026-09-10 06:03:46'),
-(18, 2, 6, 'Computer', 1, 1, '2026-09-10 06:03:51'),
-(19, 2, 7, 'Bengali', 1, 1, '2026-09-10 06:03:57'),
-(20, 2, 7, 'English', 1, 1, '2026-09-10 06:04:02'),
-(21, 2, 7, 'Math', 1, 1, '2026-09-10 06:04:13'),
-(22, 2, 8, 'Bengali', 1, 1, '2026-09-10 06:04:19'),
-(23, 2, 8, 'English', 1, 1, '2026-09-10 06:04:33'),
-(24, 2, 8, 'Math', 1, 1, '2026-09-10 06:04:39'),
-(25, 2, 9, 'Bengali', 1, 1, '2026-09-10 06:04:53'),
-(26, 2, 9, 'Math', 1, 1, '2026-09-10 06:05:01');
+INSERT INTO `subject_master` (`id`, `school_id`, `branch_id`, `class_id`, `subject_name`, `status`, `sort_order`, `created_on`) VALUES
+(1, 2, 2, 1, 'Bengali', 1, 1, '2026-11-18 09:30:28'),
+(2, 2, 2, 2, 'Bengali', 1, 1, '2026-11-18 09:30:28'),
+(3, 2, 2, 3, 'Bengali', 1, 1, '2026-11-18 09:30:28'),
+(4, 2, 2, 4, 'Bengali', 1, 1, '2026-11-18 09:30:28'),
+(5, 2, 2, 1, 'English', 1, 1, '2026-11-18 09:30:38'),
+(6, 2, 2, 2, 'English', 1, 1, '2026-11-18 09:30:38'),
+(7, 2, 2, 3, 'English', 1, 1, '2026-11-18 09:30:38'),
+(8, 2, 2, 4, 'English', 1, 1, '2026-11-18 09:30:38'),
+(9, 2, 2, 1, 'Math', 1, 1, '2026-11-18 09:30:55'),
+(10, 2, 2, 2, 'Math', 1, 1, '2026-11-18 09:30:55'),
+(11, 2, 2, 3, 'Math', 1, 1, '2026-11-18 09:30:55'),
+(12, 2, 2, 4, 'Math', 1, 1, '2026-11-18 09:30:55'),
+(13, 2, 2, 1, 'Computer', 1, 1, '2026-11-18 09:31:07'),
+(14, 2, 2, 2, 'Computer', 1, 1, '2026-11-18 09:31:07'),
+(15, 2, 2, 3, 'Computer', 1, 1, '2026-11-18 09:31:07'),
+(16, 2, 2, 4, 'Computer', 1, 1, '2026-11-18 09:31:07');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `subscription_audit_logs`
+--
+
+CREATE TABLE `subscription_audit_logs` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `school_id` int(11) NOT NULL,
+  `subscription_id` int(11) DEFAULT NULL,
+  `payment_order_id` int(11) DEFAULT NULL,
+  `actor_type` enum('school_admin','saas_super_admin','webhook','system_cron','onboarding') NOT NULL DEFAULT 'school_admin',
+  `actor_id` int(11) DEFAULT NULL,
+  `action` varchar(80) NOT NULL,
+  `previous_state_json` longtext DEFAULT NULL,
+  `new_state_json` longtext DEFAULT NULL,
+  `reason` text DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `subscription_audit_logs`
+--
+
+INSERT INTO `subscription_audit_logs` (`id`, `school_id`, `subscription_id`, `payment_order_id`, `actor_type`, `actor_id`, `action`, `previous_state_json`, `new_state_json`, `reason`, `created_at`) VALUES
+(1, 1, 1, 1, 'onboarding', 1, 'ORDER_FULFILLED', NULL, '{\"order_no\":\"ORD-20261118-542088\",\"invoice_no\":\"INV-2026-00001\",\"order_type\":\"trial_with_addons\",\"plan_id\":8,\"grand_total\":\"0.00\",\"start_date\":\"2026-11-18\",\"end_date\":\"2027-01-17\"}', 'Free trial activated on onboarding', '2026-11-18 14:54:35'),
+(2, 2, 2, 2, 'onboarding', 2, 'ORDER_FULFILLED', NULL, '{\"order_no\":\"ORD-20261118-909603\",\"invoice_no\":\"INV-2026-00002\",\"order_type\":\"trial_with_addons\",\"plan_id\":8,\"grand_total\":\"0.00\",\"start_date\":\"2026-11-18\",\"end_date\":\"2027-01-17\"}', 'Free trial activated on onboarding', '2026-11-18 14:56:51'),
+(3, 3, 3, 3, 'onboarding', 5, 'ORDER_FULFILLED', NULL, '{\"order_no\":\"ORD-20261119-181088\",\"invoice_no\":\"INV-2026-00003\",\"order_type\":\"trial_with_addons\",\"plan_id\":8,\"grand_total\":\"0.00\",\"start_date\":\"2026-11-19\",\"end_date\":\"2027-01-18\"}', 'Free trial activated on onboarding', '2026-11-19 12:59:55');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `subscription_items`
+--
+
+CREATE TABLE `subscription_items` (
+  `id` int(11) NOT NULL,
+  `sub_id` int(11) NOT NULL COMMENT 'FK referencing subscription_plans.id',
+  `item_name` varchar(150) NOT NULL COMMENT 'e.g. SMS Notifications, Push Notifications, RFID Module',
+  `item_code` varchar(50) DEFAULT NULL COMMENT 'e.g. SMS_ALERTS, PUSH_NOTIF, EMAIL_SVC, RFID_MODULE',
+  `item_type` enum('module','feature') NOT NULL DEFAULT 'feature',
+  `description` text DEFAULT NULL,
+  `status` tinyint(1) NOT NULL DEFAULT 1 COMMENT '1 = Active, 0 = Inactive',
+  `created_at` datetime DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `subscription_items`
+--
+
+INSERT INTO `subscription_items` (`id`, `sub_id`, `item_name`, `item_code`, `item_type`, `description`, `status`, `created_at`, `updated_at`) VALUES
+(1, 7, 'Up to 100 students', 'UP_TO_100_STUDENTS', 'feature', '', 1, '2026-11-18 13:38:25', '2026-11-18 13:38:25'),
+(2, 7, '3 GB cloud storage', '3_GB_CLOUD_STORAGE', 'feature', '', 1, '2026-11-18 13:38:25', '2026-11-18 13:38:25'),
+(3, 7, 'Easy school management', 'EASY_SCHOOL_MANAGEMENT', 'feature', '', 1, '2026-11-18 13:38:25', '2026-11-18 13:38:25'),
+(4, 7, 'Digital record keeping', 'DIGITAL_RECORD_KEEPING', 'feature', '', 1, '2026-11-18 13:38:25', '2026-11-18 13:38:25'),
+(5, 8, 'Up to 100 students', 'UP_TO_100_STUDENTS', 'feature', '', 4, '2026-11-18 13:38:52', '2026-11-23 11:10:13'),
+(6, 8, '3 GB cloud storage', '3_GB_CLOUD_STORAGE', 'feature', '', 4, '2026-11-18 13:38:52', '2026-11-23 11:10:13'),
+(7, 8, 'Easy school management', 'EASY_SCHOOL_MANAGEMENT', 'feature', '', 4, '2026-11-18 13:38:52', '2026-11-23 11:10:13'),
+(8, 8, 'Digital record keeping', 'DIGITAL_RECORD_KEEPING', 'feature', '', 4, '2026-11-18 13:38:52', '2026-11-23 11:10:13'),
+(9, 8, 'Up to 100 students', 'UP_TO_100_STUDENTS', 'feature', '', 4, '2026-11-23 11:10:13', '2026-11-23 11:16:27'),
+(10, 8, '3 GB cloud storage', '3_GB_CLOUD_STORAGE', 'feature', '', 4, '2026-11-23 11:10:13', '2026-11-23 11:16:27'),
+(11, 8, 'Easy school management', 'EASY_SCHOOL_MANAGEMENT', 'feature', '', 4, '2026-11-23 11:10:13', '2026-11-23 11:16:27'),
+(12, 8, 'Digital record keeping', 'DIGITAL_RECORD_KEEPING', 'feature', '', 4, '2026-11-23 11:10:13', '2026-11-23 11:16:27'),
+(13, 8, 'Up to 100 students', 'UP_TO_100_STUDENTS', 'feature', '', 1, '2026-11-23 11:16:27', '2026-11-23 11:16:27'),
+(14, 8, '3 GB cloud storage', '3_GB_CLOUD_STORAGE', 'feature', '', 1, '2026-11-23 11:16:27', '2026-11-23 11:16:27'),
+(15, 8, 'Easy school management', 'EASY_SCHOOL_MANAGEMENT', 'feature', '', 1, '2026-11-23 11:16:27', '2026-11-23 11:16:27'),
+(16, 8, 'Digital record keeping', 'DIGITAL_RECORD_KEEPING', 'feature', '', 1, '2026-11-23 11:16:27', '2026-11-23 11:16:27');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `subscription_payment_orders`
+--
+
+CREATE TABLE `subscription_payment_orders` (
+  `id` int(11) NOT NULL,
+  `order_no` varchar(60) NOT NULL,
+  `invoice_no` varchar(60) DEFAULT NULL,
+  `school_id` int(11) DEFAULT NULL,
+  `order_type` enum('onboarding','trial_with_addons','renewal','upgrade','addon_only','manual_override') NOT NULL DEFAULT 'renewal',
+  `action_type` enum('onboarding','trial','renewal','upgrade','addon_only','manual_override') NOT NULL DEFAULT 'renewal',
+  `plan_id` int(11) DEFAULT NULL,
+  `billing_cycle` varchar(50) DEFAULT NULL,
+  `plan_amount` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `storage_plan_id` int(11) DEFAULT NULL,
+  `storage_qty` int(11) NOT NULL DEFAULT 0,
+  `storage_amount` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `machines_amount` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `rfid_amount` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `notifications_amount` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `subtotal_amount` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `coupon_id` int(11) DEFAULT NULL,
+  `coupon_code` varchar(60) DEFAULT NULL,
+  `discount_amount` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `grand_total` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `currency` varchar(10) NOT NULL DEFAULT 'INR',
+  `payment_method` enum('razorpay','bank_transfer','free_trial','coupon_100','super_admin_manual') NOT NULL DEFAULT 'razorpay',
+  `razorpay_order_id` varchar(120) DEFAULT NULL,
+  `razorpay_payment_id` varchar(120) DEFAULT NULL,
+  `utr_number` varchar(150) DEFAULT NULL,
+  `bank_account_id` int(11) DEFAULT NULL,
+  `shipping_address` text DEFAULT NULL,
+  `payload_snapshot_json` longtext DEFAULT NULL,
+  `status` enum('created','pending_verification','paid','failed','rejected','expired') NOT NULL DEFAULT 'created',
+  `failure_code` varchar(100) DEFAULT NULL,
+  `failure_reason` text DEFAULT NULL,
+  `activated_subscription_id` int(11) DEFAULT NULL,
+  `verified_by` int(11) DEFAULT NULL,
+  `verification_notes` text DEFAULT NULL,
+  `paid_at` datetime DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `subscription_payment_orders`
+--
+
+INSERT INTO `subscription_payment_orders` (`id`, `order_no`, `invoice_no`, `school_id`, `order_type`, `action_type`, `plan_id`, `billing_cycle`, `plan_amount`, `storage_plan_id`, `storage_qty`, `storage_amount`, `machines_amount`, `rfid_amount`, `notifications_amount`, `subtotal_amount`, `coupon_id`, `coupon_code`, `discount_amount`, `grand_total`, `currency`, `payment_method`, `razorpay_order_id`, `razorpay_payment_id`, `utr_number`, `bank_account_id`, `shipping_address`, `payload_snapshot_json`, `status`, `failure_code`, `failure_reason`, `activated_subscription_id`, `verified_by`, `verification_notes`, `paid_at`, `created_at`, `updated_at`) VALUES
+(1, 'ORD-20261118-542088', 'INV-2026-00001', 1, 'trial_with_addons', 'trial', 8, 'trial', 0.00, NULL, 0, 0.00, 0.00, 0.00, 0.00, 0.00, NULL, NULL, 0.00, 0.00, 'INR', 'free_trial', NULL, NULL, NULL, NULL, '25 Park Street, Kolkata, West Bengal, 700016', '{\"breakdown\":{\"is_trial\":true,\"is_addon_only\":false,\"plan_id\":8,\"plan_name\":\"Basic\",\"plan_price\":0,\"billing_cycle\":\"trial\",\"included_storage_gb\":5,\"storage\":null,\"machines\":[],\"cards\":[],\"notifications\":[],\"tax_amount\":0,\"plan_discount_amount\":0,\"net_plan_price\":0,\"net_addons_amount\":0},\"transition\":null,\"extra\":{\"school_name\":\"Green Valley Public School\",\"email\":\"aarav@gmail.com\",\"phone\":\"9863520142\",\"onboarding_registration\":{\"is_trial\":true,\"school\":{\"school_name\":\"Green Valley Public School\",\"school_code\":\"GVP2026001\",\"school_type\":\"Co-Educational\",\"affiliation_board\":\"CBSC\",\"medium_of_instruction\":\"English\",\"established_year\":\"2026\",\"registration_type\":\"multiple\",\"school_logo\":\"upload/platform/school/Logo_Logo-1794993873829-eacc55.png\",\"phone_number\":\"9863202541\",\"email\":\"info@greenvalleyschool.in\",\"website\":\"www.greenvalleyschool.in\",\"address\":\"25 Park Street, Kolkata, West Bengal, 700016\",\"country\":\"101\",\"state\":\"41\",\"city\":\"5548\",\"postal_code\":\"700016\",\"footer\":null},\"academic_year\":{\"academic_year\":\"2026\",\"start_date\":\"2026-01-01\",\"end_date\":\"2027-01-01\"},\"admin\":{\"first_name\":\"Aarav \",\"last_name\":\"Sharma\",\"email\":\"aarav@gmail.com\",\"phone\":\"9863520142\",\"gender\":1,\"picture\":null,\"password_hash\":\"$2b$10$dQ9qb8e/5VzLxwmtZG7yiev1uVPK7Xdmd.OKIGti/D14jR2dxVTQK\"}},\"handover_jti\":\"77bf925034dbac2eee9f1073ec9d8d29\",\"handover_consumed_at\":\"2026-11-18T09:25:01.285Z\"}}', 'paid', NULL, NULL, 1, 1, 'Free trial activated on onboarding', '2026-11-18 14:54:35', '2026-11-18 14:54:34', '2026-11-18 14:55:01'),
+(2, 'ORD-20261118-909603', 'INV-2026-00002', 2, 'trial_with_addons', 'trial', 8, 'trial', 0.00, NULL, 0, 0.00, 0.00, 0.00, 0.00, 0.00, NULL, NULL, 0.00, 0.00, 'INR', 'free_trial', NULL, NULL, NULL, NULL, '55 Govindapur, Santipur, Nadia', '{\"breakdown\":{\"is_trial\":true,\"is_addon_only\":false,\"plan_id\":8,\"plan_name\":\"Basic\",\"plan_price\":0,\"billing_cycle\":\"trial\",\"included_storage_gb\":5,\"storage\":null,\"machines\":[],\"cards\":[],\"notifications\":[],\"tax_amount\":0,\"plan_discount_amount\":0,\"net_plan_price\":0,\"net_addons_amount\":0},\"transition\":null,\"extra\":{\"school_name\":\"Shishu Kakali KG School\",\"email\":\"admin@school.com\",\"phone\":\"8965239652\",\"onboarding_registration\":{\"is_trial\":true,\"school\":{\"school_name\":\"Shishu Kakali KG School\",\"school_code\":\"SKKS\",\"school_type\":\"Private\",\"affiliation_board\":\"CBSC\",\"medium_of_instruction\":\"Bengali\",\"established_year\":\"1990\",\"registration_type\":\"multiple\",\"school_logo\":\"upload/platform/school/Logo_Logo-1794994008565-5f2cfb.jpg\",\"phone_number\":\"9865239550\",\"email\":\"shishu.kakali@gmail.com\",\"website\":null,\"address\":\"55 Govindapur, Santipur, Nadia\",\"country\":\"101\",\"state\":\"41\",\"city\":\"5704\",\"postal_code\":\"741404\",\"footer\":null},\"academic_year\":{\"academic_year\":\"2026-2027\",\"start_date\":\"2026-04-01\",\"end_date\":\"2027-03-31\"},\"admin\":{\"first_name\":\"Chitta\",\"last_name\":\"Banga\",\"email\":\"admin@school.com\",\"phone\":\"8965239652\",\"gender\":1,\"picture\":\"upload/platform/staff/Admin_Admin-1794994009302-8df49d.png\",\"password_hash\":\"$2b$10$mijVO/XvlxZS5S3f55cHPupMLPo/wpNjwMs5PxADMsClP39Uob2TC\"}},\"handover_jti\":\"0926abad90b14198771db39dc523c806\",\"handover_consumed_at\":\"2026-11-18T09:27:08.520Z\"}}', 'paid', NULL, NULL, 2, 2, 'Free trial activated on onboarding', '2026-11-18 14:56:51', '2026-11-18 14:56:49', '2026-11-18 14:57:08'),
+(3, 'ORD-20261119-181088', 'INV-2026-00003', 3, 'trial_with_addons', 'trial', 8, 'trial', 0.00, NULL, 0, 0.00, 0.00, 0.00, 0.00, 0.00, NULL, NULL, 0.00, 0.00, 'INR', 'free_trial', NULL, NULL, NULL, NULL, 'Kalyani, West Bengal, 785210', '{\"breakdown\":{\"is_trial\":true,\"is_addon_only\":false,\"plan_id\":8,\"plan_name\":\"Basic\",\"plan_price\":0,\"billing_cycle\":\"trial\",\"included_storage_gb\":5,\"storage\":null,\"machines\":[],\"cards\":[],\"notifications\":[],\"tax_amount\":0,\"plan_discount_amount\":0,\"net_plan_price\":0,\"net_addons_amount\":0},\"transition\":null,\"extra\":{\"school_name\":\"Codeulas School\",\"email\":\"sumanta@codeulas.com\",\"phone\":\"+917898650254\",\"onboarding_registration\":{\"is_trial\":true,\"school\":{\"school_name\":\"Codeulas School\",\"school_code\":\"CS\",\"school_type\":\"Private\",\"affiliation_board\":\"CBSE\",\"medium_of_instruction\":\"English\",\"established_year\":\"1990\",\"registration_type\":\"multiple\",\"school_logo\":\"upload/platform/school/Logo_Logo-1795073391181-c3234f.webp\",\"phone_number\":\"9630258741\",\"email\":\"codeulas@gmail.com\",\"website\":\"https://codeulas.com/\",\"address\":\"Kalyani, West Bengal, 785210\",\"country\":\"101\",\"state\":\"41\",\"city\":\"5548\",\"postal_code\":\"741321\",\"footer\":null},\"academic_year\":{\"academic_year\":\"2026 -2027\",\"start_date\":\"2026-01-01\",\"end_date\":\"2027-01-01\"},\"admin\":{\"first_name\":\"Sumanta\",\"last_name\":\"Dey\",\"email\":\"sumanta@codeulas.com\",\"phone\":\"+917898650254\",\"gender\":1,\"picture\":\"upload/platform/staff/Admin_Admin-1795073391968-4578ea.webp\",\"password_hash\":\"$2b$10$Nl2POA58v1lPZwg4c6GP6OTWJ.Zmik4kUvePjpYLS2CP.Ytnmut7O\"}},\"handover_jti\":\"da7fa312273400f47bf2cf1996cd6aca\",\"handover_consumed_at\":\"2026-11-19T07:33:01.114Z\"}}', 'paid', NULL, NULL, 3, 5, 'Free trial activated on onboarding', '2026-11-19 12:59:55', '2026-11-19 12:59:52', '2026-11-19 13:03:01');
 
 -- --------------------------------------------------------
 
@@ -55536,25 +57740,52 @@ CREATE TABLE `subscription_plans` (
   `id` int(11) NOT NULL,
   `plan_name` varchar(100) NOT NULL,
   `plan_code` varchar(50) NOT NULL,
+  `plan_group` varchar(50) DEFAULT NULL,
+  `tier_rank` int(11) NOT NULL DEFAULT 1,
   `description` text DEFAULT NULL,
   `price` decimal(10,2) NOT NULL,
-  `billing_cycle` enum('monthly','annual','trial') DEFAULT 'annual',
+  `original_price` decimal(10,2) DEFAULT NULL,
+  `billing_cycle` varchar(50) NOT NULL DEFAULT 'annual',
+  `free_trial_days` int(11) NOT NULL DEFAULT 0,
   `max_students` int(11) DEFAULT 0,
-  `max_teachers` int(11) DEFAULT 0,
-  `features_json` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`features_json`)),
+  `max_teachers` int(11) NOT NULL DEFAULT 0,
+  `included_storage_gb` int(11) NOT NULL DEFAULT 5,
+  `included_push_credits` int(11) NOT NULL DEFAULT 0,
+  `included_sms_credits` int(11) NOT NULL DEFAULT 0,
   `status` tinyint(1) DEFAULT 1,
-  `created_at` datetime DEFAULT current_timestamp()
+  `is_popular` tinyint(1) NOT NULL DEFAULT 0,
+  `created_at` datetime DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  `features_json` longtext DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `subscription_plans`
 --
 
-INSERT INTO `subscription_plans` (`id`, `plan_name`, `plan_code`, `description`, `price`, `billing_cycle`, `max_students`, `max_teachers`, `features_json`, `status`, `created_at`) VALUES
-(1, 'Starter Plan', 'starter_annual', 'Ideal for small schools and preschools getting started with digital school management.', 2999.00, 'annual', 300, 25, '{\"attendance\":true,\"routine\":true,\"students\":true,\"teachers\":true,\"parents\":true,\"basic_fees\":true,\"certificates\":true,\"transport\":false,\"hostel\":false,\"payroll\":false}', 1, '2026-09-10 18:18:30'),
-(2, 'Growth Plan (Most Popular)', 'growth_annual', 'Comprehensive management suite for growing K-12 schools with transport and fee structures.', 5999.00, 'annual', 1000, 60, '{\"attendance\":true,\"routine\":true,\"students\":true,\"teachers\":true,\"parents\":true,\"advanced_fees\":true,\"certificates\":true,\"transport\":true,\"examinations\":true,\"hostel\":false,\"payroll\":false}', 1, '2026-09-10 18:18:30'),
-(3, 'Enterprise Plan', 'enterprise_annual', 'Full institutional suite with unlimited students, full payroll, hostel, transport, and priority support.', 9999.00, 'annual', 0, 0, '{\"attendance\":true,\"routine\":true,\"students\":true,\"teachers\":true,\"parents\":true,\"advanced_fees\":true,\"certificates\":true,\"transport\":true,\"examinations\":true,\"hostel\":true,\"payroll\":true,\"priority_support\":true}', 1, '2026-09-10 18:18:30'),
-(4, '14-Day Free Trial', 'free_trial_14d', 'Test the full platform with your teachers and staff free for 14 days. No payment required.', 0.00, 'trial', 150, 20, '{\"attendance\":true,\"routine\":true,\"students\":true,\"teachers\":true,\"parents\":true,\"basic_fees\":true,\"certificates\":true,\"transport\":false,\"hostel\":false,\"payroll\":false}', 1, '2026-09-10 18:40:31');
+INSERT INTO `subscription_plans` (`id`, `plan_name`, `plan_code`, `plan_group`, `tier_rank`, `description`, `price`, `original_price`, `billing_cycle`, `free_trial_days`, `max_students`, `max_teachers`, `included_storage_gb`, `included_push_credits`, `included_sms_credits`, `status`, `is_popular`, `created_at`, `updated_at`, `features_json`) VALUES
+(7, 'Basic', 'basic', 'basic', 1, 'Essential tools for up to 200 students.', 399.00, NULL, 'monthly', 30, 200, 0, 0, 0, 0, 1, 0, '2026-10-02 16:29:33', '2026-11-18 13:38:25', NULL),
+(8, 'Basic', 'basic', 'basic', 1, 'Essential tools for up to 200 students.', 3999.00, NULL, 'annual', 60, 200, 0, 5, 0, 0, 1, 0, '2026-10-02 16:30:21', '2026-11-23 11:16:27', NULL),
+(9, 'Advance', 'advance', 'advance', 2, '', 699.00, NULL, 'monthly', 30, 500, 0, 5, 0, 0, 2, 0, '2026-10-28 15:37:32', '2026-11-03 15:31:52', NULL),
+(10, 'Advance', 'advance', 'advance', 2, '', 6000.00, NULL, 'annual', 60, 500, 0, 0, 0, 0, 4, 1, '2026-10-28 15:39:01', '2026-11-03 15:31:27', NULL),
+(12, 'Prime', 'prime_annual', 'prime', 1, '', 5225.00, 5500.00, 'annual', 20, 150, 0, 0, 0, 0, 1, 1, '2026-10-29 16:57:53', '2026-11-23 11:16:14', NULL);
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `subscription_reminder_logs`
+--
+
+CREATE TABLE `subscription_reminder_logs` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `school_id` int(11) NOT NULL,
+  `subscription_id` int(11) NOT NULL,
+  `milestone_days` int(11) NOT NULL COMMENT '15, 7, 3, 1, or 0',
+  `channel` enum('email','sms') NOT NULL,
+  `status` enum('sent','skipped','failed') NOT NULL DEFAULT 'sent',
+  `detail` varchar(255) DEFAULT NULL,
+  `sent_at` datetime NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -55574,7 +57805,7 @@ CREATE TABLE `supplier_contact_information` (
   `position` varchar(100) DEFAULT NULL,
   `remark` text DEFAULT NULL,
   `date` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -55607,7 +57838,51 @@ CREATE TABLE `supplier_information` (
   `warehouse` varchar(250) DEFAULT NULL,
   `merchandiser` varchar(250) DEFAULT NULL,
   `date` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `support_tickets`
+--
+
+CREATE TABLE `support_tickets` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `ticket_number` varchar(40) NOT NULL,
+  `school_id` int(10) UNSIGNED NOT NULL,
+  `branch_id` int(10) UNSIGNED DEFAULT NULL,
+  `created_by_admin_id` int(10) UNSIGNED NOT NULL,
+  `subject` varchar(255) NOT NULL,
+  `category` enum('technical','billing','subscription','hardware_rfid','feature_request','other') NOT NULL DEFAULT 'technical',
+  `priority` enum('low','medium','high','urgent') NOT NULL DEFAULT 'medium',
+  `status` enum('open','in_progress','resolved','closed') NOT NULL DEFAULT 'open',
+  `assigned_to_saas_admin_id` int(10) UNSIGNED DEFAULT NULL,
+  `last_reply_at` datetime DEFAULT NULL,
+  `last_reply_by` enum('school','saas_admin') DEFAULT NULL,
+  `resolved_at` datetime DEFAULT NULL,
+  `closed_at` datetime DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `support_ticket_messages`
+--
+
+CREATE TABLE `support_ticket_messages` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `ticket_id` int(10) UNSIGNED NOT NULL,
+  `sender_type` enum('school_admin','saas_admin') NOT NULL,
+  `sender_id` int(10) UNSIGNED NOT NULL,
+  `sender_name` varchar(150) NOT NULL,
+  `message` text NOT NULL,
+  `attachment_url` varchar(500) DEFAULT NULL,
+  `attachment_name` varchar(255) DEFAULT NULL,
+  `is_internal_note` tinyint(1) NOT NULL DEFAULT 0,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -55618,20 +57893,24 @@ CREATE TABLE `supplier_information` (
 CREATE TABLE `syllabus` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `academic_year` int(11) DEFAULT NULL,
   `class_id` int(11) DEFAULT NULL,
   `subject_id` int(11) DEFAULT NULL,
-  `lession` text DEFAULT NULL,
+  `lession` mediumtext DEFAULT NULL,
   `status` int(11) NOT NULL DEFAULT 1 COMMENT '1=pending, 2=progress, 3=complete',
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `syllabus`
 --
 
-INSERT INTO `syllabus` (`id`, `school_id`, `academic_year`, `class_id`, `subject_id`, `lession`, `status`, `created_at`) VALUES
-(1, 2, 8, 6, 15, 'A happy child', 1, '2026-09-10 11:14:58');
+INSERT INTO `syllabus` (`id`, `school_id`, `branch_id`, `academic_year`, `class_id`, `subject_id`, `lession`, `status`, `created_at`) VALUES
+(1, 2, 2, 2, 1, 1, 'Core Textbooks\n\n• আমার বই (Amar Boi - Part 1 & 2): An integrated textbook combining 1st language (Bengali), 2nd language (English), and basic Mathematics.\n• সহজ পাঠ (Sahoj Path - Part 1): Authored by Rabindranath Tagore, used as a primary Bengali reading and language foundation.\n• স্বাস্থ্য ও শারীরশিক্ষা (Swasthya O Sharirsiksha): Covers basic personal hygiene, clean habits, and physical activities.\n\nSubject-Wise Syllabus Breakdown\n\n• Bengali (1st Language):\n	• Alphabet recognition and writing (Vowels - Swarabarna and Consonants - Byanjanbarna).\n	• Simple two-letter and three-letter words without matras, followed by words with matras.\n	• Rhymes, short sentences, and introductory lessons from Sahoj Path.\n• English (2nd Language):\n	• The English alphabet (capital and small letters).\n	• Phonics, simple action words, colors, fruits, vegetables, and daily-use vocabulary integrated within Amar Boi.\n• Mathematics (Numeracy):\n	• Numbers from 1 to 50 (reading, writing, and counting).\n	• Basic concepts of more/less, tall/short, heavy/light, and simple addition/subtraction using objects.\n• Health and Physical Education:\n	• Cleanliness (washing hands, brushing teeth, cutting nails).\n	• Basic free-hand movements, marching, and discipline games.', 1, '2026-11-18 09:59:18'),
+(2, 2, 2, 2, 1, 1, 'Test 2', 4, '2026-11-18 09:59:32'),
+(3, 2, 2, 2, 2, 2, 'Core Textbooks\n\n• আমার বই (Amar Boi - Part 1 & 2): An integrated textbook combining 1st language (Bengali), 2nd language (English), and basic Mathematics.\n• সহজ পাঠ (Sahoj Path - Part 1): Authored by Rabindranath Tagore, used as a primary Bengali reading and language foundation.\n• স্বাস্থ্য ও শারীরশিক্ষা (Swasthya O Sharirsiksha): Covers basic personal hygiene, clean habits, and physical activities.\n\nSubject-Wise Syllabus Breakdown\n\n• Bengali (1st Language):\n	• Alphabet recognition and writing (Vowels - Swarabarna and Consonants - Byanjanbarna).\n	• Simple two-letter and three-letter words without matras, followed by words with matras.\n	• Rhymes, short sentences, and introductory lessons from Sahoj Path.\n• English (2nd Language):\n	• The English alphabet (capital and small letters).\n	• Phonics, simple action words, colors, fruits, vegetables, and daily-use vocabulary integrated within Amar Boi.\n• Mathematics (Numeracy):\n	• Numbers from 1 to 50 (reading, writing, and counting).\n	• Basic concepts of more/less, tall/short, heavy/light, and simple addition/subtraction using objects.\n• Health and Physical Education:\n	• Cleanliness (washing hands, brushing teeth, cutting nails).\n	• Basic free-hand movements, marching, and discipline games.', 1, '2026-11-18 10:00:21'),
+(4, 2, 2, 2, 2, 2, 'Core Textbooks', 4, '2026-11-18 10:00:58');
 
 -- --------------------------------------------------------
 
@@ -55644,7 +57923,7 @@ CREATE TABLE `task_category_settings` (
   `category_name` varchar(255) DEFAULT NULL,
   `status` int(11) NOT NULL DEFAULT 1 COMMENT '1=active,0=delete',
   `created_on` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -55681,7 +57960,7 @@ CREATE TABLE `task_settings` (
   `history` int(11) DEFAULT NULL,
   `copy_task_link` int(11) DEFAULT NULL,
   `created_on` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -55692,29 +57971,30 @@ CREATE TABLE `task_settings` (
 CREATE TABLE `teacher_address` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `teacher_id` int(11) DEFAULT NULL,
-  `address1` text DEFAULT NULL,
-  `address2` text DEFAULT NULL,
+  `address1` mediumtext DEFAULT NULL,
+  `address2` mediumtext DEFAULT NULL,
   `country` int(11) DEFAULT NULL,
   `state` int(11) DEFAULT NULL,
   `city` int(11) DEFAULT NULL,
-  `postal_code` int(150) DEFAULT NULL,
+  `postal_code` int(11) DEFAULT NULL,
   `address_type` int(11) DEFAULT NULL COMMENT '1=Current, 2=Parmanent',
   `same_permanent` int(11) DEFAULT NULL COMMENT '1=true, 0=false',
   `status` int(11) DEFAULT 1 COMMENT '1=Active,2=Inactive,4=Delete',
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `teacher_address`
 --
 
-INSERT INTO `teacher_address` (`id`, `school_id`, `teacher_id`, `address1`, `address2`, `country`, `state`, `city`, `postal_code`, `address_type`, `same_permanent`, `status`, `created_at`, `updated_at`) VALUES
-(1, 1, 1, 'Kolkata', '', 115, 2037, 25539, 70006, 1, 1, 1, '2026-09-09 11:22:01', '2026-09-09 11:22:01'),
-(2, 1, 2, 'Kalyani', '', 109, 1930, 24450, 754251, 1, 1, 1, '2026-09-09 11:26:45', '2026-09-09 11:26:45'),
-(4, 2, 4, 'Barasat', '', 113, 2006, 25498, 70006, 1, 1, 1, '2026-09-10 07:47:39', '2026-09-10 07:47:39'),
-(10, 2, 3, 'Kalyani', '', 100, 1657, 21447, 70006, 1, 1, 1, '2026-09-10 11:33:38', '2026-09-10 11:33:38');
+INSERT INTO `teacher_address` (`id`, `school_id`, `branch_id`, `teacher_id`, `address1`, `address2`, `country`, `state`, `city`, `postal_code`, `address_type`, `same_permanent`, `status`, `created_at`, `updated_at`) VALUES
+(1, 2, 2, 1, 'A9/245, Kalyani, Nadia', '', 101, 41, 5548, 741235, 1, 1, 1, '2026-11-18 09:39:02', '2026-11-18 09:39:02'),
+(2, 2, 2, 2, 'A9/245 Kalyani, Nadia', '', 101, 41, 5548, 741235, 1, 1, 1, '2026-11-18 09:42:08', '2026-11-18 09:42:08'),
+(3, 2, 2, 3, 'kalyani', '', 101, 41, 5551, 741235, 1, 1, 1, '2026-11-19 08:06:51', '2026-11-19 08:06:51'),
+(4, 2, 2, 4, 'Kanchrapara', '', 101, 41, 5551, 741235, 1, 1, 1, '2026-11-19 09:29:53', '2026-11-19 09:29:53');
 
 -- --------------------------------------------------------
 
@@ -55725,12 +58005,32 @@ INSERT INTO `teacher_address` (`id`, `school_id`, `teacher_id`, `address1`, `add
 CREATE TABLE `teacher_attendance` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT 1,
+  `branch_id` int(11) DEFAULT NULL,
   `teacher_id` int(11) NOT NULL,
   `attendance` int(11) NOT NULL DEFAULT 0 COMMENT 'Absent = 0 Present = 1 Late = 2 Halfday = 3	',
-  `notes` text DEFAULT NULL,
+  `notes` mediumtext DEFAULT NULL,
   `date` datetime NOT NULL DEFAULT current_timestamp(),
-  `status` int(11) NOT NULL DEFAULT 1
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+  `status` int(11) NOT NULL DEFAULT 1,
+  `source` varchar(10) NOT NULL DEFAULT 'admin' COMMENT 'admin | app | machine',
+  `check_in_time` datetime DEFAULT NULL,
+  `latitude` decimal(10,7) DEFAULT NULL,
+  `longitude` decimal(10,7) DEFAULT NULL,
+  `accuracy_m` decimal(8,2) DEFAULT NULL,
+  `distance_m` decimal(8,2) DEFAULT NULL,
+  `device_info` varchar(255) DEFAULT NULL,
+  `marked_by` int(11) DEFAULT NULL,
+  `att_date` date GENERATED ALWAYS AS (cast(`date` as date)) STORED
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `teacher_attendance`
+--
+
+INSERT INTO `teacher_attendance` (`id`, `school_id`, `branch_id`, `teacher_id`, `attendance`, `notes`, `date`, `status`, `source`, `check_in_time`, `latitude`, `longitude`, `accuracy_m`, `distance_m`, `device_info`, `marked_by`) VALUES
+(1, 2, 2, 1, 1, '', '2026-11-19 00:00:00', 1, 'admin', NULL, NULL, NULL, NULL, NULL, NULL, 2),
+(2, 2, 2, 2, 1, '', '2026-11-19 00:00:00', 1, 'admin', NULL, NULL, NULL, NULL, NULL, NULL, 2),
+(3, 2, 2, 3, 0, '', '2026-11-19 00:00:00', 1, 'admin', NULL, NULL, NULL, NULL, NULL, NULL, 2),
+(4, 2, 2, 4, 1, '', '2026-11-19 00:00:00', 1, 'admin', NULL, NULL, NULL, NULL, NULL, NULL, 2);
 
 -- --------------------------------------------------------
 
@@ -55741,6 +58041,7 @@ CREATE TABLE `teacher_attendance` (
 CREATE TABLE `teacher_bank` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `teacher_id` int(11) DEFAULT NULL,
   `account_name` varchar(255) DEFAULT NULL,
   `account_number` varchar(255) DEFAULT NULL,
@@ -55751,7 +58052,17 @@ CREATE TABLE `teacher_bank` (
   `status` int(11) NOT NULL DEFAULT 1,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `teacher_bank`
+--
+
+INSERT INTO `teacher_bank` (`id`, `school_id`, `branch_id`, `teacher_id`, `account_name`, `account_number`, `bank_name`, `ifsc_code`, `branch_name`, `academic_year`, `status`, `created_at`, `updated_at`) VALUES
+(1, 2, 2, 3, 'Ritwik Ghosal', '123456789599', 'State Bank Of India', 'IFSC00012', 'Kalyani', NULL, 1, '2026-11-19 15:05:04', '2026-11-19 09:35:04'),
+(2, 2, 2, 1, 'Gitanjali Paul', '897845568954', 'Axis Bank', 'IFSC00018', 'Kanchrapara', NULL, 1, '2026-11-19 15:06:12', '2026-11-19 09:36:12'),
+(3, 2, 2, 2, 'Nazimuddin Sekh', '988754878787', 'HDFC Bank', 'IFSC00018', 'KALYANI', NULL, 1, '2026-11-19 15:06:55', '2026-11-19 09:36:55'),
+(4, 2, 2, 4, 'Sanjay Gupta', '123456789566', 'HDFC', 'IFSC00016', 'Bangla School', NULL, 1, '2026-11-19 15:07:24', '2026-11-19 09:37:24');
 
 -- --------------------------------------------------------
 
@@ -55762,41 +58073,40 @@ CREATE TABLE `teacher_bank` (
 CREATE TABLE `teacher_class_assign` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `teacher_id` int(11) DEFAULT NULL,
   `class_id` int(11) DEFAULT NULL,
   `subject_id` int(11) DEFAULT NULL,
   `academic_year` int(11) DEFAULT NULL,
   `status` int(11) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `teacher_class_assign`
 --
 
-INSERT INTO `teacher_class_assign` (`id`, `school_id`, `teacher_id`, `class_id`, `subject_id`, `academic_year`, `status`, `created_at`) VALUES
-(1, 1, 1, 1, 1, 4, 1, '2026-09-09 11:22:01'),
-(2, 1, 1, 2, 8, 4, 1, '2026-09-09 11:22:01'),
-(3, 1, 2, 3, 13, 4, 1, '2026-09-09 11:26:45'),
-(4, 1, 2, 1, 5, 4, 1, '2026-09-09 11:26:45'),
-(5, 2, 3, 6, 15, 8, 1, '2026-09-10 06:08:12'),
-(6, 2, 3, 7, 20, 8, 1, '2026-09-10 06:08:12'),
-(7, 2, 4, 7, 20, 8, 1, '2026-09-10 07:47:39'),
-(8, 2, 3, 6, 15, 8, 1, '2026-09-10 08:04:06'),
-(9, 2, 3, 7, 20, 8, 1, '2026-09-10 08:04:06'),
-(10, 2, 3, 6, 15, 8, 1, '2026-09-10 08:05:43'),
-(11, 2, 3, 7, 20, 8, 1, '2026-09-10 08:05:43'),
-(12, 2, 3, 6, 15, 8, 1, '2026-09-10 08:06:16'),
-(13, 2, 3, 7, 21, 8, 1, '2026-09-10 08:06:16'),
-(14, 2, 3, 6, 15, 8, 1, '2026-09-10 10:37:32'),
-(15, 2, 3, 7, 21, 8, 1, '2026-09-10 10:37:32'),
-(16, 2, 3, 8, 24, 8, 1, '2026-09-10 10:37:32'),
-(17, 2, 3, 6, 15, 8, 1, '2026-09-10 11:33:11'),
-(18, 2, 3, 7, 21, 8, 1, '2026-09-10 11:33:11'),
-(19, 2, 3, 8, 24, 8, 1, '2026-09-10 11:33:11'),
-(20, 2, 3, 6, 15, 8, 1, '2026-09-10 11:33:38'),
-(21, 2, 3, 7, 21, 8, 1, '2026-09-10 11:33:38'),
-(22, 2, 3, 8, 24, 8, 1, '2026-09-10 11:33:38');
+INSERT INTO `teacher_class_assign` (`id`, `school_id`, `branch_id`, `teacher_id`, `class_id`, `subject_id`, `academic_year`, `status`, `created_at`) VALUES
+(1, 2, 2, 1, 1, 1, 2, 1, '2026-11-18 09:39:02'),
+(2, 2, 2, 1, 2, 2, 2, 1, '2026-11-18 09:39:02'),
+(3, 2, 2, 1, 3, 3, 2, 1, '2026-11-18 09:39:02'),
+(4, 2, 2, 1, 4, 4, 2, 1, '2026-11-18 09:39:02'),
+(5, 2, 2, 2, 1, 5, 2, 1, '2026-11-18 09:42:08'),
+(6, 2, 2, 2, 2, 6, 2, 1, '2026-11-18 09:42:08'),
+(7, 2, 2, 2, 3, 7, 2, 1, '2026-11-18 09:42:08'),
+(8, 2, 2, 2, 4, 8, 2, 1, '2026-11-18 09:42:08'),
+(9, 2, 2, 3, 1, 1, 2, 1, '2026-11-19 08:06:51'),
+(10, 2, 2, 3, 1, 5, 2, 1, '2026-11-19 08:06:51'),
+(11, 2, 2, 3, 1, 9, 2, 1, '2026-11-19 08:06:51'),
+(12, 2, 2, 3, 1, 13, 2, 1, '2026-11-19 08:06:51'),
+(13, 2, 2, 3, 2, 2, 2, 1, '2026-11-19 08:06:51'),
+(14, 2, 2, 3, 2, 6, 2, 1, '2026-11-19 08:06:51'),
+(15, 2, 2, 3, 2, 10, 2, 1, '2026-11-19 08:06:51'),
+(16, 2, 2, 3, 2, 14, 2, 1, '2026-11-19 08:06:51'),
+(17, 2, 2, 4, 1, 9, 2, 1, '2026-11-19 09:29:53'),
+(18, 2, 2, 4, 2, 10, 2, 1, '2026-11-19 09:29:53'),
+(19, 2, 2, 4, 3, 11, 2, 1, '2026-11-19 09:29:53'),
+(20, 2, 2, 4, 4, 12, 2, 1, '2026-11-19 09:29:53');
 
 -- --------------------------------------------------------
 
@@ -55807,15 +58117,16 @@ INSERT INTO `teacher_class_assign` (`id`, `school_id`, `teacher_id`, `class_id`,
 CREATE TABLE `teacher_document` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT 1,
+  `branch_id` int(11) DEFAULT NULL,
   `teacher_id` int(11) DEFAULT NULL,
   `document_type` int(11) DEFAULT NULL,
-  `attachments` text DEFAULT NULL,
+  `attachments` mediumtext DEFAULT NULL,
   `academic_year` int(11) DEFAULT NULL,
-  `file_name` text DEFAULT NULL,
+  `file_name` mediumtext DEFAULT NULL,
   `status` int(11) NOT NULL DEFAULT 1,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -55826,6 +58137,7 @@ CREATE TABLE `teacher_document` (
 CREATE TABLE `teacher_hostel` (
   `id` int(11) NOT NULL,
   `school_id` int(11) NOT NULL DEFAULT 1,
+  `branch_id` int(11) DEFAULT NULL,
   `teacher_id` int(11) DEFAULT NULL,
   `hostel_name` int(11) DEFAULT NULL,
   `room_number` int(11) DEFAULT NULL,
@@ -55833,31 +58145,7 @@ CREATE TABLE `teacher_hostel` (
   `status` int(11) NOT NULL DEFAULT 1,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
-
---
--- Dumping data for table `teacher_hostel`
---
-
-INSERT INTO `teacher_hostel` (`id`, `school_id`, `teacher_id`, `hostel_name`, `room_number`, `academic_year`, `status`, `created_at`, `updated_at`) VALUES
-(1, 2, 3, 3, 3, 8, 1, '2026-09-10 17:03:38', '2026-09-10 11:33:38');
-
--- --------------------------------------------------------
-
---
--- Table structure for table `teacher_leave`
---
-
-CREATE TABLE `teacher_leave` (
-  `id` int(11) NOT NULL,
-  `teacher_id` int(11) DEFAULT NULL,
-  `academic_year` int(11) DEFAULT NULL,
-  `leave_name` varchar(255) DEFAULT NULL,
-  `leaves` int(11) DEFAULT NULL,
-  `status` int(11) NOT NULL DEFAULT 1,
-  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
-  `updated_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -55868,6 +58156,7 @@ CREATE TABLE `teacher_leave` (
 CREATE TABLE `teacher_master` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT 1,
+  `branch_id` int(11) DEFAULT NULL,
   `academic_year` int(11) DEFAULT NULL,
   `teacher_id` varchar(255) DEFAULT NULL,
   `first_name` varchar(255) DEFAULT NULL,
@@ -55891,15 +58180,15 @@ CREATE TABLE `teacher_master` (
   `previous_school_address` varchar(255) DEFAULT NULL,
   `previous_school_phone` varchar(255) DEFAULT NULL,
   `pan_number` varchar(255) DEFAULT NULL,
-  `address1` text DEFAULT NULL,
-  `address2` text DEFAULT NULL,
+  `address1` mediumtext DEFAULT NULL,
+  `address2` mediumtext DEFAULT NULL,
   `country` int(11) DEFAULT NULL,
   `state` int(11) DEFAULT NULL,
   `city` int(11) DEFAULT NULL,
   `postal_code` varchar(255) DEFAULT NULL,
-  `notes` text DEFAULT NULL,
+  `notes` mediumtext DEFAULT NULL,
   `take_attendance` int(11) NOT NULL DEFAULT 1,
-  `picture` text DEFAULT NULL,
+  `picture` mediumtext DEFAULT NULL,
   `password` varchar(255) DEFAULT NULL,
   `status` int(11) NOT NULL DEFAULT 1,
   `created_on` datetime NOT NULL DEFAULT current_timestamp(),
@@ -55907,17 +58196,17 @@ CREATE TABLE `teacher_master` (
   `passcode` varchar(255) DEFAULT NULL,
   `otp` varchar(10) DEFAULT NULL,
   `otp_expires_at` datetime DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `teacher_master`
 --
 
-INSERT INTO `teacher_master` (`id`, `school_id`, `academic_year`, `teacher_id`, `first_name`, `last_name`, `class`, `section`, `subject`, `gender`, `primary_contact_number`, `email_address`, `blood_group`, `date_of_joining`, `father_name`, `mother_name`, `date_of_birth`, `marital_status`, `language_known`, `qualification`, `work_experience`, `previous_school_name`, `previous_school_address`, `previous_school_phone`, `pan_number`, `address1`, `address2`, `country`, `state`, `city`, `postal_code`, `notes`, `take_attendance`, `picture`, `password`, `status`, `created_on`, `updated_on`, `passcode`, `otp`, `otp_expires_at`) VALUES
-(1, 1, 4, 'TCH-2026-001', 'Ananya', 'Sharma', 1, 1, 1, 1, '9876543210', 'ananya.sharma@gmail.com', 1, '2026-07-02 00:00:00', 'Rajesh Sharm', 'Sunita Sharma', '1988-03-08 00:00:00', 2, 'Bengali', 'M.A.', '8 Years', 'St. Mary\'s High School', '12 Park Street, Kolkata, West Bengal', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 2, NULL, '123456', 1, '2026-09-09 16:52:01', '2026-09-09 11:22:01', NULL, NULL, NULL),
-(2, 1, 4, 'TCH-2026-002', 'Priya', 'Das', 2, 4, 13, 2, '07898650254', 'priya@gmail.com', 1, '2025-03-07 00:00:00', 'Amit Kumar', 'Moumita Sen', '1986-04-08 00:00:00', 2, 'Bengali', 'M.Com., B.Ed.', '5 Years', NULL, 'sdfsdf', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 2, 'upload/teacher/avatar2-1788953205858-9744.jpg', '123456', 1, '2026-09-09 16:56:45', '2026-09-09 11:26:45', NULL, NULL, NULL),
-(3, 2, 8, 'TCH-2026-001', 'Ardhendu', 'Bag', 6, 10, 15, 1, '07898650254', 'ardhendu@gmail.com', 3, '2026-09-10 11:38:12', NULL, NULL, NULL, 1, 'Bengali', 'B.Tech', NULL, NULL, 'sdfsdf', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 2, 'upload/teacher/avatar1-1789020492860-3292.jpg', '123456', 1, '2026-09-10 11:38:12', '2026-09-10 06:08:12', NULL, NULL, NULL),
-(4, 2, 8, 'TCH-2026-001', 'Rohan', 'Biswas', 6, 10, 20, 1, '7898650253', 'rohan@gmail.com', 3, '2026-09-10 13:17:39', NULL, NULL, NULL, 1, 'Hindi', 'M.A.', NULL, NULL, 'sdfsdf', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 2, NULL, '123456', 1, '2026-09-10 13:17:39', '2026-09-10 07:47:39', NULL, NULL, NULL);
+INSERT INTO `teacher_master` (`id`, `school_id`, `branch_id`, `academic_year`, `teacher_id`, `first_name`, `last_name`, `class`, `section`, `subject`, `gender`, `primary_contact_number`, `email_address`, `blood_group`, `date_of_joining`, `father_name`, `mother_name`, `date_of_birth`, `marital_status`, `language_known`, `qualification`, `work_experience`, `previous_school_name`, `previous_school_address`, `previous_school_phone`, `pan_number`, `address1`, `address2`, `country`, `state`, `city`, `postal_code`, `notes`, `take_attendance`, `picture`, `password`, `status`, `created_on`, `updated_on`, `passcode`, `otp`, `otp_expires_at`) VALUES
+(1, 2, 2, 2, 'TD123456', 'Gitanjali', 'Paul', 1, 1, 1, 2, '9856235951', 'gitanjali@gmail.com', NULL, '2026-11-18 00:00:00', 'Suresh Paul', 'Mani Paul', '1999-12-12 00:00:00', 1, 'Bengali, English', 'MA', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 2, NULL, '$2b$10$bGp88I9AoaIoUdmn4HUcEePWsMxsh7THoPTbuNA0q4ELA5LQWKEdW', 1, '2026-11-18 15:09:02', '2026-11-18 09:39:02', NULL, NULL, NULL),
+(2, 2, 2, 2, 'TD123457', 'Nazimuddin', 'Sekh', NULL, NULL, 5, 1, '8978564523', 'nazimuddin@gmail.com', NULL, '2026-11-18 00:00:00', NULL, NULL, NULL, 2, 'Bengali', 'BA', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 2, NULL, '$2b$10$.etkbKULoTRct6lHcPok0.wd8iMPyIZlCQ.lTwUnUtZn1oOKZETk.', 1, '2026-11-18 15:12:08', '2026-11-18 09:42:08', NULL, NULL, NULL),
+(3, 2, 2, 2, 'TD123450', 'Ritwik', 'Ghosal', NULL, NULL, 1, 1, '9784659865', 'ritwik@gmail.com', NULL, NULL, NULL, NULL, NULL, 2, 'Bengali', 'BA', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 2, NULL, '$2b$10$Pg8G1W6DlAeXT4u82UNqOeDtrKgIthrBjZ3x9vCDA7Yt8oKKPimZO', 1, '2026-11-19 13:36:51', '2026-11-19 08:06:51', NULL, NULL, NULL),
+(4, 2, 2, 2, 'TD123452', 'Sanjay', 'Gupta', 2, 4, 9, 1, '8989455412', 'sanjay@gmail.com', NULL, '2026-11-19 00:00:00', NULL, NULL, NULL, 2, 'Bengali', 'MCA', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 2, NULL, '$2b$10$7yurHUhwGDEqExn0IUe6teetodEmkH1rLpNtzbxpRQmDpKD5pe7iW', 1, '2026-11-19 14:59:53', '2026-11-19 09:29:53', NULL, NULL, NULL);
 
 -- --------------------------------------------------------
 
@@ -55928,6 +58217,7 @@ INSERT INTO `teacher_master` (`id`, `school_id`, `academic_year`, `teacher_id`, 
 CREATE TABLE `teacher_payroll` (
   `id` int(11) NOT NULL,
   `school_id` int(11) NOT NULL DEFAULT 1,
+  `branch_id` int(11) DEFAULT NULL,
   `teacher_id` int(11) DEFAULT NULL,
   `epf_no` varchar(255) DEFAULT NULL,
   `basic_salary` float DEFAULT NULL,
@@ -55939,17 +58229,17 @@ CREATE TABLE `teacher_payroll` (
   `status` int(11) NOT NULL DEFAULT 1,
   `created_on` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_on` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `teacher_payroll`
 --
 
-INSERT INTO `teacher_payroll` (`id`, `school_id`, `teacher_id`, `epf_no`, `basic_salary`, `contract_type`, `work_shift`, `work_location`, `date_of_leaving`, `academic_year`, `status`, `created_on`, `updated_on`) VALUES
-(1, 1, 1, 'ABCDE1234F', 12000, 2, 1, '', NULL, 4, 1, '2026-09-09 16:52:01', '2026-09-09 11:22:01'),
-(2, 1, 2, '100123456789', 14000, 2, 2, '', NULL, 4, 1, '2026-09-09 16:56:45', '2026-09-09 11:26:45'),
-(4, 2, 4, 'EPF-8756', 7000, 2, 4, '', NULL, 8, 1, '2026-09-10 13:17:39', '2026-09-10 07:47:39'),
-(10, 2, 3, 'EPF-215478', 8000, 2, 3, '', NULL, 8, 1, '2026-09-10 17:03:38', '2026-09-10 11:33:38');
+INSERT INTO `teacher_payroll` (`id`, `school_id`, `branch_id`, `teacher_id`, `epf_no`, `basic_salary`, `contract_type`, `work_shift`, `work_location`, `date_of_leaving`, `academic_year`, `status`, `created_on`, `updated_on`) VALUES
+(1, 2, 2, 1, '7894561230', 19000, 2, 1, '', NULL, 2, 1, '2026-11-18 15:09:02', '2026-11-18 09:39:02'),
+(2, 2, 2, 2, '8764525889', 15000, 2, 1, '', NULL, 2, 1, '2026-11-18 15:12:08', '2026-11-18 09:42:08'),
+(3, 2, 2, 3, '789456564', 15000, 2, 1, '', NULL, 2, 1, '2026-11-19 13:36:51', '2026-11-19 08:06:51'),
+(4, 2, 2, 4, '789645132546', 19000, 2, 1, '', NULL, 2, 1, '2026-11-19 14:59:53', '2026-11-19 09:29:53');
 
 -- --------------------------------------------------------
 
@@ -55960,27 +58250,28 @@ INSERT INTO `teacher_payroll` (`id`, `school_id`, `teacher_id`, `epf_no`, `basic
 CREATE TABLE `teacher_social_link` (
   `id` int(11) NOT NULL,
   `school_id` int(11) NOT NULL DEFAULT 1,
+  `branch_id` int(11) DEFAULT NULL,
   `teacher_id` int(11) DEFAULT NULL,
-  `facebook_link` text DEFAULT NULL,
-  `instagram_link` text DEFAULT NULL,
-  `linkedin_link` text DEFAULT NULL,
-  `youtube_link` text DEFAULT NULL,
-  `twitter_link` text DEFAULT NULL,
+  `facebook_link` mediumtext DEFAULT NULL,
+  `instagram_link` mediumtext DEFAULT NULL,
+  `linkedin_link` mediumtext DEFAULT NULL,
+  `youtube_link` mediumtext DEFAULT NULL,
+  `twitter_link` mediumtext DEFAULT NULL,
   `academic_year` int(11) DEFAULT NULL,
   `staus` int(11) NOT NULL DEFAULT 1,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `teacher_social_link`
 --
 
-INSERT INTO `teacher_social_link` (`id`, `school_id`, `teacher_id`, `facebook_link`, `instagram_link`, `linkedin_link`, `youtube_link`, `twitter_link`, `academic_year`, `staus`, `created_at`, `updated_at`) VALUES
-(1, 1, 1, '', '', '', '', '', 4, 1, '2026-09-09 16:52:01', '2026-09-09 11:22:01'),
-(2, 1, 2, '', '', '', '', '', 4, 1, '2026-09-09 16:56:45', '2026-09-09 11:26:45'),
-(4, 2, 4, '', '', '', '', '', 8, 1, '2026-09-10 13:17:39', '2026-09-10 07:47:39'),
-(10, 2, 3, '', '', '', '', '', 8, 1, '2026-09-10 17:03:38', '2026-09-10 11:33:38');
+INSERT INTO `teacher_social_link` (`id`, `school_id`, `branch_id`, `teacher_id`, `facebook_link`, `instagram_link`, `linkedin_link`, `youtube_link`, `twitter_link`, `academic_year`, `staus`, `created_at`, `updated_at`) VALUES
+(1, 2, 2, 1, '', '', '', '', '', 2, 1, '2026-11-18 15:09:02', '2026-11-18 09:39:02'),
+(2, 2, 2, 2, '', '', '', '', '', 2, 1, '2026-11-18 15:12:08', '2026-11-18 09:42:08'),
+(3, 2, 2, 3, '', '', '', '', '', 2, 1, '2026-11-19 13:36:51', '2026-11-19 08:06:51'),
+(4, 2, 2, 4, '', '', '', '', '', 2, 1, '2026-11-19 14:59:53', '2026-11-19 09:29:53');
 
 -- --------------------------------------------------------
 
@@ -55991,6 +58282,7 @@ INSERT INTO `teacher_social_link` (`id`, `school_id`, `teacher_id`, `facebook_li
 CREATE TABLE `teacher_transport` (
   `id` int(11) NOT NULL,
   `school_id` int(11) NOT NULL DEFAULT 1,
+  `branch_id` int(11) DEFAULT NULL,
   `teacher_id` int(11) DEFAULT NULL,
   `route` int(11) DEFAULT NULL,
   `vehicle_number` int(11) DEFAULT NULL,
@@ -56000,14 +58292,7 @@ CREATE TABLE `teacher_transport` (
   `staus` int(11) NOT NULL DEFAULT 1,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
-
---
--- Dumping data for table `teacher_transport`
---
-
-INSERT INTO `teacher_transport` (`id`, `school_id`, `teacher_id`, `route`, `vehicle_number`, `pickup_point`, `drop_point`, `academic_year`, `staus`, `created_at`, `updated_at`) VALUES
-(2, 2, 3, 3, 0, 'Barrackpore', 'Kalyani', 8, 1, '2026-09-10 17:03:38', '2026-09-10 11:33:38');
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -56022,7 +58307,7 @@ CREATE TABLE `timelog_settings` (
   `tracker_reminder` int(11) DEFAULT NULL,
   `timelog_report` int(11) DEFAULT NULL,
   `created_on` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -56033,10 +58318,11 @@ CREATE TABLE `timelog_settings` (
 CREATE TABLE `trans_pickup_master` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `pickup_point` varchar(255) DEFAULT NULL,
   `sort_order` int(11) DEFAULT NULL,
   `status` int(11) NOT NULL DEFAULT 1
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -56047,21 +58333,20 @@ CREATE TABLE `trans_pickup_master` (
 CREATE TABLE `trans_route_master` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `transport_route` varchar(255) DEFAULT NULL,
   `bus_id` int(11) NOT NULL,
   `sort_order` int(11) DEFAULT NULL,
   `status` int(11) NOT NULL DEFAULT 1,
   `fare` decimal(10,2) DEFAULT 0.00
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `trans_route_master`
 --
 
-INSERT INTO `trans_route_master` (`id`, `school_id`, `transport_route`, `bus_id`, `sort_order`, `status`, `fare`) VALUES
-(1, 1, 'MADANPUR-SIMURALI (MAIN)', 2, 1, 1, 1000.00),
-(2, 1, 'Simurali-Chakdaha Main', 1, 1, 1, 800.00),
-(3, 2, 'Simurali-Chakdaha Main', 3, 1, 1, 100.00);
+INSERT INTO `trans_route_master` (`id`, `school_id`, `branch_id`, `transport_route`, `bus_id`, `sort_order`, `status`, `fare`) VALUES
+(1, 2, 2, 'SIMURALI-KALYANI', 1, 1, 1, 15.00);
 
 -- --------------------------------------------------------
 
@@ -56072,10 +58357,11 @@ INSERT INTO `trans_route_master` (`id`, `school_id`, `transport_route`, `bus_id`
 CREATE TABLE `trans_vehicle_master` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `vehicle_number` varchar(255) DEFAULT NULL,
   `sort_order` int(11) DEFAULT NULL,
   `status` int(11) NOT NULL DEFAULT 1
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -56086,6 +58372,7 @@ CREATE TABLE `trans_vehicle_master` (
 CREATE TABLE `user_bank` (
   `id` int(11) NOT NULL,
   `school_id` int(11) NOT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `user_id` int(11) DEFAULT NULL,
   `account_name` varchar(255) DEFAULT NULL,
   `account_number` varchar(255) DEFAULT NULL,
@@ -56095,14 +58382,14 @@ CREATE TABLE `user_bank` (
   `status` int(11) NOT NULL DEFAULT 1,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `user_bank`
 --
 
-INSERT INTO `user_bank` (`id`, `school_id`, `user_id`, `account_name`, `account_number`, `bank_name`, `ifsc_code`, `branch_name`, `status`, `created_at`, `updated_at`) VALUES
-(1, 2, 3, 'Ardhendu Bag', '12345678912', 'STATE BANK OF INDIA', 'SBIN452N', 'KALYANI', 1, '2026-09-10 10:56:10', '2026-09-11 08:11:13');
+INSERT INTO `user_bank` (`id`, `school_id`, `branch_id`, `user_id`, `account_name`, `account_number`, `bank_name`, `ifsc_code`, `branch_name`, `status`, `created_at`, `updated_at`) VALUES
+(1, 2, 3, 3, 'Ardhendu Bag', 'xxxxxxxx01', 'State Bank of India', 'SBI00006', 'KALYANI', 1, '2026-11-18 15:10:30', '2026-11-18 09:40:51');
 
 -- --------------------------------------------------------
 
@@ -56111,14 +58398,41 @@ INSERT INTO `user_bank` (`id`, `school_id`, `user_id`, `account_name`, `account_
 --
 
 CREATE TABLE `user_device_tokens` (
-  `id` int(11) NOT NULL,
-  `user_type` enum('teacher','student','parent') NOT NULL,
-  `user_id` int(11) NOT NULL,
-  `device_token` varchar(255) NOT NULL,
-  `device_info` varchar(255) DEFAULT NULL,
-  `created_at` datetime DEFAULT current_timestamp(),
-  `last_used_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `school_id` int(11) NOT NULL DEFAULT 1 COMMENT 'Reference to school / tenant',
+  `branch_id` int(11) DEFAULT NULL,
+  `user_id` int(11) NOT NULL COMMENT 'User ID within role (student_id, teacher_id, parent_id, user_id)',
+  `role` enum('student','parent','teacher','admin','staff','saas_admin','other') NOT NULL COMMENT 'User role',
+  `device_type` enum('web','android','ios') NOT NULL COMMENT 'Platform type',
+  `token` text NOT NULL COMMENT 'Expo Push Token or stringified Web PushSubscription',
+  `endpoint_hash` varchar(64) NOT NULL COMMENT 'SHA256 hash of token or webpush endpoint for fast lookup and uniqueness',
+  `device_name` varchar(150) DEFAULT NULL COMMENT 'Friendly device or browser name',
+  `user_agent` varchar(255) DEFAULT NULL COMMENT 'Client User-Agent header',
+  `is_active` tinyint(1) NOT NULL DEFAULT 1 COMMENT '1 = active, 0 = revoked/expired',
+  `last_used_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Multi-platform push notification device tokens (Web VAPID & Mobile Expo)';
+
+--
+-- Dumping data for table `user_device_tokens`
+--
+
+INSERT INTO `user_device_tokens` (`id`, `school_id`, `branch_id`, `user_id`, `role`, `device_type`, `token`, `endpoint_hash`, `device_name`, `user_agent`, `is_active`, `last_used_at`, `created_at`, `updated_at`) VALUES
+(1, 2, 2, 2, 'admin', 'web', '{\"endpoint\":\"https://fcm.googleapis.com/fcm/send/dlccWUOgrLo:APA91bHEiOcVPW85mkIBp7b8UqduruqoFruJBKtm-0pHuxXhbuvheTizCJD9XVZNBLEWYOfEsQYprL7tDak-SVVP9QvluAEXUZlbsCmyWEU2PTVuAxzXeOB-DCPUQfYCiipgaIqm-2Lf\",\"expirationTime\":null,\"keys\":{\"p256dh\":\"BG39vAcrFCsYVqmoYcmR1CHwaqQckWY_lFjC6zg9SHCB_DMlKKsDRXMeqGyJwNllHtYVb_0uNkTQyeeUuYeLx_0\",\"auth\":\"dAZFR0eaNXIb8Ro67dRRKw\"}}', '12ae7205d870626fe90bb0fd86326c004a3c2108028cbfdfe104675e4835c346', 'Google Chrome', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36', 0, '2026-11-24 10:55:45', '2026-11-19 10:27:11', '2026-11-24 10:55:45'),
+(18, 1, 1, 1, 'admin', 'web', '{\"endpoint\":\"https://fcm.googleapis.com/fcm/send/dlccWUOgrLo:APA91bHEiOcVPW85mkIBp7b8UqduruqoFruJBKtm-0pHuxXhbuvheTizCJD9XVZNBLEWYOfEsQYprL7tDak-SVVP9QvluAEXUZlbsCmyWEU2PTVuAxzXeOB-DCPUQfYCiipgaIqm-2Lf\",\"expirationTime\":null,\"keys\":{\"p256dh\":\"BG39vAcrFCsYVqmoYcmR1CHwaqQckWY_lFjC6zg9SHCB_DMlKKsDRXMeqGyJwNllHtYVb_0uNkTQyeeUuYeLx_0\",\"auth\":\"dAZFR0eaNXIb8Ro67dRRKw\"}}', '12ae7205d870626fe90bb0fd86326c004a3c2108028cbfdfe104675e4835c346', 'Google Chrome', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36', 0, '2026-11-19 12:29:30', '2026-11-19 12:29:17', '2026-11-19 12:29:30'),
+(30, 2, 2, 1, 'teacher', 'web', '{\"endpoint\":\"https://fcm.googleapis.com/fcm/send/dlccWUOgrLo:APA91bHEiOcVPW85mkIBp7b8UqduruqoFruJBKtm-0pHuxXhbuvheTizCJD9XVZNBLEWYOfEsQYprL7tDak-SVVP9QvluAEXUZlbsCmyWEU2PTVuAxzXeOB-DCPUQfYCiipgaIqm-2Lf\",\"expirationTime\":null,\"keys\":{\"p256dh\":\"BG39vAcrFCsYVqmoYcmR1CHwaqQckWY_lFjC6zg9SHCB_DMlKKsDRXMeqGyJwNllHtYVb_0uNkTQyeeUuYeLx_0\",\"auth\":\"dAZFR0eaNXIb8Ro67dRRKw\"}}', '12ae7205d870626fe90bb0fd86326c004a3c2108028cbfdfe104675e4835c346', 'Google Chrome', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36', 0, '2026-11-19 18:35:32', '2026-11-19 12:46:55', '2026-11-19 18:35:32'),
+(54, 1, 1, 1, 'admin', 'web', '{\"endpoint\":\"https://fcm.googleapis.com/fcm/send/fRxMgtWD0Gw:APA91bFMQdgAVj34GFe2cWYX3xT74l92200zUGyM03PLW03tU97HwIHC-IXJ3W37gl04wP0wj427gVydeM8TtTARPx0vfd7MRvgB-2Am8N5kTcPDWoIitZ43pQKeKF23-qWmkhJ9OTE-\",\"expirationTime\":null,\"keys\":{\"p256dh\":\"BFAD8S82D6WPlfE80x_Ee-1-pGcVWKJytb_waMY4xAAQ_kYTph-Ujn-TrB-1rAOid7oRtPhp0ioyYuX1R7T8Ar8\",\"auth\":\"Lk6S0uF7C77AYlRVuFYRNQ\"}}', 'a81c119c7727a478fe1cbbb62ee9a0da7fff53fe220d5fe64cef3aac964c4cc2', 'Google Chrome', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36', 0, '2026-11-19 13:47:14', '2026-11-19 13:32:10', '2026-11-19 13:47:14'),
+(58, 2, 2, 2, 'admin', 'web', '{\"endpoint\":\"https://fcm.googleapis.com/fcm/send/fRxMgtWD0Gw:APA91bFMQdgAVj34GFe2cWYX3xT74l92200zUGyM03PLW03tU97HwIHC-IXJ3W37gl04wP0wj427gVydeM8TtTARPx0vfd7MRvgB-2Am8N5kTcPDWoIitZ43pQKeKF23-qWmkhJ9OTE-\",\"expirationTime\":null,\"keys\":{\"p256dh\":\"BFAD8S82D6WPlfE80x_Ee-1-pGcVWKJytb_waMY4xAAQ_kYTph-Ujn-TrB-1rAOid7oRtPhp0ioyYuX1R7T8Ar8\",\"auth\":\"Lk6S0uF7C77AYlRVuFYRNQ\"}}', 'a81c119c7727a478fe1cbbb62ee9a0da7fff53fe220d5fe64cef3aac964c4cc2', 'Google Chrome', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36', 1, '2026-11-24 10:29:54', '2026-11-19 13:47:14', '2026-11-24 10:29:54'),
+(98, 2, 2, 4, 'parent', 'web', '{\"endpoint\":\"https://fcm.googleapis.com/fcm/send/dlccWUOgrLo:APA91bHEiOcVPW85mkIBp7b8UqduruqoFruJBKtm-0pHuxXhbuvheTizCJD9XVZNBLEWYOfEsQYprL7tDak-SVVP9QvluAEXUZlbsCmyWEU2PTVuAxzXeOB-DCPUQfYCiipgaIqm-2Lf\",\"expirationTime\":null,\"keys\":{\"p256dh\":\"BG39vAcrFCsYVqmoYcmR1CHwaqQckWY_lFjC6zg9SHCB_DMlKKsDRXMeqGyJwNllHtYVb_0uNkTQyeeUuYeLx_0\",\"auth\":\"dAZFR0eaNXIb8Ro67dRRKw\"}}', '12ae7205d870626fe90bb0fd86326c004a3c2108028cbfdfe104675e4835c346', 'Google Chrome', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36', 0, '2026-11-19 16:58:55', '2026-11-19 16:55:27', '2026-11-19 16:58:55'),
+(100, 2, 2, 6, 'parent', 'web', '{\"endpoint\":\"https://fcm.googleapis.com/fcm/send/dlccWUOgrLo:APA91bHEiOcVPW85mkIBp7b8UqduruqoFruJBKtm-0pHuxXhbuvheTizCJD9XVZNBLEWYOfEsQYprL7tDak-SVVP9QvluAEXUZlbsCmyWEU2PTVuAxzXeOB-DCPUQfYCiipgaIqm-2Lf\",\"expirationTime\":null,\"keys\":{\"p256dh\":\"BG39vAcrFCsYVqmoYcmR1CHwaqQckWY_lFjC6zg9SHCB_DMlKKsDRXMeqGyJwNllHtYVb_0uNkTQyeeUuYeLx_0\",\"auth\":\"dAZFR0eaNXIb8Ro67dRRKw\"}}', '12ae7205d870626fe90bb0fd86326c004a3c2108028cbfdfe104675e4835c346', 'Google Chrome', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36', 0, '2026-11-19 18:27:42', '2026-11-19 16:58:55', '2026-11-19 18:27:42'),
+(154, 2, 2, 129, 'student', 'web', '{\"endpoint\":\"https://fcm.googleapis.com/fcm/send/dlccWUOgrLo:APA91bHEiOcVPW85mkIBp7b8UqduruqoFruJBKtm-0pHuxXhbuvheTizCJD9XVZNBLEWYOfEsQYprL7tDak-SVVP9QvluAEXUZlbsCmyWEU2PTVuAxzXeOB-DCPUQfYCiipgaIqm-2Lf\",\"expirationTime\":null,\"keys\":{\"p256dh\":\"BG39vAcrFCsYVqmoYcmR1CHwaqQckWY_lFjC6zg9SHCB_DMlKKsDRXMeqGyJwNllHtYVb_0uNkTQyeeUuYeLx_0\",\"auth\":\"dAZFR0eaNXIb8Ro67dRRKw\"}}', '12ae7205d870626fe90bb0fd86326c004a3c2108028cbfdfe104675e4835c346', 'Google Chrome', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36', 0, '2026-11-19 19:52:16', '2026-11-19 19:51:54', '2026-11-19 19:52:16'),
+(251, 0, NULL, 2, 'saas_admin', 'web', '{\"endpoint\":\"https://fcm.googleapis.com/fcm/send/fRxMgtWD0Gw:APA91bFMQdgAVj34GFe2cWYX3xT74l92200zUGyM03PLW03tU97HwIHC-IXJ3W37gl04wP0wj427gVydeM8TtTARPx0vfd7MRvgB-2Am8N5kTcPDWoIitZ43pQKeKF23-qWmkhJ9OTE-\",\"expirationTime\":null,\"keys\":{\"p256dh\":\"BFAD8S82D6WPlfE80x_Ee-1-pGcVWKJytb_waMY4xAAQ_kYTph-Ujn-TrB-1rAOid7oRtPhp0ioyYuX1R7T8Ar8\",\"auth\":\"Lk6S0uF7C77AYlRVuFYRNQ\"}}', 'a81c119c7727a478fe1cbbb62ee9a0da7fff53fe220d5fe64cef3aac964c4cc2', 'Google Chrome (SaaS Admin)', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36', 0, '2026-11-24 10:29:08', '2026-11-23 11:04:31', '2026-11-24 10:29:08'),
+(276, 2, 2, 155, 'parent', 'web', '{\"endpoint\":\"https://fcm.googleapis.com/fcm/send/dlccWUOgrLo:APA91bHEiOcVPW85mkIBp7b8UqduruqoFruJBKtm-0pHuxXhbuvheTizCJD9XVZNBLEWYOfEsQYprL7tDak-SVVP9QvluAEXUZlbsCmyWEU2PTVuAxzXeOB-DCPUQfYCiipgaIqm-2Lf\",\"expirationTime\":null,\"keys\":{\"p256dh\":\"BG39vAcrFCsYVqmoYcmR1CHwaqQckWY_lFjC6zg9SHCB_DMlKKsDRXMeqGyJwNllHtYVb_0uNkTQyeeUuYeLx_0\",\"auth\":\"dAZFR0eaNXIb8Ro67dRRKw\"}}', '12ae7205d870626fe90bb0fd86326c004a3c2108028cbfdfe104675e4835c346', 'Google Chrome', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36', 0, '2026-11-23 11:44:52', '2026-11-23 11:42:30', '2026-11-23 11:44:52'),
+(304, 2, 2, 159, 'parent', 'web', '{\"endpoint\":\"https://fcm.googleapis.com/fcm/send/dlccWUOgrLo:APA91bHEiOcVPW85mkIBp7b8UqduruqoFruJBKtm-0pHuxXhbuvheTizCJD9XVZNBLEWYOfEsQYprL7tDak-SVVP9QvluAEXUZlbsCmyWEU2PTVuAxzXeOB-DCPUQfYCiipgaIqm-2Lf\",\"expirationTime\":null,\"keys\":{\"p256dh\":\"BG39vAcrFCsYVqmoYcmR1CHwaqQckWY_lFjC6zg9SHCB_DMlKKsDRXMeqGyJwNllHtYVb_0uNkTQyeeUuYeLx_0\",\"auth\":\"dAZFR0eaNXIb8Ro67dRRKw\"}}', '12ae7205d870626fe90bb0fd86326c004a3c2108028cbfdfe104675e4835c346', 'Google Chrome', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36', 0, '2026-11-23 12:35:42', '2026-11-23 11:56:59', '2026-11-23 12:35:42'),
+(339, 2, 2, 2, 'teacher', 'web', '{\"endpoint\":\"https://fcm.googleapis.com/fcm/send/dlccWUOgrLo:APA91bHEiOcVPW85mkIBp7b8UqduruqoFruJBKtm-0pHuxXhbuvheTizCJD9XVZNBLEWYOfEsQYprL7tDak-SVVP9QvluAEXUZlbsCmyWEU2PTVuAxzXeOB-DCPUQfYCiipgaIqm-2Lf\",\"expirationTime\":null,\"keys\":{\"p256dh\":\"BG39vAcrFCsYVqmoYcmR1CHwaqQckWY_lFjC6zg9SHCB_DMlKKsDRXMeqGyJwNllHtYVb_0uNkTQyeeUuYeLx_0\",\"auth\":\"dAZFR0eaNXIb8Ro67dRRKw\"}}', '12ae7205d870626fe90bb0fd86326c004a3c2108028cbfdfe104675e4835c346', 'Google Chrome', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36', 0, '2026-11-23 17:51:29', '2026-11-23 15:23:49', '2026-11-23 17:51:29'),
+(343, 2, 2, 83, 'student', 'web', '{\"endpoint\":\"https://fcm.googleapis.com/fcm/send/dlccWUOgrLo:APA91bHEiOcVPW85mkIBp7b8UqduruqoFruJBKtm-0pHuxXhbuvheTizCJD9XVZNBLEWYOfEsQYprL7tDak-SVVP9QvluAEXUZlbsCmyWEU2PTVuAxzXeOB-DCPUQfYCiipgaIqm-2Lf\",\"expirationTime\":null,\"keys\":{\"p256dh\":\"BG39vAcrFCsYVqmoYcmR1CHwaqQckWY_lFjC6zg9SHCB_DMlKKsDRXMeqGyJwNllHtYVb_0uNkTQyeeUuYeLx_0\",\"auth\":\"dAZFR0eaNXIb8Ro67dRRKw\"}}', '12ae7205d870626fe90bb0fd86326c004a3c2108028cbfdfe104675e4835c346', 'Google Chrome', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36', 0, '2026-11-23 18:39:47', '2026-11-23 15:28:36', '2026-11-23 18:39:47'),
+(462, 0, NULL, 2, 'saas_admin', 'web', '{\"endpoint\":\"https://fcm.googleapis.com/fcm/send/dlccWUOgrLo:APA91bHEiOcVPW85mkIBp7b8UqduruqoFruJBKtm-0pHuxXhbuvheTizCJD9XVZNBLEWYOfEsQYprL7tDak-SVVP9QvluAEXUZlbsCmyWEU2PTVuAxzXeOB-DCPUQfYCiipgaIqm-2Lf\",\"expirationTime\":null,\"keys\":{\"p256dh\":\"BG39vAcrFCsYVqmoYcmR1CHwaqQckWY_lFjC6zg9SHCB_DMlKKsDRXMeqGyJwNllHtYVb_0uNkTQyeeUuYeLx_0\",\"auth\":\"dAZFR0eaNXIb8Ro67dRRKw\"}}', '12ae7205d870626fe90bb0fd86326c004a3c2108028cbfdfe104675e4835c346', 'Google Chrome (SaaS Admin)', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36', 1, '2026-11-24 10:55:56', '2026-11-24 10:55:45', '2026-11-24 10:55:56');
 
 -- --------------------------------------------------------
 
@@ -56129,13 +58443,14 @@ CREATE TABLE `user_device_tokens` (
 CREATE TABLE `user_document` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT 1,
+  `branch_id` int(11) DEFAULT NULL,
   `user_id` int(11) DEFAULT NULL,
   `document_type` int(11) DEFAULT NULL,
-  `attachments` text DEFAULT NULL,
+  `attachments` mediumtext DEFAULT NULL,
   `status` int(11) NOT NULL DEFAULT 1,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -56146,29 +58461,14 @@ CREATE TABLE `user_document` (
 CREATE TABLE `user_hostel` (
   `id` int(11) NOT NULL,
   `school_id` int(11) NOT NULL DEFAULT 1,
+  `branch_id` int(11) DEFAULT NULL,
   `user_id` int(11) DEFAULT NULL,
   `hostel_name` int(11) DEFAULT NULL,
   `room_number` int(11) DEFAULT NULL,
   `status` int(11) NOT NULL DEFAULT 1,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
-
--- --------------------------------------------------------
-
---
--- Table structure for table `user_leave`
---
-
-CREATE TABLE `user_leave` (
-  `id` int(11) NOT NULL,
-  `user_id` int(11) DEFAULT NULL,
-  `leave_name` varchar(255) DEFAULT NULL,
-  `leaves` int(11) DEFAULT NULL,
-  `status` int(11) NOT NULL DEFAULT 1,
-  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
-  `updated_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -56179,6 +58479,7 @@ CREATE TABLE `user_leave` (
 CREATE TABLE `user_master` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `first_name` varchar(255) DEFAULT NULL,
   `last_name` varchar(255) DEFAULT NULL,
   `email` varchar(255) DEFAULT NULL,
@@ -56188,6 +58489,7 @@ CREATE TABLE `user_master` (
   `blood_group` int(11) DEFAULT NULL,
   `picture` varchar(255) DEFAULT NULL,
   `otp` varchar(11) DEFAULT NULL,
+  `otp_expires_at` datetime DEFAULT NULL,
   `verification_code` text DEFAULT NULL,
   `country_id` int(11) DEFAULT NULL,
   `state_id` int(11) DEFAULT NULL,
@@ -56196,19 +58498,19 @@ CREATE TABLE `user_master` (
   `admin_type` int(5) NOT NULL DEFAULT 2 COMMENT '1 = super admin, 2 = stuff',
   `status` int(11) DEFAULT 1 COMMENT '1=Active, 2=Inactive, 4=Delete',
   `date` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `user_master`
 --
 
-INSERT INTO `user_master` (`id`, `school_id`, `first_name`, `last_name`, `email`, `phone`, `password`, `gender`, `blood_group`, `picture`, `otp`, `verification_code`, `country_id`, `state_id`, `city`, `role`, `admin_type`, `status`, `date`) VALUES
-(1, 1, 'Admin', 'Admin', 'admin@school.com', '1234567890', 'e10adc3949ba59abbe56e057f20f883e', 1, NULL, NULL, NULL, NULL, 101, 41, 5548, NULL, 1, 1, '2026-09-09 07:56:39'),
-(2, 2, 'kaustav', 'Kha', 'kaustav@gmail.com', '1234567569', 'e10adc3949ba59abbe56e057f20f883e', 1, NULL, NULL, NULL, NULL, 101, 41, 5548, NULL, 1, 1, '2026-09-09 07:56:39'),
-(3, 2, 'Ardhendu', 'Bag', 'ardhendu@gmail.com', '07898650254', 'e10adc3949ba59abbe56e057f20f883e', 1, 3, 'upload/staff/images__2_-1789114273069-4478.jpg', NULL, NULL, 12, 244, 6554, 3, 0, 1, '2026-09-09 13:49:17'),
-(7, 7, 'Pradipta', 'Karmakar', 'pradipta.codeulas@gmail.com', '6295258586', 'e10adc3949ba59abbe56e057f20f883e', 0, NULL, NULL, NULL, NULL, NULL, NULL, 5548, NULL, 1, 1, '2026-09-10 13:38:56'),
-(9, 9, 'Ananya', 'Sharma', 'ananya@gmail.com', '8564712560', 'e10adc3949ba59abbe56e057f20f883e', 0, NULL, NULL, NULL, NULL, NULL, NULL, 5583, NULL, 1, 1, '2026-09-11 12:22:57'),
-(10, 10, 'Ananya', 'Bose', 'bose@gmail.com', '9856324710', 'e10adc3949ba59abbe56e057f20f883e', 0, NULL, NULL, NULL, NULL, NULL, NULL, 5583, NULL, 1, 1, '2026-09-11 14:04:51');
+INSERT INTO `user_master` (`id`, `school_id`, `branch_id`, `first_name`, `last_name`, `email`, `phone`, `password`, `gender`, `blood_group`, `picture`, `otp`, `otp_expires_at`, `verification_code`, `country_id`, `state_id`, `city`, `role`, `admin_type`, `status`, `date`) VALUES
+(1, 1, 1, 'Aarav', 'Sharma', 'aarav@gmail.com', '9863520142', '$2b$10$RSDICwZtECvYE5GhD3gH8u1QyuAEO4oUQuPYoTsFjVQY0eYLt7h8i', 1, NULL, NULL, NULL, NULL, NULL, 101, 41, 5548, 0, 1, 1, '2026-11-18 09:24:35'),
+(2, 2, 2, 'Chitta', 'Banga', 'admin@school.com', '8965239652', '$2b$10$LSGoZf6f/3/FP2FEQBXuC.bPAI5JxKumzjEtSkb5M99BUiZ.Qia0.', 1, 1, 'upload/schools/2/branches/2/staff/Admin_Admin-1794994010476-dae910.png', NULL, NULL, NULL, 101, 41, 5704, 0, 1, 1, '2026-11-18 09:26:51'),
+(3, 2, 3, 'Ardhendu', 'Bag', 'ardhendu.codeulas@gmail.com', '6853241250', '$2b$10$HEmn0SPnZdjejRi2C0kKQ.p8oLIEqyoi8RG9JNGFgsQN6UQXReJ/C', 1, 3, 'upload/schools/2/branches/3/staff/avatar-1794994850643-474d1f.jpg', NULL, NULL, NULL, 101, 11, 708, 2, 2, 1, '2026-11-18 09:40:30'),
+(4, 2, 2, 'Mainak', 'Pramanick', 'mainak@gmail.com', '8789846825', '$2b$10$TXgMi6.mzAZvAibWNS96FOTxSRFfiZ0DwdoVPESosUYs1jQl9E7CW', 1, 1, NULL, NULL, NULL, NULL, 101, 41, 5704, 1, 2, 1, '2026-11-18 09:45:36'),
+(5, 3, 6, 'Sumanta', 'Dey', 'sumanta@codeulas.com', '+917898650254', '$2b$10$uwbMu5BqBzpUUwHMoLTFm.tdgWz7AhNNHh69YzCs2bxhyG40LoQZq', 1, NULL, 'upload/schools/3/branches/6/staff/Admin_Admin-1795073394720-c66f79.webp', NULL, NULL, NULL, 101, 41, 5548, 0, 1, 1, '2026-11-19 07:29:55'),
+(6, 2, 2, 'Kaushik', 'Guha', 'kaushik.guha@gmail.com', '8956658998', '$2b$10$zgZfp8OAjpto2UVS39O8N.OnvyS3CVar3OtlU7vyGdze8XQqXpbla', 1, 1, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 2, 2, 1, '2026-11-19 07:48:15');
 
 -- --------------------------------------------------------
 
@@ -56219,12 +58521,22 @@ INSERT INTO `user_master` (`id`, `school_id`, `first_name`, `last_name`, `email`
 CREATE TABLE `user_master_attendance` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `user_master_id` int(11) NOT NULL,
   `attendance` int(11) NOT NULL DEFAULT 0 COMMENT 'Absent = 0 Present = 1 Late = 2 Halfday = 3	',
-  `notes` text NOT NULL,
+  `notes` mediumtext NOT NULL,
   `date` datetime NOT NULL DEFAULT current_timestamp(),
   `status` int(11) NOT NULL DEFAULT 1
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `user_master_attendance`
+--
+
+INSERT INTO `user_master_attendance` (`id`, `school_id`, `branch_id`, `user_master_id`, `attendance`, `notes`, `date`, `status`) VALUES
+(1, 2, 2, 2, 1, '', '2026-11-19 00:00:00', 1),
+(2, 2, 2, 4, 1, '', '2026-11-19 00:00:00', 1),
+(3, 2, 2, 6, 1, '', '2026-11-19 00:00:00', 1);
 
 -- --------------------------------------------------------
 
@@ -56235,6 +58547,7 @@ CREATE TABLE `user_master_attendance` (
 CREATE TABLE `user_transport` (
   `id` int(11) NOT NULL,
   `school_id` int(11) NOT NULL DEFAULT 1,
+  `branch_id` int(11) DEFAULT NULL,
   `user_id` int(11) DEFAULT NULL,
   `route` int(11) DEFAULT NULL,
   `vehicle_number` int(11) DEFAULT NULL,
@@ -56243,7 +58556,7 @@ CREATE TABLE `user_transport` (
   `staus` int(11) NOT NULL DEFAULT 1,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -56254,31 +58567,21 @@ CREATE TABLE `user_transport` (
 CREATE TABLE `weekends` (
   `id` int(11) NOT NULL,
   `school_id` int(11) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL,
   `weekends` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `weekends`
 --
 
-INSERT INTO `weekends` (`id`, `school_id`, `weekends`) VALUES
-(1, 1, 1),
-(2, 1, 2),
-(3, 1, 3),
-(4, 1, 4),
-(5, 1, 5),
-(18, 7, 6),
-(19, 7, 7),
-(20, 2, 1),
-(21, 2, 2),
-(22, 2, 3),
-(23, 2, 4),
-(24, 8, 6),
-(25, 8, 7),
-(26, 9, 6),
-(27, 9, 7),
-(28, 10, 6),
-(29, 10, 7);
+INSERT INTO `weekends` (`id`, `school_id`, `branch_id`, `weekends`) VALUES
+(1, 1, 1, 6),
+(2, 1, 1, 7),
+(5, 2, 2, 6),
+(6, 2, 2, 7),
+(7, 3, 6, 6),
+(8, 3, 6, 7);
 
 --
 -- Indexes for dumped tables
@@ -56294,29 +58597,2355 @@ ALTER TABLE `academic_year_master`
 -- Indexes for table `assesment`
 --
 ALTER TABLE `assesment`
-  ADD PRIMARY KEY (`id`);
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_assesment_branch_id` (`branch_id`);
 
 --
 -- Indexes for table `assesment_master`
 --
 ALTER TABLE `assesment_master`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_assesment_master_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `assignments`
+--
+ALTER TABLE `assignments`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_assignments_branch` (`school_id`,`branch_id`);
+
+--
+-- Indexes for table `assignment_answers`
+--
+ALTER TABLE `assignment_answers`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_assignment_answers_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `assignment_questions`
+--
+ALTER TABLE `assignment_questions`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_assignment_questions_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `assignment_types`
+--
+ALTER TABLE `assignment_types`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_assignment_types_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `attendance_machine_master`
+--
+ALTER TABLE `attendance_machine_master`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `model_number` (`model_number`),
+  ADD KEY `idx_machine_status` (`status`),
+  ADD KEY `idx_machine_type` (`machine_type`),
+  ADD KEY `idx_machine_brand` (`brand`);
+
+--
+-- Indexes for table `attendance_settings`
+--
+ALTER TABLE `attendance_settings`
   ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `award_settings`
+--
+ALTER TABLE `award_settings`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `bank_account_master`
+--
+ALTER TABLE `bank_account_master`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_bank_status` (`status`),
+  ADD KEY `idx_bank_default` (`is_default`);
+
+--
+-- Indexes for table `beneficiary_master`
+--
+ALTER TABLE `beneficiary_master`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_beneficiary_master_branch` (`school_id`,`branch_id`);
+
+--
+-- Indexes for table `billing_cycle_master`
+--
+ALTER TABLE `billing_cycle_master`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_billing_cycle_code` (`code`),
+  ADD KEY `idx_billing_cycle_status` (`status`);
+
+--
+-- Indexes for table `blood_group_master`
+--
+ALTER TABLE `blood_group_master`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `branch_master`
+--
+ALTER TABLE `branch_master`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_branch_school` (`school_id`,`status`),
+  ADD KEY `idx_branch_code` (`school_id`,`branch_code`),
+  ADD KEY `idx_branch_head` (`head_user_id`);
+
+--
+-- Indexes for table `bus_master`
+--
+ALTER TABLE `bus_master`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_bus_master_branch` (`school_id`,`branch_id`);
+
+--
+-- Indexes for table `bus_operator`
+--
+ALTER TABLE `bus_operator`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `bus_to_operator`
+--
+ALTER TABLE `bus_to_operator`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_bus_to_operator_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `capacity_unit_master`
+--
+ALTER TABLE `capacity_unit_master`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `unit_code` (`unit_code`),
+  ADD KEY `idx_unit_status` (`status`);
+
+--
+-- Indexes for table `certificate_border_master`
+--
+ALTER TABLE `certificate_border_master`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_certificate_border_master_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `certificate_category`
+--
+ALTER TABLE `certificate_category`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_certificate_category_branch` (`school_id`,`branch_id`);
+
+--
+-- Indexes for table `certificate_template`
+--
+ALTER TABLE `certificate_template`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_certificate_template_branch` (`school_id`,`branch_id`);
+
+--
+-- Indexes for table `cities`
+--
+ALTER TABLE `cities`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `class_master`
+--
+ALTER TABLE `class_master`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_class_master_branch` (`school_id`,`branch_id`);
+
+--
+-- Indexes for table `company_settings`
+--
+ALTER TABLE `company_settings`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `contract_type_master`
+--
+ALTER TABLE `contract_type_master`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `countries`
+--
+ALTER TABLE `countries`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `coupons`
+--
+ALTER TABLE `coupons`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `code` (`code`);
+
+--
+-- Indexes for table `coupon_usages`
+--
+ALTER TABLE `coupon_usages`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_coupon` (`coupon_id`),
+  ADD KEY `idx_school` (`school_id`);
+
+--
+-- Indexes for table `currency_settings`
+--
+ALTER TABLE `currency_settings`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `customer_contact_information`
+--
+ALTER TABLE `customer_contact_information`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `customer_information`
+--
+ALTER TABLE `customer_information`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `days_master`
+--
+ALTER TABLE `days_master`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_days_master_branch` (`school_id`,`branch_id`);
+
+--
+-- Indexes for table `deal_agent`
+--
+ALTER TABLE `deal_agent`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `deal_agent_category`
+--
+ALTER TABLE `deal_agent_category`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `deal_category`
+--
+ALTER TABLE `deal_category`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `document_type_master`
+--
+ALTER TABLE `document_type_master`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_document_type_master_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `email_credentials`
+--
+ALTER TABLE `email_credentials`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_email_provider` (`provider`),
+  ADD KEY `idx_email_default` (`is_default`,`status`);
+
+--
+-- Indexes for table `emergency_contact`
+--
+ALTER TABLE `emergency_contact`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `employee_salary`
+--
+ALTER TABLE `employee_salary`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_employee_salary_branch` (`school_id`,`branch_id`);
+
+--
+-- Indexes for table `event`
+--
+ALTER TABLE `event`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_event_branch` (`school_id`,`branch_id`);
+
+--
+-- Indexes for table `exam_attendance`
+--
+ALTER TABLE `exam_attendance`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_exam_attendance_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `exam_master`
+--
+ALTER TABLE `exam_master`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_exam_master_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `exam_result`
+--
+ALTER TABLE `exam_result`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_exam_result_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `exam_result_subject`
+--
+ALTER TABLE `exam_result_subject`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_exam_result_subject_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `exam_schedule`
+--
+ALTER TABLE `exam_schedule`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_exam_schedule_branch` (`school_id`,`branch_id`);
+
+--
+-- Indexes for table `exam_subject_marks`
+--
+ALTER TABLE `exam_subject_marks`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_exam_subject_marks_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `exam_subject_master`
+--
+ALTER TABLE `exam_subject_master`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_exam_subject_master_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `exam_type_master`
+--
+ALTER TABLE `exam_type_master`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_exam_type_master_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `expense_category`
+--
+ALTER TABLE `expense_category`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `expense_user_role`
+--
+ALTER TABLE `expense_user_role`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `fee_components`
+--
+ALTER TABLE `fee_components`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_fee_components_branch` (`school_id`,`branch_id`);
+
+--
+-- Indexes for table `fee_invoices`
+--
+ALTER TABLE `fee_invoices`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_fee_invoices_branch` (`school_id`,`branch_id`);
+
+--
+-- Indexes for table `fee_invoice_items`
+--
+ALTER TABLE `fee_invoice_items`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_fee_invoice_items_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `fee_payments`
+--
+ALTER TABLE `fee_payments`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_fee_payments_branch` (`school_id`,`branch_id`);
+
+--
+-- Indexes for table `fee_structures`
+--
+ALTER TABLE `fee_structures`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_fee_structures_branch` (`school_id`,`branch_id`);
+
+--
+-- Indexes for table `fee_structure_components`
+--
+ALTER TABLE `fee_structure_components`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_fee_structure_components_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `filemanager`
+--
+ALTER TABLE `filemanager`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `filesharing`
+--
+ALTER TABLE `filesharing`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `file_storage_ledger`
+--
+ALTER TABLE `file_storage_ledger`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_file_storage_path` (`file_path`),
+  ADD KEY `idx_ledger_school_branch_status` (`school_id`,`branch_id`,`status`),
+  ADD KEY `idx_ledger_school_category` (`school_id`,`category`,`status`),
+  ADD KEY `idx_ledger_b2_key` (`b2_key`);
+
+--
+-- Indexes for table `gender_master`
+--
+ALTER TABLE `gender_master`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `grade_settings`
+--
+ALTER TABLE `grade_settings`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_grade_settings_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `holiday`
+--
+ALTER TABLE `holiday`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_holiday_branch` (`school_id`,`branch_id`);
+
+--
+-- Indexes for table `hostel_name_master`
+--
+ALTER TABLE `hostel_name_master`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_hostel_name_master_branch` (`school_id`,`branch_id`);
+
+--
+-- Indexes for table `hostel_room_master`
+--
+ALTER TABLE `hostel_room_master`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_hostel_room_master_branch` (`school_id`,`branch_id`);
+
+--
+-- Indexes for table `house_master`
+--
+ALTER TABLE `house_master`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_house_master_branch` (`school_id`,`branch_id`);
+
+--
+-- Indexes for table `lead_deal_stage`
+--
+ALTER TABLE `lead_deal_stage`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `lead_pipeline`
+--
+ALTER TABLE `lead_pipeline`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `lead_source`
+--
+ALTER TABLE `lead_source`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `leaves`
+--
+ALTER TABLE `leaves`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_leaves_branch` (`school_id`,`branch_id`);
+
+--
+-- Indexes for table `leaves_date`
+--
+ALTER TABLE `leaves_date`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_leaves_date_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `leave_master`
+--
+ALTER TABLE `leave_master`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_leave_master_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `lession_master`
+--
+ALTER TABLE `lession_master`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_lession_master_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `marital_master`
+--
+ALTER TABLE `marital_master`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `material_types`
+--
+ALTER TABLE `material_types`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_material_types_branch_id` (`branch_id`);
 
 --
 -- Indexes for table `message`
 --
 ALTER TABLE `message`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_msg_conv` (`school_id`,`sender`,`sender_role`,`reciver`,`receiver_role`),
+  ADD KEY `idx_msg_unread` (`school_id`,`reciver`,`receiver_role`,`seen`,`status`),
+  ADD KEY `idx_msg_time` (`school_id`,`time`),
+  ADD KEY `idx_message_branch` (`school_id`,`branch_id`);
+
+--
+-- Indexes for table `message_settings`
+--
+ALTER TABLE `message_settings`
   ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `mf_sample_warehousing`
+--
+ALTER TABLE `mf_sample_warehousing`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `mother_tongue_master`
+--
+ALTER TABLE `mother_tongue_master`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_mother_tongue_master_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `notice`
+--
+ALTER TABLE `notice`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_notice_branch` (`school_id`,`branch_id`);
+
+--
+-- Indexes for table `notice_message`
+--
+ALTER TABLE `notice_message`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_notice_message_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `notification_master`
+--
+ALTER TABLE `notification_master`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `notification_pricing_master`
+--
+ALTER TABLE `notification_pricing_master`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_notif_pricing_channel` (`channel`);
+
+--
+-- Indexes for table `notification_records`
+--
+ALTER TABLE `notification_records`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_school_channel_status` (`school_id`,`channel`,`status`),
+  ADD KEY `idx_channel_created` (`channel`,`created_at`),
+  ADD KEY `idx_recipient` (`recipient_role`,`recipient_id`),
+  ADD KEY `idx_recipient_phone` (`recipient_phone`),
+  ADD KEY `idx_status` (`status`),
+  ADD KEY `idx_provider_msg_id` (`provider_message_id`),
+  ADD KEY `idx_created_at` (`created_at`);
+
+--
+-- Indexes for table `onboarding_email_otps`
+--
+ALTER TABLE `onboarding_email_otps`
+  ADD PRIMARY KEY (`email`);
+
+--
+-- Indexes for table `online_credentials`
+--
+ALTER TABLE `online_credentials`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `operator_bank`
+--
+ALTER TABLE `operator_bank`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_school_operator` (`school_id`,`operator_id`);
+
+--
+-- Indexes for table `operator_master`
+--
+ALTER TABLE `operator_master`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_operator_master_branch` (`school_id`,`branch_id`);
+
+--
+-- Indexes for table `parent_master`
+--
+ALTER TABLE `parent_master`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_parent_master_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `parent_master_address`
+--
+ALTER TABLE `parent_master_address`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_parent_master_address_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `parent_type_master`
+--
+ALTER TABLE `parent_type_master`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `payment_credentials`
+--
+ALTER TABLE `payment_credentials`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `payment_webhook_logs`
+--
+ALTER TABLE `payment_webhook_logs`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `period_master`
+--
+ALTER TABLE `period_master`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_period_master_branch` (`school_id`,`branch_id`);
+
+--
+-- Indexes for table `permission`
+--
+ALTER TABLE `permission`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `previous_school_address`
+--
+ALTER TABLE `previous_school_address`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_previous_school_address_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `product_category`
+--
+ALTER TABLE `product_category`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `product_information`
+--
+ALTER TABLE `product_information`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `product_sub_category`
+--
+ALTER TABLE `product_sub_category`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `product_tax`
+--
+ALTER TABLE `product_tax`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `product_unit`
+--
+ALTER TABLE `product_unit`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `profile_document`
+--
+ALTER TABLE `profile_document`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `project_category`
+--
+ALTER TABLE `project_category`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `project_settings`
+--
+ALTER TABLE `project_settings`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `project_status`
+--
+ALTER TABLE `project_status`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `religion_master`
+--
+ALTER TABLE `religion_master`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_religion_master_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `rfid_card_master`
+--
+ALTER TABLE `rfid_card_master`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `card_code` (`card_code`),
+  ADD KEY `idx_rfid_card_status` (`status`),
+  ADD KEY `idx_rfid_card_type` (`card_type`);
+
+--
+-- Indexes for table `role_master`
+--
+ALTER TABLE `role_master`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `routine`
+--
+ALTER TABLE `routine`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_routine_branch` (`school_id`,`branch_id`);
+
+--
+-- Indexes for table `saas_admin_users`
+--
+ALTER TABLE `saas_admin_users`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `email` (`email`),
+  ADD KEY `fk_saas_admin_users_gender` (`gender`),
+  ADD KEY `fk_saas_admin_users_role` (`role_id`);
+
+--
+-- Indexes for table `saas_communication_settings`
+--
+ALTER TABLE `saas_communication_settings`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `saas_modules`
+--
+ALTER TABLE `saas_modules`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `module_key` (`module_key`);
+
+--
+-- Indexes for table `saas_roles`
+--
+ALTER TABLE `saas_roles`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `role_name` (`role_name`);
+
+--
+-- Indexes for table `saas_role_permissions`
+--
+ALTER TABLE `saas_role_permissions`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_saas_role_module` (`role_id`,`module_key`);
+
+--
+-- Indexes for table `school_attendance_machines`
+--
+ALTER TABLE `school_attendance_machines`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_school_device_serial` (`school_id`,`device_serial_number`),
+  ADD KEY `idx_school_machine` (`school_id`),
+  ADD KEY `fk_school_device_master` (`machine_master_id`);
+
+--
+-- Indexes for table `school_master`
+--
+ALTER TABLE `school_master`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `school_notification_ledger`
+--
+ALTER TABLE `school_notification_ledger`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_notif_ledger_school` (`school_id`,`channel`,`created_at`);
+
+--
+-- Indexes for table `school_notification_wallets`
+--
+ALTER TABLE `school_notification_wallets`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_wallet_school` (`school_id`);
+
+--
+-- Indexes for table `school_rfid_orders`
+--
+ALTER TABLE `school_rfid_orders`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `order_no` (`order_no`),
+  ADD KEY `idx_school_rfid_order` (`school_id`),
+  ADD KEY `idx_rfid_order_status` (`order_status`),
+  ADD KEY `fk_school_rfid_orders_card` (`rfid_card_id`);
+
+--
+-- Indexes for table `school_storage_orders`
+--
+ALTER TABLE `school_storage_orders`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_storage_order_school` (`school_id`),
+  ADD KEY `idx_storage_order_plan` (`storage_plan_id`),
+  ADD KEY `idx_storage_order_status` (`order_status`);
+
+--
+-- Indexes for table `school_subscriptions`
+--
+ALTER TABLE `school_subscriptions`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `section_master`
+--
+ALTER TABLE `section_master`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_section_master_branch` (`school_id`,`branch_id`);
+
+--
+-- Indexes for table `settings_salary_date`
+--
+ALTER TABLE `settings_salary_date`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_settings_salary_date_branch` (`school_id`,`branch_id`);
+
+--
+-- Indexes for table `shift_master`
+--
+ALTER TABLE `shift_master`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_shift_master_branch` (`school_id`,`branch_id`);
+
+--
+-- Indexes for table `sibilings`
+--
+ALTER TABLE `sibilings`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_sibilings_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `signup_settings`
+--
+ALTER TABLE `signup_settings`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `storage_master`
+--
+ALTER TABLE `storage_master`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_storage_status` (`status`),
+  ADD KEY `idx_storage_capacity` (`storage_capacity`),
+  ADD KEY `fk_storage_capacity_unit` (`capacity_unit_id`);
+
+--
+-- Indexes for table `student_activity`
+--
+ALTER TABLE `student_activity`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_student_activity_branch` (`school_id`,`branch_id`);
+
+--
+-- Indexes for table `student_address`
+--
+ALTER TABLE `student_address`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_student_address_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `student_assignment_attempts`
+--
+ALTER TABLE `student_assignment_attempts`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_student_assignment_attempts_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `student_assignment_submissions`
+--
+ALTER TABLE `student_assignment_submissions`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_student_assignment_submissions_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `student_attendance`
+--
+ALTER TABLE `student_attendance`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_student_attendance_branch` (`school_id`,`branch_id`);
+
+--
+-- Indexes for table `student_category_master`
+--
+ALTER TABLE `student_category_master`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_student_category_master_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `student_certificate`
+--
+ALTER TABLE `student_certificate`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_student_certificate_branch` (`school_id`,`branch_id`);
+
+--
+-- Indexes for table `student_class`
+--
+ALTER TABLE `student_class`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_student_class_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `student_document`
+--
+ALTER TABLE `student_document`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_student_document_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `student_fee_allocations`
+--
+ALTER TABLE `student_fee_allocations`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_student_fee_allocations_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `student_hostel`
+--
+ALTER TABLE `student_hostel`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_student_hostel_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `student_master`
+--
+ALTER TABLE `student_master`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_student_master_branch` (`school_id`,`branch_id`);
+
+--
+-- Indexes for table `student_medical_history`
+--
+ALTER TABLE `student_medical_history`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_student_medical_history_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `student_promotion_history`
+--
+ALTER TABLE `student_promotion_history`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `student_to_parent`
+--
+ALTER TABLE `student_to_parent`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_student_to_parent_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `student_transport`
+--
+ALTER TABLE `student_transport`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_student_transport_branch` (`school_id`,`branch_id`);
+
+--
+-- Indexes for table `study_materials`
+--
+ALTER TABLE `study_materials`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_study_materials_branch` (`school_id`,`branch_id`);
+
+--
+-- Indexes for table `subject_master`
+--
+ALTER TABLE `subject_master`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_subject_master_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `subscription_audit_logs`
+--
+ALTER TABLE `subscription_audit_logs`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_sub_audit_school` (`school_id`,`created_at`);
+
+--
+-- Indexes for table `subscription_items`
+--
+ALTER TABLE `subscription_items`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_sub_item_plan` (`sub_id`),
+  ADD KEY `idx_sub_item_status` (`status`);
+
+--
+-- Indexes for table `subscription_payment_orders`
+--
+ALTER TABLE `subscription_payment_orders`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_sub_order_no` (`order_no`),
+  ADD UNIQUE KEY `uq_sub_rzp_order` (`razorpay_order_id`),
+  ADD KEY `idx_sub_order_school` (`school_id`,`status`),
+  ADD KEY `idx_sub_order_invoice` (`invoice_no`);
+
+--
+-- Indexes for table `subscription_plans`
+--
+ALTER TABLE `subscription_plans`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `subscription_reminder_logs`
+--
+ALTER TABLE `subscription_reminder_logs`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_sub_reminder_once` (`subscription_id`,`milestone_days`,`channel`);
+
+--
+-- Indexes for table `supplier_contact_information`
+--
+ALTER TABLE `supplier_contact_information`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `supplier_information`
+--
+ALTER TABLE `supplier_information`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `support_tickets`
+--
+ALTER TABLE `support_tickets`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `ticket_number` (`ticket_number`),
+  ADD KEY `idx_st_school` (`school_id`),
+  ADD KEY `idx_st_status` (`status`),
+  ADD KEY `idx_st_priority` (`priority`),
+  ADD KEY `idx_st_category` (`category`),
+  ADD KEY `idx_st_assigned` (`assigned_to_saas_admin_id`);
+
+--
+-- Indexes for table `support_ticket_messages`
+--
+ALTER TABLE `support_ticket_messages`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_stm_ticket` (`ticket_id`);
+
+--
+-- Indexes for table `syllabus`
+--
+ALTER TABLE `syllabus`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_syllabus_branch` (`school_id`,`branch_id`);
+
+--
+-- Indexes for table `task_category_settings`
+--
+ALTER TABLE `task_category_settings`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `task_settings`
+--
+ALTER TABLE `task_settings`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `teacher_address`
+--
+ALTER TABLE `teacher_address`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_teacher_address_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `teacher_attendance`
+--
+ALTER TABLE `teacher_attendance`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_teacher_day` (`school_id`,`teacher_id`,`att_date`),
+  ADD KEY `idx_teacher_attendance_branch` (`school_id`,`branch_id`);
+
+--
+-- Indexes for table `teacher_bank`
+--
+ALTER TABLE `teacher_bank`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_teacher_bank_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `teacher_class_assign`
+--
+ALTER TABLE `teacher_class_assign`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_teacher_class_assign_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `teacher_document`
+--
+ALTER TABLE `teacher_document`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_teacher_document_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `teacher_hostel`
+--
+ALTER TABLE `teacher_hostel`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_teacher_hostel_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `teacher_master`
+--
+ALTER TABLE `teacher_master`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_teacher_master_branch` (`school_id`,`branch_id`);
+
+--
+-- Indexes for table `teacher_payroll`
+--
+ALTER TABLE `teacher_payroll`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_teacher_payroll_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `teacher_social_link`
+--
+ALTER TABLE `teacher_social_link`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_teacher_social_link_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `teacher_transport`
+--
+ALTER TABLE `teacher_transport`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_teacher_transport_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `timelog_settings`
+--
+ALTER TABLE `timelog_settings`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `trans_pickup_master`
+--
+ALTER TABLE `trans_pickup_master`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_trans_pickup_master_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `trans_route_master`
+--
+ALTER TABLE `trans_route_master`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_trans_route_master_branch` (`school_id`,`branch_id`);
+
+--
+-- Indexes for table `trans_vehicle_master`
+--
+ALTER TABLE `trans_vehicle_master`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_trans_vehicle_master_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `user_bank`
+--
+ALTER TABLE `user_bank`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_user_bank_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `user_device_tokens`
+--
+ALTER TABLE `user_device_tokens`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_user_role_endpoint` (`user_id`,`role`,`endpoint_hash`),
+  ADD KEY `idx_user_role_active` (`user_id`,`role`,`is_active`),
+  ADD KEY `idx_school_role_active` (`school_id`,`role`,`is_active`),
+  ADD KEY `idx_device_type` (`device_type`),
+  ADD KEY `idx_user_device_tokens_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `user_document`
+--
+ALTER TABLE `user_document`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_user_document_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `user_hostel`
+--
+ALTER TABLE `user_hostel`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_user_hostel_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `user_master`
+--
+ALTER TABLE `user_master`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_user_master_branch` (`school_id`,`branch_id`);
+
+--
+-- Indexes for table `user_master_attendance`
+--
+ALTER TABLE `user_master_attendance`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_user_master_attendance_branch` (`school_id`,`branch_id`);
+
+--
+-- Indexes for table `user_transport`
+--
+ALTER TABLE `user_transport`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_user_transport_branch_id` (`branch_id`);
+
+--
+-- Indexes for table `weekends`
+--
+ALTER TABLE `weekends`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_weekends_branch_id` (`branch_id`);
 
 --
 -- AUTO_INCREMENT for dumped tables
 --
 
 --
+-- AUTO_INCREMENT for table `academic_year_master`
+--
+ALTER TABLE `academic_year_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+
+--
+-- AUTO_INCREMENT for table `assesment`
+--
+ALTER TABLE `assesment`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `assesment_master`
+--
+ALTER TABLE `assesment_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `assignments`
+--
+ALTER TABLE `assignments`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+
+--
+-- AUTO_INCREMENT for table `assignment_answers`
+--
+ALTER TABLE `assignment_answers`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=41;
+
+--
+-- AUTO_INCREMENT for table `assignment_questions`
+--
+ALTER TABLE `assignment_questions`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=56;
+
+--
+-- AUTO_INCREMENT for table `assignment_types`
+--
+ALTER TABLE `assignment_types`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+
+--
+-- AUTO_INCREMENT for table `attendance_machine_master`
+--
+ALTER TABLE `attendance_machine_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
+
+--
+-- AUTO_INCREMENT for table `attendance_settings`
+--
+ALTER TABLE `attendance_settings`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `award_settings`
+--
+ALTER TABLE `award_settings`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `bank_account_master`
+--
+ALTER TABLE `bank_account_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+
+--
+-- AUTO_INCREMENT for table `beneficiary_master`
+--
+ALTER TABLE `beneficiary_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
+
+--
+-- AUTO_INCREMENT for table `billing_cycle_master`
+--
+ALTER TABLE `billing_cycle_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3072;
+
+--
+-- AUTO_INCREMENT for table `blood_group_master`
+--
+ALTER TABLE `blood_group_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=10;
+
+--
+-- AUTO_INCREMENT for table `branch_master`
+--
+ALTER TABLE `branch_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
+
+--
+-- AUTO_INCREMENT for table `bus_master`
+--
+ALTER TABLE `bus_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+
+--
+-- AUTO_INCREMENT for table `bus_operator`
+--
+ALTER TABLE `bus_operator`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `bus_to_operator`
+--
+ALTER TABLE `bus_to_operator`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
+
+--
+-- AUTO_INCREMENT for table `capacity_unit_master`
+--
+ALTER TABLE `capacity_unit_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+
+--
+-- AUTO_INCREMENT for table `certificate_border_master`
+--
+ALTER TABLE `certificate_border_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `certificate_category`
+--
+ALTER TABLE `certificate_category`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `certificate_template`
+--
+ALTER TABLE `certificate_template`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `cities`
+--
+ALTER TABLE `cities`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=48357;
+
+--
+-- AUTO_INCREMENT for table `class_master`
+--
+ALTER TABLE `class_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
+
+--
+-- AUTO_INCREMENT for table `company_settings`
+--
+ALTER TABLE `company_settings`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `contract_type_master`
+--
+ALTER TABLE `contract_type_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+
+--
+-- AUTO_INCREMENT for table `countries`
+--
+ALTER TABLE `countries`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=247;
+
+--
+-- AUTO_INCREMENT for table `coupons`
+--
+ALTER TABLE `coupons`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `coupon_usages`
+--
+ALTER TABLE `coupon_usages`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `currency_settings`
+--
+ALTER TABLE `currency_settings`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `customer_contact_information`
+--
+ALTER TABLE `customer_contact_information`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `customer_information`
+--
+ALTER TABLE `customer_information`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `days_master`
+--
+ALTER TABLE `days_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
+
+--
+-- AUTO_INCREMENT for table `deal_agent`
+--
+ALTER TABLE `deal_agent`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `deal_agent_category`
+--
+ALTER TABLE `deal_agent_category`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `deal_category`
+--
+ALTER TABLE `deal_category`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `document_type_master`
+--
+ALTER TABLE `document_type_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+
+--
+-- AUTO_INCREMENT for table `email_credentials`
+--
+ALTER TABLE `email_credentials`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+
+--
+-- AUTO_INCREMENT for table `emergency_contact`
+--
+ALTER TABLE `emergency_contact`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `employee_salary`
+--
+ALTER TABLE `employee_salary`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+
+--
+-- AUTO_INCREMENT for table `event`
+--
+ALTER TABLE `event`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `exam_attendance`
+--
+ALTER TABLE `exam_attendance`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=21;
+
+--
+-- AUTO_INCREMENT for table `exam_master`
+--
+ALTER TABLE `exam_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+
+--
+-- AUTO_INCREMENT for table `exam_result`
+--
+ALTER TABLE `exam_result`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+
+--
+-- AUTO_INCREMENT for table `exam_result_subject`
+--
+ALTER TABLE `exam_result_subject`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+
+--
+-- AUTO_INCREMENT for table `exam_schedule`
+--
+ALTER TABLE `exam_schedule`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
+
+--
+-- AUTO_INCREMENT for table `exam_subject_marks`
+--
+ALTER TABLE `exam_subject_marks`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=19;
+
+--
+-- AUTO_INCREMENT for table `exam_subject_master`
+--
+ALTER TABLE `exam_subject_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+
+--
+-- AUTO_INCREMENT for table `exam_type_master`
+--
+ALTER TABLE `exam_type_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
+
+--
+-- AUTO_INCREMENT for table `expense_category`
+--
+ALTER TABLE `expense_category`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `expense_user_role`
+--
+ALTER TABLE `expense_user_role`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `fee_components`
+--
+ALTER TABLE `fee_components`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+
+--
+-- AUTO_INCREMENT for table `fee_invoices`
+--
+ALTER TABLE `fee_invoices`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+
+--
+-- AUTO_INCREMENT for table `fee_invoice_items`
+--
+ALTER TABLE `fee_invoice_items`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+
+--
+-- AUTO_INCREMENT for table `fee_payments`
+--
+ALTER TABLE `fee_payments`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+
+--
+-- AUTO_INCREMENT for table `fee_structures`
+--
+ALTER TABLE `fee_structures`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+
+--
+-- AUTO_INCREMENT for table `fee_structure_components`
+--
+ALTER TABLE `fee_structure_components`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+
+--
+-- AUTO_INCREMENT for table `filemanager`
+--
+ALTER TABLE `filemanager`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `filesharing`
+--
+ALTER TABLE `filesharing`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `file_storage_ledger`
+--
+ALTER TABLE `file_storage_ledger`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=41;
+
+--
+-- AUTO_INCREMENT for table `gender_master`
+--
+ALTER TABLE `gender_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+
+--
+-- AUTO_INCREMENT for table `grade_settings`
+--
+ALTER TABLE `grade_settings`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=10;
+
+--
+-- AUTO_INCREMENT for table `holiday`
+--
+ALTER TABLE `holiday`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `hostel_name_master`
+--
+ALTER TABLE `hostel_name_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+
+--
+-- AUTO_INCREMENT for table `hostel_room_master`
+--
+ALTER TABLE `hostel_room_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+
+--
+-- AUTO_INCREMENT for table `house_master`
+--
+ALTER TABLE `house_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+
+--
+-- AUTO_INCREMENT for table `lead_deal_stage`
+--
+ALTER TABLE `lead_deal_stage`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `lead_pipeline`
+--
+ALTER TABLE `lead_pipeline`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `lead_source`
+--
+ALTER TABLE `lead_source`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `leaves`
+--
+ALTER TABLE `leaves`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+
+--
+-- AUTO_INCREMENT for table `leaves_date`
+--
+ALTER TABLE `leaves_date`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+
+--
+-- AUTO_INCREMENT for table `leave_master`
+--
+ALTER TABLE `leave_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
+
+--
+-- AUTO_INCREMENT for table `lession_master`
+--
+ALTER TABLE `lession_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `marital_master`
+--
+ALTER TABLE `marital_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+
+--
+-- AUTO_INCREMENT for table `material_types`
+--
+ALTER TABLE `material_types`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+
+--
 -- AUTO_INCREMENT for table `message`
 --
 ALTER TABLE `message`
-  MODIFY `id` int(15) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `id` int(15) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+
+--
+-- AUTO_INCREMENT for table `message_settings`
+--
+ALTER TABLE `message_settings`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `mf_sample_warehousing`
+--
+ALTER TABLE `mf_sample_warehousing`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `mother_tongue_master`
+--
+ALTER TABLE `mother_tongue_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+
+--
+-- AUTO_INCREMENT for table `notice`
+--
+ALTER TABLE `notice`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+
+--
+-- AUTO_INCREMENT for table `notice_message`
+--
+ALTER TABLE `notice_message`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+
+--
+-- AUTO_INCREMENT for table `notification_master`
+--
+ALTER TABLE `notification_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `notification_pricing_master`
+--
+ALTER TABLE `notification_pricing_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `notification_records`
+--
+ALTER TABLE `notification_records`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `online_credentials`
+--
+ALTER TABLE `online_credentials`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `operator_bank`
+--
+ALTER TABLE `operator_bank`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `operator_master`
+--
+ALTER TABLE `operator_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+
+--
+-- AUTO_INCREMENT for table `parent_master`
+--
+ALTER TABLE `parent_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=165;
+
+--
+-- AUTO_INCREMENT for table `parent_master_address`
+--
+ALTER TABLE `parent_master_address`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=522;
+
+--
+-- AUTO_INCREMENT for table `parent_type_master`
+--
+ALTER TABLE `parent_type_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `payment_credentials`
+--
+ALTER TABLE `payment_credentials`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+
+--
+-- AUTO_INCREMENT for table `payment_webhook_logs`
+--
+ALTER TABLE `payment_webhook_logs`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `period_master`
+--
+ALTER TABLE `period_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
+
+--
+-- AUTO_INCREMENT for table `permission`
+--
+ALTER TABLE `permission`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=120;
+
+--
+-- AUTO_INCREMENT for table `previous_school_address`
+--
+ALTER TABLE `previous_school_address`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=189;
+
+--
+-- AUTO_INCREMENT for table `product_category`
+--
+ALTER TABLE `product_category`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `product_information`
+--
+ALTER TABLE `product_information`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `product_sub_category`
+--
+ALTER TABLE `product_sub_category`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `product_tax`
+--
+ALTER TABLE `product_tax`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `product_unit`
+--
+ALTER TABLE `product_unit`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `profile_document`
+--
+ALTER TABLE `profile_document`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `project_category`
+--
+ALTER TABLE `project_category`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `project_settings`
+--
+ALTER TABLE `project_settings`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `project_status`
+--
+ALTER TABLE `project_status`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `religion_master`
+--
+ALTER TABLE `religion_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+
+--
+-- AUTO_INCREMENT for table `rfid_card_master`
+--
+ALTER TABLE `rfid_card_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `role_master`
+--
+ALTER TABLE `role_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+
+--
+-- AUTO_INCREMENT for table `routine`
+--
+ALTER TABLE `routine`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=21;
+
+--
+-- AUTO_INCREMENT for table `saas_admin_users`
+--
+ALTER TABLE `saas_admin_users`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+
+--
+-- AUTO_INCREMENT for table `saas_modules`
+--
+ALTER TABLE `saas_modules`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `saas_roles`
+--
+ALTER TABLE `saas_roles`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `saas_role_permissions`
+--
+ALTER TABLE `saas_role_permissions`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `school_attendance_machines`
+--
+ALTER TABLE `school_attendance_machines`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+
+--
+-- AUTO_INCREMENT for table `school_master`
+--
+ALTER TABLE `school_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+
+--
+-- AUTO_INCREMENT for table `school_notification_ledger`
+--
+ALTER TABLE `school_notification_ledger`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `school_notification_wallets`
+--
+ALTER TABLE `school_notification_wallets`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `school_rfid_orders`
+--
+ALTER TABLE `school_rfid_orders`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `school_storage_orders`
+--
+ALTER TABLE `school_storage_orders`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `school_subscriptions`
+--
+ALTER TABLE `school_subscriptions`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+
+--
+-- AUTO_INCREMENT for table `section_master`
+--
+ALTER TABLE `section_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=15;
+
+--
+-- AUTO_INCREMENT for table `settings_salary_date`
+--
+ALTER TABLE `settings_salary_date`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `shift_master`
+--
+ALTER TABLE `shift_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+
+--
+-- AUTO_INCREMENT for table `sibilings`
+--
+ALTER TABLE `sibilings`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `signup_settings`
+--
+ALTER TABLE `signup_settings`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `storage_master`
+--
+ALTER TABLE `storage_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+
+--
+-- AUTO_INCREMENT for table `student_activity`
+--
+ALTER TABLE `student_activity`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `student_address`
+--
+ALTER TABLE `student_address`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=86;
+
+--
+-- AUTO_INCREMENT for table `student_assignment_attempts`
+--
+ALTER TABLE `student_assignment_attempts`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+
+--
+-- AUTO_INCREMENT for table `student_assignment_submissions`
+--
+ALTER TABLE `student_assignment_submissions`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=16;
+
+--
+-- AUTO_INCREMENT for table `student_attendance`
+--
+ALTER TABLE `student_attendance`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `student_category_master`
+--
+ALTER TABLE `student_category_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+
+--
+-- AUTO_INCREMENT for table `student_certificate`
+--
+ALTER TABLE `student_certificate`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `student_class`
+--
+ALTER TABLE `student_class`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `student_document`
+--
+ALTER TABLE `student_document`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `student_fee_allocations`
+--
+ALTER TABLE `student_fee_allocations`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=167;
+
+--
+-- AUTO_INCREMENT for table `student_hostel`
+--
+ALTER TABLE `student_hostel`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `student_master`
+--
+ALTER TABLE `student_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=84;
+
+--
+-- AUTO_INCREMENT for table `student_medical_history`
+--
+ALTER TABLE `student_medical_history`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=84;
+
+--
+-- AUTO_INCREMENT for table `student_promotion_history`
+--
+ALTER TABLE `student_promotion_history`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `student_to_parent`
+--
+ALTER TABLE `student_to_parent`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=84;
+
+--
+-- AUTO_INCREMENT for table `student_transport`
+--
+ALTER TABLE `student_transport`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `study_materials`
+--
+ALTER TABLE `study_materials`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+
+--
+-- AUTO_INCREMENT for table `subject_master`
+--
+ALTER TABLE `subject_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=17;
+
+--
+-- AUTO_INCREMENT for table `subscription_audit_logs`
+--
+ALTER TABLE `subscription_audit_logs`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+
+--
+-- AUTO_INCREMENT for table `subscription_items`
+--
+ALTER TABLE `subscription_items`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=17;
+
+--
+-- AUTO_INCREMENT for table `subscription_payment_orders`
+--
+ALTER TABLE `subscription_payment_orders`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+
+--
+-- AUTO_INCREMENT for table `subscription_plans`
+--
+ALTER TABLE `subscription_plans`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=13;
+
+--
+-- AUTO_INCREMENT for table `subscription_reminder_logs`
+--
+ALTER TABLE `subscription_reminder_logs`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `supplier_contact_information`
+--
+ALTER TABLE `supplier_contact_information`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `supplier_information`
+--
+ALTER TABLE `supplier_information`
+  MODIFY `id` int(10) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `support_tickets`
+--
+ALTER TABLE `support_tickets`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `support_ticket_messages`
+--
+ALTER TABLE `support_ticket_messages`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `syllabus`
+--
+ALTER TABLE `syllabus`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+
+--
+-- AUTO_INCREMENT for table `task_category_settings`
+--
+ALTER TABLE `task_category_settings`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `task_settings`
+--
+ALTER TABLE `task_settings`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `teacher_address`
+--
+ALTER TABLE `teacher_address`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+
+--
+-- AUTO_INCREMENT for table `teacher_attendance`
+--
+ALTER TABLE `teacher_attendance`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+
+--
+-- AUTO_INCREMENT for table `teacher_bank`
+--
+ALTER TABLE `teacher_bank`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+
+--
+-- AUTO_INCREMENT for table `teacher_class_assign`
+--
+ALTER TABLE `teacher_class_assign`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=21;
+
+--
+-- AUTO_INCREMENT for table `teacher_document`
+--
+ALTER TABLE `teacher_document`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `teacher_hostel`
+--
+ALTER TABLE `teacher_hostel`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `teacher_master`
+--
+ALTER TABLE `teacher_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+
+--
+-- AUTO_INCREMENT for table `teacher_payroll`
+--
+ALTER TABLE `teacher_payroll`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+
+--
+-- AUTO_INCREMENT for table `teacher_social_link`
+--
+ALTER TABLE `teacher_social_link`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+
+--
+-- AUTO_INCREMENT for table `teacher_transport`
+--
+ALTER TABLE `teacher_transport`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `timelog_settings`
+--
+ALTER TABLE `timelog_settings`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `trans_pickup_master`
+--
+ALTER TABLE `trans_pickup_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `trans_route_master`
+--
+ALTER TABLE `trans_route_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+
+--
+-- AUTO_INCREMENT for table `trans_vehicle_master`
+--
+ALTER TABLE `trans_vehicle_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `user_bank`
+--
+ALTER TABLE `user_bank`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+
+--
+-- AUTO_INCREMENT for table `user_device_tokens`
+--
+ALTER TABLE `user_device_tokens`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=465;
+
+--
+-- AUTO_INCREMENT for table `user_document`
+--
+ALTER TABLE `user_document`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `user_hostel`
+--
+ALTER TABLE `user_hostel`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `user_master`
+--
+ALTER TABLE `user_master`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
+
+--
+-- AUTO_INCREMENT for table `user_master_attendance`
+--
+ALTER TABLE `user_master_attendance`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+
+--
+-- AUTO_INCREMENT for table `user_transport`
+--
+ALTER TABLE `user_transport`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `weekends`
+--
+ALTER TABLE `weekends`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
+
+--
+-- Constraints for dumped tables
+--
+
+--
+-- Constraints for table `saas_admin_users`
+--
+ALTER TABLE `saas_admin_users`
+  ADD CONSTRAINT `fk_saas_admin_users_gender` FOREIGN KEY (`gender`) REFERENCES `gender_master` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_saas_admin_users_role` FOREIGN KEY (`role_id`) REFERENCES `saas_roles` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+--
+-- Constraints for table `saas_role_permissions`
+--
+ALTER TABLE `saas_role_permissions`
+  ADD CONSTRAINT `fk_saas_role_perm_role` FOREIGN KEY (`role_id`) REFERENCES `saas_roles` (`id`) ON DELETE CASCADE;
+
+--
+-- Constraints for table `school_attendance_machines`
+--
+ALTER TABLE `school_attendance_machines`
+  ADD CONSTRAINT `fk_school_device_master` FOREIGN KEY (`machine_master_id`) REFERENCES `attendance_machine_master` (`id`);
+
+--
+-- Constraints for table `school_rfid_orders`
+--
+ALTER TABLE `school_rfid_orders`
+  ADD CONSTRAINT `fk_school_rfid_orders_card` FOREIGN KEY (`rfid_card_id`) REFERENCES `rfid_card_master` (`id`);
+
+--
+-- Constraints for table `storage_master`
+--
+ALTER TABLE `storage_master`
+  ADD CONSTRAINT `fk_storage_capacity_unit` FOREIGN KEY (`capacity_unit_id`) REFERENCES `capacity_unit_master` (`id`) ON UPDATE CASCADE;
+
+--
+-- Constraints for table `subscription_items`
+--
+ALTER TABLE `subscription_items`
+  ADD CONSTRAINT `fk_subscription_items_plan` FOREIGN KEY (`sub_id`) REFERENCES `subscription_plans` (`id`) ON DELETE CASCADE;
+
+--
+-- Constraints for table `support_ticket_messages`
+--
+ALTER TABLE `support_ticket_messages`
+  ADD CONSTRAINT `fk_stm_ticket` FOREIGN KEY (`ticket_id`) REFERENCES `support_tickets` (`id`) ON DELETE CASCADE;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

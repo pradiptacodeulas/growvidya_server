@@ -221,6 +221,10 @@ router.post('/settings/email-delivery/test', checkPermission('email_delivery', '
 router.patch('/settings/email/active-provider', checkPermission('email_delivery', 'can_edit'), SaasAdminController.setActiveEmailProvider);
 router.patch('/settings/email-delivery/active-provider', checkPermission('email_delivery', 'can_edit'), SaasAdminController.setActiveEmailProvider);
 
+// Settings — Platform Footer Configuration
+router.get('/settings/footer', checkPermission(['footer_settings', 'payment_gateway', 'email_delivery', 'email_settings'], 'can_view'), SaasAdminController.getFooterSetting);
+router.put('/settings/footer', checkPermission(['footer_settings', 'payment_gateway', 'email_delivery', 'email_settings'], ['can_edit', 'can_manage', 'can_add']), SaasAdminController.updateFooterSetting);
+
 // Help & Support Tickets Management
 router.get('/support-tickets', checkPermission('support_tickets', 'can_view'), SupportTicketController.getSaasTickets);
 router.get('/support-tickets/assignees', checkPermission('support_tickets', 'can_view'), SupportTicketController.getSaasAssignees);

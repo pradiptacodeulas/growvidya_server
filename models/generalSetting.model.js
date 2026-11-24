@@ -12,8 +12,7 @@ class GeneralSettingModel {
         id, 
         school_name AS school_title, 
         school_code, 
-        school_logo, 
-        footer
+        school_logo
        FROM school_master 
        WHERE id = ? AND status = 1
        LIMIT 1`,
@@ -29,7 +28,6 @@ class GeneralSettingModel {
       school_name: school.school_title || '',
       school_code: school.school_code || '',
       school_logo: school.school_logo || '',
-      footer: school.footer || '',
     };
   }
 
@@ -57,7 +55,6 @@ class GeneralSettingModel {
         established_year, 
         school_type, 
         affiliation_board, 
-        footer, 
         status,
         bank_name,
         account_holder_name,
@@ -148,7 +145,6 @@ class GeneralSettingModel {
       state,
       city,
       postal_code,
-      footer,
       established_year,
       website,
       affiliation_board,
@@ -180,7 +176,6 @@ class GeneralSettingModel {
         state = COALESCE(?, state),
         city = COALESCE(?, city),
         postal_code = COALESCE(?, postal_code),
-        footer = COALESCE(?, footer),
         established_year = COALESCE(?, established_year),
         website = COALESCE(?, website),
         affiliation_board = COALESCE(?, affiliation_board),
@@ -204,7 +199,6 @@ class GeneralSettingModel {
         state ? Number(state) : null,
         city ? Number(city) : null,
         postal_code,
-        footer,
         established_year,
         website,
         affiliation_board,
@@ -253,7 +247,7 @@ class GeneralSettingModel {
     }
 
     const [updatedRows] = await pool.query(
-      `SELECT id, school_name, school_code, school_logo, qr_code, email, phone_number, website, footer, bank_name, account_holder_name, account_number, ifsc_code, branch_name, upi_id FROM school_master WHERE id = ?`,
+      `SELECT id, school_name, school_code, school_logo, qr_code, email, phone_number, website, bank_name, account_holder_name, account_number, ifsc_code, branch_name, upi_id FROM school_master WHERE id = ?`,
       [schoolId]
     );
 

@@ -5,7 +5,7 @@ const ApiResponse = require('../utils/api.response');
 
 class SchoolController {
   /**
-   * Fetch non-sensitive school branding configuration (name, logo, footer)
+   * Fetch non-sensitive school branding configuration (name, code, logo)
    * Strictly resolves schoolId from the authenticated session token.
    */
   static async getSchoolConfig(req, res, next) {

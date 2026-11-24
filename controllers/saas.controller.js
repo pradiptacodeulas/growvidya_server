@@ -5,6 +5,7 @@ const { saveBase64File } = require('../utils/file.util');
 const SaasModel = require('../models/saas.model');
 const SubscriptionModel = require('../models/subscription.model');
 const CouponModel = require('../models/coupon.model');
+const FooterSettingModel = require('../models/footerSetting.model');
 const SubscriptionPolicyService = require('../services/subscriptionPolicy.service');
 const SubscriptionFulfillmentService = require('../services/subscriptionFulfillment.service');
 const ApiResponse = require('../utils/api.response');
@@ -32,6 +33,29 @@ class SaasController {
     try {
       const plans = await SaasModel.getActivePlans();
       return ApiResponse.success(res, 'Subscription plans fetched successfully.', plans);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/v1/saas/footer
+   * Get global platform footer setting configured by SaaS Admin
+   */
+  static async getFooterSetting(req, res, next) {
+    try {
+      const setting = await FooterSettingModel.getCurrent();
+      return ApiResponse.success(
+        res,
+        'Footer setting fetched successfully.',
+        setting
+          ? {
+              id: setting.id,
+              footer_text: setting.footer_text,
+              updated_at: setting.updated_at,
+            }
+          : null
+      );
     } catch (error) {
       next(error);
     }
@@ -1121,7 +1145,6 @@ class SaasController {
           schoolId: user.school_id,
           schoolName: user.school_name || '',
           schoolLogo: user.school_logo || null,
-          schoolFooter: user.school_footer || null,
           registrationType: user.registration_type || 'single',
           branchId: user.branch_id || null,
           branch_id: user.branch_id || null,

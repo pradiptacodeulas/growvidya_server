@@ -86,8 +86,6 @@ class SaasModel {
         included_sms_credits: Math.max(0, parseInt(row.included_sms_credits, 10) || 0),
         is_popular: Number(row.is_popular) === 1 ? 1 : 0,
         max_students: Number(row.max_students) || 0,
-        max_teachers: 0, // Unlimited teachers on all plans
-        max_branches: 0, // Unlimited branches on all plans
         cycle_meta: getBillingCycleMeta(row.billing_cycle, row.free_trial_days),
         features: featuresMap,
         items: items || [],
@@ -499,9 +497,6 @@ class SaasModel {
 
       // 6. Insert into school_master
       const schoolName = (schoolData.school_name || '').trim();
-      const currentYear = new Date().getFullYear();
-      const defaultFooter = `Copyright © ${currentYear} ${schoolName} - School Management System`;
-      const footerText = (schoolData.footer || '').trim() || defaultFooter;
 
       const countryId = schoolData.country && !isNaN(schoolData.country) ? parseInt(schoolData.country, 10) : 101;
       const stateId = schoolData.state && !isNaN(schoolData.state) ? parseInt(schoolData.state, 10) : null;
@@ -512,8 +507,8 @@ class SaasModel {
         `INSERT INTO school_master (
           school_name, school_code, school_logo, address, city, state, country,
           postal_code, phone_number, email, website, established_year,
-          school_type, affiliation_board, medium_of_instruction, registration_type, footer, status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW(), NOW())`,
+          school_type, affiliation_board, medium_of_instruction, registration_type, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW(), NOW())`,
         [
           schoolName,
           schoolCode,
@@ -531,7 +526,6 @@ class SaasModel {
           (schoolData.affiliation_board || '').trim() || null,
           (schoolData.medium_of_instruction || '').trim() || null,
           regType,
-          footerText,
         ]
       );
       const schoolId = schoolResult.insertId;

@@ -50,7 +50,6 @@ class AdminGeneralSettingController {
         schoolLogo: updatedSchool?.school_logo || data.school_logo,
         qrCode: updatedSchool?.qr_code || data.qr_code,
         schoolName: updatedSchool?.school_name || data.school_title,
-        footer: updatedSchool?.footer !== undefined ? updatedSchool.footer : data.footer,
         school: updatedSchool,
       });
     } catch (error) {

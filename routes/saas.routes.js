@@ -5,6 +5,7 @@ const StorageMasterController = require('../controllers/storageMaster.controller
 
 // Public SaaS routes (no auth required)
 router.get('/plans', SaasController.getPlans);
+router.get('/footer', SaasController.getFooterSetting);
 router.get('/config-catalog', SaasController.getConfigCatalog);
 router.get('/storage-plans', StorageMasterController.getActive);
 router.get('/trial-eligibility', SaasController.checkTrialEligibility);

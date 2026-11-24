@@ -5,6 +5,7 @@ const CouponModel = require('../models/coupon.model');
 const SubscriptionItemModel = require('../models/subscriptionItem.model');
 const RazorpayCredentialModel = require('../models/razorpayCredential.model');
 const EmailCredentialModel = require('../models/emailCredential.model');
+const FooterSettingModel = require('../models/footerSetting.model');
 const EmailService = require('../services/email.service');
 const SubscriptionFulfillmentService = require('../services/subscriptionFulfillment.service');
 const SubscriptionAlertService = require('../services/subscriptionAlert.service');
@@ -1899,6 +1900,37 @@ class SaasAdminController {
         `Test email sent successfully to ${toEmail} via ${label}.`,
         result
       );
+    } catch (error) {
+      if (error.statusCode === 400) {
+        return ApiResponse.error(res, error.message, null, 400);
+      }
+      next(error);
+    }
+  }
+
+  // ========================================================
+  // 12. SETTINGS — PLATFORM FOOTER CONFIGURATION
+  // ========================================================
+  static async getFooterSetting(req, res, next) {
+    try {
+      const setting = await FooterSettingModel.getCurrent();
+      return ApiResponse.success(res, 'Footer setting retrieved successfully.', setting);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async updateFooterSetting(req, res, next) {
+    try {
+      const body = req.body || {};
+      const footer_text = body.footer_text !== undefined ? body.footer_text : body.footerText;
+
+      const updated = await FooterSettingModel.upsert({
+        footer_text,
+        updated_by: req.saasAdmin?.id || null,
+      });
+
+      return ApiResponse.success(res, 'Footer setting updated successfully.', updated);
     } catch (error) {
       if (error.statusCode === 400) {
         return ApiResponse.error(res, error.message, null, 400);
