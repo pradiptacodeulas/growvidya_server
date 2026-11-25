@@ -52,6 +52,7 @@ router.get('/subscriptions', checkPermission(['subscriptions', 'schools'], 'can_
 router.get('/subscriptions/assign-options', checkPermission(['subscriptions', 'schools'], ['can_manage', 'can_view']), SaasAdminController.getAssignSubscriptionOptions);
 router.post('/subscriptions/manual-assign', checkPermission(['subscriptions', 'schools'], 'can_manage'), SaasAdminController.manualAssignSubscription);
 router.get('/subscriptions/orders/:orderNo/invoice', checkPermission(['subscriptions', 'schools'], 'can_view'), SaasAdminController.getSubscriptionInvoice);
+router.get('/subscriptions/orders/:orderNo/invoice-pdf', checkPermission(['subscriptions', 'schools'], 'can_view'), SaasAdminController.getSubscriptionInvoicePdf);
 router.get('/subscriptions/:id', checkPermission(['subscriptions', 'schools'], 'can_view'), SaasAdminController.getSubscriptionById);
 router.post('/subscriptions/:id/approve', checkPermission(['subscriptions', 'schools'], 'can_manage'), SaasAdminController.approveSubscription);
 router.post('/subscriptions/:id/reject', checkPermission(['subscriptions', 'schools'], 'can_manage'), SaasAdminController.rejectSubscription);
@@ -224,6 +225,12 @@ router.patch('/settings/email-delivery/active-provider', checkPermission('email_
 // Settings — Platform Footer Configuration
 router.get('/settings/footer', checkPermission(['footer_settings', 'payment_gateway', 'email_delivery', 'email_settings'], 'can_view'), SaasAdminController.getFooterSetting);
 router.put('/settings/footer', checkPermission(['footer_settings', 'payment_gateway', 'email_delivery', 'email_settings'], ['can_edit', 'can_manage', 'can_add']), SaasAdminController.updateFooterSetting);
+
+// Settings — Platform GST & Tax Configuration
+router.get('/settings/gst', checkPermission(['gst_settings', 'footer_settings', 'payment_gateway', 'email_delivery', 'email_settings'], 'can_view'), SaasAdminController.getGstSetting);
+router.put('/settings/gst', checkPermission(['gst_settings', 'footer_settings', 'payment_gateway', 'email_delivery', 'email_settings'], ['can_edit', 'can_manage', 'can_add']), SaasAdminController.updateGstSetting);
+router.get('/locations/countries', SaasAdminController.getCountries);
+router.get('/locations/states/:countryId', SaasAdminController.getStates);
 
 // Help & Support Tickets Management
 router.get('/support-tickets', checkPermission('support_tickets', 'can_view'), SupportTicketController.getSaasTickets);

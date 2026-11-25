@@ -40,6 +40,7 @@ router.get('/config-catalog', superAdminBillingGuard, AdminSubscriptionControlle
 router.get('/orders', superAdminBillingGuard, AdminSubscriptionController.getBillingHistory);
 router.get('/orders/:orderNo', superAdminBillingGuard, AdminSubscriptionController.getOrderDetails);
 router.get('/orders/:orderNo/invoice', superAdminBillingGuard, AdminSubscriptionController.getOrderDetails);
+router.get('/orders/:orderNo/invoice-pdf', superAdminBillingGuard, AdminSubscriptionController.getOrderInvoicePdf);
 
 router.post('/create-order', superAdminBillingGuard, AdminSubscriptionController.createSubscriptionOrder);
 router.post('/verify-payment', superAdminBillingGuard, AdminSubscriptionController.verifySubscriptionPayment);

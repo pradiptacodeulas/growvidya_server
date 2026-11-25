@@ -381,10 +381,14 @@ class SubscriptionFulfillmentService {
            order_no, school_id, order_type, action_type, plan_id, billing_cycle,
            plan_amount, storage_plan_id, storage_qty, storage_amount,
            machines_amount, rfid_amount, notifications_amount, subtotal_amount,
-           coupon_id, coupon_code, discount_amount, grand_total, currency,
+           coupon_id, coupon_code, discount_amount,
+           taxable_amount, tax_type, billing_state_id, billing_state_name,
+           cgst_percentage, cgst_amount, sgst_percentage, sgst_amount,
+           igst_percentage, igst_amount, tax_percentage, tax_amount,
+           grand_total, currency,
            payment_method, razorpay_order_id, utr_number, bank_account_id, shipping_address,
            payload_snapshot_json, status
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'INR', ?, ?, ?, ?, ?, ?, ?)`,
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'INR', ?, ?, ?, ?, ?, ?, ?)`,
         [
           orderNo,
           parsedSchoolId,
@@ -403,6 +407,18 @@ class SubscriptionFulfillmentService {
           verifiedCalc.couponInfo?.id || null,
           verifiedCalc.couponInfo?.code || null,
           verifiedCalc.discountAmount || 0,
+          verifiedCalc.taxableAmount !== undefined ? verifiedCalc.taxableAmount : Math.max(0, (verifiedCalc.subtotalAmount || 0) - (verifiedCalc.discountAmount || 0)),
+          verifiedCalc.taxType || verifiedCalc.breakdown?.tax_type || 'none',
+          verifiedCalc.billingStateId || verifiedCalc.breakdown?.billing_state_id || null,
+          verifiedCalc.billingStateName || verifiedCalc.breakdown?.billing_state_name || null,
+          verifiedCalc.cgstPercentage || verifiedCalc.breakdown?.cgst_percentage || 0,
+          verifiedCalc.cgstAmount || verifiedCalc.breakdown?.cgst_amount || 0,
+          verifiedCalc.sgstPercentage || verifiedCalc.breakdown?.sgst_percentage || 0,
+          verifiedCalc.sgstAmount || verifiedCalc.breakdown?.sgst_amount || 0,
+          verifiedCalc.igstPercentage || verifiedCalc.breakdown?.igst_percentage || 0,
+          verifiedCalc.igstAmount || verifiedCalc.breakdown?.igst_amount || 0,
+          verifiedCalc.taxPercentage || verifiedCalc.breakdown?.tax_percentage || 0,
+          verifiedCalc.taxAmount || verifiedCalc.breakdown?.tax_amount || 0,
           verifiedCalc.grandTotal || 0,
           paymentMethod,
           razorpayOrderId || null,
@@ -1806,6 +1822,8 @@ class SubscriptionFulfillmentService {
              p.plan_name, p.plan_code, p.max_students, p.included_storage_gb,
              ss.start_date AS sub_start_date, ss.end_date AS sub_end_date, ss.status AS sub_status,
              sm.school_name, sm.school_code, sm.email AS school_email, sm.phone_number AS school_phone, sm.address AS school_address,
+             sm.postal_code AS school_postal_code, sm.state AS school_state_id,
+             st.state AS school_state_name, ct.name AS school_city_name,
              bam.account_title AS company_bank_title,
              bam.beneficiary_name AS company_bank_beneficiary,
              bam.account_number AS company_bank_account_number,
@@ -1817,6 +1835,8 @@ class SubscriptionFulfillmentService {
       LEFT JOIN subscription_plans p ON o.plan_id = p.id
       LEFT JOIN school_subscriptions ss ON o.activated_subscription_id = ss.id
       LEFT JOIN school_master sm ON o.school_id = sm.id
+      LEFT JOIN states st ON sm.state = st.id_state
+      LEFT JOIN cities ct ON sm.city = ct.id
       LEFT JOIN bank_account_master bam ON o.bank_account_id = bam.id
     `;
     const params = [];
@@ -1926,6 +1946,25 @@ class SubscriptionFulfillmentService {
     const schoolEmail = row.school_email || snapshot?.extra?.email || null;
     const schoolPhone = row.school_phone || snapshot?.extra?.phone || null;
     const schoolAddress = row.school_address || row.shipping_address || null;
+    const schoolCity = row.school_city_name || snapshot?.extra?.onboarding_registration?.school?.city_name || null;
+    const schoolState = row.billing_state_name || row.school_state_name || breakdown.billing_state_name || null;
+    const schoolPostalCode = row.school_postal_code || snapshot?.extra?.onboarding_registration?.school?.postal_code || null;
+
+    const subtotalAmount = parseFloat(row.subtotal_amount) || 0;
+    const discountAmount = parseFloat(row.discount_amount) || 0;
+    const taxableAmount =
+      row.taxable_amount !== undefined && row.taxable_amount !== null && parseFloat(row.taxable_amount) > 0
+        ? parseFloat(row.taxable_amount)
+        : Math.max(0, Math.round((subtotalAmount - discountAmount) * 100) / 100);
+    const taxType = row.tax_type && row.tax_type !== 'none' ? row.tax_type : (breakdown.tax_type || 'none');
+    const cgstPercentage = parseFloat(row.cgst_percentage) || parseFloat(breakdown.cgst_percentage) || 0;
+    const cgstAmount = parseFloat(row.cgst_amount) || parseFloat(breakdown.cgst_amount) || 0;
+    const sgstPercentage = parseFloat(row.sgst_percentage) || parseFloat(breakdown.sgst_percentage) || 0;
+    const sgstAmount = parseFloat(row.sgst_amount) || parseFloat(breakdown.sgst_amount) || 0;
+    const igstPercentage = parseFloat(row.igst_percentage) || parseFloat(breakdown.igst_percentage) || 0;
+    const igstAmount = parseFloat(row.igst_amount) || parseFloat(breakdown.igst_amount) || 0;
+    const taxPercentage = parseFloat(row.tax_percentage) || parseFloat(breakdown.tax_percentage) || 0;
+    const taxAmount = parseFloat(row.tax_amount) || parseFloat(breakdown.tax_amount) || 0;
 
     return {
       id: row.id,
@@ -1937,12 +1976,18 @@ class SubscriptionFulfillmentService {
       school_email: schoolEmail,
       school_phone: schoolPhone,
       school_address: schoolAddress,
+      school_city: schoolCity,
+      school_state: schoolState,
+      school_postal_code: schoolPostalCode,
       school: {
         name: schoolName,
         code: schoolCode,
         email: schoolEmail,
         phone: schoolPhone,
         address: schoolAddress,
+        city: schoolCity,
+        state: schoolState,
+        postal_code: schoolPostalCode,
       },
       order_type: row.order_type,
       action_type: row.action_type,
@@ -1956,10 +2001,21 @@ class SubscriptionFulfillmentService {
       rfid_amount: rfidAmount,
       notifications_amount: notificationsAmount,
       addons_amount: addonsAmount,
-      subtotal_amount: parseFloat(row.subtotal_amount) || 0,
+      subtotal_amount: subtotalAmount,
       coupon_code: row.coupon_code || null,
-      discount_amount: parseFloat(row.discount_amount) || 0,
-      tax_amount: 0, // Zero GST
+      discount_amount: discountAmount,
+      taxable_amount: taxableAmount,
+      tax_type: taxType,
+      billing_state_id: row.billing_state_id || breakdown.billing_state_id || row.school_state_id || null,
+      billing_state_name: schoolState,
+      cgst_percentage: cgstPercentage,
+      cgst_amount: cgstAmount,
+      sgst_percentage: sgstPercentage,
+      sgst_amount: sgstAmount,
+      igst_percentage: igstPercentage,
+      igst_amount: igstAmount,
+      tax_percentage: taxPercentage,
+      tax_amount: taxAmount,
       grand_total: parseFloat(row.grand_total) || 0,
       currency: row.currency || 'INR',
       payment_method: row.payment_method,
@@ -2006,7 +2062,11 @@ class SubscriptionFulfillmentService {
     const [orders] = await pool.query(
       `SELECT o.id, o.order_no, o.invoice_no, o.order_type, o.action_type, o.plan_id,
               COALESCE(p.plan_name, 'Add-ons & Credits') AS plan_name,
-              o.billing_cycle, o.subtotal_amount, o.coupon_code, o.discount_amount, o.grand_total,
+              o.billing_cycle, o.subtotal_amount, o.coupon_code, o.discount_amount,
+              o.taxable_amount, o.tax_type, o.billing_state_id, o.billing_state_name,
+              o.cgst_percentage, o.cgst_amount, o.sgst_percentage, o.sgst_amount,
+              o.igst_percentage, o.igst_amount, o.tax_percentage, o.tax_amount,
+              o.grand_total,
               o.payment_method, o.razorpay_order_id, o.razorpay_payment_id, o.utr_number, o.bank_account_id,
               bam.bank_name AS company_bank_name, bam.account_number AS company_bank_account_number, bam.ifsc_code AS company_bank_ifsc,
               o.status, o.failure_reason, o.paid_at, o.created_at,
@@ -2053,7 +2113,17 @@ class SubscriptionFulfillmentService {
       subtotal_amount: parseFloat(o.subtotal_amount) || 0,
       discount_amount: parseFloat(o.discount_amount) || 0,
       coupon_code: o.coupon_code,
-      tax_amount: 0,
+      taxable_amount: parseFloat(o.taxable_amount) || Math.max(0, (parseFloat(o.subtotal_amount) || 0) - (parseFloat(o.discount_amount) || 0)),
+      tax_type: o.tax_type || 'none',
+      billing_state_name: o.billing_state_name || null,
+      cgst_percentage: parseFloat(o.cgst_percentage) || 0,
+      cgst_amount: parseFloat(o.cgst_amount) || 0,
+      sgst_percentage: parseFloat(o.sgst_percentage) || 0,
+      sgst_amount: parseFloat(o.sgst_amount) || 0,
+      igst_percentage: parseFloat(o.igst_percentage) || 0,
+      igst_amount: parseFloat(o.igst_amount) || 0,
+      tax_percentage: parseFloat(o.tax_percentage) || 0,
+      tax_amount: parseFloat(o.tax_amount) || 0,
       grand_total: parseFloat(o.grand_total) || 0,
       payment_method: o.payment_method,
       bank_account_id: o.bank_account_id || null,

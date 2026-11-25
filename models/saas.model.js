@@ -663,19 +663,21 @@ class SaasModel {
 
       await connection.commit();
 
-      if (fulfilled.grandTotal > 0) {
-        postCommitAlert = {
-          schoolId,
-          planName: fulfilled.planName,
-          invoiceNo: fulfilled.invoiceNo,
-          amountPaid: fulfilled.grandTotal,
-          startDate: fulfilled.startDate,
-          endDate: fulfilled.endDate,
-        };
-        setImmediate(() => {
-          SubscriptionAlertService.sendPaymentSuccessAlert(postCommitAlert).catch(() => {});
-        });
-      }
+      postCommitAlert = {
+        schoolId,
+        orderNo: fulfilled.orderNo,
+        schoolName: schoolData.school_name,
+        schoolCode,
+        adminEmail,
+        planName: fulfilled.planName,
+        invoiceNo: fulfilled.invoiceNo,
+        amountPaid: fulfilled.grandTotal,
+        startDate: fulfilled.startDate,
+        endDate: fulfilled.endDate,
+      };
+      setImmediate(() => {
+        SubscriptionAlertService.sendOnboardingCongratulationsAndInvoiceEmails(postCommitAlert).catch(() => {});
+      });
 
       return {
         schoolId,

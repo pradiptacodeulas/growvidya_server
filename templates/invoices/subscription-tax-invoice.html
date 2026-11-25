@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tax Invoice - {{invoice_no}}</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 10mm 12mm;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background: #ffffff;
+      font-family: Arial, Helvetica, sans-serif;
+      color: #111827;
+      font-size: 11.5px;
+      line-height: 1.4;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    .page-container {
+      width: 100%;
+      min-height: 272mm;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    /* Top Header Outside Box */
+    .top-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 10px;
+      gap: 16px;
+    }
+
+    .company-brand {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      max-width: 68%;
+    }
+
+    .company-logo {
+      max-height: 58px;
+      max-width: 140px;
+      width: auto;
+      object-fit: contain;
+      flex-shrink: 0;
+    }
+
+    .company-details h1 {
+      font-size: 17px;
+      font-weight: 800;
+      color: #111827;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      margin-bottom: 2px;
+    }
+
+    .company-details .meta-line {
+      font-size: 11px;
+      color: #374151;
+      line-height: 1.38;
+    }
+
+    .company-details .gstin-line {
+      font-size: 11.5px;
+      font-weight: 700;
+      color: #111827;
+      margin-top: 2px;
+    }
+
+    .invoice-type-badge {
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    .invoice-type-badge .tax-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #374151;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+    }
+
+    .invoice-type-badge .copy-subtitle {
+      font-size: 11px;
+      font-weight: 800;
+      color: #111827;
+      text-transform: uppercase;
+      margin-top: 2px;
+    }
+
+    /* Main Bordered Box */
+    .invoice-box {
+      border: 1.5px solid #111827;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Customer & Invoice Metadata Grid */
+    .meta-grid {
+      display: flex;
+      width: 100%;
+      border-bottom: 1.5px solid #111827;
+    }
+
+    .customer-col {
+      width: 52%;
+      padding: 8px 10px;
+      border-right: 1.5px solid #111827;
+    }
+
+    .customer-col .section-label {
+      font-size: 10.5px;
+      font-weight: 700;
+      color: #374151;
+      margin-bottom: 3px;
+    }
+
+    .customer-col .customer-name {
+      font-size: 13px;
+      font-weight: 800;
+      color: #111827;
+      text-transform: uppercase;
+      margin-bottom: 3px;
+    }
+
+    .customer-col .customer-line {
+      font-size: 11px;
+      color: #1f2937;
+      line-height: 1.38;
+    }
+
+    .invoice-meta-col {
+      width: 48%;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .meta-row {
+      display: flex;
+      flex: 1;
+    }
+
+    .meta-row:first-child {
+      border-bottom: 1.5px solid #111827;
+    }
+
+    .meta-cell {
+      width: 50%;
+      padding: 8px 10px;
+    }
+
+    .meta-cell:first-child {
+      border-right: 1.5px solid #111827;
+    }
+
+    .meta-cell .label {
+      font-size: 10.5px;
+      font-weight: 700;
+      color: #374151;
+      margin-bottom: 2px;
+    }
+
+    .meta-cell .value {
+      font-size: 12px;
+      font-weight: 800;
+      color: #111827;
+      word-break: break-word;
+    }
+
+    /* Items Table */
+    .items-table {
+      width: 100%;
+      border-collapse: collapse;
+      border-bottom: 1.5px solid #111827;
+    }
+
+    .items-table th {
+      border-bottom: 1.5px solid #111827;
+      border-right: 1px solid #111827;
+      padding: 6px 7px;
+      font-size: 10.5px;
+      font-weight: 800;
+      color: #111827;
+      background: #f9fafb;
+    }
+
+    .items-table th:last-child {
+      border-right: none;
+    }
+
+    .items-table td {
+      border-right: 1px solid #111827;
+      padding: 7px 7px;
+      font-size: 11px;
+      color: #111827;
+      vertical-align: top;
+    }
+
+    .items-table td:last-child {
+      border-right: none;
+    }
+
+    .items-table tbody tr.spacer-row td {
+      height: 115px;
+    }
+
+    .text-left {
+      text-align: left;
+    }
+
+    .text-center {
+      text-align: center;
+    }
+
+    .text-right {
+      text-align: right;
+    }
+
+    .item-title {
+      font-weight: 700;
+      color: #111827;
+    }
+
+    .item-sub {
+      font-size: 10px;
+      color: #4b5563;
+      margin-top: 2px;
+    }
+
+    /* Summary & Bank Section */
+    .summary-grid {
+      display: flex;
+      width: 100%;
+      border-bottom: 1.5px solid #111827;
+    }
+
+    .summary-left {
+      width: 58%;
+      padding: 10px 12px;
+      border-right: 1.5px solid #111827;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .words-block {
+      font-size: 11px;
+      color: #111827;
+    }
+
+    .words-block .qty-line {
+      font-weight: 700;
+      margin-bottom: 3px;
+    }
+
+    .words-block .words-line {
+      font-weight: 600;
+      line-height: 1.35;
+    }
+
+    .bank-block {
+      margin-top: 4px;
+      font-size: 11px;
+    }
+
+    .bank-block .bank-heading {
+      font-weight: 800;
+      color: #111827;
+      margin-bottom: 4px;
+    }
+
+    .bank-table {
+      border-collapse: collapse;
+    }
+
+    .bank-table td {
+      padding: 1.5px 10px 1.5px 0;
+      font-size: 10.5px;
+      color: #111827;
+    }
+
+    .bank-table td.b-label {
+      color: #374151;
+      font-weight: 600;
+      min-width: 78px;
+    }
+
+    .bank-table td.b-val {
+      font-weight: 700;
+    }
+
+    .summary-right {
+      width: 42%;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .totals-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .totals-table td {
+      padding: 3px 0;
+      font-size: 11px;
+      color: #111827;
+    }
+
+    .totals-table td.t-label {
+      text-align: right;
+      padding-right: 14px;
+      font-weight: 700;
+      color: #374151;
+    }
+
+    .totals-table td.t-val {
+      text-align: right;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .totals-table tr.grand-row td {
+      border-top: 1.5px solid #111827;
+      border-bottom: 1.5px solid #111827;
+      padding: 6px 0;
+      font-size: 15px;
+      font-weight: 800;
+      color: #111827;
+    }
+
+    .totals-table tr.payable-row td {
+      padding-top: 5px;
+      font-size: 11.5px;
+      font-weight: 700;
+    }
+
+    /* Bottom Signatory Section Inside Box */
+    .signatory-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      padding: 10px 12px;
+      min-height: 70px;
+    }
+
+    .terms-col {
+      font-size: 10px;
+      color: #4b5563;
+      max-width: 62%;
+    }
+
+    .signatory-col {
+      text-align: right;
+    }
+
+    .signatory-col .for-company {
+      font-size: 11px;
+      font-weight: 700;
+      color: #111827;
+      margin-bottom: 32px;
+    }
+
+    .signatory-col .auth-label {
+      font-size: 10.5px;
+      font-weight: 700;
+      color: #374151;
+    }
+
+    /* Bottom Page Footer Outside Box */
+    .bottom-page-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 10px;
+      padding-top: 6px;
+      font-size: 10px;
+      color: #374151;
+    }
+
+    .powered-by {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      text-align: right;
+    }
+
+    .powered-by img {
+      max-height: 24px;
+      width: auto;
+      object-fit: contain;
+    }
+  </style>
+</head>
+<body>
+  <div class="page-container">
+    <div>
+      <!-- Top Header Outside Bordered Box -->
+      <div class="top-header">
+        <div class="company-brand">
+          {{#if company_logo_uri}}
+          <img src="{{company_logo_uri}}" alt="Logo" class="company-logo" />
+          {{/if}}
+          <div class="company-details">
+            {{#if company_name}}
+            <h1>{{company_name}}</h1>
+            {{/if}}
+            {{#if company_address}}
+            <div class="meta-line">{{company_address}}</div>
+            {{/if}}
+            {{#if company_gstin}}
+            <div class="gstin-line">GSTIN: {{company_gstin}}</div>
+            {{/if}}
+            {{#if company_contact_line}}
+            <div class="meta-line">{{company_contact_line}}</div>
+            {{/if}}
+          </div>
+        </div>
+
+        <div class="invoice-type-badge">
+          <div class="tax-title">TAX INVOICE</div>
+          <div class="copy-subtitle">ORIGINAL FOR RECIPIENT</div>
+        </div>
+      </div>
+
+      <!-- Main Bordered Box -->
+      <div class="invoice-box">
+        <!-- Customer Details & Invoice Meta 2x2 Grid -->
+        <div class="meta-grid">
+          <div class="customer-col">
+            <div class="section-label">Customer Details:</div>
+            <div class="customer-name">{{school_name}}</div>
+            {{#if school_code}}
+            <div class="customer-line"><strong>School Code:</strong> {{school_code}}</div>
+            {{/if}}
+            {{#if school_address}}
+            <div class="section-label" style="margin-top: 4px;">Billing Address:</div>
+            <div class="customer-line">{{school_address}}</div>
+            {{/if}}
+            {{#if school_location_line}}
+            <div class="customer-line">{{school_location_line}}</div>
+            {{/if}}
+            {{#if school_phone}}
+            <div class="customer-line">Ph: {{school_phone}}</div>
+            {{/if}}
+            {{#if school_email}}
+            <div class="customer-line">Email: {{school_email}}</div>
+            {{/if}}
+          </div>
+
+          <div class="invoice-meta-col">
+            <div class="meta-row">
+              <div class="meta-cell">
+                <div class="label">Invoice #:</div>
+                <div class="value">{{invoice_no}}</div>
+              </div>
+              <div class="meta-cell">
+                <div class="label">Date:</div>
+                <div class="value">{{invoice_date}}</div>
+              </div>
+            </div>
+            <div class="meta-row">
+              <div class="meta-cell">
+                <div class="label">Place of Supply:</div>
+                <div class="value">{{place_of_supply}}</div>
+              </div>
+              <div class="meta-cell">
+                <div class="label">Order Ref:</div>
+                <div class="value">{{order_no}}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Line Items Table -->
+        <table class="items-table">
+          <thead>
+            {{items_table_head}}
+          </thead>
+          <tbody>
+            {{items_table_rows}}
+            <tr class="spacer-row">
+              {{spacer_cells}}
+            </tr>
+          </tbody>
+        </table>
+
+        <!-- Summary & Bank Details Grid -->
+        <div class="summary-grid">
+          <div class="summary-left">
+            <div class="words-block">
+              <div class="qty-line">Total Items / Qty : {{total_items}} / {{total_qty}}</div>
+              <div class="words-line">Total amount (in words): INR {{amount_in_words}}</div>
+            </div>
+
+            <div class="bank-block">
+              <div class="bank-heading">Payment &amp; Transaction Details:</div>
+              <table class="bank-table">
+                <tr>
+                  <td class="b-label">Method:</td>
+                  <td class="b-val">{{payment_method_label}}</td>
+                </tr>
+                <tr>
+                  <td class="b-label">Reference:</td>
+                  <td class="b-val">{{transaction_ref}}</td>
+                </tr>
+                {{#if validity_period}}
+                <tr>
+                  <td class="b-label">Validity:</td>
+                  <td class="b-val">{{validity_period}}</td>
+                </tr>
+                {{/if}}
+                {{#if bank_name}}
+                <tr>
+                  <td class="b-label">Bank:</td>
+                  <td class="b-val">{{bank_name}}</td>
+                </tr>
+                {{/if}}
+                {{#if bank_account_number}}
+                <tr>
+                  <td class="b-label">Account #:</td>
+                  <td class="b-val">{{bank_account_number}}</td>
+                </tr>
+                {{/if}}
+                {{#if bank_ifsc}}
+                <tr>
+                  <td class="b-label">IFSC Code:</td>
+                  <td class="b-val">{{bank_ifsc}}</td>
+                </tr>
+                {{/if}}
+                {{#if bank_branch}}
+                <tr>
+                  <td class="b-label">Branch:</td>
+                  <td class="b-val">{{bank_branch}}</td>
+                </tr>
+                {{/if}}
+                {{#if bank_upi}}
+                <tr>
+                  <td class="b-label">UPI ID:</td>
+                  <td class="b-val">{{bank_upi}}</td>
+                </tr>
+                {{/if}}
+              </table>
+            </div>
+          </div>
+
+          <div class="summary-right">
+            <table class="totals-table">
+              {{totals_table_rows}}
+            </table>
+          </div>
+        </div>
+
+        <!-- Signatory Row -->
+        <div class="signatory-row">
+          <div class="terms-col">
+            {{#if shipping_address}}
+            <div><strong>Dispatch Address:</strong> {{shipping_address}}</div>
+            {{/if}}
+          </div>
+          <div class="signatory-col">
+            {{#if company_name}}
+            <div class="for-company">For {{company_name}}</div>
+            {{/if}}
+            <div class="auth-label">Authorized Signatory</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom Page Footer Outside Box -->
+    <div class="bottom-page-footer">
+      <div>
+        {{#if footer_text}}
+        <div><strong>{{footer_text}}</strong></div>
+        {{/if}}
+        <div>Page 1/1 • This is a computer generated document and requires no signature.</div>
+      </div>
+      {{#if company_logo_uri}}
+      <div class="powered-by">
+        <div>
+          <div style="font-size: 9px; color: #6b7280;">Powered By</div>
+          <img src="{{company_logo_uri}}" alt="Logo" />
+        </div>
+      </div>
+      {{/if}}
+    </div>
+  </div>
+</body>
+</html>

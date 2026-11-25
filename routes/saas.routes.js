@@ -6,6 +6,7 @@ const StorageMasterController = require('../controllers/storageMaster.controller
 // Public SaaS routes (no auth required)
 router.get('/plans', SaasController.getPlans);
 router.get('/footer', SaasController.getFooterSetting);
+router.get('/gst', SaasController.getGstSetting);
 router.get('/config-catalog', SaasController.getConfigCatalog);
 router.get('/storage-plans', StorageMasterController.getActive);
 router.get('/trial-eligibility', SaasController.checkTrialEligibility);
@@ -17,6 +18,7 @@ router.post('/verify-registration-otp', SaasController.verifyRegistrationOtp);
 router.post('/create-order', SaasController.createRegistrationOrder);
 router.post('/record-payment-failure', SaasController.recordPaymentFailure);
 router.get('/orders/:orderNo', SaasController.getPublicOrderDetails);
+router.get('/orders/:orderNo/invoice-pdf', SaasController.getPublicOrderInvoicePdf);
 router.post('/register-school', SaasController.registerSchool);
 router.post('/register', SaasController.registerSchool);
 router.post('/auth/exchange-handover', SaasController.exchangeHandoverToken);

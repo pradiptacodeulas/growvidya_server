@@ -6,6 +6,8 @@ const SaasModel = require('../models/saas.model');
 const SubscriptionModel = require('../models/subscription.model');
 const CouponModel = require('../models/coupon.model');
 const FooterSettingModel = require('../models/footerSetting.model');
+const GstSettingModel = require('../models/gstSetting.model');
+const SubscriptionInvoicePdfService = require('../services/subscriptionInvoicePdf.service');
 const SubscriptionPolicyService = require('../services/subscriptionPolicy.service');
 const SubscriptionFulfillmentService = require('../services/subscriptionFulfillment.service');
 const ApiResponse = require('../utils/api.response');
@@ -56,6 +58,19 @@ class SaasController {
             }
           : null
       );
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/v1/saas/gst
+   * Get global platform GST configuration set by SaaS Admin
+   */
+  static async getGstSetting(req, res, next) {
+    try {
+      const setting = await GstSettingModel.getCurrent();
+      return ApiResponse.success(res, 'GST setting fetched successfully.', setting);
     } catch (error) {
       next(error);
     }
@@ -377,6 +392,19 @@ class SaasController {
         }
       }
 
+      const stateId =
+        req.body.state_id ||
+        req.body.stateId ||
+        req.body.school?.state ||
+        req.body.campus?.state ||
+        null;
+      const stateName =
+        req.body.state_name ||
+        req.body.stateName ||
+        req.body.school?.state_name ||
+        req.body.campus?.state_name ||
+        null;
+
       const verifiedCalc = await SubscriptionPolicyService.calculateVerifiedCheckout({
         plan,
         is_trial: isTrialReq,
@@ -391,6 +419,8 @@ class SaasController {
         selected_notifications: req.body.selected_notifications || req.body.selectedNotifications || [],
         coupon_code: req.body.coupon_code || req.body.couponCode || null,
         school_id: null,
+        state_id: stateId,
+        state_name: stateName,
         email: adminEmail || schoolEmail,
         phone: adminPhone || schoolPhone,
       });
@@ -537,7 +567,16 @@ class SaasController {
         price: plan.price,
         original_amount: verifiedCalc.subtotalAmount,
         discount_amount: verifiedCalc.discountAmount,
-        tax_amount: 0,
+        taxable_amount: verifiedCalc.taxableAmount,
+        tax_type: verifiedCalc.taxType,
+        cgst_percentage: verifiedCalc.cgstPercentage,
+        cgst_amount: verifiedCalc.cgstAmount,
+        sgst_percentage: verifiedCalc.sgstPercentage,
+        sgst_amount: verifiedCalc.sgstAmount,
+        igst_percentage: verifiedCalc.igstPercentage,
+        igst_amount: verifiedCalc.igstAmount,
+        tax_percentage: verifiedCalc.taxPercentage,
+        tax_amount: verifiedCalc.taxAmount,
         total_amount: verifiedCalc.grandTotal,
         final_price: verifiedCalc.grandTotal,
         coupon: verifiedCalc.couponInfo,
@@ -669,6 +708,18 @@ class SaasController {
         selected_notifications: req.body.selected_notifications || req.body.selectedNotifications || [],
         coupon_code: req.body.coupon_code || req.body.couponCode || null,
         school_id: isAlreadyProvisionedByWebhook ? preProvisionedOrder.school_id : null,
+        state_id:
+          school?.state ||
+          req.body.state_id ||
+          req.body.stateId ||
+          preProvisionedOrder?.billing_state_id ||
+          null,
+        state_name:
+          school?.state_name ||
+          req.body.state_name ||
+          req.body.stateName ||
+          preProvisionedOrder?.billing_state_name ||
+          null,
         email: isAlreadyProvisionedByWebhook ? null : admin.email,
         phone: isAlreadyProvisionedByWebhook ? null : admin.phone,
         exclude_order_id: preProvisionedOrder ? preProvisionedOrder.id : null,
@@ -967,6 +1018,36 @@ class SaasController {
       }
 
       return ApiResponse.success(res, 'Order details retrieved successfully.', order);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/v1/saas/orders/:orderNo/invoice-pdf
+   * Generates and streams the official A4 Tax Invoice PDF for public onboarding receipt
+   */
+  static async getPublicOrderInvoicePdf(req, res, next) {
+    try {
+      const orderNo = String(req.params.orderNo || '').trim();
+      if (!orderNo || !/^(ORD-\d{8}-\d{6}|order_[A-Za-z0-9]+)$/.test(orderNo)) {
+        return ApiResponse.error(res, 'Valid onboarding order reference number is required.', null, 400);
+      }
+
+      const order = await SubscriptionFulfillmentService.getOrderWithInvoice(orderNo, null, {
+        publicOnboardingOnly: true,
+      });
+      if (!order) {
+        return ApiResponse.error(res, 'Order reference not found.', null, 404);
+      }
+
+      const pdfBuffer = await SubscriptionInvoicePdfService.generateInvoicePdfBuffer(order);
+      const fileName = `${order.invoice_no || order.order_no}.pdf`;
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="${fileName}"`);
+      res.setHeader('Content-Length', pdfBuffer.length);
+      return res.send(pdfBuffer);
     } catch (error) {
       next(error);
     }

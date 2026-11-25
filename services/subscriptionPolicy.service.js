@@ -287,6 +287,8 @@ class SubscriptionPolicyService {
     selected_notifications = [],
     coupon_code = null,
     school_id = null,
+    state_id = null,
+    state_name = null,
     email = null,
     phone = null,
     exclude_order_id = null,
@@ -632,11 +634,38 @@ class SubscriptionPolicyService {
       Math.round(breakdown.notifications.reduce((s, n) => s + n.net_total_price, 0) * 100) / 100;
     const netAddonsAmount =
       Math.round((netStorageAmount + netMachinesAmount + netRfidAmount + netNotificationsAmount) * 100) / 100;
-    const grandTotal = Math.max(0, Math.round((subtotalAmount - payableDiscountAmount) * 100) / 100);
+    const taxableAmount = Math.max(0, Math.round((subtotalAmount - payableDiscountAmount) * 100) / 100);
+
+    const GstSettingModel = require('../models/gstSetting.model');
+    const taxCalc = await GstSettingModel.calculateTax({
+      taxableAmount,
+      schoolId: school_id,
+      stateId: state_id,
+      stateName: state_name,
+      connection: db,
+    });
+
+    const taxAmount = taxCalc.tax_amount;
+    const grandTotal = Math.max(0, Math.round((taxableAmount + taxAmount) * 100) / 100);
 
     breakdown.plan_discount_amount = planEligibleEntry ? planEligibleEntry.discount : 0;
     breakdown.net_plan_price = netPlanAmount;
     breakdown.net_addons_amount = netAddonsAmount;
+    breakdown.taxable_amount = taxableAmount;
+    breakdown.tax_type = taxCalc.tax_type;
+    breakdown.billing_state_id = taxCalc.billing_state_id;
+    breakdown.billing_state_name = taxCalc.billing_state_name;
+    breakdown.home_state_id = taxCalc.home_state_id;
+    breakdown.home_state_name = taxCalc.home_state_name;
+    breakdown.gst_percentage = taxCalc.gst_percentage;
+    breakdown.cgst_percentage = taxCalc.cgst_percentage;
+    breakdown.cgst_amount = taxCalc.cgst_amount;
+    breakdown.sgst_percentage = taxCalc.sgst_percentage;
+    breakdown.sgst_amount = taxCalc.sgst_amount;
+    breakdown.igst_percentage = taxCalc.igst_percentage;
+    breakdown.igst_amount = taxCalc.igst_amount;
+    breakdown.tax_percentage = taxCalc.tax_percentage;
+    breakdown.tax_amount = taxAmount;
 
     return {
       planAmount,
@@ -653,7 +682,18 @@ class SubscriptionPolicyService {
       netAddonsAmount,
       subtotalAmount,
       discountAmount,
-      taxAmount: 0, // Zero GST
+      taxableAmount,
+      taxType: taxCalc.tax_type,
+      billingStateId: taxCalc.billing_state_id,
+      billingStateName: taxCalc.billing_state_name,
+      cgstPercentage: taxCalc.cgst_percentage,
+      cgstAmount: taxCalc.cgst_amount,
+      sgstPercentage: taxCalc.sgst_percentage,
+      sgstAmount: taxCalc.sgst_amount,
+      igstPercentage: taxCalc.igst_percentage,
+      igstAmount: taxCalc.igst_amount,
+      taxPercentage: taxCalc.tax_percentage,
+      taxAmount,
       grandTotal,
       totalAmount: grandTotal,
       originalAmount: subtotalAmount,

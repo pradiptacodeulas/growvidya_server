@@ -12,8 +12,21 @@ class EmailService {
   /**
    * Send an email via Mailjet v3.1 Send API
    */
-  static async _sendViaMailjet(creds, { to, toName, subject, text, html }) {
+  static async _sendViaMailjet(creds, { to, toName, subject, text, html, attachments = [] }) {
     const authHeader = Buffer.from(`${creds.apiKey}:${creds.apiSecret}`).toString('base64');
+    const mailjetAttachments =
+      Array.isArray(attachments) && attachments.length > 0
+        ? attachments
+            .filter((a) => a && a.filename && a.content)
+            .map((a) => ({
+              ContentType: a.contentType || 'application/pdf',
+              Filename: a.filename,
+              Base64Content: Buffer.isBuffer(a.content)
+                ? a.content.toString('base64')
+                : Buffer.from(String(a.content)).toString('base64'),
+            }))
+        : undefined;
+
     const payload = JSON.stringify({
       Messages: [
         {
@@ -30,6 +43,9 @@ class EmailService {
           Subject: subject,
           TextPart: text || '',
           HTMLPart: html || `<p>${text || ''}</p>`,
+          ...(mailjetAttachments && mailjetAttachments.length > 0
+            ? { Attachments: mailjetAttachments }
+            : {}),
         },
       ],
     });
@@ -108,7 +124,7 @@ class EmailService {
   /**
    * Send an email via Zoho Mail or Custom SMTP using Nodemailer
    */
-  static async _sendViaSmtp(creds, { to, subject, text, html }) {
+  static async _sendViaSmtp(creds, { to, subject, text, html, attachments = [] }) {
     const isZoho = creds.provider === 'zoho';
     const defaultPort = isZoho ? 465 : 587;
     const port = Number(creds.smtpPort) || defaultPort;
@@ -136,6 +152,7 @@ class EmailService {
         subject,
         text: text || '',
         html: html || `<p>${text || ''}</p>`,
+        ...(Array.isArray(attachments) && attachments.length > 0 ? { attachments } : {}),
       });
 
       return {
@@ -155,7 +172,7 @@ class EmailService {
    * Dynamically send an email using the single active Default provider (Mailjet, Zoho Mail, or SMTP),
    * or a specific credential ID if provided.
    */
-  static async sendEmail({ to, toName, subject, text, html, credentialId = null }) {
+  static async sendEmail({ to, toName, subject, text, html, attachments = [], credentialId = null }) {
     if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(to).trim())) {
       const err = new Error('A valid recipient email address is required.');
       err.statusCode = 400;
@@ -178,6 +195,7 @@ class EmailService {
         subject,
         text,
         html,
+        attachments,
       });
     }
 
@@ -186,6 +204,7 @@ class EmailService {
       subject,
       text,
       html,
+      attachments,
     });
   }
 

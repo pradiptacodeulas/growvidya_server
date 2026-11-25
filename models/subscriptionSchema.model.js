@@ -371,6 +371,18 @@ class SubscriptionSchemaModel {
         \`coupon_id\` INT(11) DEFAULT NULL,
         \`coupon_code\` VARCHAR(60) DEFAULT NULL,
         \`discount_amount\` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+        \`taxable_amount\` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+        \`tax_type\` ENUM('none','intra_state','inter_state') NOT NULL DEFAULT 'none',
+        \`billing_state_id\` INT(11) DEFAULT NULL,
+        \`billing_state_name\` VARCHAR(100) DEFAULT NULL,
+        \`cgst_percentage\` DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+        \`cgst_amount\` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+        \`sgst_percentage\` DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+        \`sgst_amount\` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+        \`igst_percentage\` DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+        \`igst_amount\` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+        \`tax_percentage\` DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+        \`tax_amount\` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
         \`grand_total\` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
         \`currency\` VARCHAR(10) NOT NULL DEFAULT 'INR',
         \`payment_method\` ENUM('razorpay','bank_transfer','free_trial','coupon_100','super_admin_manual') NOT NULL DEFAULT 'razorpay',
@@ -410,6 +422,46 @@ class SubscriptionSchemaModel {
         await pool.query(
           `ALTER TABLE \`subscription_payment_orders\` ADD COLUMN \`bank_account_id\` INT(11) DEFAULT NULL AFTER \`utr_number\``
         );
+      }
+      const taxColsToAdd = [];
+      if (!orderCols.has('taxable_amount')) {
+        taxColsToAdd.push("ADD COLUMN `taxable_amount` DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER `discount_amount`");
+      }
+      if (!orderCols.has('tax_type')) {
+        taxColsToAdd.push("ADD COLUMN `tax_type` ENUM('none','intra_state','inter_state') NOT NULL DEFAULT 'none' AFTER `taxable_amount`");
+      }
+      if (!orderCols.has('billing_state_id')) {
+        taxColsToAdd.push("ADD COLUMN `billing_state_id` INT(11) DEFAULT NULL AFTER `tax_type`");
+      }
+      if (!orderCols.has('billing_state_name')) {
+        taxColsToAdd.push("ADD COLUMN `billing_state_name` VARCHAR(100) DEFAULT NULL AFTER `billing_state_id`");
+      }
+      if (!orderCols.has('cgst_percentage')) {
+        taxColsToAdd.push("ADD COLUMN `cgst_percentage` DECIMAL(5,2) NOT NULL DEFAULT 0.00 AFTER `billing_state_name`");
+      }
+      if (!orderCols.has('cgst_amount')) {
+        taxColsToAdd.push("ADD COLUMN `cgst_amount` DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER `cgst_percentage`");
+      }
+      if (!orderCols.has('sgst_percentage')) {
+        taxColsToAdd.push("ADD COLUMN `sgst_percentage` DECIMAL(5,2) NOT NULL DEFAULT 0.00 AFTER `cgst_amount`");
+      }
+      if (!orderCols.has('sgst_amount')) {
+        taxColsToAdd.push("ADD COLUMN `sgst_amount` DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER `sgst_percentage`");
+      }
+      if (!orderCols.has('igst_percentage')) {
+        taxColsToAdd.push("ADD COLUMN `igst_percentage` DECIMAL(5,2) NOT NULL DEFAULT 0.00 AFTER `sgst_amount`");
+      }
+      if (!orderCols.has('igst_amount')) {
+        taxColsToAdd.push("ADD COLUMN `igst_amount` DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER `igst_percentage`");
+      }
+      if (!orderCols.has('tax_percentage')) {
+        taxColsToAdd.push("ADD COLUMN `tax_percentage` DECIMAL(5,2) NOT NULL DEFAULT 0.00 AFTER `igst_amount`");
+      }
+      if (!orderCols.has('tax_amount')) {
+        taxColsToAdd.push("ADD COLUMN `tax_amount` DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER `tax_percentage`");
+      }
+      if (taxColsToAdd.length > 0) {
+        await pool.query(`ALTER TABLE \`subscription_payment_orders\` ${taxColsToAdd.join(', ')}`);
       }
     } catch (_) {}
   }

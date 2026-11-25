@@ -6,6 +6,9 @@ const SubscriptionItemModel = require('../models/subscriptionItem.model');
 const RazorpayCredentialModel = require('../models/razorpayCredential.model');
 const EmailCredentialModel = require('../models/emailCredential.model');
 const FooterSettingModel = require('../models/footerSetting.model');
+const GstSettingModel = require('../models/gstSetting.model');
+const SaasModel = require('../models/saas.model');
+const SubscriptionInvoicePdfService = require('../services/subscriptionInvoicePdf.service');
 const EmailService = require('../services/email.service');
 const SubscriptionFulfillmentService = require('../services/subscriptionFulfillment.service');
 const SubscriptionAlertService = require('../services/subscriptionAlert.service');
@@ -313,6 +316,29 @@ class SaasAdminController {
         return ApiResponse.notFound(res, 'Order / Invoice record not found.');
       }
       return ApiResponse.success(res, 'Invoice details fetched successfully.', order);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Stream Official A4 Tax Invoice PDF by orderNo, invoiceNo, or ID
+   */
+  static async getSubscriptionInvoicePdf(req, res, next) {
+    try {
+      const { orderNo } = req.params;
+      const order = await SubscriptionFulfillmentService.getOrderWithInvoice(orderNo);
+      if (!order) {
+        return ApiResponse.notFound(res, 'Order / Invoice record not found.');
+      }
+
+      const pdfBuffer = await SubscriptionInvoicePdfService.generateInvoicePdfBuffer(order);
+      const fileName = `${order.invoice_no || order.order_no}.pdf`;
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="${fileName}"`);
+      res.setHeader('Content-Length', pdfBuffer.length);
+      return res.send(pdfBuffer);
     } catch (error) {
       next(error);
     }
@@ -1935,6 +1961,49 @@ class SaasAdminController {
       if (error.statusCode === 400) {
         return ApiResponse.error(res, error.message, null, 400);
       }
+      next(error);
+    }
+  }
+
+  // ========================================================
+  // 13. SETTINGS — PLATFORM GST & TAX CONFIGURATION
+  // ========================================================
+  static async getGstSetting(req, res, next) {
+    try {
+      const setting = await GstSettingModel.getCurrent();
+      return ApiResponse.success(res, 'GST setting retrieved successfully.', setting);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async updateGstSetting(req, res, next) {
+    try {
+      const updated = await GstSettingModel.upsert(req.body || {}, req.saasAdmin?.id || null);
+      return ApiResponse.success(res, 'GST setting updated successfully.', updated);
+    } catch (error) {
+      if (error.statusCode === 400) {
+        return ApiResponse.error(res, error.message, null, 400);
+      }
+      next(error);
+    }
+  }
+
+  static async getCountries(req, res, next) {
+    try {
+      const countries = await SaasModel.getCountries();
+      return ApiResponse.success(res, 'Countries fetched successfully.', countries);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getStates(req, res, next) {
+    try {
+      const { countryId } = req.params;
+      const states = await SaasModel.getStates(countryId);
+      return ApiResponse.success(res, 'States fetched successfully.', states);
+    } catch (error) {
       next(error);
     }
   }

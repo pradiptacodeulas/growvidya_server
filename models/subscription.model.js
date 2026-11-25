@@ -218,12 +218,20 @@ class SubscriptionModel {
     const lifecycle = await SubscriptionFulfillmentService.loadSchoolLifecycleSnapshot(targetSchoolId);
 
     let schoolAddress = null;
+    let schoolStateId = null;
+    let schoolStateName = null;
     try {
       const [smRows] = await pool.query(
-        'SELECT address FROM school_master WHERE id = ? LIMIT 1',
+        `SELECT sm.address, sm.state AS state_id, s.state AS state_name
+         FROM school_master sm
+         LEFT JOIN states s ON sm.state = s.id_state
+         WHERE sm.id = ?
+         LIMIT 1`,
         [targetSchoolId]
       );
       schoolAddress = smRows[0]?.address || null;
+      schoolStateId = smRows[0]?.state_id ? Number(smRows[0].state_id) : null;
+      schoolStateName = smRows[0]?.state_name || null;
     } catch (_) {}
 
     if (rows.length === 0) {
@@ -233,6 +241,8 @@ class SubscriptionModel {
           subscription_id: pendingSubscription.subscription_id,
           school_id: targetSchoolId,
           school_address: schoolAddress,
+          school_state_id: schoolStateId,
+          school_state_name: schoolStateName,
           plan_id: pendingSubscription.plan_id,
           storage_plan_id: pendingSubscription.storage_plan_id,
           plan_name: pendingSubscription.plan_name,
@@ -273,6 +283,8 @@ class SubscriptionModel {
         subscription_id: null,
         school_id: targetSchoolId,
         school_address: schoolAddress,
+        school_state_id: schoolStateId,
+        school_state_name: schoolStateName,
         plan_name: 'No Active Subscription',
         status: latestRejected ? 'rejected' : 'expired',
         liveStatus: latestRejected ? 'rejected' : 'expired',
@@ -359,6 +371,8 @@ class SubscriptionModel {
     return {
       ...sub,
       school_address: schoolAddress,
+      school_state_id: schoolStateId,
+      school_state_name: schoolStateName,
       tier_rank: Number(sub.tier_rank) || 1,
       included_storage_gb: Math.max(0, parseInt(sub.included_storage_gb, 10) || 0),
       included_push_credits: Math.max(0, parseInt(sub.included_push_credits, 10) || 0),
@@ -680,6 +694,9 @@ class SubscriptionModel {
       status: np.status,
     }));
 
+    const GstSettingModel = require('./gstSetting.model');
+    const gstSettings = await GstSettingModel.getCurrent().catch(() => null);
+
     return {
       storage_plans: enrichedStoragePlans,
       attendance_machines: attendanceMachines || [],
@@ -687,6 +704,7 @@ class SubscriptionModel {
       bank_accounts: bankAccounts || [],
       notification_pricing: notificationPricing || [],
       notification_records: notificationRecords,
+      gst_settings: gstSettings,
     };
   }
 

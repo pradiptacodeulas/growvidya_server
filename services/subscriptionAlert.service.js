@@ -159,7 +159,7 @@ class SubscriptionAlertService {
     return result;
   }
 
-  static async sendPaymentSuccessAlert({ schoolId, planName, invoiceNo, amountPaid, startDate, endDate }) {
+  static async sendPaymentSuccessAlert({ schoolId, orderNo, planName, invoiceNo, amountPaid, startDate, endDate }) {
     const formattedAmt = Number(amountPaid || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
     return await SubscriptionAlertService.dispatchEvent({
       schoolId,
@@ -178,6 +178,124 @@ class SubscriptionAlertService {
       </div>`,
       smsText: `GrowVidya: Payment of Rs.${formattedAmt} (${invoiceNo || 'Receipt'}) verified. ${planName || 'Order'} is now active.`,
     });
+  }
+
+  /**
+   * Dispatch two separate emails upon school onboarding / subscription purchase:
+   * 1) Congratulations & Welcome Email
+   * 2) Official Tax Invoice Email with the generated Invoice PDF attached
+   */
+  static async sendOnboardingCongratulationsAndInvoiceEmails({
+    schoolId,
+    orderNo,
+    schoolName,
+    schoolCode,
+    adminEmail,
+    planName,
+    invoiceNo,
+    amountPaid,
+    startDate,
+    endDate,
+  }) {
+    try {
+      const contact = await SubscriptionAlertService._getSchoolContact(schoolId);
+      const targetEmail = adminEmail || contact?.admin_email || contact?.school_email;
+      if (!targetEmail) return;
+
+      const resolvedSchoolName = schoolName || contact?.school_name || '';
+      const resolvedAdminName =
+        [contact?.first_name, contact?.last_name].filter(Boolean).join(' ') || resolvedSchoolName;
+      const formattedAmt = Number(amountPaid || 0).toLocaleString('en-IN', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+
+      // 1. First Email: Congratulations & Welcome Email
+      try {
+        await EmailService.sendEmail({
+          to: targetEmail,
+          toName: resolvedAdminName,
+          subject: `Congratulations & Welcome to Growvidya — ${resolvedSchoolName} Portal Activated!`,
+          text: `Congratulations ${resolvedAdminName}!\n\nWelcome to Growvidya. Your institutional portal for ${resolvedSchoolName}${schoolCode ? ` (${schoolCode})` : ''} has been activated.\n${planName ? `\nActivated Package: ${planName}` : ''}${startDate && endDate ? `\nValidity: ${startDate} to ${endDate}` : ''}\nSuper Admin Login ID: ${targetEmail}\n\nThank you for choosing Growvidya!`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e5e7eb; border-radius: 12px; color: #1e293b; line-height: 1.6;">
+              <h2 style="color: #059669; margin-top: 0;">Congratulations &amp; Welcome to Growvidya!</h2>
+              <p>Hello <strong>${resolvedAdminName}</strong>,</p>
+              <p>
+                Congratulations on registering <strong>${resolvedSchoolName}</strong>${schoolCode ? ` (Code: <strong>${schoolCode}</strong>)` : ''} on the Growvidya School Management Platform. Your institutional workspace and Super Admin account are now live and ready to use.
+              </p>
+              <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 18px 0; font-size: 14px;">
+                ${resolvedSchoolName ? `<div><strong>Institution:</strong> ${resolvedSchoolName}</div>` : ''}
+                ${schoolCode ? `<div><strong>School Code:</strong> ${schoolCode}</div>` : ''}
+                ${planName ? `<div><strong>Activated Package:</strong> ${planName}</div>` : ''}
+                ${startDate && endDate ? `<div><strong>License Validity:</strong> ${startDate} to ${endDate}</div>` : ''}
+                <div><strong>Super Admin Login Email:</strong> ${targetEmail}</div>
+              </div>
+              <p style="font-size: 13px; color: #64748b; margin-bottom: 0;">
+                Your official tax invoice is being sent in a separate email for your billing records.
+              </p>
+            </div>
+          `,
+        });
+      } catch (welcomeErr) {
+        console.warn('[SubscriptionAlertService] Welcome email error:', welcomeErr.message);
+      }
+
+      // 2. Second Email: Official Tax Invoice Email with PDF Attachment
+      if (orderNo) {
+        try {
+          const SubscriptionFulfillmentService = require('./subscriptionFulfillment.service');
+          const SubscriptionInvoicePdfService = require('./subscriptionInvoicePdf.service');
+          const order = await SubscriptionFulfillmentService.getOrderWithInvoice(orderNo, schoolId);
+          if (order) {
+            const pdfBuffer = await SubscriptionInvoicePdfService.generateInvoicePdfBuffer(order);
+            const resolvedInvNo = order.invoice_no || invoiceNo || order.order_no;
+            const taxSummaryHtml =
+              order.tax_type === 'intra_state'
+                ? `<div><strong>CGST (${order.cgst_percentage}%):</strong> ₹${Number(order.cgst_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                   <div><strong>SGST (${order.sgst_percentage}%):</strong> ₹${Number(order.sgst_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>`
+                : order.tax_type === 'inter_state'
+                ? `<div><strong>IGST (${order.igst_percentage}%):</strong> ₹${Number(order.igst_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>`
+                : '';
+
+            await EmailService.sendEmail({
+              to: targetEmail,
+              toName: resolvedAdminName,
+              subject: `Official Tax Invoice (${resolvedInvNo}) — ${resolvedSchoolName}`,
+              text: `Hello ${resolvedAdminName},\n\nPlease find attached the official tax invoice (${resolvedInvNo}) for your Growvidya subscription order (${order.order_no}).\n\nTotal Amount Paid: INR ${formattedAmt}\n\nThank you!`,
+              html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e5e7eb; border-radius: 12px; color: #1e293b; line-height: 1.6;">
+                  <h2 style="color: #1e293b; margin-top: 0;">Official Tax Invoice — ${resolvedInvNo}</h2>
+                  <p>Hello <strong>${resolvedAdminName}</strong>,</p>
+                  <p>
+                    Please find attached the official tax invoice PDF for <strong>${resolvedSchoolName}</strong>.
+                  </p>
+                  <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 18px 0; font-size: 14px;">
+                    <div><strong>Invoice Number:</strong> ${resolvedInvNo}</div>
+                    <div><strong>Order Reference:</strong> ${order.order_no}</div>
+                    <div><strong>Taxable Amount:</strong> ₹${Number(order.taxable_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                    ${taxSummaryHtml}
+                    <div style="margin-top: 6px; font-size: 15px;"><strong>Total Amount Paid:</strong> ₹${Number(order.grand_total || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                  </div>
+                  <p style="font-size: 13px; color: #64748b; margin-bottom: 0;">
+                    The printable A4 Tax Invoice PDF (<strong>${resolvedInvNo}.pdf</strong>) is attached to this email.
+                  </p>
+                </div>
+              `,
+              attachments: [
+                {
+                  filename: `${resolvedInvNo}.pdf`,
+                  content: pdfBuffer,
+                  contentType: 'application/pdf',
+                },
+              ],
+            });
+          }
+        } catch (invErr) {
+          console.warn('[SubscriptionAlertService] Invoice email error:', invErr.message);
+        }
+      }
+    } catch (_) {}
   }
 
   static async sendOfflineDecisionAlert({ schoolId, approved, planName, utrNumber, notes, startDate, endDate }) {

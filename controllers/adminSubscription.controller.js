@@ -3,6 +3,7 @@ const SubscriptionModel = require('../models/subscription.model');
 const CouponModel = require('../models/coupon.model');
 const SubscriptionPolicyService = require('../services/subscriptionPolicy.service');
 const SubscriptionFulfillmentService = require('../services/subscriptionFulfillment.service');
+const SubscriptionInvoicePdfService = require('../services/subscriptionInvoicePdf.service');
 const StorageQuotaService = require('../services/storageQuota.service');
 const ApiResponse = require('../utils/api.response');
 const { getRazorpayConfig } = require('../config/razorpay.config');
@@ -243,7 +244,16 @@ class AdminSubscriptionController {
         total_amount: verifiedCalc.grandTotal,
         original_amount: verifiedCalc.subtotalAmount,
         discount_amount: verifiedCalc.discountAmount,
-        tax_amount: 0,
+        taxable_amount: verifiedCalc.taxableAmount,
+        tax_type: verifiedCalc.taxType,
+        cgst_percentage: verifiedCalc.cgstPercentage,
+        cgst_amount: verifiedCalc.cgstAmount,
+        sgst_percentage: verifiedCalc.sgstPercentage,
+        sgst_amount: verifiedCalc.sgstAmount,
+        igst_percentage: verifiedCalc.igstPercentage,
+        igst_amount: verifiedCalc.igstAmount,
+        tax_percentage: verifiedCalc.taxPercentage,
+        tax_amount: verifiedCalc.taxAmount,
         coupon: verifiedCalc.couponInfo,
         breakdown: verifiedCalc.breakdown,
         billing_cycle: plan.billing_cycle,
@@ -356,7 +366,7 @@ class AdminSubscriptionController {
           start_date: fulfilled.startDate,
           end_date: fulfilled.endDate,
           amount_paid: fulfilled.grandTotal,
-          tax_amount: 0,
+          tax_amount: invoiceOrder?.tax_amount || 0,
           transaction_id: paymentId,
           breakdown: fulfilled.breakdown,
           order: invoiceOrder,
@@ -496,7 +506,16 @@ class AdminSubscriptionController {
         total_amount: verifiedCalc.grandTotal,
         original_amount: verifiedCalc.subtotalAmount,
         discount_amount: verifiedCalc.discountAmount,
-        tax_amount: 0,
+        taxable_amount: verifiedCalc.taxableAmount,
+        tax_type: verifiedCalc.taxType,
+        cgst_percentage: verifiedCalc.cgstPercentage,
+        cgst_amount: verifiedCalc.cgstAmount,
+        sgst_percentage: verifiedCalc.sgstPercentage,
+        sgst_amount: verifiedCalc.sgstAmount,
+        igst_percentage: verifiedCalc.igstPercentage,
+        igst_amount: verifiedCalc.igstAmount,
+        tax_percentage: verifiedCalc.taxPercentage,
+        tax_amount: verifiedCalc.taxAmount,
         coupon: verifiedCalc.couponInfo,
         breakdown: verifiedCalc.breakdown,
       });
@@ -603,7 +622,7 @@ class AdminSubscriptionController {
           order_no: orderIntent.orderNo,
           status: 'pending_verification',
           total_amount: verifiedCalc.grandTotal,
-          tax_amount: 0,
+          tax_amount: verifiedCalc.taxAmount,
           payment_transaction_id: String(utrNumber).trim(),
           breakdown: verifiedCalc.breakdown,
         }
@@ -758,7 +777,7 @@ class AdminSubscriptionController {
           plan_id: plan.id,
           plan_name: plan.plan_name,
           amount_paid: verifiedCalc.grandTotal,
-          tax_amount: 0,
+          tax_amount: verifiedCalc.taxAmount,
           transaction_id: String(txnId).trim(),
           status: 'pending',
           breakdown: verifiedCalc.breakdown,
@@ -843,6 +862,34 @@ class AdminSubscriptionController {
         return ApiResponse.error(res, 'Order or invoice not found.', null, 404);
       }
       return ApiResponse.success(res, 'Order details retrieved successfully.', order);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/v1/admin/subscription/orders/:orderNo/invoice-pdf
+   * Streams the official A4 Tax Invoice PDF for the authenticated school
+   */
+  static async getOrderInvoicePdf(req, res, next) {
+    try {
+      const schoolId = req.user?.school_id || req.user?.schoolId;
+      if (!schoolId) {
+        return ApiResponse.error(res, 'School ID not found in session.', null, 400);
+      }
+      const orderNo = req.params.orderNo;
+      const order = await SubscriptionFulfillmentService.getOrderWithInvoice(orderNo, schoolId);
+      if (!order) {
+        return ApiResponse.error(res, 'Order or invoice not found.', null, 404);
+      }
+
+      const pdfBuffer = await SubscriptionInvoicePdfService.generateInvoicePdfBuffer(order);
+      const fileName = `${order.invoice_no || order.order_no}.pdf`;
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="${fileName}"`);
+      res.setHeader('Content-Length', pdfBuffer.length);
+      return res.send(pdfBuffer);
     } catch (error) {
       next(error);
     }
